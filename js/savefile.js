@@ -366,3 +366,14 @@ export function undoJerseyNumbers(changes) {
     if (c.stint) c.stint.num = c.stintNum;
   }
 }
+
+// Level: the player's rating on a 100 scale. A maxed 5-star (potential 10:
+// 168 total across the 12 skill ratings) is 100, and every two rating
+// points is one level, so a maxed 4.5-star (154) is 93 and a maxed 4-star
+// (140) is 86. Capped at 100 (107 for the secret legend tier).
+const SKILL_KEYS = ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE', 'DRE', 'STL', 'BLK'];
+export function levelOf(p) {
+  const total = SKILL_KEYS.reduce((a, k) => a + (p.attributes?.[k]?.[0] ?? 0), 0);
+  const cap = p.pot >= 11 ? 107 : 100;
+  return Math.max(1, Math.min(cap, Math.round(100 - (168 - total) / 2)));
+}

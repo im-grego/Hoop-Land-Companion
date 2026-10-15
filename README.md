@@ -187,6 +187,11 @@ starred). Nothing is written until you finish, and **Reset** starts over (undoin
   prospects become free agents, college stats move to history, used picks are removed, a draft news item per pick,
   and the save moves to the **Post-Draft** phase — so summer league and the rookie bump can follow. Replaying the
   game's own picks through this reproduces the game's post-draft save (the game re-sorts depth charts itself).
+- **Player value** uses **Level** (a maxed 5-star is Lv 100; every two upgrades is one level, so a maxed 4-star is
+  86 and a 4.5 is 93), last season's production, youth and upside, age decline, and the **contract**: an expiring deal
+  is close to neutral, a bargain adds value, and an overpay for the player's level costs value for every year left
+  (more with a player option, less with a team option). Trade labels show Level, salary × years, the option (TO/PO)
+  and an Expiring / Overpaid / Bargain tag.
 - **Player trades** move the player and update the player's new-season stats row (team and jersey), as the game does.
 - **Jersey numbers:** a player joining a team (draft or trade) keeps their number if it's free; otherwise they try its
   single digit (#27 → 7, #55 → 5), then the lowest number that's neither worn nor retired. The offseason screen can

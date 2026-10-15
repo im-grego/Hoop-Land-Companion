@@ -1,6 +1,6 @@
 import {
   parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
-  playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers,
+  playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores } from './progression.js';
 import {
@@ -13,12 +13,12 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers } from './livedraft.js';
-import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade } from './trades.js';
+import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue } from './trades.js';
 import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.21.0';
+const APP_VERSION = '0.21.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -210,7 +210,6 @@ function layout({ title, left = '', right = '', body, action = null }) {
     </div>
     <main class="panel">${body}</main>
     ${action ? `<div class="bottom"><button class="btn action" data-act="${action.act}">${esc(action.label)}</button></div>` : ''}`;
-  window.scrollTo(0, 0);
 }
 
 const BACK_ARROW = `<svg width="40" height="28" viewBox="0 0 10 7" shape-rendering="crispEdges" aria-hidden="true">
@@ -221,6 +220,7 @@ const actions = {};
 
 function go(name, args = {}) {
   if (!screenAllowed(name)) { toast('Finish the current step on the calendar first'); return; }
+  state.stack[state.stack.length - 1].y = window.scrollY;
   state.stack.push({ name, args });
   history.pushState({ depth: state.stack.length }, '');
   render();
@@ -244,9 +244,17 @@ function replace(name, args = {}) {
   state.stack[state.stack.length - 1] = { name, args };
   render();
 }
+// Re-rendering the same screen (a tap that updates it) keeps your place;
+// a new screen, tab or view starts at the top.
+let lastView = '';
 function render() {
   const top = state.stack[state.stack.length - 1];
+  const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
+  const y = window.scrollY;
   screens[top.name](top.args);
+  window.scrollTo(0, view === lastView ? y : top.y ?? 0);
+  top.y = null;
+  lastView = view;
 }
 
 window.addEventListener('popstate', () => {
@@ -1189,7 +1197,7 @@ function playerRow(p, d) {
       <span class="stars">${stars(p.pot)}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
-    <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · AVG ${avgRating(p).toFixed(1)}</span>
+    <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · Lv ${levelOf(p)}</span>
     ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
   </button>`;
 }
@@ -1251,7 +1259,7 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></p>
+        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="gold">Lv ${levelOf(p)}</span> · <span class="stars">${stars(p.pot)}</span></p>
         <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
       </div>
       ${p.season?.ap ? `<fieldset class="frame"><legend>Upgrade Points</legend>
@@ -2022,8 +2030,11 @@ function draftWarRoom() {
   const byId = new Map(league().draftClass.map(p => [p.id, p]));
   return {
     html: `<fieldset class="frame"><legend>Your Board</legend>
-        ${board.length ? `<div class="list">${board.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="gold">${i + 1}.</span> `)}
-          <div class="mv"><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up">▲</button><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down">▼</button><button class="btn square" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></div></div>`).join('')}</div>`
+        ${board.length ? `<div class="brows">${board.map((p, i) => `<div class="brow">
+          <span class="rk gold">${i + 1}</span>
+          <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y</span> ${valueChip(p)}</span></button>
+          <span class="mv"><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvb x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></span>
+        </div>`).join('')}</div>`
         : '<p class="note">Your board is empty. Add prospects from Consensus with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
       </fieldset>
       <fieldset class="frame"><legend>Mock Draft · First Round</legend>
@@ -2106,7 +2117,8 @@ function frontOfficeOffers(team) {
   const out = [];
   const ly = lastYear();
   const others = L.teams.filter(t => !isUserTeam(t)).sort(() => rng() - 0.5);
-  const text = x => x.pick ? (x.key.startsWith('c:') ? `#${x.key.slice(2)}` : pickLabel(x.pick)) : playerName(x.player);
+  const text = x => x.pick ? (x.key.startsWith('c:') ? `#${x.key.slice(2)}` : pickLabel(x.pick))
+    : `${playerName(x.player)} (Lv ${levelOf(x.player)}${contractText(x.player) ? `, ${contractText(x.player)}` : ''}${contractValue(x.player).tag ? `, ${contractValue(x.player).tag}` : ''})`;
   for (const want of onBlock) {
     let n = 0;
     for (const t of others) {
@@ -2665,6 +2677,18 @@ actions.liveFinish = async () => {
 
 // ---- Live trade builder
 
+// "$24M × 3 · PO" and a value tag (Expiring / Overpaid / Bargain).
+const OPT_SHORT = { 1: 'TO', 2: 'PO' };
+function contractText(p) {
+  const c = p.contract || {};
+  if (!c.sal) return '';
+  return `$${c.sal}M × ${c.yrs || 1}${OPT_SHORT[c.opt] ? ` · ${OPT_SHORT[c.opt]}` : ''}`;
+}
+function contractBadge(p) {
+  const { tag } = contractValue(p);
+  return tag ? ` <span class="badge ${tag === 'Overpaid' ? 'down-b' : tag === 'Bargain' ? 'lvl' : 'new'}">${tag}</span>` : '';
+}
+
 function liveAssets(team) {
   const L = league();
   const live = liveState();
@@ -2686,7 +2710,8 @@ function liveAssets(team) {
   }
   for (const p of [...team.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly))) {
     const l = seasonLine(p, state.leagueIdx, ly);
-    out.push({ key: `p:${p.id}`, label: `${playerName(p)} <span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${p.contract?.sal ? ` · $${p.contract.sal}M` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
+    const ct = contractText(p);
+    out.push({ key: `p:${p.id}`, label: `${esc(playerName(p))} <span class="gold small">Lv ${levelOf(p)}</span>${contractBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
   }
   return out;
 }
@@ -2925,7 +2950,7 @@ screens.fa = (args = {}) => {
         const M = FA.MOTIVES[m.motive];
         const signed = s.signings.find(x => x.p === m.p);
         return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
-          <span class="name">${esc(playerName(m.p))}</span>
+          <span class="name">${esc(playerName(m.p))} <span class="gold small">Lv ${levelOf(m.p)}</span></span>
           <span class="right"><span class="small">Ask $${m.ask}M</span>${s.day >= 3 && m.min === FA.FA_DEFAULTS.vetMin && m.ask > m.min ? '<br><span class="small up">Takes the min</span>' : ''}<br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
           <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
           ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`

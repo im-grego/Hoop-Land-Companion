@@ -601,4 +601,16 @@ body::before {
 .board-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
 .board-row .mv { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
 .board-row .mv .btn.square { width: 44px; min-height: 40px; font-size: 18px; }
+/* War Room board: one compact line per prospect. */
+.brows { display: flex; flex-direction: column; gap: 4px; }
+.brow { display: flex; align-items: center; gap: 6px; background: var(--btn); border: 2px solid var(--btn-edge); padding: 4px 6px; min-height: 40px; }
+.brow .rk { width: 18px; text-align: right; font-weight: 800; flex: none; }
+.brow .bname { flex: 1; min-width: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; padding: 2px; cursor: pointer; line-height: 1.15; overflow-wrap: anywhere; }
+.brow .bname b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brow .bname .bmeta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.brow .bmeta .value-chip { font-size: 11px; padding: 0 5px; min-width: 0; }
+.brow .mv { display: flex; gap: 3px; flex: none; }
+.brow .mvb { width: 28px; height: 28px; padding: 0; font-size: 13px; color: #fff; background: var(--btn-edge); border: 0; box-shadow: 0 2px 0 var(--btn-shadow); cursor: pointer; }
+.brow .mvb:disabled { opacity: .3; cursor: default; }
+.brow .mvb.x { background: #7a2430; }
 .nowrap { white-space: nowrap; }
