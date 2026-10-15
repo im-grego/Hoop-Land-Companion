@@ -141,12 +141,14 @@ offseason bump. Rookies' ratings already include the draft drop.
 
 ## Storylines
 
-**Main menu → Storylines** ranks the top 10 stories of the offseason, built from the save: the champion and Finals
-MVP, MVP and other awards, notable retirements, free-agent signings and trades (players on a new team since last
-season), the best players still unsigned, the lottery winner and #1 pick, stars coming back from injuries, and
-stars entering decline. Development the app applied this session adds stories too: big rating jumps, potential up
-or down, regression age changes for stars and a notable mentorship. At most two stories of a kind (three for player
-moves). Tap a story to open the player; **Copy as Text** copies or shares the list.
+**Main menu → Storylines** ranks the top 10 stories of the offseason, written the way a fan would read them, with no
+behind-the-scenes numbers. They come from the save: the champion going for a repeat, the MVP, contenders who fell
+short (Finals losers, teams with several straight deep runs and no title), awards, notable retirements, signings and
+trades (grouped when a team brings in several), the best players still unsigned, lottery luck, top-5 rookies
+(especially on bad teams), stars coming back from injuries and aging stars racing Father Time. Development the app
+applied this session shows up as summer buzz (big rating jumps), breakout candidates and notable mentorships. At most
+two stories of a kind (three for moves and contenders). Tap a story to open the player; **Copy as Text** copies or
+shares the list.
 
 ## Dropbox
 

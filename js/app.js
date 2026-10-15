@@ -13,7 +13,7 @@ import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines } from './storylines.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.13.0';
+const APP_VERSION = '0.13.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1922,7 +1922,7 @@ function currentStorylines() {
     .map(m => ({ mentor: players.get(m.mentorId), mentee: players.get(m.menteeId), skill: m.skill }))
     .filter(m => m.mentor && m.mentee);
   const dev = p => { const snap = state.snaps.get(snapKey(p.id, li)); return snap ? diffPlayer(p, snap) : null; };
-  return { stories: buildStorylines(L, { leagueIdx: li, params: state.params, dev, mentorships }), players };
+  return { stories: buildStorylines(L, { leagueIdx: li, leagues: state.data.seasonLeagues, params: state.params, dev, mentorships }), players };
 }
 
 function storylinesText(stories) {
