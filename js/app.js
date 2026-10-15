@@ -333,7 +333,7 @@ screens.main = () => {
 
 function phaseWarning(s) {
   if (BUMP_PHASES.includes(s.phase)) return '';
-  return `<p class="note gold small" style="margin-top:10px">The bump is meant to run after the champion is crowned (Season Complete) or at the start of the offseason before the lottery. This file is at phase ${s.phase}.</p>`;
+  return `<p class="note gold small" style="margin-top:10px">The bump is meant to run after the champion is crowned (Season Complete). This file is at ${esc(PHASE_NAMES[s.phase] ?? `phase ${s.phase}`)}.</p>`;
 }
 
 actions.nav = d => go(d.to, d.arg ? { arg: d.arg } : {});

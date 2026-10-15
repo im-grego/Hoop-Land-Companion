@@ -101,7 +101,7 @@ export const POSITIONS = ['PG', 'G', 'SG', 'GF', 'SF', 'F', 'PF', 'FC', 'C'];
 
 export const MODE_NAMES = { 0: 'Franchise', 1: 'Commissioner' };
 
-// season.phase values where the bump is meant to run:
+// Known season.phase values:
 // 11 = champion crowned, offseason not started (ages not yet +1)
 // 2  = offseason start, before the lottery (new year, ages +1, retirees gone)
 export const PHASE_SEASON_COMPLETE = 11;
@@ -110,7 +110,8 @@ export const PHASE_NAMES = {
   [PHASE_SEASON_COMPLETE]: 'Season Complete',
   [PHASE_PRE_LOTTERY]: 'Offseason · Pre-Lottery',
 };
-export const BUMP_PHASES = [PHASE_SEASON_COMPLETE, PHASE_PRE_LOTTERY];
+// Phases where the bump is meant to run (final choice pending).
+export const BUMP_PHASES = [PHASE_SEASON_COMPLETE];
 
 export function playerName(p) { return `${p.fn} ${p.ln}`; }
 
