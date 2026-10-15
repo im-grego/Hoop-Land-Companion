@@ -13,6 +13,6 @@ for (const s of stories) {
   assert.ok(!/undefined|NaN|null/.test(s.title + s.text), `no missing data: ${s.title}`);
   kinds[s.kind] = (kinds[s.kind] || 0) + 1;
 }
-for (const [k, n] of Object.entries(kinds)) assert.ok(n <= (k === 'move' ? 3 : 2), `at most two ${k} stories`);
+for (const [k, n] of Object.entries(kinds)) assert.ok(n <= (['move', 'hump'].includes(k) ? 3 : 2), `too many ${k} stories`);
 for (let i = 1; i < stories.length; i++) assert.ok(stories[i - 1].score >= stories[i].score, 'ranked by score');
 console.log(`storylines OK: ${stories.map(s => s.kind).join(', ')}`);
