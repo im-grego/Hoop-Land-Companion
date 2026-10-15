@@ -142,6 +142,9 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
+- **Draft value (the gold 1–99 number next to every prospect):** prospects whose floor and ceiling comps are both
+  All-Star or better rank first, and the comp tiers count directly (a Hall of Fame ceiling beats a Superstar one, a
+  Starter floor beats Bench Depth).
 - **How teams value prospects:** expected potential first (the projected ceiling at the scouted tier), then the floor
   (rookie line plus development), with a bonus for prospects strong in both. Rebuilding teams lean young; **win-now**
   teams (last season .560+) weigh the floor more and mind age less, so older high-floor prospects go to contenders.

@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.3';
+const APP_VERSION = '0.19.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1728,7 +1728,8 @@ function compsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
   if (!cache.has('class')) {
     const bands = state.params.recoveryBands;
-    cache.set('class', assignClassComps(boardOrder(), compPool(), {
+    const base = [...league().draftClass].sort((a, b) => baseValue(b) - baseValue(a));
+    cache.set('class', assignClassComps(base, compPool(), {
       floorVec: x => floorVector(x, bands),
       ceilVec: x => projectedCeiling(x, scoutPot(x)),
       potOf: scoutPot,
@@ -1775,7 +1776,23 @@ function draftVecs() {
   }
   return cache.get('vecs');
 }
-const scoutValue = p => { const v = draftVecs(); return draftScore(p, v.scales, v.fns, null); };
+const baseValue = p => { const v = draftVecs(); return draftScore(p, v.scales, v.fns, null); };
+// Floor and ceiling comps both All-Star or better: the safest stars in the
+// class go to the top of every board.
+const ALL_STAR = 8;
+function eliteBonus(p) {
+  const c = compsFor(p);
+  const f = c.floor[0]?.pot ?? 0, ce = c.ceiling[0]?.pot ?? 0;
+  if (!f || !ce) return 0;
+  // The comp tiers count directly (a Hall of Fame ceiling beats a
+  // Superstar one, a Starter floor beats Bench Depth)...
+  const tiers = 0.65 * (ce - ALL_STAR) + 0.65 * (f - 6);
+  // ...and All-Star-or-better on both ends goes to the top.
+  return tiers + (f >= ALL_STAR && ce >= ALL_STAR ? 2.5 + (f - ALL_STAR) * 0.5 : 0);
+}
+const scoutValue = p => baseValue(p) + eliteBonus(p);
+// Draft value shown next to prospects: 1–99.
+const valueNum = p => Math.max(1, Math.min(99, Math.round(40 + 10 * scoutValue(p))));
 
 // A team's draft outlook: win-now or not, and its two needs.
 function teamOutlook(team) {
@@ -1792,7 +1809,7 @@ function teamDraftPick(team, available, rng) {
   const gauss = () => { const u = Math.max(1e-9, rng()), w = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w); };
   let best = null, bestScore = -Infinity;
   for (const p of available) {
-    const sc = draftScore(p, v.scales, v.fns, ctx) + gauss() * 0.3;
+    const sc = draftScore(p, v.scales, v.fns, ctx) + eliteBonus(p) + gauss() * 0.3;
     if (sc > bestScore) { best = p; bestScore = sc; }
   }
   return best;
@@ -1805,6 +1822,7 @@ function fillsFor(team, p) {
   const c = v.fns.ceilOf(p), f = v.fns.floorOf(p);
   return needsFilled(p, o.needs, o.baseline, c.map((x, i) => (x + f[i]) / 2));
 }
+const valueChip = p => `<span class="value-chip" title="Draft value">${valueNum(p)}</span>`;
 const needChips = needs => needs.map(n => `<span class="badge need">${esc(n.label)}</span>`).join('');
 
 function rookieCompsFor(p) {
@@ -1933,14 +1951,13 @@ function draftBoard(args = {}) {
     html: `
       ${league().teams.filter(isUserTeam).map(t => { const o = teamOutlook(t); return `<div class="needs-row">${logoImg(t)}<b>${esc(t.shortName)}</b><span class="small muted">${o.winNow ? 'Win now' : 'Building'}</span>${needChips(o.needs)}</div>`; }).join('')}
       <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
-      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouting: projected ceiling first, then floor, with a bonus for both, and younger is better.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'} Rookie = projected average skill rating after the draft drop and summer league.</p>
+      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by draft value (the gold number, 1–99): All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'}</p>
       <div class="list">${rows.map((p, i) => {
-        const fl = avg(rookieLine(p, state.params.recoveryBands));
         const pk = drafted.get(p.id);
         const row = `<button class="prow ${watch.has(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
-          <span class="name">${i + 1}. ${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
+          <span class="name">${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
           <span class="right">
-            ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
+            ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : valueChip(p)}</span>
           <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
           <span class="chg">${compLine(compsFor(p))}${(() => { const t = league().teams.find(isUserTeam); const f = t ? fillsFor(t, p) : []; return f.length ? ` · <span class="up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''; })()}</span>
         </button>`;
@@ -2149,7 +2166,7 @@ function draftMock() {
           return `<div class="lot-row ${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}">
             <span class="pk">${pk.overall}</span>${logoImg(pk.owner)}
             <span class="grow">${esc(pk.owner.shortName)}${traded ? ` <span class="muted small">via ${esc(pk.orig.shortName)}</span>` : ''}${pk.rd > 1 ? ` <span class="muted small">R${pk.rd}</span>` : ''}<br>
-              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)}</span><br><span class="small muted">${compLine(compsFor(p))}</span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
+              ${p ? `${valueChip(p)} <span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)}</span><br><span class="small muted">${compLine(compsFor(p))}</span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
           </div>`;
         }).join('')}
       </div>`,
@@ -2166,7 +2183,7 @@ actions.mockChoose = () => {
   const o = overlay(`
     <p class="note">${esc(pk.owner.shortName)} · Pick #${pk.overall}</p>
     <div class="stack" style="max-height:60vh;overflow:auto">
-      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span></button>`).join('')}
+      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${esc(playerName(p))} ${valueChip(p)}<br><span class="muted small">${esc(posName(p))} · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span></button>`).join('')}
     </div>
     <button class="btn off" data-close>Cancel</button>`);
   o.addEventListener('click', e => {
@@ -2275,7 +2292,7 @@ function draftLive() {
           return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''}">
             <span class="pk">${q.overall}</span>${logoImg(q.owner)}
             <span class="grow">${esc(q.owner.shortName)}${q.owner.id !== q.orig.id ? ` <span class="muted small">via ${esc(q.orig.shortName)}</span>` : ''}${q.rd > 1 ? ` <span class="muted small">R${q.rd}</span>` : ''}<br>
-              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${p.age}y</span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
+              ${p ? `${valueChip(p)} <span class="small">${esc(playerName(p))} · ${esc(posName(p))}</span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
           </div>`;
         }).join('')}
       </div>`,
@@ -2295,7 +2312,7 @@ actions.liveChoose = () => {
   const box = overlay(`
     <p class="note">${esc(o.owner.shortName)} · Pick #${o.overall} · your board order</p>
     <div class="stack" style="max-height:60vh;overflow:auto">
-      ${avail.map(p => { const f = fillsFor(o.owner, p); return `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${watch.has(p.id) ? '⭐ ' : ''}${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span>${f.length ? `<br><span class="small up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''}</span></button>`; }).join('')}
+      ${avail.map(p => { const f = fillsFor(o.owner, p); return `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${watch.has(p.id) ? '⭐ ' : ''}${esc(playerName(p))} ${valueChip(p)}<br><span class="muted small">${esc(posName(p))} · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span>${f.length ? `<br><span class="small up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''}</span></button>`; }).join('')}
     </div>
     <button class="btn off" data-close>Cancel</button>`);
   box.addEventListener('click', e => {
@@ -2403,7 +2420,7 @@ function liveAssets(team) {
   }
   for (const s of tradeableProspects(live, order, team.id, state.params.draftTradeWindow)) {
     const p = prospectById(s.pid);
-    out.push({ key: `d:${s.overall}`, label: `${playerName(p)} (just drafted #${s.overall})`, value: slotValue(boardRank(p)), prospect: s.overall });
+    out.push({ key: `d:${s.overall}`, label: `${playerName(p)} (just drafted, value ${valueNum(p)})`, value: slotValue(boardRank(p)), prospect: s.overall });
   }
   for (const p of [...team.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly))) {
     const l = seasonLine(p, state.leagueIdx, ly);

@@ -524,3 +524,8 @@ fieldset.frame > legend {
 .badge.need { border-color: var(--gold); color: var(--gold); }
 .needs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border: 3px solid var(--btn-edge); background: var(--btn); }
 .needs-line { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.value-chip {
+  display: inline-grid; place-items: center; min-width: 40px; padding: 2px 6px;
+  font-family: var(--pixel); font-weight: 700; font-size: 16px; color: var(--marquee);
+  background: var(--gold); border: 2px solid var(--btn-shadow); vertical-align: middle;
+}
