@@ -121,13 +121,22 @@ export const PHASE_NAMES = {
   [PHASE_FREE_AGENCY]: 'Free Agency',
 };
 
+// The veteran bump runs in free agency (best on day 3, the last day before
+// the new season), using players' new ages.
+export const BUMP_PHASES = [PHASE_FREE_AGENCY];
+export const BUMP_DAY = 3;
+
+// Regression starts once a player's age passes their regressionAge.
+export const POT_MIN = 4;
+export const POT_MAX = 10; // 11 exists as a secret level; never set by the app
+export const regressionYear = p => p.age - p.regressionAge; // 1 = first year of decline
+
 export function phaseName(season) {
   const name = PHASE_NAMES[season.phase];
   if (!name) return `Phase ${season.phase}`;
   return season.phase === PHASE_FREE_AGENCY ? `${name} · Day ${season.currentDay}` : name;
 }
-// Phases where the bump is meant to run (final choice pending).
-export const BUMP_PHASES = [PHASE_SEASON_COMPLETE];
+
 
 export function playerName(p) { return `${p.fn} ${p.ln}`; }
 
@@ -179,6 +188,8 @@ export function snapshot(p) {
     attributes: JSON.parse(JSON.stringify(p.attributes)),
     skills: JSON.parse(JSON.stringify(p.skills)),
     ap: [...(p.season?.ap || [])],
+    pot: p.pot,
+    regressionAge: p.regressionAge,
   };
 }
 
@@ -186,6 +197,8 @@ export function restore(p, snap) {
   p.attributes = JSON.parse(JSON.stringify(snap.attributes));
   p.skills = JSON.parse(JSON.stringify(snap.skills));
   if (p.season?.ap) p.season.ap = [...snap.ap];
+  p.pot = snap.pot;
+  p.regressionAge = snap.regressionAge;
 }
 
 export const heldPoints = p => (p.season?.ap || []).reduce((a, b) => a + b, 0);
@@ -211,6 +224,8 @@ export function diffPlayer(p, snap) {
   }
   for (const [id, was] of before) if (was >= 1 && (now.get(id) || 0) < 1) removed.push(id);
   const apDelta = (p.season?.ap || []).map((v, i) => v - (snap.ap[i] || 0));
-  const changed = apDelta.some(Boolean) || points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
-  return { attrs, points, added, leveled, removed, apDelta, changed };
+  const potDelta = p.pot - snap.pot;
+  const regDelta = p.regressionAge - snap.regressionAge;
+  const changed = potDelta !== 0 || regDelta !== 0 || apDelta.some(Boolean) || points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
+  return { attrs, points, added, leveled, removed, apDelta, potDelta, regDelta, changed };
 }

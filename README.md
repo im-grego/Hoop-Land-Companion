@@ -12,6 +12,9 @@ Everything runs on-device; the file never leaves your phone.
 
 ## How the offseason bump works
 
+Run it in **free agency, Day 3** (the last day before advancing to the new season). Ratings don't change anywhere
+in the offseason; the game applies progression/regression once the new season starts. Ages are the new-season ages.
+
 The bump sits on top of the game's normal in-season progression. Young players earn extra **upgrade points**,
 which are added to each player's `season.ap` pools (Finishing, Shooting, Creating, Defense) and spent in-game.
 Every team gets the same rules, so CPU teams stay even with yours.
@@ -22,6 +25,10 @@ Every team gets the same rules, so CPU teams stay even with yours.
 - **Your players:** adjust any player's points per category by hand.
 - **CPU points:** held for the game to spend (default), or *Spend Now* to apply them to ratings in the app
   for commissioner saves where the CPU doesn't spend. Spending raises the ceiling with the rating (13/14 +2 → 15/15).
+- **Longevity:** regression starts once a player's age passes their `regressionAge`. Players in their first season
+  of decline have a 30% chance (10% later on, scaled by minutes) to have `regressionAge` pushed back a year.
+- **Potential:** players 25 and under have a rare 4% chance (scaled by minutes) of +1 potential (half a star, max 10).
+- Both can also be adjusted by hand on any player.
 - Optional skill unlocks/level-ups (off by default).
 - Runs are **seeded**, so the same seed reproduces the same offseason. Re-roll for a different one.
 

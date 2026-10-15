@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MAX, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
 export const AWARD_CATEGORIES = [0, 1, 2, 3];
@@ -27,6 +27,12 @@ export const DEFAULT_PARAMS = {
   // Commissioner saves: CPU teams hold points without spending them. On =
   // spend CPU points into ratings now (raising ceilings as needed).
   spendCpuPoints: false,
+  // Longevity: chance to push regressionAge back a year (scaled by minutes).
+  regFirstYearChance: 30, // % for players in their first regression year
+  regLaterChance: 10,     // % for players further into regression
+  // Rare potential upgrade (+1 = half a star), scaled by minutes.
+  potUpChance: 4,         // %
+  potUpMaxAge: 25,
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -193,6 +199,23 @@ export function runRookieBump(entries, params) {
   return awards;
 }
 
+// Push regressionAge back a year: likeliest in the first year of decline.
+export function maybeLongevity(p, mult, params, rng) {
+  const year = p.age - p.regressionAge;
+  if (year < 1) return false;
+  const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult;
+  if (rng() * 100 >= chance) return false;
+  p.regressionAge++;
+  return true;
+}
+
+export function maybePotential(p, mult, params, rng) {
+  if (p.age > params.potUpMaxAge || p.pot >= POT_MAX) return false;
+  if (rng() * 100 >= params.potUpChance * mult) return false;
+  p.pot++;
+  return true;
+}
+
 // Unlock a skill, reusing the locked (level 0) entry and its XP if present.
 export function unlockSkill(p, id) {
   const s = p.skills.find(x => x.id === id);
@@ -223,8 +246,12 @@ export function runProgression(entries, params, profiles) {
   // Sort by id so results don't depend on roster order.
   const sorted = [...entries].sort((a, b) => a.p.id - b.p.id);
   for (const e of sorted) {
-    const pts = pointsFor(e.p, lastSeasonMpg(e.p, e.leagueIdx), params, rng);
+    const mpg = lastSeasonMpg(e.p, e.leagueIdx);
+    const pts = pointsFor(e.p, mpg, params, rng);
     awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
+    const mult = minutesMult(mpg, params);
+    maybeLongevity(e.p, mult, params, rng);
+    maybePotential(e.p, mult, params, rng);
     maybeSkills(e.p, pts, params, profiles, rng);
     if (e.spend) spendHeldPoints(e.p, params, rng);
   }

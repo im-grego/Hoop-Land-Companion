@@ -19,7 +19,7 @@ function run(spend, params = P) {
 // 1. Default: points are added to season.ap, ratings untouched.
 {
   const { entries, snaps, awards } = run(false);
-  let bumped = 0, total = 0;
+  let bumped = 0, total = 0, delayed = 0, potUps = 0;
   for (const { p } of entries) {
     const d = diffPlayer(p, snaps.get(p.id));
     const award = awards.get(p.id);
@@ -36,8 +36,13 @@ function run(spend, params = P) {
     if (band) assert.ok(award <= Math.round(band[2] * P.starterMult), 'within band max');
     if (award) bumped++;
     total += award;
+    const snap = snaps.get(p.id);
+    assert.ok(d.regDelta === 0 || d.regDelta === 1, 'regression delayed at most a year');
+    if (d.regDelta) { assert.ok(p.age > snap.regressionAge, 'only players already past their regression age'); delayed++; }
+    assert.ok(d.potDelta === 0 || d.potDelta === 1, 'potential +1 at most');
+    if (d.potDelta) { assert.ok(p.age <= P.potUpMaxAge && p.pot <= 10, 'young players, max 10'); potUps++; }
   }
-  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points`);
+  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points, ${delayed} regressions delayed, ${potUps} potential upgrades`);
 }
 
 // 2. Determinism.

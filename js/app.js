@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, phaseName, BUMP_PHASES, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump } from './progression.js';
@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.5.1';
+const APP_VERSION = '0.6.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -394,8 +394,9 @@ screens.main = () => {
 };
 
 function phaseWarning(s) {
-  if (BUMP_PHASES.includes(s.phase)) return '';
-  return `<p class="note gold small" style="margin-top:10px">The bump is meant to run after the champion is crowned (Season Complete). This file is at ${esc(phaseName(s))}.</p>`;
+  if (BUMP_PHASES.includes(s.phase) && s.currentDay === BUMP_DAY) return '';
+  if (BUMP_PHASES.includes(s.phase)) return `<p class="note gold small" style="margin-top:10px">Best run on Free Agency Day ${BUMP_DAY} (the last day before the new season), once rosters are set. This file is at ${esc(phaseName(s))}.</p>`;
+  return `<p class="note gold small" style="margin-top:10px">The offseason bump is meant for free agency (Day ${BUMP_DAY}, before advancing to the new season). This file is at ${esc(phaseName(s))}.</p>`;
 }
 
 actions.nav = d => go(d.to, d.arg ? { arg: d.arg } : {});
@@ -467,11 +468,17 @@ function applyBump(seed) {
     players++;
     points += n;
   }
-  for (const e of entries) if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
+  let longevity = 0, potUps = 0;
+  for (const e of entries) {
+    if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
+    const d = diffPlayer(e.p, snapOf(e.p));
+    if (d.regDelta > 0) longevity++;
+    if (d.potDelta > 0) potUps++;
+  }
   const all = (state.awards[li] ||= new Map());
   for (const p of vetPlayers()) all.delete(p.id);
   for (const [k, v] of awards) all.set(k, v);
-  state.auto[li] = { seed, players, points, mine, total: entries.length, spent: state.params.spendCpuPoints };
+  state.auto[li] = { seed, players, points, mine, longevity, potUps, total: entries.length, spent: state.params.spendCpuPoints };
   state.dirty = true;
 }
 
@@ -562,6 +569,8 @@ screens.offseason = () => {
               <dt>Players bumped</dt><dd class="up">${auto.players} / ${auto.total}</dd>
               <dt>Points awarded</dt><dd class="up">+${auto.points}</dd>
               <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
+              <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}</dd>
+              <dt>Potential upgrades</dt><dd class="up">${auto.potUps ?? 0}</dd>
               <dt>CPU points</dt><dd>${auto.spent ? 'Spent into ratings' : 'Held for the game'}</dd>
               <dt>Seed</dt><dd>${auto.seed}</dd>
             </dl>
@@ -571,7 +580,7 @@ screens.offseason = () => {
               <button class="btn" data-act="undoAuto">↺ Undo</button>
             </div>`
           : `
-            <p class="note">Players aged ${bands[bands.length - 1][0]} and under earn upgrade points (more for younger players and heavier minutes). Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Every team gets the same rules, so CPU teams stay even.</p>
+            <p class="note">Players aged ${bands[bands.length - 1][0]} and under (new age) earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), and young players get a rare potential upgrade (${P.potUpChance}%). Every team gets the same rules, so CPU teams stay even.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
@@ -740,8 +749,13 @@ function playerRow(p, d) {
       ${award ? `<span class="up">+${award} pts</span>` : '<span class="muted">—</span>'}
     </span>
     <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · AVG ${avgRating(p).toFixed(1)}</span>
-    ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}</span>` : ''}
+    ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
   </button>`;
+}
+
+function longevityBadges(p, d) {
+  return (d.regDelta ? `<span class="badge lvl">Regress ${p.regressionAge - d.regDelta + 1}→${p.regressionAge + 1}</span>` : '') +
+    (d.potDelta ? `<span class="badge new">POT ${d.potDelta > 0 ? '▲' : '▼'}</span>` : '');
 }
 
 actions.openPlayer = d => go('player', { id: +d.id });
@@ -804,6 +818,22 @@ screens.player = (args) => {
         </div>
         <p class="note muted small" style="margin-top:8px">Spent in-game. Green = added this offseason${awardOf(p) ? ` (bump gave +${awardOf(p)})` : ''}.</p>
       </fieldset>` : ''}
+      <fieldset class="frame"><legend>Longevity &amp; Potential</legend>
+        <div class="stack">
+          <div class="pts-row">
+            <span class="grow">Regression age<br><span class="muted small">${regressionText(p)}</span></span>
+            <button class="btn square" data-act="regAge" data-dir="-1" aria-label="Earlier regression">−</button>
+            <span class="pts-val ${d.regDelta ? 'gold' : ''}">${p.regressionAge}${d.regDelta ? `<span class="small up"> ${d.regDelta > 0 ? '+' : ''}${d.regDelta}</span>` : ''}</span>
+            <button class="btn square" data-act="regAge" data-dir="1" aria-label="Later regression">+</button>
+          </div>
+          <div class="pts-row">
+            <span class="grow">Potential<br><span class="stars">${stars(p.pot)}</span></span>
+            <button class="btn square" data-act="potAdj" data-dir="-1" aria-label="Lower potential">−</button>
+            <span class="pts-val ${d.potDelta ? 'gold' : ''}">${p.pot}${d.potDelta ? `<span class="small up"> ${d.potDelta > 0 ? '+' : ''}${d.potDelta}</span>` : ''}</span>
+            <button class="btn square" data-act="potAdj" data-dir="1" aria-label="Higher potential">+</button>
+          </div>
+        </div>
+      </fieldset>
       <div class="row">
         <p class="note grow">Rating changes: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
         <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
@@ -883,6 +913,26 @@ actions.attr = d => {
     v[0] = Math.max(attrMin(d.k), Math.min(ATTR_MAX, v[0] + dir));
     if (v[0] > v[1]) v[1] = v[0];
   }
+  state.dirty = true;
+  render();
+};
+
+function regressionText(p) {
+  const y = regressionYear(p);
+  if (y < 1) return `Declines after age ${p.regressionAge} (${-y + 1} season${-y + 1 === 1 ? '' : 's'} away)`;
+  return y === 1 ? `First season of decline (age ${p.age})` : `Season ${y} of decline (age ${p.age})`;
+}
+
+actions.regAge = d => {
+  const p = currentPlayer();
+  p.regressionAge = Math.max(25, Math.min(45, p.regressionAge + +d.dir));
+  state.dirty = true;
+  render();
+};
+
+actions.potAdj = d => {
+  const p = currentPlayer();
+  p.pot = Math.max(POT_MIN, Math.min(POT_MAX, p.pot + +d.dir));
   state.dirty = true;
   render();
 };
@@ -977,6 +1027,10 @@ const STEP_FIELDS = {
     ['seed', 'Random Seed', 1, 0, 999999],
     ['starterMpg', 'Starter MPG (bonus)', 1, 0, 48],
     ['benchMpg', 'Bench MPG (penalty below)', 1, 0, 48],
+    ['regFirstYearChance', 'Delay Regression: 1st Year %', 5, 0, 100],
+    ['regLaterChance', 'Delay Regression: Later Years %', 5, 0, 100],
+    ['potUpChance', 'Potential Upgrade %', 1, 0, 100],
+    ['potUpMaxAge', 'Potential Upgrade Max Age', 1, 18, 40],
   ],
   skills: [
     ['newSkillChance', 'New Skill Chance %', 5, 0, 100],
