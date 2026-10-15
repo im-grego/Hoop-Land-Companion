@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.6';
+const APP_VERSION = '0.6.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -45,14 +45,14 @@ function loadParams() {
       if (saved.version < 4) delete saved.recoveryBands;
       // v5 rescaled injury risk for natural (unedited) injuries.
       if (saved.version < 5) for (const k of ['injuryMinGames', 'injuryPotPerGame']) delete saved[k];
-      if (saved.version < 6) delete saved.softTissueParts; // v6 added Back
+      if (saved.version < 7) for (const k of ['softTissueParts', 'softTissueMult', 'softTissuePointsMult', 'structuralParts', 'structuralMult']) delete saved[k]; // v7 injury classes
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 6 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 7 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -766,7 +766,7 @@ function playerRow(p, d) {
 
 function injuryBadge(p) {
   const r = injuryRisk(p, lastSeasonYear(), state.params);
-  return r ? `<span class="badge down-b">${esc(injuryName(r.worst))}${r.softTissue ? ' · lingering' : ''}</span>` : '';
+  return r ? `<span class="badge down-b">${esc(injuryName(r.worst))} · ${r.cls}</span>` : '';
 }
 
 function longevityBadges(p, d) {
@@ -934,13 +934,19 @@ actions.attr = d => {
   render();
 };
 
+const CLASS_LABEL = {
+  standard: 'standard',
+  nagging: 'nagging (held back)',
+  structural: 'structural',
+};
+
 function injuryText(p) {
   const yr = lastSeasonYear();
   const r = injuryRisk(p, yr, state.params);
   if (!r) return '';
   const w = r.worst;
   const linger = [r.sameType ? `${r.sameType}× same injury` : '', r.sameArea ? `${r.sameArea}× same area` : ''].filter(Boolean).join(', ');
-  return `<br><span class="small down">${yr}: ${esc(injuryName(w))}, ${r.games} games out${r.softTissue ? ' · lingering (held back)' : ''}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
+  return `<br><span class="small down">${yr}: ${esc(injuryName(w))}, ${r.games} games out · ${CLASS_LABEL[r.cls]}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
 }
 
 function regressionText(p) {
@@ -1061,8 +1067,11 @@ const STEP_FIELDS = {
     ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
     ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],
-    ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 10, 0, 100],
-    ['softTissuePointsMult', 'Lingering Injury: Bump Points ×', 0.05, 0, 1],
+    ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 5, 0, 100],
+    ['naggingRiskMult', 'Nagging Injury: Risk ×', 0.05, 1, 3],
+    ['naggingPointsMult', 'Nagging Injury: Bump Points ×', 0.05, 0, 1],
+    ['structuralRiskMult', 'Structural Injury: Risk ×', 0.05, 1, 3],
+    ['structuralLongevityCut', 'Structural: Cut To Regression Delay %', 5, 0, 100],
   ],
   skills: [
     ['newSkillChance', 'New Skill Chance %', 5, 0, 100],

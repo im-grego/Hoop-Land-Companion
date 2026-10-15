@@ -45,13 +45,16 @@ export const DEFAULT_PARAMS = {
   injuryWindow: 3,        // seasons looked back for lingering injuries
   injuryRepeatType: 0.5,  // +50% per earlier injury of the same type
   injuryRepeatArea: 0.25, // +25% per earlier injury in the same body area
-  // Lingering injuries (soft tissue + back) tend to recur, holding players back.
-  softTissueParts: ['Groin', 'Abs', 'Calf', 'Hamstring', 'Thigh', 'Back'],
-  softTissueMult: 1.25,       // x potential-loss risk
-  softTissuePointsMult: 0.75, // x offseason bump points
-  // Torn ACL / Achilles: career-altering, extra potential-loss risk.
-  structuralParts: ['ACL', 'Achilles'],
-  structuralMult: 1.25,
+  // Injury classes:
+  //  nagging    - soft tissue + back; tends to recur and holds players back
+  //  structural - a major injury to a load-bearing part; career-altering
+  //  standard   - everything else
+  naggingParts: ['Groin', 'Abs', 'Back', 'Calf', 'Hamstring', 'Thigh'],
+  naggingRiskMult: 1.25,       // x potential-loss risk
+  naggingPointsMult: 0.75,     // x offseason bump points
+  structuralParts: ['Achilles', 'ACL', 'MCL', 'Knee', 'Foot', 'Hip'],
+  structuralRiskMult: 1.25,
+  structuralLongevityCut: 75,  // % cut to the regression-delay chance
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -219,10 +222,13 @@ export function runRookieBump(entries, params) {
 }
 
 // Push regressionAge back a year: likeliest in the first year of decline.
-export function maybeLongevity(p, mult, params, rng, injured = false) {
+// `injury` is the injury class ('standard' | 'nagging' | 'structural') when
+// the player had a qualifying injury last season.
+export function maybeLongevity(p, mult, params, rng, injury = null) {
   const year = p.age - p.regressionAge;
   if (year < 1) return false;
-  const cut = injured ? 1 - params.injuryLongevityCut / 100 : 1;
+  const pct = injury === 'structural' ? params.structuralLongevityCut : injury ? params.injuryLongevityCut : 0;
+  const cut = 1 - pct / 100;
   const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut;
   if (rng() * 100 >= chance) return false;
   p.regressionAge++;
@@ -240,24 +246,28 @@ export function maybePotential(p, mult, params, rng) {
 // Risk of losing potential from last season's injuries. Lingering or
 // recurring injuries (same type or area within the window) raise the risk
 // and count even below the games threshold.
-export const isSoftTissue = (inj, params) => !!inj && params.softTissueParts.includes(injuryPart(inj));
-export const isStructural = (inj, params) =>
-  !!inj && inj.majorSeverity === 4 && params.structuralParts.includes(injuryPart(inj));
+export function injuryClass(inj, params) {
+  if (!inj) return null;
+  const part = injuryPart(inj);
+  if (params.naggingParts.includes(part)) return 'nagging';
+  if (inj.majorSeverity > 0 && params.structuralParts.includes(part)) return 'structural';
+  return 'standard';
+}
 
 export function injuryRisk(p, year, params) {
   const h = injuryHistory(p, year, params.injuryWindow);
   if (!h) return null;
   const recurring = h.sameType + h.sameArea > 0;
-  if (h.games < params.injuryMinGames && !recurring) return { ...h, chance: 0, softTissue: isSoftTissue(h.worst, params) };
+  const cls = injuryClass(h.worst, params);
+  if (h.games < params.injuryMinGames && !recurring) return { ...h, chance: 0, cls };
   const w = h.worst;
   const sev = w.majorSeverity > 0 ? 0.7 + params.injurySevStep * Math.min(4, w.majorSeverity) : params.injuryMinorMult;
   const area = w.lowerBody ? params.injuryLowerBodyMult : 1;
   const repeat = 1 + h.sameType * params.injuryRepeatType + h.sameArea * params.injuryRepeatArea;
-  const soft = isSoftTissue(w, params) ? params.softTissueMult : 1;
-  const structural = isStructural(w, params) ? params.structuralMult : 1;
+  const clsMult = cls === 'nagging' ? params.naggingRiskMult : cls === 'structural' ? params.structuralRiskMult : 1;
   const age = p.age >= params.injuryOldAge ? 1.25 : 1;
-  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * soft * structural * age);
-  return { ...h, chance, softTissue: soft > 1 };
+  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * clsMult * age);
+  return { ...h, chance, cls };
 }
 
 export const injuryPotChance = (p, year, params) => injuryRisk(p, year, params)?.chance || 0;
@@ -303,13 +313,13 @@ export function runProgression(entries, params, profiles) {
     const mpg = lastSeasonMpg(e.p, e.leagueIdx);
     const risk = e.injuryYear != null ? injuryRisk(e.p, e.injuryYear, params) : null;
     let pts = pointsFor(e.p, mpg, params, rng);
-    if (risk?.softTissue) pts = Math.round(pts * params.softTissuePointsMult);
+    if (risk?.cls === 'nagging') pts = Math.round(pts * params.naggingPointsMult);
     awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
     // Seriously injured players are less likely to delay regression, risk
     // losing potential and can't gain it.
     const injured = !!risk?.chance;
-    maybeLongevity(e.p, mult, params, rng, injured);
+    maybeLongevity(e.p, mult, params, rng, injured ? risk.cls : null);
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
     else maybePotential(e.p, mult, params, rng);
     maybeSkills(e.p, pts, params, profiles, rng);
