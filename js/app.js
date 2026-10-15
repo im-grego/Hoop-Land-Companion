@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.3';
+const APP_VERSION = '0.6.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -932,7 +932,7 @@ function injuryText(p) {
   const r = injuryRisk(p, yr, state.params);
   if (!r) return '';
   const w = r.worst;
-  const kind = w.majorSeverity > 0 ? `major (sev ${w.majorSeverity})` : 'minor';
+  const kind = r.softTissue ? 'likely soft tissue (held back)' : w.majorSeverity > 0 ? `major (sev ${w.majorSeverity})` : 'minor';
   const linger = [r.sameType ? `${r.sameType}× same injury` : '', r.sameArea ? `${r.sameArea}× same area` : ''].filter(Boolean).join(', ');
   return `<br><span class="small down">${yr}: ${r.games} games out · ${esc(injuryArea(w))} ${kind}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
 }
@@ -1056,6 +1056,9 @@ const STEP_FIELDS = {
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
     ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],
     ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 10, 0, 100],
+    ['softTissueMinGames', 'Soft Tissue: Min Games (lower body)', 1, 0, 82],
+    ['softTissueMaxGames', 'Soft Tissue: Max Games (lower body)', 1, 0, 82],
+    ['softTissuePointsMult', 'Soft Tissue: Bump Points ×', 0.05, 0, 1],
   ],
   skills: [
     ['newSkillChance', 'New Skill Chance %', 5, 0, 100],
@@ -1172,7 +1175,7 @@ actions.setOpt = d => {
 };
 actions.step = d => {
   const f = [...STEP_FIELDS.general, ...STEP_FIELDS.skills].find(x => x[0] === d.k);
-  state.params[d.k] = Math.round(Math.max(f[3], Math.min(f[4], state.params[d.k] + f[2] * +d.dir)) * 10) / 10;
+  state.params[d.k] = Math.round(Math.max(f[3], Math.min(f[4], state.params[d.k] + f[2] * +d.dir)) * 100) / 100;
   saveParams();
   render();
 };

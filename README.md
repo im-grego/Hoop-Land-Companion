@@ -31,8 +31,9 @@ Every team gets the same rules, so CPU teams stay even with yours.
 - **Injuries:** players who missed 15+ games to injury last season (`history.injuries`) risk −1 potential:
   0.6% per game missed, ×0.8–1.1 by major severity (1–4; minor injuries ×0.6), ×1.2 lower body, ×1.25 at 30+.
   **Lingering injuries** (looking back 3 seasons): ×1.5 per earlier injury of the same type, ×1.25 per earlier
-  injury in the same area, and recurring injuries count even under 15 games. Soft-tissue injury types can get an
-  extra ×1.25 once mapped. Capped at 50%. Injured players can't also get the potential upgrade, and their
+  injury in the same area, and recurring injuries count even under 15 games. **Likely soft-tissue** injuries
+  (lower body, 10–35 games: hamstring/calf-type strains, which tend to linger) are held back: ×1.25 risk and ×0.75
+  offseason bump points. Capped at 50%. Injured players can't also get the potential upgrade, and their
   regression-delay chance is cut in half.
 - Regression age and potential can also be adjusted by hand on any player.
 - Optional skill unlocks/level-ups (off by default).

@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryType } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, injuryHistory } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
 export const AWARD_CATEGORIES = [0, 1, 2, 3];
@@ -45,8 +45,13 @@ export const DEFAULT_PARAMS = {
   injuryWindow: 3,        // seasons looked back for lingering injuries
   injuryRepeatType: 0.5,  // +50% per earlier injury of the same type
   injuryRepeatArea: 0.25, // +25% per earlier injury in the same body area
-  softTissueCodes: [],    // injury types ('lowerBody:3', ...) treated as soft tissue
-  softTissueMult: 1.25,
+  // Likely soft-tissue injuries (hamstring/calf-type strains): the game
+  // doesn't name injuries, so a lower-body injury costing this many games is
+  // treated as one. They tend to linger, so the player is held back.
+  softTissueMinGames: 10,
+  softTissueMaxGames: 35,
+  softTissueMult: 1.25,       // x potential-loss risk
+  softTissuePointsMult: 0.75, // x offseason bump points
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -235,19 +240,22 @@ export function maybePotential(p, mult, params, rng) {
 // Risk of losing potential from last season's injuries. Lingering or
 // recurring injuries (same type or area within the window) raise the risk
 // and count even below the games threshold.
+export const isSoftTissue = (inj, params) =>
+  !!inj?.lowerBody && inj.gamesOut >= params.softTissueMinGames && inj.gamesOut <= params.softTissueMaxGames;
+
 export function injuryRisk(p, year, params) {
   const h = injuryHistory(p, year, params.injuryWindow);
   if (!h) return null;
   const recurring = h.sameType + h.sameArea > 0;
-  if (h.games < params.injuryMinGames && !recurring) return { ...h, chance: 0 };
+  if (h.games < params.injuryMinGames && !recurring) return { ...h, chance: 0, softTissue: isSoftTissue(h.worst, params) };
   const w = h.worst;
   const sev = w.majorSeverity > 0 ? 0.7 + params.injurySevStep * Math.min(4, w.majorSeverity) : params.injuryMinorMult;
   const area = w.lowerBody ? params.injuryLowerBodyMult : 1;
   const repeat = 1 + h.sameType * params.injuryRepeatType + h.sameArea * params.injuryRepeatArea;
-  const soft = params.softTissueCodes.includes(injuryType(w)) ? params.softTissueMult : 1;
+  const soft = isSoftTissue(w, params) ? params.softTissueMult : 1;
   const age = p.age >= params.injuryOldAge ? 1.25 : 1;
   const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * soft * age);
-  return { ...h, chance };
+  return { ...h, chance, softTissue: soft > 1 };
 }
 
 export const injuryPotChance = (p, year, params) => injuryRisk(p, year, params)?.chance || 0;
@@ -291,12 +299,14 @@ export function runProgression(entries, params, profiles) {
   const sorted = [...entries].sort((a, b) => a.p.id - b.p.id);
   for (const e of sorted) {
     const mpg = lastSeasonMpg(e.p, e.leagueIdx);
-    const pts = pointsFor(e.p, mpg, params, rng);
+    const risk = e.injuryYear != null ? injuryRisk(e.p, e.injuryYear, params) : null;
+    let pts = pointsFor(e.p, mpg, params, rng);
+    if (risk?.softTissue) pts = Math.round(pts * params.softTissuePointsMult);
     awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
     // Seriously injured players are less likely to delay regression, risk
     // losing potential and can't gain it.
-    const injured = e.injuryYear != null && injuryPotChance(e.p, e.injuryYear, params) > 0;
+    const injured = !!risk?.chance;
     maybeLongevity(e.p, mult, params, rng, injured);
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
     else maybePotential(e.p, mult, params, rng);
