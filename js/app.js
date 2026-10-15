@@ -8,7 +8,7 @@ import {
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
-  needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore,
+  needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore, LOTTERY_FORMATS,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.21.5';
+const APP_VERSION = '0.22.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2023,7 +2023,7 @@ function draftConsensus() {
   const rows = boardOrder();
   return {
     html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. Tap + to add a prospect to your War Room board.</p>
-      <div class="list">${rows.map(p => `<div class="board-row">${prospectRow(p)}
+      <div class="list">${rows.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
         <div class="mv"><button class="btn square ${onBoard(p.id) ? 'on focus' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button></div></div>`).join('')}</div>`,
   };
 }
@@ -2100,7 +2100,7 @@ function draftOffice() {
       </fieldset>
       <fieldset class="frame"><legend>Trade Block</legend>
         <p class="note muted small" style="margin-bottom:8px">Tap to put a player or pick on the block. Teams pick up the phone for what's on it; teams behind your picks may call about moving up anyway.</p>
-        <div class="list">${assets.map(x => `<button class="pick ${block.has(x.key) ? 'sel' : ''}" data-act="officeBlock" data-k="${x.key}">
+        <div class="list">${assets.map(x => `<button class="pick ${block.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="officeBlock" data-k="${x.key}"`}>
           <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('')}</div>
       </fieldset>
       ${live.trades.length ? `<fieldset class="frame"><legend>Trades Made</legend><div class="stack">
@@ -2117,7 +2117,7 @@ function frontOfficeOffers(team) {
   const ds = draftState();
   const block = ds.block || new Set();
   const rng = mulberry32((ds.offerSeed ||= Math.floor(Math.random() * 1e9)));
-  const mineAll = liveAssets(team);
+  const mineAll = liveAssets(team).filter(x => !x.locked);
   const onBlock = mineAll.filter(x => block.has(x.key));
   const out = [];
   const ly = lastYear();
@@ -2130,7 +2130,7 @@ function frontOfficeOffers(team) {
       if (n >= 3) break;
       if (rng() < 0.45) continue;
       const stars = new Set([...t.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly)).slice(0, 2));
-      const theirs = liveAssets(t).filter(x => !x.prospect && !(x.player && stars.has(x.player))).sort((a, b) => a.value - b.value);
+      const theirs = liveAssets(t).filter(x => !x.prospect && !x.locked && !(x.player && stars.has(x.player))).sort((a, b) => a.value - b.value);
       const lo = want.value * 0.8, hi = want.value * 1.0;
       let pack = theirs.find(x => x.value >= lo && x.value <= hi);
       if (!pack) {
@@ -2333,33 +2333,44 @@ screens.lottery = () => {
   const L = league();
   if (lotteryDone(L)) { lotteryResultView(); return; }
   const P = state.params;
-  const setup = lotterySetup(L, P.lotteryFormat, P.lotteryDraws);
-  const draws = setup.draws;
-  const odds = lotteryOdds(L, P.lotteryFormat, P.lotteryDraws, 5000, 1);
+  const setup = lotterySetup(L, P.lotteryFormat);
+  const odds = lotteryOdds(L, P.lotteryFormat, null, 20000, 1);
   const rec = new Map(setup.table.map(r => [r.team.id, r]));
   const totalW = odds.reduce((a, r) => a + r.weight, 0) || 1;
+  const topN = setup.format === 'old' ? 3 : 4;
+  const F = LOTTERY_FORMATS[setup.format];
+  const out = setup.table.slice(setup.lotteryTeams.length);
+  const about = {
+    321: `All ${setup.draws} lottery picks are drawn with your league's odds; the 3 worst teams pick no lower than #12.`,
+    top4: 'The 14 non-playoff teams; the 3 worst share the best odds (14% each) and the top 4 picks are drawn. No team falls more than 4 spots.',
+    old: 'The 14 non-playoff teams; the worst team has a 25% shot at #1 and only the top 3 picks are drawn. No team falls more than 3 spots.',
+  }[setup.format];
   layout({
     title: 'Draft Lottery',
     body: `
-      ${options('Lottery Format', 'lotteryFormat', [['auto', 'Auto'], ['321', '3-2-1'], ['classic', 'Classic']])}
-      ${setup.format === '321'
-        ? `<p class="note small">${P.lotteryFormat === 'auto' ? 'Detected from your league settings. ' : ''}3-2-1 lottery (NBA 2027+): all ${draws} lottery picks are drawn; the 3 worst teams pick no lower than #12.</p>`
-        : `<div class="stepper">
-        <button class="btn square" data-act="lotteryDraws" data-dir="-1" aria-label="Fewer picks drawn">−</button>
-        <div class="val small">Top ${draws} pick${draws > 1 ? 's' : ''} drawn</div>
-        <button class="btn square" data-act="lotteryDraws" data-dir="1" aria-label="More picks drawn">+</button>
-      </div>`}
-      <fieldset class="frame"><legend>Odds</legend>
-        <div class="odds-head"><span>Seed</span><span>Team</span><span>Weight</span><span>#1</span><span>Top ${setup.format === '321' ? 4 : draws}</span></div>
+      <div class="opts lot-formats">${Object.entries(LOTTERY_FORMATS).map(([k, f]) => `<button class="btn ${k === setup.format ? 'on focus' : 'off'}" data-act="lotFormat" data-f="${k}">${f.name}<span class="small">${f.era}</span></button>`).join('')}</div>
+      <p class="note small">${P.lotteryFormat === 'auto' ? 'Picked from your league settings. ' : ''}${about}</p>
+      <fieldset class="frame"><legend>Odds · ${esc(F.name)}</legend>
+        <div class="odds-head lot"><span>Seed</span><span>Team</span><span>#1</span><span>Top ${topN}</span></div>
         ${odds.map(r => {
           const rr = rec.get(r.team.id);
-          const top = r.pct.slice(0, setup.format === '321' ? 4 : draws).reduce((a, b) => a + b, 0);
-          return `<div class="odds-row ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${(r.weight / totalW * 100).toFixed(1)}%</span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span></div>`;
+          const top = Math.min(100, r.pct.slice(0, topN).reduce((a, b) => a + b, 0));
+          return `<div class="odds-row lot ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
+            <span class="odds-bar" aria-hidden="true"><i class="top" style="width:${top}%"></i><i class="one" style="width:${r.pct[0]}%"></i></span></div>`;
         }).join('')}
-        <p class="note muted small" style="margin-top:8px">Weights come from your league's lottery settings (worst record = seed 1). Odds from 5,000 simulations.</p>
+        ${out.length ? `<p class="note muted small" style="margin-top:8px">Out of the lottery (pick by record): ${out.map(r => esc(r.team.shortName)).join(', ')}.</p>` : ''}
+        <p class="note muted small" style="margin-top:8px"><span class="gold">■</span> chance at #1 · <span class="cyan">■</span> chance at a top-${topN} pick. Odds from 20,000 simulations.</p>
       </fieldset>`,
     action: { act: 'advLottery', label: 'Run Lottery' },
   });
+};
+
+actions.lotFormat = d => {
+  state.params.lotteryFormat = d.f;
+  saveParams();
+  draftState().lottery = null;
+  draftState().mock = null;
+  render();
 };
 
 // The real lottery's result, right after it's drawn.
@@ -2682,7 +2693,7 @@ actions.liveFinish = async () => {
 
 // ---- Live trade builder
 
-// "$24M · 3 yrs · PO" and a value tag (Expiring / Overpaid / Bargain).
+// "$24M · 3 yrs · PO" and a value tag (Final Year / Overpaid / Bargain).
 const OPT_SHORT = { 1: 'TO', 2: 'PO' };
 function contractText(p) {
   const c = p.contract || {};
@@ -2713,10 +2724,15 @@ function liveAssets(team) {
     const p = prospectById(s.pid);
     out.push({ key: `d:${s.overall}`, label: `${playerName(p)} (just drafted, ${gradeOf(p)[0]})`, value: slotValue(boardRank(p)), prospect: s.overall });
   }
-  for (const p of [...team.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly))) {
+  // Players whose contracts are up (pending free agents) can't be traded:
+  // they're listed last, greyed out.
+  const pending = p => p.status === 4 || !p.contract?.yrs;
+  const roster = [...team.roster].sort((a, b) => pending(a) - pending(b) || playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly));
+  for (const p of roster) {
     const l = seasonLine(p, state.leagueIdx, ly);
     const ct = contractText(p);
-    out.push({ key: `p:${p.id}`, label: `${esc(playerName(p))} <span class="gold small">Lv ${levelOf(p)}</span>${contractBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
+    const locked = pending(p);
+    out.push({ key: `p:${p.id}`, locked, label: `${esc(playerName(p))} <span class="gold small">Lv ${levelOf(p)}</span>${locked ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : contractBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
   }
   return out;
 }
@@ -2740,7 +2756,7 @@ screens.liveTrade = (args) => {
   const aa = liveAssets(A), bb = liveAssets(B);
   const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + x.value, 0);
   const vA = sum(aa, selA), vB = sum(bb, selB);
-  const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''}" data-act="liveToggle" data-side="${side}" data-k="${x.key}">
+  const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
       <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
   const select = (side, cur) => {
     const T = L.teams.find(t => t.id === cur);
@@ -2821,7 +2837,7 @@ actions.liveTradeGo = async d => {
   const L = league();
   const A = L.teams.find(t => t.id === +a.a), B = L.teams.find(t => t.id === +a.b);
   const pickSide = (team, keys) => {
-    const items = liveAssets(team).filter(x => keys.includes(x.key));
+    const items = liveAssets(team).filter(x => keys.includes(x.key) && !x.locked);
     return { team, items, picks: items.filter(x => x.pick).map(x => x.pick), players: items.filter(x => x.player).map(x => x.player), prospects: items.filter(x => x.prospect).map(x => x.prospect) };
   };
   const sa = pickSide(A, a.selA || []), sb = pickSide(B, a.selB || []);

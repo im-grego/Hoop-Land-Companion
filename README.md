@@ -145,9 +145,11 @@ Available once the file has a draft class (offseason, before the lottery).
     packages from their picks and players (never their two best players), and teams behind your picks call about
     moving up. Accept an offer, or **Build a Trade** yourself. Trades are written to the file and can be undone.
   Each prospect page shows college stats, fit on your team, the scouting report and comps.
-- **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
-  Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
-  the classic top-4 draw.
+- **Lottery:** three formats, with each team's odds at #1 and at a top pick (20,000 simulations, shown as bars):
+  **3-2-1** (NBA 2027+: your league's weights, all lottery picks drawn, worst 3 teams no lower than #12;
+  auto-detected), **Top 4** (NBA 2019–2026: 14 teams, worst 3 at 14%, top 4 drawn) and **Old School**
+  (NBA 1994–2018: 14 teams, worst at 25%, top 3 drawn).
+- **Consensus** shows each prospect's overall rank so you know how far down the board you are.
 - **Draft grades** next to every prospect: Consensus #1, Top 5, Lottery, First Round, Second Round, UDFA, or N/A
   (projected to go unsigned). They follow the board with a fixed scouting nudge near the cutoffs, so they read like
   projections rather than exact ranks.
@@ -180,7 +182,8 @@ starred). Nothing is written until you finish, and **Reset** starts over (undoin
 - **Trades at any point:** picks in this draft, future picks, players, and **draft-and-trade** of a rookie for up to
   8 picks after being taken (Settings → Rookies). CPU teams accept when they get a bit more value back than they give;
   With **Commissioner Mode** on (Settings) you can trade for any team and **Force** pushes a trade through; off (the
-  default), your side is limited to the teams you control. Pick teams with the ◀ ▶ arrows. A balance bar
+  default), your side is limited to the teams you control. Pick teams with the ◀ ▶ arrows. Players whose contracts are up (pending free
+  agents) can't be traded: they're listed last, greyed out with a 🔒 Pending FA tag. A balance bar
   under the teams shows who the deal favors (middle = even); the green zone is where the CPU side accepts. Every trade can be undone.
 - **Trade-back offers:** when you're on the clock, teams picking 3–8 slots later may offer their pick plus future
   picks to move up. CPU teams also trade up among themselves now and then in round 1 (Settings: off / rare / normal /
@@ -193,7 +196,7 @@ starred). Nothing is written until you finish, and **Reset** starts over (undoin
   86 and a 4.5 is 93), last season's production, youth and upside, age decline, and the **contract**: an expiring deal
   is close to neutral, a bargain adds value, and an overpay for the player's level costs value for every year left
   (more with a player option, less with a team option). Trade labels show Level, salary × years, the option (TO/PO)
-  and an Expiring / Overpaid / Bargain tag.
+  and a Final Year / Overpaid / Bargain tag.
 - **Player trades** move the player and update the player's new-season stats row (team and jersey), as the game does.
 - **Jersey numbers:** a player joining a team (draft or trade) keeps their number if it's free; otherwise they try its
   single digit (#27 → 7, #55 → 5), then the lowest number that's neither worn nor retired. The offseason screen can

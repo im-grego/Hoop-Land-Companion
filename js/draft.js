@@ -389,18 +389,26 @@ export function standings(league) {
 }
 
 // Lottery formats:
-//  classic: top `draws` picks drawn, the rest by record.
-//  321 (NBA 2027+): all lottery picks drawn; the 3 worst teams pick no lower
-//  than #12.
+//  321 (NBA 2027+): the league's own odds, every lottery pick drawn; the 3
+//    worst teams pick no lower than #12.
+//  top4 (NBA 2019–2026): 14 teams, the 3 worst at 14% each, top 4 drawn.
+//  old (NBA 1994–2018): 14 teams, the worst at 25%, top 3 drawn.
 export const LOTTERY_321 = { floorTeams: 3, floorPick: 12 };
+export const LOTTERY_FORMATS = {
+  321: { name: '3-2-1', era: 'NBA 2027+' },
+  top4: { name: 'Top 4', era: 'NBA 2019–2026', teams: 14, draws: 4, weights: [140, 140, 140, 125, 105, 90, 75, 60, 45, 30, 20, 15, 10, 5] },
+  old: { name: 'Old School', era: 'NBA 1994–2018', teams: 14, draws: 3, weights: [250, 199, 156, 119, 88, 63, 43, 28, 17, 11, 8, 7, 6, 5] },
+};
 
 // Detect the 3-2-1 format from the odds: 16 teams and the worst seeds having
-// lower odds than seed 4.
+// lower odds than seed 4. Anything else gets the Top 4 lottery.
 export function detectLotteryFormat(league) {
   const s = league.season;
   const o = s.lotteryOdds || [];
-  return s.lotteryTeams === 16 && o.length >= 4 && o[0] < o[3] ? '321' : 'classic';
+  return s.lotteryTeams === 16 && o.length >= 4 && o[0] < o[3] ? '321' : 'top4';
 }
+const lotteryFormatOf = (league, format) =>
+  LOTTERY_FORMATS[format] ? format : format === 'classic' ? 'top4' : detectLotteryFormat(league);
 
 // Draw picks from the lottery teams using the league's odds (index 0 = worst
 // record). `drawn` picks are drawn; the rest follow by record. `floor`
@@ -437,18 +445,20 @@ export function seedOrder(league) {
   return [...league.teams].sort((a, b) => slot(a) - slot(b)).map(t => ({ team: t, ...teamRecord(t) }));
 }
 
-// `format` is 'auto', 'classic' or '321'; `classicDraws` is used for classic.
-export function lotterySetup(league, format = 'auto', classicDraws = 4) {
+// `format` is '321', 'top4' or 'old' ('auto' picks from the league's
+// settings). The last argument is unused (kept for older callers).
+export function lotterySetup(league, format = 'auto', _unused) {
   const s = league.season;
   const table = seedOrder(league);
-  const n = Math.min(s.lotteryTeams || 14, table.length);
-  const fmt = format === 'auto' ? detectLotteryFormat(league) : format;
+  const fmt = lotteryFormatOf(league, format);
+  const F = LOTTERY_FORMATS[fmt];
+  const n = Math.min(F.teams || s.lotteryTeams || 14, table.length);
   return {
     table,
     lotteryTeams: table.slice(0, n).map(r => r.team),
-    odds: s.lotteryOdds || [],
+    odds: F.weights || s.lotteryOdds || [],
     format: fmt,
-    draws: fmt === '321' ? n : Math.min(classicDraws, n),
+    draws: F.draws ? Math.min(F.draws, n) : n,
     floor: fmt === '321' ? LOTTERY_321 : null,
   };
 }

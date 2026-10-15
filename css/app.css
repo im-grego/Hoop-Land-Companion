@@ -653,3 +653,21 @@ body::before {
 .tbar-mark.idle { opacity: .35; }
 .tbar-wrap > .note { margin-top: 16px; line-height: 1.5; }
 .tbar-wrap > .note b { display: block; font-size: 16px; }
+
+/* Lottery: format picker and odds with bars */
+.lot-formats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.lot-formats .btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; line-height: 1.1; }
+.lot-formats .btn .small { font-size: 11px; opacity: .8; font-weight: 600; }
+.odds-head.lot, .odds-row.lot { grid-template-columns: 34px 1fr 58px 62px; row-gap: 3px; }
+.odds-row.lot { padding: 6px 0 7px; }
+.odds-bar { grid-column: 1 / -1; position: relative; height: 8px; background: var(--btn-shadow); border: 1px solid var(--btn-edge); }
+.odds-bar i { position: absolute; left: 0; top: 0; bottom: 0; }
+.odds-bar i.top { background: var(--cyan); opacity: .55; }
+.odds-bar i.one { background: var(--gold); }
+.cyan { color: var(--cyan); }
+
+/* Untradeable (pending free agent) rows */
+.pick.locked { opacity: .45; filter: grayscale(.8); cursor: not-allowed; }
+.pick.locked .check { visibility: hidden; }
+.badge.lock { border-color: #c9d3e6; color: #c9d3e6; }
+.rank-no { display: inline-block; min-width: 28px; margin-right: 6px; padding: 0 4px; text-align: center; font-weight: 800; font-size: 13px; color: #0b2f6b; background: var(--gold); }

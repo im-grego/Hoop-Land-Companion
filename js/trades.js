@@ -17,7 +17,7 @@ export const fairSalary = level => Math.max(2, Math.round(level >= 90 ? 30 + (le
 // longer they run; a player option means there's no getting out (it counts
 // in full and a bit worse); a team option takes the edge off the last year;
 // an expiring deal is mostly harmless and even worth a little as cap room.
-// Returns { adj, tag } (tag: 'Expiring' | 'Overpaid' | 'Bargain' | '').
+// Returns { adj, tag } (tag: 'Final Year' | 'Overpaid' | 'Bargain' | '').
 export function contractValue(p) {
   const c = p.contract || {};
   const yrs = c.yrs || 0, sal = c.sal || 0;
@@ -27,7 +27,7 @@ export function contractValue(p) {
   let years = yrs;
   if (c.opt === 1) years -= 0.5;                       // team option: can walk away from the last year
   if (yrs <= 1) {
-    return { adj: over > 0 ? 2 - over * 0.15 : Math.min(4, -over * 0.2), tag: 'Expiring' };
+    return { adj: over > 0 ? 2 - over * 0.15 : Math.min(4, -over * 0.2), tag: 'Final Year' };
   }
   if (over > 0) {
     const pen = Math.min(30, over * Math.min(years, 4) * 0.35 * (c.opt === 2 ? 1.25 : 1));

@@ -58,9 +58,13 @@ console.log('lottery #1 odds:', odds.map(r => `${r.team.shortName} ${r.pct[0].to
 
 // Mock draft
 const lot = runLottery(L, 'auto', 4, mulberry32(7)).map(r => r.team);
-// Classic: only the top 4 are drawn, so a team never picks after its seed + 4.
-for (const r of lotteryOdds(L, 'classic', 4, 2000)) {
-  r.pct.forEach((v, pick) => { if (v) assert.ok(pick <= r.seed + 4, 'classic: fall at most 4 spots'); });
+// Top 4 / Old School: 14 teams, the top 4 (3) drawn, so a team never falls
+// more than 4 (3) spots; the worst team's #1 odds are 14% (25%).
+for (const [fmt, fall, best] of [['top4', 4, 14], ['old', 3, 25]]) {
+  const o = lotteryOdds(L, fmt, null, 4000);
+  assert.equal(o.length, 14, `${fmt}: 14 lottery teams`);
+  o.forEach(r => r.pct.forEach((v, pick) => { if (v) assert.ok(pick <= r.seed + fall, `${fmt}: fall at most ${fall} spots`); }));
+  assert.ok(Math.abs(o[0].pct[0] - best) < 2.5, `${fmt}: worst team #1 odds ≈ ${best}%`);
 }
 const order = draftOrder(L, lot);
 assert.equal(new Set(order.map(o => `${o.rd}:${o.orig.id}`)).size, order.length, 'no duplicate picks');

@@ -117,8 +117,8 @@ export const DEFAULT_PARAMS = {
   recoveryBands: [[19, 0], [21, 1], [99, 2]],
   // Draft room: % of scouting reports that read potential one step off
   scoutVariance: 25,
-  lotteryFormat: 'auto',  // auto | 321 | classic
-  lotteryDraws: 4,        // classic format only
+  lotteryFormat: 'auto',  // auto (from the league's settings) | 321 | top4 | old
+  lotteryDraws: 4,        // unused (old setting)
   draftRounds: 2,
   liveCpuTradeChance: 10,  // % chance a CPU team trades up before a round-1 CPU pick in the live draft
   draftTradeWindow: 8,
