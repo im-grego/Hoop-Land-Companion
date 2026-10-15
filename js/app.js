@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.7';
+const APP_VERSION = '0.6.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -46,13 +46,14 @@ function loadParams() {
       // v5 rescaled injury risk for natural (unedited) injuries.
       if (saved.version < 5) for (const k of ['injuryMinGames', 'injuryPotPerGame']) delete saved[k];
       if (saved.version < 7) for (const k of ['softTissueParts', 'softTissueMult', 'softTissuePointsMult', 'structuralParts', 'structuralMult']) delete saved[k]; // v7 injury classes
+      if (saved.version < 8) delete saved.structuralParts; // v8 added Ankle, Back
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 7 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 8 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {

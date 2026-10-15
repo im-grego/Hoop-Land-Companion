@@ -32,9 +32,10 @@ Every team gets the same rules, so CPU teams stay even with yours.
   0.6% per game missed, ×0.8–1.1 by major severity (1–4; minor injuries ×0.6), ×1.2 lower body, ×1.25 at 30+.
   **Lingering injuries** (looking back 3 seasons): ×1.5 per earlier injury of the same type, ×1.25 per earlier
   injury in the same area, and recurring injuries count even under 15 games. Injuries fall into three classes:
-  **standard** (base risk), **nagging** (groin, abs, back, calf, hamstring, thigh: tend to recur, ×1.25 risk and ×0.75
-  offseason bump points) and **structural** (a major injury to Achilles, ACL, MCL, knee, foot or hip: ×1.25 risk, and
-  the regression-delay chance is cut 75% instead of 50%).
+  **standard** (base risk), **structural** (a major injury — broken, dislocated, fractured or torn — to Achilles,
+  ACL, MCL, knee, ankle, foot, hip or back: ×1.25 risk, and the regression-delay chance is cut 75% instead of 50%;
+  checked first, so major beats body part) and **nagging** (groin, abs, back, calf, hamstring, thigh: tend to recur,
+  ×1.25 risk and ×0.75 offseason bump points).
 
 Injury codes, as the game names them: core 1–5 Head, Abs, Back, Groin, Hip · upper body 1–6 Thumb, Finger, Hand,
 Wrist, Elbow, Shoulder · lower body 1–10 Toe, Foot, Ankle, Achilles, Calf, Hamstring, Thigh, ACL, MCL, Knee · minor

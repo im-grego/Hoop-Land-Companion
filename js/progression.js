@@ -46,13 +46,14 @@ export const DEFAULT_PARAMS = {
   injuryRepeatType: 0.5,  // +50% per earlier injury of the same type
   injuryRepeatArea: 0.25, // +25% per earlier injury in the same body area
   // Injury classes:
+  //  structural - a major injury to a load-bearing part (checked first, so a
+  //               major back injury is structural, a sore back nagging)
   //  nagging    - soft tissue + back; tends to recur and holds players back
-  //  structural - a major injury to a load-bearing part; career-altering
   //  standard   - everything else
   naggingParts: ['Groin', 'Abs', 'Back', 'Calf', 'Hamstring', 'Thigh'],
   naggingRiskMult: 1.25,       // x potential-loss risk
   naggingPointsMult: 0.75,     // x offseason bump points
-  structuralParts: ['Achilles', 'ACL', 'MCL', 'Knee', 'Foot', 'Hip'],
+  structuralParts: ['Achilles', 'ACL', 'MCL', 'Knee', 'Ankle', 'Foot', 'Hip', 'Back'],
   structuralRiskMult: 1.25,
   structuralLongevityCut: 75,  // % cut to the regression-delay chance
   // Optional skill gains (off by default)
@@ -249,8 +250,8 @@ export function maybePotential(p, mult, params, rng) {
 export function injuryClass(inj, params) {
   if (!inj) return null;
   const part = injuryPart(inj);
-  if (params.naggingParts.includes(part)) return 'nagging';
   if (inj.majorSeverity > 0 && params.structuralParts.includes(part)) return 'structural';
+  if (params.naggingParts.includes(part)) return 'nagging';
   return 'standard';
 }
 
