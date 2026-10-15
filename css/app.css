@@ -497,3 +497,23 @@ fieldset.frame > legend {
 
 /* Tabs stay on one line. */
 .tabs .btn { white-space: nowrap; min-width: 0; padding: 10px 12px; font-size: 15px; }
+
+/* ---------- Brand art ---------- */
+.hero { display: block; width: 100%; max-width: 100%; height: auto; border: 4px solid var(--panel-edge); box-shadow: 0 4px 0 var(--btn-shadow); }
+.league-card {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--btn); border: 4px solid var(--btn-edge); box-shadow: 0 4px 0 var(--btn-shadow);
+  padding: 12px 14px;
+}
+.league-card .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.league-card b { font-size: 18px; font-weight: 800; }
+.league-logo { width: 44px; height: 64px; object-fit: contain; flex: none; }
+/* Loading: the Hoop Land logo bounces like a dribble. */
+.spinner {
+  width: 96px; height: 96px; margin: 0 auto; clip-path: none;
+  background: url("../icons/hoopland-logo.png") center / contain no-repeat;
+  image-rendering: pixelated;
+  animation: dribble .6s steps(6) infinite alternate;
+}
+@keyframes dribble { from { transform: translateY(-6px); } to { transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }

@@ -17,7 +17,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.18.0';
+const APP_VERSION = '0.18.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -224,6 +224,12 @@ function go(name, args = {}) {
   history.pushState({ depth: state.stack.length }, '');
   render();
 }
+// The league's logo: the NBA mark for NBA leagues, else Hoop Land's.
+function leagueBadge(L) {
+  const nba = L.leagueType === 0 && /NBA|National Basketball/i.test(`${L.shortName} ${L.leagueName}`);
+  return `<img class="league-logo" src="icons/${nba ? 'nba.png' : 'hoopland-logo.png'}" alt="">`;
+}
+
 function goHome() {
   const n = state.stack.length - 1;
   state.stack = [{ name: 'main', args: {} }];
@@ -613,6 +619,7 @@ screens.main = () => {
     layout({
       title: 'Main Menu',
       body: `
+        <img class="hero" src="icons/banner.jpg" alt="Hoop Land">
         <fieldset class="frame"><legend>Hoop Land Companion</legend>
           <div class="stack">
             <p class="note">Load a save from the start of the offseason (Pre-Lottery) and run the whole offseason here: the lottery, the draft, summer league, free agency and player development. Export once at the end and load it in the game. Saves from later in the offseason pick up from where they are.</p>
@@ -633,14 +640,12 @@ screens.main = () => {
   layout({
     title: 'Main Menu',
     body: `
+      <div class="league-card">
+        ${leagueBadge(L)}
+        <div class="grow"><b>${esc(L.meta?.saveName || state.fileName)}</b>
+          <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(phaseName(s))} · Your teams: ${esc(yourTeams)}</span></div>
+      </div>
       ${calendarCard()}
-      <fieldset class="frame"><legend>Season File</legend>
-        <dl class="info">
-          <dt>Save</dt><dd>${esc(L.meta?.saveName || state.fileName)}</dd>
-          <dt>Phase in file</dt><dd>${esc(phaseName(s))}</dd>
-          <dt>Your teams</dt><dd>${esc(yourTeams)}</dd>
-        </dl>
-      </fieldset>
       <div class="grid2">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
