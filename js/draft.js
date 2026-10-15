@@ -126,7 +126,9 @@ export function scoutedPot(p, salt = 0, chance = 25) {
 // Comparison pool: active players + free agents (current ratings), retirees
 // and Hall of Famers (best of their two stored values). This year's rookies
 // are left out so prospects aren't compared with each other.
-const ESTABLISHED_AGE = 26;
+// Comps need at least this many seasons in the league (rules out rookies,
+// including older ones).
+export const MIN_COMP_SEASONS = 2;
 
 export function buildCompPool(league) {
   const pool = [];
@@ -136,8 +138,8 @@ export function buildCompPool(league) {
     if (!p?.attributes || !p.ht || isRookie(p)) return;
     const v = vec(p);
     if (v.reduce((a, b) => a + b, 0) < 40) return; // empty/placeholder records
-    // Established = has had the chance to reach their potential.
-    const established = (group !== 'Active' && group !== 'Free Agent') || p.age >= ESTABLISHED_AGE;
+    // Established = has played enough to show who they are.
+    const established = (group !== 'Active' && group !== 'Free Agent') || (p.yrs || 0) >= MIN_COMP_SEASONS;
     pool.push({ p, group, v, ht: p.ht, wt: p.wt || 0, pos: p.pos, established });
   };
   for (const t of league.teams) for (const p of t.roster) add(p, 'Active', x => SKILL_ATTRS.map(k => x.attributes[k][0]));
@@ -194,7 +196,6 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
 const QUALIFIER_MAX = 2;      // at most this many "+" and "lite" per class
 const QUALIFIER_MIN_GAP = 4; // skill-total points
 const HISTORIC_PENALTY = 6;  // distance added to retirees / Hall of Famers so current players win close calls
-const FLOOR_MIN_AGE = 24;    // younger actives haven't settled into their level yet
 
 const TOP_COMP = 10; // Wilt / LeBron territory
 
@@ -231,12 +232,11 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
   }
   for (const p of players) {
     const pot = potOf(p);
-    // A floor sits at least one tier under the ceiling comp, and skips young
-    // actives who haven't reached their level yet.
+    // A floor sits at least one tier under the ceiling comp; like ceilings it
+    // needs MIN_COMP_SEASONS in the league.
     const ceil = out.get(p.id).ceiling[0];
     const cap = Math.min(pot, ceil ? ceil.pot - 1 : pot) ;
-    const e = pick(p, floorVec(p), c => c.p.pot < TOP_COMP && c.p.pot <= cap &&
-      (historic(c) || c.p.age >= FLOOR_MIN_AGE));
+    const e = pick(p, floorVec(p), c => c.p.pot < TOP_COMP && c.p.pot <= cap && c.established);
     if (e) out.get(p.id).floor = [fmt(e, floorVec(p))];
   }
   // A couple of "+" / "lite" per class, on the comps furthest from their

@@ -89,7 +89,8 @@ Available once the file has a draft class (offseason, before the lottery).
   One floor and one ceiling comp per prospect, assigned across the whole class so no player is used twice (best
   prospects pick first). Ceiling comps are at or below the prospect's scouted tier; 10+ potential comps (Hall of Fame,
   Legend) only go to top-tier prospects, at most 2 per class, and never as floors. Ceiling comps sit within one tier of the
-  scouted tier; floors sit at least one tier under the ceiling comp and skip actives under 24. Current players are
+  scouted tier; floors sit at least one tier under the ceiling comp. Comps need 2+ seasons in the league, so rookies (older ones
+  included) are never used. Current players are
   preferred (retirees and Hall of Famers only win clear matches, about 1 in 4 ceilings). Like real scouting reports,
   a couple of comps per class get a "+" (the prospect projects a bit better) or "lite" (a bit short) — 2 of each.
 - **Fog of war:** projections use a scouted potential that's usually right but, 25% of the time by default, reads one
@@ -98,7 +99,7 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Projected ceilings:** the game caps every generated prospect's ceiling at ~140 total (an All-Star line) regardless
   of potential, while prime players top out at about 140 + 14 per potential step (pot 9 ≈ 154, pot 10 ≈ 168,
   pot 7 ≈ 126). Ceilings are projected to the prospect's tier — extra points spread over their strengths (≤ +6 each),
-  lower tiers scale down — and ceiling comps come only from established players (26+, retirees, Hall of Famers).
+  lower tiers scale down — and comps only use players with 2+ seasons in the league (plus retirees and Hall of Famers).
   Free throws are capped at 16.
 - **Scouting report:** two strengths and a weakness per prospect, judged against active players at similar positions
   and weighted by what matters for the role (guard / wing / big); free throws only count as a weakness when awful.
