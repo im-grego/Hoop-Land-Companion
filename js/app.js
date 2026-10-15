@@ -11,7 +11,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.11.3';
+const APP_VERSION = '0.11.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------

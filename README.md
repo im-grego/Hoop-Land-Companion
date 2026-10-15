@@ -88,7 +88,8 @@ Available once the file has a draft class (offseason, before the lottery).
   6 Role Player, 5 Bench Depth, 4 Project. Floor comps use the rookie line plus +2 a rating of natural development. A prospect's own potential is never shown (no stars or tier in the draft room).
   One floor and one ceiling comp per prospect, assigned across the whole class so no player is used twice (best
   prospects pick first). Ceiling comps are at or below the prospect's scouted tier; 10+ potential comps (Hall of Fame,
-  Legend) only go to top-tier prospects, at most 2 per class, and never as floors. Ceiling comps sit within one tier of the
+  Legend) only go to top-tier prospects, at most 3 per class, and never as floors; those prospects lean toward the
+  greats rather than current players. Comps stay within 2 inches of the prospect's height whenever possible. Ceiling comps sit within one tier of the
   scouted tier; floors sit at least one tier under the ceiling comp. Comps need 2+ seasons in the league, so rookies (older ones
   included) are never used. Current players are
   preferred (retirees and Hall of Famers only win clear matches, about 1 in 4 ceilings). Like real scouting reports,

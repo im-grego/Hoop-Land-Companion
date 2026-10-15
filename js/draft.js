@@ -150,9 +150,9 @@ export function buildCompPool(league) {
 }
 
 // How much size and position count against rating differences:
-// 1 inch = 1.5 rating points, 10 lb = 0.8, one position step (PG..C) = 2.
-const HEIGHT_WEIGHT = 1.5;
-const WEIGHT_WEIGHT = 0.08;
+// 1 inch = 2.5 rating points, 10 lb = 1.2, one position step (PG..C) = 2.
+const HEIGHT_WEIGHT = 2.5;
+const WEIGHT_WEIGHT = 0.12;
 const POSITION_WEIGHT = 2;
 
 // `body` = { ht, wt, pos } of the player being compared.
@@ -196,10 +196,11 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
 const QUALIFIER_MAX = 2;      // at most this many "+" and "lite" per class
 const QUALIFIER_MIN_GAP = 4; // skill-total points
 const HISTORIC_PENALTY = 6;  // distance added to retirees / Hall of Famers so current players win close calls
+const SIZE_RANGE = 2;        // inches: comps stay this close in height when anyone fits
 
 const TOP_COMP = 10; // Wilt / LeBron territory
 
-export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p => p.pot, legendCap = 2 }) {
+export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p => p.pot, legendCap = 3 }) {
   const used = new Set();
   const out = new Map(players.map(p => [p.id, { floor: [], ceiling: [] }]));
   let legends = 0;
@@ -209,22 +210,30 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
     gap: sum(vec) - sum(e.v),
   });
   const historic = e => e.group === 'Retired' || e.group === 'Hall of Fame';
-  const pick = (p, vec, ok) => {
-    let best = null, bestD = Infinity;
-    for (const e of pool) {
-      if (used.has(e.p.id) || e.p.id === p.id || !ok(e)) continue;
-      const d = compDistance(vec, bodyOf(p), e) + (historic(e) ? HISTORIC_PENALTY : 0);
-      if (d < bestD) { bestD = d; best = e; }
-    }
-    if (best) used.add(best.p.id);
-    return best;
+  // Stay close in size: try comps within SIZE_RANGE inches first. Top-tier
+  // prospects lean toward the greats instead of current players.
+  const pick = (p, vec, ok, favorHistoric = false) => {
+    const best = within => {
+      let b = null, bestD = Infinity;
+      for (const e of pool) {
+        if (used.has(e.p.id) || e.p.id === p.id || !ok(e)) continue;
+        if (within && Math.abs(e.ht - p.ht) > SIZE_RANGE) continue;
+        const d = compDistance(vec, bodyOf(p), e) + (historic(e) ? (favorHistoric ? -HISTORIC_PENALTY : HISTORIC_PENALTY) : 0);
+        if (d < bestD) { bestD = d; b = e; }
+      }
+      return b;
+    };
+    const e = best(true) || best(false);
+    if (e) used.add(e.p.id);
+    return e;
   };
   for (const p of players) {
     const pot = potOf(p);
     // Within one tier of the scouted tier (falling back to anything lower).
     const okCeil = c => c.established && c.p.pot <= pot &&
       (c.p.pot < TOP_COMP || (pot >= TOP_COMP && legends < legendCap));
-    const e = pick(p, ceilVec(p), c => okCeil(c) && c.p.pot >= pot - 1) || pick(p, ceilVec(p), okCeil);
+    const top = pot >= TOP_COMP;
+    const e = pick(p, ceilVec(p), c => okCeil(c) && c.p.pot >= pot - 1, top) || pick(p, ceilVec(p), okCeil, top);
     if (e) {
       if (e.p.pot >= TOP_COMP) legends++;
       out.get(p.id).ceiling = [fmt(e, ceilVec(p))];

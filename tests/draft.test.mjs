@@ -38,7 +38,7 @@ for (const p of board) {
   if ((c.ceiling[0]?.tier === 'Hall of Fame' || c.ceiling[0]?.tier === 'Legend')) { legends++; assert.equal(p.pot, 10, 'top comps only for 10s'); }
   assert.ok(!['Hall of Fame', 'Legend'].includes(c.floor[0]?.tier), 'no top-tier floors');
 }
-assert.ok(legends <= 2, 'at most 2 Legend comps per class');
+assert.ok(legends <= 3, 'at most 3 top-tier comps per class');
 console.log(`class comps OK: ${seen.size} unique comps, ${legends} top-tier (10+)`);
 for (const p of board.slice(0, 8)) {
   const c = classComps.get(p.id);
