@@ -62,3 +62,40 @@ if (after !== text) { let i = 0; while (after[i] === text[i]) i++; assert.fail(`
 const wars = signings.filter(x => x.bidders >= 3);
 console.log(`free agency day ${day} OK: ${market.length} on the market, ${signings.length} signed (${wars.length} bidding wars), kinds ${[...new Set(signings.map(x => x.kind))].join('/')}` +
   (star ? `; user bid for ${playerName(star.p)}: ${signings.find(x => x.p === star.p)?.team.shortName || 'unsigned'}` : ''));
+
+// Restricted free agents: a CPU team matches a fair offer sheet, and a
+// user team's "match" keeps the player.
+{
+  const d2 = parseSave(text);
+  const L2 = d2.seasonLeagues[0];
+  const mk = FA.buildMarket(L2, day);
+  const rfa = mk.find(m => m.from && FA.isRestricted(L2, m.p));
+  if (rfa) {
+    const other = L2.teams.find(t => t !== rfa.from && FA.capSpace(L2, t) > rfa.ask + 5 && FA.signedRoster(t).length < O.rosterMax);
+    if (other) {
+      const sheet = { tid: other.id, sal: rfa.ask + 2, yrs: 4, opt: 0, cpu: true };
+      const bids = new Map([[rfa.p.id, [sheet]]]);
+      const users = new Set([rfa.from.id]);
+      const pend = FA.pendingMatches(L2, [rfa], bids, day, users);
+      assert.equal(pend.length, 1, 'your RFA with an offer sheet needs a decision');
+      const [s1] = FA.decide(L2, [rfa], bids, day, {}, O, { matches: new Map([[rfa.p.id, true]]), userTeams: users });
+      assert.ok(s1?.matched && s1.team === rfa.from, 'matched: stays with the old team');
+      assert.equal(s1.offer.sal, sheet.sal, 'on the offer sheet terms');
+      console.log(`restricted FA OK: ${playerName(rfa.p)} matched by ${rfa.from.shortName} at $${sheet.sal}M × 4`);
+    }
+  }
+}
+// After the last day, players without deals leave their teams (and undo puts them back).
+{
+  const d3 = parseSave(text);
+  const L3 = d3.seasonLeagues[0];
+  const t0 = serializeSave(d3);
+  const n = L3.teams.flatMap(t => t.roster).filter(p => p.status === FA.STATUS_EXPIRING).length;
+  const recs = FA.releaseUnsigned(L3);
+  assert.equal(recs.length, n, 'every expiring player released');
+  assert.ok(L3.teams.every(t => t.roster.every(p => p.status !== FA.STATUS_EXPIRING)), 'no expiring players left on rosters');
+  assert.ok(recs.every(r => L3.freeAgents.includes(r.p) && r.p.status === FA.STATUS_FREE && r.p.tid === 0), 'now free agents');
+  FA.unreleaseUnsigned(L3, recs);
+  assert.equal(serializeSave(d3), t0, 'undo restores the file');
+  console.log(`release OK: ${n} unsigned players to free agency`);
+}

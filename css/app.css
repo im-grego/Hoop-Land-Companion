@@ -743,3 +743,13 @@ body::before {
 .recap-row .lv b { font-size: 20px; color: var(--gold); line-height: 1; }
 .recap-row .lv s { opacity: .6; }
 .lot-row .grade { margin-left: auto; flex: none; }
+
+/* Free agency */
+.prow.decl { border-color: #a8424f; background: linear-gradient(90deg, rgba(255, 90, 90, .14), transparent 60%), var(--btn); }
+.books-row { display: flex; align-items: center; gap: 8px; }
+.books-row .grow { flex: 1; min-width: 0; }
+.sign-row { display: flex; align-items: flex-start; gap: 8px; }
+.sign-row .grow { flex: 1; min-width: 0; }
+.sign-row.mine b { color: var(--cyan); }
+.fa-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.fa-tabs .btn { padding: 8px 2px; font-size: 13px; }

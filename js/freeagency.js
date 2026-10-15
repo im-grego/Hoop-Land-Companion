@@ -12,7 +12,8 @@
 
 import { jerseyNumber, playerName } from './savefile.js';
 import { seasonLine } from './storylines.js';
-import { playerValue } from './trades.js';
+import { playerValue, fairSalary } from './trades.js';
+import { levelOf } from './savefile.js';
 import { teamRecord } from './draft.js';
 
 export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRAFTED = 2;
@@ -267,12 +268,84 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
 }
 
 // ---------------------------------------------------------------------------
+// Restricted free agents: first-round picks coming off their rookie deal
+// (drafted within the last 4 seasons). Their old team can match any offer
+// sheet, and a match beats every other offer.
+export function isRestricted(league, p) {
+  const d = p.history?.draft;
+  return p.status === STATUS_EXPIRING && d?.rd === 1 && d.yr > 0 && league.season.currentYear - d.yr <= 4;
+}
+
+// Would a CPU team match an offer sheet? Yes unless it's well over what the
+// player is worth to them.
+export function cpuMatches(league, team, p, offer, o = FA_DEFAULTS) {
+  if (signedRoster(team).length >= o.rosterMax) return false;
+  return offer.sal <= fairSalary(levelOf(p)) * 1.2 + 3;
+}
+
+const bestOffer = (league, m, list) => {
+  const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
+  return [...list].sort((a, b) => score(b) - score(a))[0];
+};
+
+// Your restricted free agents whose best offer is from another team (the
+// match-or-let-go decisions before players decide).
+export function pendingMatches(league, market, bids, day, userTeams, used = {}, o = FA_DEFAULTS) {
+  const out = [];
+  for (const m of market) {
+    if (!m.from || !userTeams.has(m.from.id) || !isRestricted(league, m.p)) continue;
+    const list = (bids.get(m.p.id) || []).filter(b => !checkOffer(league, league.teams.find(t => t.id === b.tid), m.p, b, day, used, o));
+    if (!list.length) continue;
+    const best = bestOffer(league, m, list);
+    if (best.tid !== m.from.id && best.sal >= (m.min ?? m.ask * o.acceptPct[Math.min(2, day - 1)])) out.push({ m, best });
+  }
+  return out;
+}
+
+// After the last day: anyone still on a roster without a contract (an
+// expiring deal nobody re-signed) is released to the free-agent pool, so
+// the game doesn't carry them into the season. Returns records for undo.
+export function releaseUnsigned(league) {
+  const year = league.season.currentYear;
+  const out = [];
+  for (const team of league.teams) {
+    for (const p of [...team.roster]) {
+      if (p.status !== STATUS_EXPIRING) continue;
+      const idx = team.roster.indexOf(p);
+      const row = (p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
+      const stint = row?.season?.[row.season.length - 1];
+      out.push({ p, team, idx, tid: p.tid, linePos: p.linePos, stintTid: stint?.tid });
+      team.roster.splice(idx, 1);
+      p.status = STATUS_FREE;
+      p.tid = 0;
+      p.linePos = -1;
+      if (stint && !stint.GP) stint.tid = 0;
+      league.freeAgents.push(p);
+    }
+  }
+  return out;
+}
+export function unreleaseUnsigned(league, recs) {
+  const year = league.season.currentYear;
+  for (const r of [...recs].reverse()) {
+    league.freeAgents.splice(league.freeAgents.indexOf(r.p), 1);
+    r.team.roster.splice(r.idx, 0, r.p);
+    Object.assign(r.p, { status: STATUS_EXPIRING, tid: r.tid, linePos: r.linePos });
+    const row = (r.p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
+    const stint = row?.season?.[row.season.length - 1];
+    if (stint && r.stintTid != null) stint.tid = r.stintTid;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Decisions and signings
 
 // Players decide, best players first. A team's cap space shrinks as it
 // signs; offers that no longer fit are dropped. Returns
 // [{ p, from, offer, motive, bidders, kind, why }] and the unsigned list.
-export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS) {
+// Restricted free agents: `matches` (Map pid -> bool) holds your match
+// decisions; CPU teams decide with cpuMatches().
+export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS, { matches = new Map(), userTeams = new Set() } = {}) {
   const ly = lastYear(league);
   const order = [...market].sort((a, b) => playerValue(b.p, 0, ly) - playerValue(a.p, 0, ly));
   const signings = [];
@@ -284,13 +357,20 @@ export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS) {
     });
     if (!list.length) continue;
     const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
-    const best = [...list].sort((a, b) => score(b) - score(a))[0];
+    let best = [...list].sort((a, b) => score(b) - score(a))[0];
     if (best.sal < (m.min ?? m.ask * accept)) continue;
+    // Offer sheet on a restricted free agent: the old team may match.
+    let matched = false;
+    if (m.from && best.tid !== m.from.id && isRestricted(league, m.p)) {
+      const yes = userTeams.has(m.from.id) ? !!matches.get(m.p.id) : cpuMatches(league, m.from, m.p, best, o);
+      if (yes && signedRoster(m.from).length < o.rosterMax) { best = { ...best, tid: m.from.id, cpu: !userTeams.has(m.from.id) }; matched = true; }
+    }
     const team = league.teams.find(t => t.id === best.tid);
-    const kind = offerKind(league, team, m.p, best, day, used, o);
+    const kind = matched ? 'bird' : offerKind(league, team, m.p, best, day, used, o);
     if (kind === 'mle') (used.mle ||= new Set()).add(team.id);
     const rec = signPlayer(league, m.p, team, best, day);
-    signings.push({ p: m.p, from: m.from, team, offer: best, motive: m.motive, bidders: list.length, kind, why: why(m.motive, best, teamStrength(league, team)), rec });
+    signings.push({ p: m.p, from: m.from, team, offer: best, motive: m.motive, bidders: list.length, kind, matched,
+      why: matched ? `🔒 ${team.shortName} matched the offer sheet` : why(m.motive, best, teamStrength(league, team)), rec });
   }
   return signings;
 }

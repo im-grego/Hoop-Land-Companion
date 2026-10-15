@@ -248,6 +248,14 @@ are cleared too, so the game doesn't sign players over the app's results (Settin
 restores the file exactly. Export, advance a day in the game, and load the next day's save. Bidding wars feed the
 storylines.
 
+- **Restricted free agents:** first-round picks coming off their rookie deal (drafted within 4 seasons). Their old
+  team can match any offer sheet, and a match beats every other offer. CPU teams match fair offers; for your RFAs
+  you're asked to **Match** or **Let Go** before players decide.
+- **Last day:** anyone still on a roster without a contract is released to the free-agent pool, so the game doesn't
+  carry them (or their development) into the season.
+- The market sorts by level, with Guards / Wings / Bigs / Bidding tabs. Players past their regression age are
+  flagged **Declining** in red. Your own free agents are listed under Your Books (other teams can bid on them too).
+
 ## Summer league (right after the draft)
 
 Two steps, in order, both by age only (draft slot doesn't matter) and final (undo needs Commissioner Mode):
