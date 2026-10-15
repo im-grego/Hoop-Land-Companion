@@ -250,7 +250,12 @@ storylines.
 
 ## Summer league (right after the draft)
 
-Older rookies win back part of the draft drop: 18–19 +0 (keep the full −4), 20–21 +1 (net −3), 22+ +2 (net −2), never past their
+Two steps, in order, both by age only (draft slot doesn't matter) and final (undo needs Commissioner Mode):
+
+1. **Age Adjustment**: the same on every skill, no dice.
+2. **Summer League**: rookies earn upgrade points to spend in the game, more for younger players.
+
+The age adjustment: older rookies win back part of the draft drop: 18–19 +0 (keep the full −4), 20–21 +1 (net −3), 22+ +2 (net −2), never past their
 pre-draft rating (12 skill ratings only; physicals never drop). The app remembers prospects' pre-draft ratings
 whenever you load a save that has a draft class; at the post-draft phase you can also load a pre-draft save as a
 read-only reference. It only runs at the Post-Draft phase and is locked for that season once you export, so it

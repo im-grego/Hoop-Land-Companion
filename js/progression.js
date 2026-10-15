@@ -276,8 +276,8 @@ export function rookiePoints(p, round, params, rng) {
   if (round === 0 && !params.rookieIncludeUndrafted) return 0;
   const band = params.rookieBands.find(b => p.age <= b[0]);
   if (!band) return 0;
-  const mult = round === 1 ? params.rookieR1Mult : round === 2 ? params.rookieR2Mult : params.rookieUndraftedMult;
-  return Math.round(randInt(rng, band[1], band[2]) * mult);
+  // By age only: where a rookie was drafted doesn't matter.
+  return randInt(rng, band[1], band[2]);
 }
 
 // Rookie bump. `entries` are { p, round, spend }. Returns Map pid -> points.

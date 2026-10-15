@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.24.0';
+const APP_VERSION = '0.25.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -454,7 +454,7 @@ const CALENDAR = [
     done: () => calFlags().warroom || phaseRank(league().season) >= 3 },
   { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
-  { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies win back ratings by age and get their first development bump.',
+  { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies are age adjusted and get a chance to earn development.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'The market opens: the big deals happen today. Draft picks sign their rookie contracts.',
     done: () => faDone(1) },
@@ -507,7 +507,7 @@ function stepActions(key) {
     case 'lottery': return `<button class="btn big focus" data-act="nav" data-to="lottery">🎱 Draft Lottery</button>`;
     case 'warroom': return `<div class="grid2"><button class="btn" data-act="nav" data-to="draft">🔎 Scouting</button><button class="btn focus" data-act="calDone" data-k="warroom">⏭ Advance to Draft</button></div>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
-    case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🏀 Summer League</button><button class="btn" data-act="calCamp">✅ Wrap Up</button></div>`;
+    case 'camp': return `<button class="btn big focus" data-act="nav" data-to="camp">🏀 Summer League</button>`;
     case 'fa1': case 'fa2': case 'fa3': {
       const day = +key[2];
       if (s.phase === 5) return `<button class="btn big focus" data-act="advFreeAgency">✍️ Open Free Agency</button>`;
@@ -817,15 +817,14 @@ function applyRookieBump(seed) {
   state.dirty = true;
 }
 
-actions.runRookies = async () => {
-  if (state.rookieAuto[state.leagueIdx] && !(await confirmBox('Re-roll the rookie bump? Manual changes to rookies are reset.', 'Re-roll'))) return;
-  const seed = state.rookieAuto[state.leagueIdx] ? Math.floor(Math.random() * 1e6) : state.params.seed;
-  applyRookieBump(seed);
+actions.runRookies = () => {
+  if (state.rookieAuto[state.leagueIdx]) return;
+  applyRookieBump(state.params.seed);
   render();
 };
 
 actions.undoRookies = async () => {
-  if (!(await confirmBox('Undo the rookie bump?', 'Undo'))) return;
+  if (!(await confirmBox('Undo summer league?', 'Undo'))) return;
   for (const r of leagueRookies(league())) {
     if (r.p.season?.ap) r.p.season.ap = [...snapOf(r.p).ap];
     state.awards[state.leagueIdx]?.delete(r.p.id);
@@ -929,14 +928,15 @@ screens.offseason = () => {
 // Summer League step: rookies win back draft-drop ratings by age, then the
 // rookie bump.
 screens.camp = () => {
+  const ageDone = !!state.summer[state.leagueIdx] || summerDone();
+  const devDone = !!state.rookieAuto[state.leagueIdx];
   layout({
     title: 'Summer League',
-    body: `<p class="note small">Rookies took the −${DRAFT_DROP} draft drop. Summer league gives some of it back by age (older rookies more), then the rookie bump adds upgrade points by age and draft round.</p>
-      ${rookieCard() || '<p class="note">No rookies this year.</p>'}
-      <button class="btn big" data-act="calCampBack">✅ Wrap Up Summer League</button>`,
+    body: leagueRookies(league()).length ? `${ageSection()}${devSection(ageDone)}` : '<p class="note">No rookies this year.</p>',
+    action: ageDone && devDone ? { act: 'calCampBack', label: 'Advance to Free Agency' } : null,
   });
 };
-actions.calCampBack = async () => { await actions.calCamp(); if (calFlags().camp) goHome(); };
+actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
 actions.calDevBack = () => { calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.'); };
 
 
@@ -960,11 +960,11 @@ actions.runSummer = async () => {
   state.compCache = {};
   state.dirty = true;
   render();
-  toast(`Summer league: +${points} ratings across ${players} rookies`);
+  toast(`Age adjustment: +${points} points back across ${players} rookies`);
 };
 
 actions.undoSummer = async () => {
-  if (!(await confirmBox('Undo summer league? Rookie ratings go back to their post-draft values.', 'Undo'))) return;
+  if (!(await confirmBox('Undo the age adjustment? Rookie ratings go back to their post-draft values.', 'Undo'))) return;
   for (const r of leagueRookies(league())) {
     const snap = snapOf(r.p);
     for (const k of SKILL_ATTRS) r.p.attributes[k] = [...snap.attributes[k]];
@@ -974,29 +974,66 @@ actions.undoSummer = async () => {
   render();
 };
 
-function summerSection() {
+// Step 1: the age adjustment. The game's draft takes −${DRAFT_DROP} off every
+// rating; older rookies get part of it back on every skill, never past their
+// pre-draft rating. Same for everyone the same age: no dice.
+function ageSection() {
   const L = league();
   const done = state.summer[state.leagueIdx];
   const bands = state.params.recoveryBands;
-  const bandText = bands.map((b, i) => `${i === 0 ? '≤' : `${bands[i - 1][0] + 1}`}${b[0] >= 99 ? '+' : i === 0 ? b[0] : `–${b[0]}`}: +${b[1]}`).join(' · ');
+  const net = b => DRAFT_DROP - b[1];
+  const bandText = bands.map((b, i) => `<li><b>${i === 0 ? `Age ${b[0]} and under` : b[0] >= 99 ? `Age ${bands[i - 1][0] + 1}+` : `Age ${bands[i - 1][0] + 1}–${b[0]}`}</b>: −${net(b)} per skill${b[1] ? ` <span class="up">(+${b[1]} back)</span>` : ''}</li>`).join('');
   let body;
   if (done) {
-    body = `<p class="note up">Applied: +${done.points} ratings across ${done.players} rookies. It's locked for this season once you export.</p>
-      <button class="btn small" data-act="undoSummer">↺ Undo Summer League</button>`;
+    const mine = leagueRookies(L).filter(r => isUserTeam(r.team));
+    body = `<dl class="info">
+        <dt>Points restored</dt><dd class="up">+${done.points}</dd>
+        <dt>Rookies adjusted</dt><dd>${done.players}</dd>
+      </dl>
+      ${mine.length ? `<div class="stack">${mine.map(r => {
+        const d = diffPlayer(r.p, snapOf(r.p));
+        return `<div class="row"><span class="grow">${esc(playerName(r.p))} <span class="muted small">${r.p.age}y · ${esc(r.team.shortName)}</span></span><span class="${d.points ? 'up' : 'muted'}">${d.points ? `+${d.points}` : '—'}</span></div>`;
+      }).join('')}</div>` : ''}
+      ${state.params.commissioner ? '<button class="btn small" data-act="undoSummer">↺ Undo</button>' : ''}`;
   } else if (summerDone(L)) {
-    body = `<p class="note">Summer league was already applied for ${L.season.currentYear}, so it won't run again.</p>`;
+    body = `<p class="note">The age adjustment was already applied for ${L.season.currentYear}.</p>`;
   } else if (L.season.phase !== PHASE_POST_DRAFT) {
-    body = `<p class="note muted">Summer league runs right after the draft (Post-Draft phase). This file is at ${esc(phaseName(L.season))}.</p>`;
+    body = `<p class="note muted">The age adjustment runs right after the draft (Post-Draft phase). This file is at ${esc(phaseName(L.season))}.</p>`;
   } else {
     const eligible = summerEligible();
     const total = leagueRookies(L).filter(r => r.round > 0 || state.params.rookieIncludeUndrafted).length;
     body = eligible.length
-      ? `<p class="note">Older rookies win back part of the −${DRAFT_DROP} draft drop (${bandText}), never past their pre-draft rating. Pre-draft ratings found for ${eligible.length} / ${total} rookies.</p>
-        <button class="btn big focus" data-act="runSummer">▶ Apply Summer League</button>`
-      : `<p class="note">Summer league needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
+      ? `<p class="note">Hoop Land takes ${DRAFT_DROP} points off every rating when a prospect is drafted, which buries the high-ceiling rookies. The age adjustment gives part of it back, the same on every skill, by age only:</p>
+        <ul class="age-bands">${bandText}</ul>
+        <p class="note muted small">A rating never goes above where it was before the draft.</p>
+        <button class="btn big focus" data-act="runSummer">▶ Run Age Adjustment</button>`
+      : `<p class="note">The age adjustment needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
     if (eligible.length < total) body += `<label class="btn small">📂 Load Pre-Draft Save<input type="file" id="origInput"></label>`;
   }
-  return `<fieldset class="frame"><legend>Summer League</legend><div class="stack">${body}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>1 · Age Adjustment</legend><div class="stack">${body}</div></fieldset>`;
+}
+
+// Step 2: summer league. Rookies can earn development (upgrade points, by
+// age: younger players earn more), spent in the game.
+function devSection(ageDone) {
+  const rookies = leagueRookies(league());
+  const r = state.rookieAuto[state.leagueIdx];
+  let body;
+  if (r) {
+    body = `<dl class="info">
+        <dt>Upgrade points earned</dt><dd class="up">+${r.points}</dd>
+        <dt>Your rookies</dt><dd class="up">+${r.mine}</dd>
+      </dl>
+      <p class="note muted small">Upgrade points are spent on ratings in the game.</p>
+      <button class="btn focus" data-act="nav" data-to="rookies">📋 View Rookies</button>
+      ${state.params.commissioner ? '<button class="btn small" data-act="undoRookies">↺ Undo</button>' : ''}`;
+  } else if (!ageDone) {
+    body = '<p class="note muted">Run the age adjustment first.</p>';
+  } else {
+    body = `<p class="note">${rookies.length} rookies play summer league and can earn development: upgrade points to spend in the game. Younger rookies earn more.</p>
+      <button class="btn big focus" data-act="runRookies">🏀 Run Summer League</button>`;
+  }
+  return `<fieldset class="frame"><legend>2 · Summer League</legend><div class="stack">${body}</div></fieldset>`;
 }
 
 // ---- Mentorship
@@ -1110,27 +1147,6 @@ actions.unteach = d => {
   render();
 };
 
-function rookieCard() {
-  const rookies = leagueRookies(league());
-  if (!rookies.length) return '';
-  const r = state.rookieAuto[state.leagueIdx];
-  const drafted = rookies.filter(x => x.round > 0).length;
-  return summerSection() + `<fieldset class="frame"><legend>Rookie Bump</legend>
-    <div class="stack">
-      ${r ? `<dl class="info">
-          <dt>Rookies bumped</dt><dd class="up">${r.players} / ${r.total}</dd>
-          <dt>Points awarded</dt><dd class="up">+${r.points}</dd>
-          <dt>Your rookies</dt><dd class="up">+${r.mine}</dd>
-        </dl>
-        <button class="btn focus" data-act="nav" data-to="rookies">📋 View Rookies</button>
-        <div class="grid2"><button class="btn" data-act="runRookies">🎲 Re-roll</button><button class="btn" data-act="undoRookies">↺ Undo</button></div>`
-      : `<p class="note">${drafted} drafted rookies${rookies.length > drafted ? ` + ${rookies.length - drafted} undrafted` : ''}. Give them a development bump in upgrade points (by age and draft round), on top of summer league.</p>
-        <button class="btn big focus" data-act="runRookies">▶ Run Rookie Bump</button>
-        <button class="btn small" data-act="nav" data-to="rookies">📋 View Rookies</button>`}
-    </div>
-  </fieldset>`;
-}
-
 screens.rookies = () => {
   const rookies = leagueRookies(league());
   layout({
@@ -1141,9 +1157,9 @@ screens.rookies = () => {
         const award = awardOf(r.p);
         return `<button class="prow ${isUserTeam(r.team) ? 'sel' : ''}" data-act="openPlayer" data-id="${r.p.id}">
           <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
-          <span class="right"><span class="stars">${stars(r.p.pot)}</span><br>${award ? `<span class="up">+${award} pts</span>` : '<span class="muted">—</span>'}</span>
+          <span class="right"><span class="gold">Lv ${levelOf(r.p)}</span><br>${award ? `<span class="up">+${award} upgrade pts</span>` : '<span class="muted">—</span>'}</span>
           <span class="meta">${r.team ? esc(r.team.shortName) : 'Undrafted'} · ${r.round ? `R${r.round}` : 'FA'} · ${esc(POSITIONS[r.p.pos] ?? '')} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
-          ${d.changed ? `<span class="chg">${esc([d.points ? `Summer +${d.points}: ${changeSummary(d)}` : '', apSummary(d)].filter(Boolean).join(' · '))}</span>` : ''}
+          ${d.points ? `<span class="chg">Age adjustment <span class="up">+${d.points}</span></span>` : ''}
         </button>`;
       }).join('')}</div>`,
   });
@@ -1631,16 +1647,13 @@ screens.settings = (args) => {
           <button class="btn square" data-act="rband" data-i="${i}" data-j="${j}" data-dir="1" aria-label="Increase">+</button></div></div>`;
         return `<fieldset class="frame"><legend>${label}</legend><div class="grid2">${st(1, b[1], 'Min pts')}${st(2, b[2], 'Max pts')}</div></fieldset>`;
       }).join('') +
-      `<fieldset class="frame"><legend>Summer League Recovery</legend><div class="stack">${P.recoveryBands.map((b, i) => `<div class="pts-row">
+      `<fieldset class="frame"><legend>Age Adjustment</legend><div class="stack">${P.recoveryBands.map((b, i) => `<div class="pts-row">
         <span class="grow">Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}</span>
         <button class="btn square" data-act="recBand" data-i="${i}" data-dir="-1" aria-label="Less recovery">−</button>
         <span class="pts-val">+${b[1]}</span>
         <button class="btn square" data-act="recBand" data-i="${i}" data-dir="1" aria-label="More recovery">+</button></div>`).join('')}
         <p class="note muted small">Draft-drop points won back right after the draft (of the −${DRAFT_DROP}, at most +2).</p></div></fieldset>` +
-      options('1st Round', 'rookieR1Mult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]) +
-      options('2nd Round', 'rookieR2Mult', [[0.75, '×0.75'], [1, '×1.0'], [1.25, '×1.25']]) +
       options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
-      options('Undrafted Multiplier', 'rookieUndraftedMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']]) +
       options('Scouting Report Accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]) +
       `<p class="note muted small">How often a prospect's scouting report reads their potential one step high or low (0% / 15% / 25% / 40%).</p>` +
       options('Live Draft: CPU Trade-Ups', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
@@ -2659,8 +2672,8 @@ function draftRecap(live, order) {
   return `<button class="btn big focus" data-act="liveFinish">✅ Finish Draft</button>
     ${live.trades.length ? tradesBox(live) : ''}
     <fieldset class="frame"><legend>Draft Recap</legend>
-      <div class="opts recap-sort"><button class="btn small ${sortBy === 'pick' ? 'on focus' : 'off'}" data-act="recapSort" data-s="pick">By Pick</button><button class="btn small ${sortBy === 'level' ? 'on focus' : 'off'}" data-act="recapSort" data-s="level">By Level</button></div>
-      <p class="note muted small" style="margin:6px 0 8px">Rookie level = after the draft dip and summer league (younger players win more back).</p>
+      <div class="opts recap-sort"><button class="btn small ${sortBy === 'pick' ? 'on focus' : 'off'}" data-act="recapSort" data-s="pick">By Pick</button><button class="btn small ${sortBy === 'level' ? 'on focus' : 'off'}" data-act="recapSort" data-s="level">Pro Readiness</button></div>
+      <p class="note muted small" style="margin:6px 0 8px">Level after the draft drop and age adjustment: who's most ready to play now.</p>
       <div class="stack recap">${rows.map(r => `<div class="recap-row" ${color(r.team)}>
         <span class="pk">${r.q.overall}</span>${logoImg(r.team)}
         <span class="grow"><b>${esc(playerName(r.p))}</b><br><span class="small">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y · ${classYear(r.p)}</span></span>
@@ -2760,6 +2773,7 @@ actions.liveFinish = async () => {
   const live = liveState();
   const order = liveOrder();
   if (clockIndex(live, order) >= 0) { toast('Finish every pick first'); return; }
+  if (!(await confirmBox('Advance in the offseason? Rookies join their teams, the rest become free agents, and we move on to Summer League.', 'Finish'))) return;
   checkpoint('Draft');
   const res = applyDraft(L, livePicks(live, order), state.leagueIdx);
   for (const r of leagueRookies(L)) state.snaps.set(snapKey(r.p.id), snapshot(r.p));
