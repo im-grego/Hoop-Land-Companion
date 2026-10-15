@@ -4,7 +4,7 @@
 // toward `ceiling`; the game's own regression handles decline, so this only
 // ever adds.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, lastSeasonMpg } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, lastSeasonMpg, activeSkills } from './savefile.js';
 
 export const DEFAULT_PARAMS = {
   seed: 2027,
@@ -65,7 +65,7 @@ function weightedPick(rng, items, weightOf) {
 export function buildSkillProfiles(players) {
   const sums = {};
   for (const p of players) {
-    for (const s of p.skills) {
+    for (const s of activeSkills(p)) {
       const e = sums[s.id] || (sums[s.id] = { n: 0, v: ATTRS.map(() => 0) });
       e.n++;
       ATTRS.forEach((k, i) => { e.v[i] += p.attributes[k][0]; });
@@ -89,7 +89,7 @@ function cosine(a, b) {
 
 // Skills ranked by how well they fit this player's strengths.
 export function rankSkillsFor(p, profiles) {
-  const owned = new Set(p.skills.map(s => s.id));
+  const owned = new Set(activeSkills(p).map(s => s.id));
   const pv = centered(ATTRS.map(k => p.attributes[k][0]));
   return Object.entries(profiles)
     .filter(([id]) => !owned.has(id))
@@ -129,15 +129,22 @@ export function distributePoints(p, points, params, rng) {
   return spent;
 }
 
+// Unlock a skill, reusing the locked (level 0) entry and its XP if present.
+export function unlockSkill(p, id) {
+  const s = p.skills.find(x => x.id === id);
+  if (s) { s.level = Math.max(1, s.level); s.equipped = true; }
+  else p.skills.push({ id, xp: 0, level: 1, equipped: true });
+}
+
 export function maybeSkills(p, spent, params, profiles, rng) {
   if (p.age <= params.skillMaxAge && spent >= params.skillMinPoints &&
-      p.skills.length < params.maxSkills && rng() * 100 < params.newSkillChance) {
+      activeSkills(p).length < params.maxSkills && rng() * 100 < params.newSkillChance) {
     const ranked = rankSkillsFor(p, profiles).slice(0, 5).filter(s => s.fit > 0);
     const pick = weightedPick(rng, ranked, s => s.fit);
-    if (pick) p.skills.push({ id: pick.id, xp: 0, level: 1, equipped: true });
+    if (pick) unlockSkill(p, pick.id);
   }
   if (p.age <= params.levelUpMaxAge && rng() * 100 < params.levelUpChance) {
-    const up = p.skills.filter(s => s.level < SKILL_MAX_LEVEL);
+    const up = activeSkills(p).filter(s => s.level < SKILL_MAX_LEVEL);
     const s = up.length ? up[Math.floor(rng() * up.length)] : null;
     if (s) s.level++;
   }

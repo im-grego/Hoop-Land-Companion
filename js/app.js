@@ -1,10 +1,10 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, ATTR_MIN, ATTR_MAX, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
 
-const APP_VERSION = '0.1.1';
+const APP_VERSION = '0.1.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -590,7 +590,7 @@ screens.player = (args) => {
   const d = diffPlayer(p, snap);
   const ceilMode = !!args.ceil;
   const mpg = lastSeasonMpg(p, state.leagueIdx);
-  const ownedOrig = new Set(snap.skills.map(s => s.id));
+  const ownedOrig = new Set(snap.skills.filter(s => s.level >= 1).map(s => s.id));
   const pos = POSITIONS[p.pos] ?? p.pos;
   layout({
     title: 'Player Development',
@@ -610,9 +610,9 @@ screens.player = (args) => {
         </div>
         <p class="note muted small" style="margin-top:10px">Bar = current rating, green = gained this offseason, gold mark = ceiling.</p>
       </fieldset>
-      <fieldset class="frame"><legend>Skills (${p.skills.length})</legend>
+      <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
         <div class="stack">
-          ${p.skills.map((s, i) => `
+          ${p.skills.map((s, i) => s.level < 1 ? '' : `
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
               <div><span class="code">${esc(s.id)}</span> <span class="hint">${esc(skillHint(s.id))}</span></div>
               <div class="ctrls">
@@ -622,7 +622,8 @@ screens.player = (args) => {
                 <button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>
                 <button class="btn" data-act="skillDel" data-i="${i}" aria-label="Remove skill">✕</button>
               </div>
-            </div>`).join('') || '<p class="note muted">No skills.</p>'}
+            </div>`).join('')}
+          ${activeSkills(p).length ? '' : '<p class="note muted">No skills.</p>'}
           <button class="btn" data-act="addSkill">＋ Add Skill</button>
         </div>
       </fieldset>
@@ -674,7 +675,7 @@ actions.attr = d => {
   if (a.ceil) {
     v[1] = Math.max(v[0], Math.min(ATTR_MAX, v[1] + dir));
   } else {
-    v[0] = Math.max(ATTR_MIN, Math.min(ATTR_MAX, v[0] + dir));
+    v[0] = Math.max(attrMin(d.k), Math.min(ATTR_MAX, v[0] + dir));
     if (v[0] > v[1]) v[1] = v[0];
   }
   state.dirty = true;
@@ -698,11 +699,17 @@ actions.skillLv = d => {
 actions.skillDel = async d => {
   const p = currentPlayer();
   const s = p.skills[+d.i];
-  if (!(await confirmBox(`Remove ${esc(s.id)} from ${esc(playerName(p))}?`, 'Remove'))) return;
-  p.skills.splice(+d.i, 1);
+  if (!(await confirmBox(`Remove ${esc(s.id)} from ${esc(playerName(p))}? Its XP is kept.`, 'Remove'))) return;
+  if (snapOf(p).skills.some(x => x.id === s.id)) { s.level = 0; s.equipped = false; }
+  else p.skills.splice(+d.i, 1);
   state.dirty = true;
   render();
 };
+
+function lockedXp(p, id) {
+  const s = p.skills.find(x => x.id === id && x.level < 1);
+  return s ? s.xp : 0;
+}
 
 actions.addSkill = () => {
   const p = currentPlayer();
@@ -713,6 +720,7 @@ actions.addSkill = () => {
       ${ranked.map(s => `<button class="btn left" data-id="${esc(s.id)}">
         <span class="code" style="font-family:var(--pixel)">${esc(s.id)}</span>
         <span class="muted small" style="flex:1;text-align:left">${esc(skillHint(s.id))}</span>
+        ${lockedXp(p, s.id) ? `<span class="muted small">${lockedXp(p, s.id)} xp</span>` : ''}
         <span class="${s.fit > 0.3 ? 'up' : s.fit > 0 ? '' : 'muted'}">${Math.round(Math.max(0, s.fit) * 100)}%</span>
       </button>`).join('') || '<p class="note">Already has every skill.</p>'}
     </div>
@@ -721,7 +729,7 @@ actions.addSkill = () => {
     const b = e.target.closest('[data-id],[data-close]');
     if (!b) return;
     if (b.dataset.id) {
-      p.skills.push({ id: b.dataset.id, xp: 0, level: 1, equipped: true });
+      unlockSkill(p, b.dataset.id);
       state.dirty = true;
     }
     o.remove();

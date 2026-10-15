@@ -76,8 +76,10 @@ export const ATTR_NAMES = {
   STL: 'Steal', BLK: 'Block', STR: 'Strength', SPD: 'Speed', STM: 'Stamina',
 };
 
-export const ATTR_MIN = 1;
+// The 12 skill ratings range 0-20; the physical ratings range 8-20.
+export const PHYSICAL = ['STR', 'SPD', 'STM'];
 export const ATTR_MAX = 20;
+export const attrMin = k => (PHYSICAL.includes(k) ? 8 : 0);
 export const SKILL_MAX_LEVEL = 3;
 
 // Verified against the in-game roster screen (PG = 0, F = 5, C = 8).
@@ -132,6 +134,10 @@ export function restore(p, snap) {
   p.skills = JSON.parse(JSON.stringify(snap.skills));
 }
 
+// Skills at level 0 are locked: they sit in the list collecting XP until
+// they unlock at level 1.
+export const activeSkills = p => p.skills.filter(s => s.level >= 1);
+
 export function diffPlayer(p, snap) {
   const attrs = {};
   let points = 0;
@@ -140,13 +146,14 @@ export function diffPlayer(p, snap) {
     if (d) { attrs[k] = d; points += d; }
   }
   const before = new Map(snap.skills.map(s => [s.id, s.level]));
+  const now = new Map(p.skills.map(s => [s.id, s.level]));
   const added = [], leveled = [], removed = [];
-  for (const s of p.skills) {
-    if (!before.has(s.id)) added.push(s.id);
-    else if (s.level !== before.get(s.id)) leveled.push(s.id);
+  for (const [id, lv] of now) {
+    const was = before.get(id) || 0;
+    if (lv >= 1 && was < 1) added.push(id);
+    else if (lv >= 1 && lv !== was) leveled.push(id);
   }
-  const now = new Set(p.skills.map(s => s.id));
-  for (const s of snap.skills) if (!now.has(s.id)) removed.push(s.id);
+  for (const [id, was] of before) if (was >= 1 && (now.get(id) || 0) < 1) removed.push(id);
   const changed = points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
   return { attrs, points, added, leveled, removed, changed };
 }
