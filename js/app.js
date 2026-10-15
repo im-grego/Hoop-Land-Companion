@@ -4,7 +4,7 @@ import {
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
 
-const APP_VERSION = '0.1.4';
+const APP_VERSION = '0.1.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -27,12 +27,16 @@ const state = {
 function loadParams() {
   try {
     const saved = JSON.parse(localStorage.getItem('hlc:params'));
-    if (saved) return { ...structuredClone(DEFAULT_PARAMS), ...saved };
+    if (saved) {
+      // v2: ratings raise their ceiling by default.
+      if (!saved.version) delete saved.exceedCeiling;
+      return { ...structuredClone(DEFAULT_PARAMS), ...saved, version: 2 };
+    }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify(state.params)); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 2 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -614,7 +618,7 @@ screens.player = (args) => {
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
-        <p class="note muted small" style="margin-top:10px">Bar = current rating, green = gained this offseason, gold mark = ceiling.</p>
+        <p class="note muted small" style="margin-top:10px">Bar = current rating, green = gained this offseason, gold mark = ceiling. Raising a rating past its ceiling lifts the ceiling with it.</p>
       </fieldset>
       <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
         <div class="stack">
@@ -811,7 +815,7 @@ screens.settings = (args) => {
       ${options('Include Free Agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']])}
       ${options('Upgrade Focus', 'strengthBias', [[0, 'Spread'], [0.5, 'Balanced'], [1, 'Strengths']])}
       ${options('Spend Held Points', 'spendHeldPoints', [[false, 'Off'], [true, 'On']])}
-      ${options('Grow Past Ceiling', 'exceedCeiling', [[false, 'Off'], [true, 'On']])}
+      ${options('Raise Ceilings', 'exceedCeiling', [[false, 'Off'], [true, 'On']])}
       ${STEP_FIELDS.general.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('')}
       ${options('Starter Multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']])}
       ${options('Bench Multiplier', 'benchMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']])}`;

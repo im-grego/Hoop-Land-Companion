@@ -22,7 +22,7 @@ export const DEFAULT_PARAMS = {
   rotationMult: 1.0,
   benchMult: 0.75,
   maxPerAttr: 3,          // cap per attribute per offseason
-  exceedCeiling: false,   // allow growth past the hidden ceiling
+  exceedCeiling: true,    // growth raises the ceiling with it (13/14 +2 -> 15/15)
   strengthBias: 0.5,      // 0 = spread evenly, 1 = pour into strengths
   // Skills
   skillMaxAge: 25,
@@ -125,14 +125,16 @@ function raise(p, k) {
 }
 
 // Spend held category points: each point is +1 to a rating in its category.
-// Points with nowhere to go (category maxed) stay held. Returns points spent.
+// Points with nowhere to go (category all at 20) stay held. Returns points spent.
 export function spendHeldPoints(p, params, rng) {
   const ap = p.season?.ap;
   if (!ap) return 0;
   let spent = 0;
   CATEGORIES.forEach((c, i) => {
     while (ap[i] > 0) {
-      const k = weightedPick(rng, c.attrs.filter(k => canGrow(p, k, params)), k => attrWeight(p, k, params));
+      // Held points are already earned, so only the 20 cap stops them.
+      const free = { ...params, exceedCeiling: true };
+      const k = weightedPick(rng, c.attrs.filter(k => canGrow(p, k, free)), k => attrWeight(p, k, free));
       if (!k) break;
       raise(p, k);
       ap[i]--;

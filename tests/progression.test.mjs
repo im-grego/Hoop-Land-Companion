@@ -20,13 +20,14 @@ for (const { p } of entries) {
   CATEGORIES.forEach((c, i) => {
     const ap = p.season.ap[i];
     assert.ok(ap >= 0 && ap <= snaps.get(p.id).ap[i], 'held points only go down');
-    if (ap > 0) assert.ok(c.attrs.every(k => p.attributes[k][0] >= Math.min(20, p.attributes[k][1])), 'points left only when category is maxed');
+    if (ap > 0) assert.ok(c.attrs.every(k => p.attributes[k][0] >= 20), 'points left only when category is all 20');
   });
   for (const k of ATTRS) {
     const [c, ceil] = p.attributes[k];
     assert.ok(c >= snaps.get(p.id).attributes[k][0], 'never decreases');
     if (c !== snaps.get(p.id).attributes[k][0]) assert.ok(c <= ceil && c <= 20, 'within ceiling');
-    assert.ok(c - snaps.get(p.id).attributes[k][0] <= DEFAULT_PARAMS.maxPerAttr);
+    const held = snaps.get(p.id).ap[CATEGORIES.findIndex(cat => cat.attrs.includes(k))] || 0;
+    assert.ok(c - snaps.get(p.id).attributes[k][0] <= DEFAULT_PARAMS.maxPerAttr + held, 'age growth capped per rating');
   }
   for (const s of p.skills) if (UNLEVELED_SKILLS.includes(s.id)) assert.equal(s.level, 1, 'unleveled skills stay at 1');
   if (p.age >= 30) assert.equal(d.points, d.apSpent, '30+ only spends held points by default');
