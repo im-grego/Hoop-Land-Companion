@@ -331,10 +331,32 @@ function buildExport() {
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
 
+// Running as a claude.ai artifact: files are saved through the viewer's
+// download prompt, which needs an allowed extension (.json).
+const inArtifact = () => typeof window.claude?.use === 'function';
+const artifactName = name => (/\.[a-z0-9]{2,4}$/i.test(name) ? name : `${name}.json`);
+
+async function artifactSave(name, data) {
+  const dl = await window.claude.use('downloads');
+  if (!dl) { toast('Saving isn\'t available in this view'); return false; }
+  try {
+    await dl.save({ filename: artifactName(name), data });
+    return true;
+  } catch (err) {
+    if (err?.code !== 'declined') toast(`Save failed: ${err?.message || err?.code || 'unknown error'}`);
+    return false;
+  }
+}
+
 actions.download = async () => {
   const o = overlay('<div class="spinner"></div><p class="note">Building file…</p>');
   await nextFrame();
   const file = buildExport();
+  if (inArtifact()) {
+    o.remove();
+    if (await artifactSave(file.name, file)) { state.dirty = false; toast('Season file saved. Remove .json from the name before loading it in Hoop Land.'); }
+    return;
+  }
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
@@ -2517,7 +2539,7 @@ screens.storylines = () => {
 actions.copyStories = async () => {
   const text = storylinesText(currentStorylines().stories);
   try {
-    if (navigator.share && /iPhone|iPad|Android/i.test(navigator.userAgent)) await navigator.share({ text });
+    if (!inArtifact() && navigator.share && /iPhone|iPad|Android/i.test(navigator.userAgent)) await navigator.share({ text });
     else { await navigator.clipboard.writeText(text); toast('Storylines copied'); }
   } catch (err) {
     if (err.name !== 'AbortError') toast('Copy failed');
@@ -2539,7 +2561,7 @@ screens.export = () => {
       skills += d.added.length;
     }
   });
-  const canShare = typeof navigator.canShare === 'function' &&
+  const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
     navigator.canShare({ files: [new File(['x'], 'x', { type: 'application/octet-stream' })] });
   layout({
     title: 'Export Season',
@@ -2558,8 +2580,9 @@ screens.export = () => {
         <button class="btn big focus" data-act="download">💾 Download File</button>
         ${canShare ? '<button class="btn" data-act="share">📤 Share / Save to Files</button>' : ''}
       </div>
+      ${inArtifact() ? `<p class="note gold small">The file saves as <b>${esc(artifactName(state.fileName))}</b>. In the Files app, rename it to <b>${esc(state.fileName)}</b> (remove ".json") so Hoop Land can load it. To save into Dropbox, pick Dropbox in the save sheet.</p>` : ''}
       <p class="note muted small">Replace the original in your Hoop Land saves folder (keep a backup), then load it and continue the offseason.</p>
-      ${dropboxFrame()}`,
+      ${inArtifact() ? '' : dropboxFrame()}`,
   });
 };
 
