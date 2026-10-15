@@ -82,6 +82,10 @@ Available once the file has a draft class (offseason, before the lottery).
   the draft drop (−4, never below 2; ratings already at 2 or lower stay) minus what summer league gives back for their
   age. Each rating shows its projected loss. Ceiling = their top ratings. Comps weigh the 12
   skill ratings, position, height and weight against active players, free agents, retirees and Hall of Famers.
+  Every comp is tagged by its potential: 10 Legend, 9 Hall of Fame, 8 All-Star, 7 Starter, 6 Role Player,
+  5 and under Bench Depth; each prospect also gets a "Projects as" tier from their own potential.
+- **Scouting report:** two strengths and a weakness per prospect, judged against active players at similar
+  positions (ceiling for strengths, today + ceiling for weaknesses), including size for the position.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.

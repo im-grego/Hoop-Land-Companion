@@ -6,11 +6,11 @@ import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlo
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
-  recoveryFor, projectedRookie, originalRatings, applySummerLeague,
+  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.8.3';
+const APP_VERSION = '0.9.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1397,6 +1397,20 @@ function compsFor(p) {
   return cache.get(p.id);
 }
 
+const TIER_CLASS = { Legend: 't-legend', 'Hall of Fame': 't-hof', 'All-Star': 't-star', Starter: 't-start', 'Role Player': 't-role', 'Bench Depth': 't-bench' };
+const tierTag = tier => `<span class="tier ${TIER_CLASS[tier] || ''}">${esc(tier)}</span>`;
+const compLine = c => c.floor[0] || c.ceiling[0]
+  ? `Floor: ${esc(c.floor[0]?.name || '—')} ${c.floor[0] ? tierTag(c.floor[0].tier) : ''} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span> ${c.ceiling[0] ? tierTag(c.ceiling[0].tier) : ''}`
+  : '';
+
+function scoutList(p) {
+  const r = scoutingReport(p, league());
+  return `<ul class="scout">
+    ${r.strengths.map(s => `<li class="plus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
+    ${r.weakness ? `<li class="minus"><b>${esc(r.weakness.text)}</b><span class="muted small"> · ${esc(r.weakness.detail)}</span></li>` : ''}
+  </ul>`;
+}
+
 function rookieCompsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
   const key = `r${p.id}`;
@@ -1438,7 +1452,7 @@ screens.draft = (args) => {
             <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
             <span class="right"><span class="stars">${stars(r.p.pot)}</span><br><span class="small">${r.team ? esc(r.team.shortName) : 'FA'}</span></span>
             <span class="meta">${esc(posName(r.p))} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
-            <span class="chg">Floor: ${esc(c.floor[0]?.name || '—')} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span></span>
+            <span class="chg">${compLine(c)}</span>
           </button>`;
         }).join('')}</div>`
       : `<p class="note">This file has no draft class yet. Prospects appear once the offseason starts (before the lottery).</p>
@@ -1468,8 +1482,8 @@ function draftBoard() {
           <span class="name">${i + 1}. ${esc(playerName(p))}</span>
           <span class="right"><span class="stars">${stars(p.pot)}</span><br>
             ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
-          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${esc(p.home || '')}</span>
-          <span class="chg">Floor: ${esc(c.floor[0]?.name || '—')} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span></span>
+          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${tierTag(tierFor(p.pot))}</span>
+          <span class="chg">${compLine(c)}</span>
         </button>`;
       }).join('')}</div>`,
   };
@@ -1484,7 +1498,7 @@ screens.prospect = (args) => {
   const rec = recoveryFor(p.age, state.params.recoveryBands);
   const fv = floorVector(p, state.params.recoveryBands), cv = ceilingVector(p);
   const compList = (list, cls) => list.map(x => `<div class="comp">
-    <span class="grow"><b class="${cls}">${esc(x.name)}</b><br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span>
+    <span class="grow"><b class="${cls}">${esc(x.name)}</b> ${tierTag(x.tier)}<br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span>
     <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
   layout({
     title: 'Prospect',
@@ -1493,7 +1507,9 @@ screens.prospect = (args) => {
         <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb · <span class="stars">${stars(p.pot)}</span></p>
         <p class="note muted small">${esc(p.home || '')}${p.history?.coll ? ' · College' : ''}</p>
+        <p class="note">Projects as: ${tierTag(tierFor(p.pot))}</p>
       </div>
+      <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       <div class="grid2">
         <fieldset class="frame"><legend>Floor</legend>${compList(c.floor, '')}</fieldset>
         <fieldset class="frame"><legend>Ceiling</legend>${compList(c.ceiling, 'up')}</fieldset>
@@ -1634,7 +1650,7 @@ function draftMock() {
           return `<div class="lot-row ${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}">
             <span class="pk">${pk.overall}</span>${logoImg(pk.owner)}
             <span class="grow">${esc(pk.owner.shortName)}${traded ? ` <span class="muted small">via ${esc(pk.orig.shortName)}</span>` : ''}${pk.rd > 1 ? ` <span class="muted small">R${pk.rd}</span>` : ''}<br>
-              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></span><br><span class="small muted">Floor ${esc(compsFor(p).floor[0]?.name || '—')} · Ceiling <span class="up">${esc(compsFor(p).ceiling[0]?.name || '—')}</span></span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
+              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></span><br><span class="small muted">${compLine(compsFor(p))}</span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
           </div>`;
         }).join('')}
       </div>`,

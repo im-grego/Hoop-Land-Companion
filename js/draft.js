@@ -1,6 +1,6 @@
 // Draft tools: prospect comps, lottery simulation, mock drafts, pick trades.
 
-import { ATTRS, PHYSICAL, playerName } from './savefile.js';
+import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr } from './savefile.js';
 import { mulberry32 } from './progression.js';
 
 // The 12 skill ratings (physical ratings aren't kept for retirees).
@@ -54,7 +54,12 @@ export function ceilingVector(p) {
 }
 
 // ---------------------------------------------------------------------------
-// Comps
+// Tiers (by potential) and comps
+
+export const TIERS = [
+  [10, 'Legend'], [9, 'Hall of Fame'], [8, 'All-Star'], [7, 'Starter'], [6, 'Role Player'], [0, 'Bench Depth'],
+];
+export const tierFor = pot => TIERS.find(([min]) => pot >= min)[1];
 
 // Comparison pool: active players + free agents (current ratings), retirees
 // and Hall of Famers (best of their two stored values). This year's rookies
@@ -101,7 +106,7 @@ export function findComps(v, body, pool, n = 3, excludeId = null) {
     .map(e => ({ ...e, dist: compDistance(v, body, e) }))
     .sort((a, b) => a.dist - b.dist)
     .slice(0, n)
-    .map(e => ({ name: playerName(e.p), group: e.group, ht: e.ht, wt: e.wt, pos: e.p.pos, sim: Math.max(0, Math.round(100 - e.dist * 3)), id: e.p.id }));
+    .map(e => ({ name: playerName(e.p), group: e.group, ht: e.ht, wt: e.wt, pos: e.p.pos, tier: tierFor(e.p.pot), sim: Math.max(0, Math.round(100 - e.dist * 3)), id: e.p.id }));
 }
 
 export function prospectComps(p, pool, bands = DEFAULT_RECOVERY) {
@@ -109,6 +114,71 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY) {
     floor: findComps(floorVector(p, bands), bodyOf(p), pool, 3, p.id),
     ceiling: findComps(ceilingVector(p), bodyOf(p), pool, 3, p.id),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Scouting report: two strengths and a weakness, judged against active
+// players at similar positions (a center isn't dinged for his three-ball).
+
+const SCOUT = {
+  LAY: ['Smooth finisher around the rim', 'Struggles to finish at the rim'],
+  DNK: ['Explosive above-the-rim finisher', 'Rarely finishes above the rim'],
+  INS: ['Polished post scorer', 'Little to no post game'],
+  MID: ['Reliable mid-range shooter', 'Inconsistent from mid-range'],
+  TPT: ['Floor-spacing three-point shooter', 'Shaky three-point shot'],
+  FTS: ['Automatic at the free-throw line', 'Poor free-throw shooter'],
+  DRB: ['Tight handle, creates off the dribble', 'Loose handle under pressure'],
+  PAS: ['Gifted passer with great vision', 'Limited playmaker'],
+  ORE: ['Relentless on the offensive glass', "Doesn't crash the offensive glass"],
+  DRE: ['Strong defensive rebounder', 'Soft on the defensive glass'],
+  STL: ['Active hands, jumps passing lanes', 'Rarely forces turnovers'],
+  BLK: ['Rim protector who erases shots', 'Not a shot blocker'],
+  STR: ['Strong, physical frame', 'Slight frame, gets pushed around'],
+  SPD: ['Quick, explosive athlete', 'Lacks foot speed'],
+  STM: ['High motor, can handle heavy minutes', 'Limited stamina'],
+};
+
+const statsCache = new WeakMap();
+function positionStats(league, pos) {
+  let byPos = statsCache.get(league);
+  if (!byPos) statsCache.set(league, byPos = new Map());
+  if (byPos.has(pos)) return byPos.get(pos);
+  const peers = league.teams.flatMap(t => t.roster).filter(p => Math.abs(p.pos - pos) <= 1);
+  const stat = vals => {
+    const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+    const sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length) || 1;
+    return { m, sd };
+  };
+  const out = { n: peers.length, ht: stat(peers.map(p => p.ht)) };
+  for (const k of ATTRS) out[k] = stat(peers.map(p => p.attributes[k][0]));
+  byPos.set(pos, out);
+  return out;
+}
+
+// `rookieLine` = the projected rookie ratings (skill attrs) if known.
+export function scoutingReport(p, league) {
+  const st = positionStats(league, p.pos);
+  const pos = POSITIONS[p.pos] ?? '';
+  const items = ATTRS.map(k => {
+    const [cur, ceil] = p.attributes[k];
+    const top = Math.max(cur, ceil);
+    // Strength judged on what they can become; weakness on today + ceiling.
+    return {
+      k,
+      up: (top - st[k].m) / st[k].sd,
+      down: ((cur + top) / 2 - st[k].m) / st[k].sd,
+      detail: top > cur ? `${k} ${cur} → ${top} ceiling` : `${k} ${cur}`,
+    };
+  });
+  const htZ = (p.ht - st.ht.m) / st.ht.sd;
+  const size = { k: 'HT', up: htZ, down: htZ, detail: `${heightStr(p.ht)} vs ${heightStr(Math.round(st.ht.m))} avg ${pos}` };
+  const strengths = [...items, size].sort((a, b) => b.up - a.up).slice(0, 2)
+    .map(x => ({ text: x.k === 'HT' ? `Great size for a ${pos}` : SCOUT[x.k][0], detail: x.detail }));
+  const used = new Set(strengths.map(s => s.text));
+  const weak = [...items, size].sort((a, b) => a.down - b.down)
+    .map(x => ({ text: x.k === 'HT' ? `Undersized for a ${pos}` : SCOUT[x.k][1], detail: x.detail }))
+    .find(x => !used.has(x.text));
+  return { strengths, weakness: weak };
 }
 
 // ---------------------------------------------------------------------------
