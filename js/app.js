@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.20.2';
+const APP_VERSION = '0.21.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -442,7 +442,7 @@ const CALENDAR = [
     done: () => calFlags().office },
   { key: 'lottery', date: 'Jun 2', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the order.',
     done: () => phaseRank(league().season) >= 2 },
-  { key: 'warroom', date: 'Jun 3–24', title: 'War Room', blurb: 'Scout the class, set your big board and watch list, run mock drafts.',
+  { key: 'warroom', date: 'Jun 3–24', title: 'War Room', blurb: 'Scout the class, build your board, run the mock draft and work the phones in the front office.',
     done: () => calFlags().warroom || phaseRank(league().season) >= 3 },
   { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
@@ -474,7 +474,7 @@ function stepSummary(key) {
     const t = n && L.teams.find(x => x.id === n.tid);
     return t ? `${t.city} ${t.name}`.trim() + ' won the #1 pick.' : 'Draft order set.';
   }
-  if (key === 'warroom') return `${boardStore().watch.length} on the watch list.`;
+  if (key === 'warroom') return `${myBoard().length || boardStore().board.length} prospects on your board.`;
   if (key === 'draft') {
     const first = leagueRookies(L).find(r => r.pick === 1);
     return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
@@ -546,7 +546,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  office: ['teams'], lottery: ['lottery'], warroom: ['draft', 'prospect', 'lottery'], draft: ['draft', 'prospect', 'liveTrade'],
+  office: ['teams'], lottery: ['lottery'], warroom: ['draft', 'prospect', 'lottery', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies'], media: ['storylines'], export: ['export'],
 };
@@ -1886,55 +1886,55 @@ function draftedMap() {
   return m;
 }
 
-// Your watch list and big board, remembered per league + season.
+// Your War Room board: prospects you add from Consensus, in your order.
+// Remembered per league + season. (Older saves had a watch list; it seeds
+// the board.)
 function boardStore() {
-  try { return JSON.parse(localStorage.getItem(`hlc:board:${seasonKey()}`)) || { watch: [], order: [] }; }
-  catch { return { watch: [], order: [] }; }
+  let b;
+  try { b = JSON.parse(localStorage.getItem(`hlc:board:${seasonKey()}`)) || {}; } catch { b = {}; }
+  if (!Array.isArray(b.board)) b.board = [...(b.watch || [])];
+  return b;
 }
 function saveBoardStore(b) {
-  try { localStorage.setItem(`hlc:board:${seasonKey()}`, JSON.stringify(b)); } catch { /* ignore */ }
+  try { localStorage.setItem(`hlc:board:${seasonKey()}`, JSON.stringify({ board: b.board })); } catch { /* ignore */ }
 }
-// Your board: your saved order first, then anyone new in consensus order.
+const onBoard = id => boardStore().board.includes(id);
+// Prospects on your board, in your order (drafted ones drop off).
+function myBoard() {
+  const byId = new Map((league().draftClass || []).map(p => [p.id, p]));
+  return boardStore().board.filter(id => byId.has(id)).map(id => byId.get(id));
+}
+// Your board first, then everyone else in consensus order (the pick list).
 function myBoardOrder() {
-  const consensus = boardOrder();
-  const byId = new Map(consensus.map(p => [p.id, p]));
-  const order = boardStore().order.filter(id => byId.has(id));
-  const rest = consensus.filter(p => !order.includes(p.id)).map(p => p.id);
-  return [...order, ...rest].map(id => byId.get(id));
+  const mine = myBoard();
+  return [...mine, ...boardOrder().filter(p => !mine.includes(p))];
 }
 
-actions.toggleWatch = d => {
+actions.toggleBoard = d => {
   const b = boardStore();
   const id = +d.id;
-  b.watch = b.watch.includes(id) ? b.watch.filter(x => x !== id) : [...b.watch, id];
+  b.board = b.board.includes(id) ? b.board.filter(x => x !== id) : [...b.board, id];
   saveBoardStore(b);
   render();
 };
 
 actions.moveBoard = d => {
-  const ids = myBoardOrder().map(p => p.id);
+  const b = boardStore();
+  const ids = myBoard().map(p => p.id);
   const i = ids.indexOf(+d.id), j = i + +d.dir;
   if (i < 0 || j < 0 || j >= ids.length) return;
   [ids[i], ids[j]] = [ids[j], ids[i]];
-  saveBoardStore({ ...boardStore(), order: ids });
+  b.board = ids;
+  saveBoardStore(b);
   render();
 };
 
-actions.resetBoard = async () => {
-  if (!(await confirmBox('Reset your big board to the consensus order?', 'Reset'))) return;
-  saveBoardStore({ ...boardStore(), order: [] });
-  render();
-};
-
-actions.boardView = d => replace('draft', { tab: 'board', view: d.v });
-
-const DRAFT_TABS = [['live', 'Live'], ['board', 'Board'], ['lottery', 'Lottery'], ['mock', 'Mock'], ['trades', 'Trades']];
+const DRAFT_TABS = [['live', 'Live'], ['consensus', 'Consensus'], ['warroom', 'War Room'], ['office', 'Front Office']];
 // Draft-room tabs open in each calendar step.
 function draftTabsNow(L = league()) {
   const step = phaseRank(L.season) === 0 ? null : currentStep()?.key;
-  if (step === 'lottery') return ['lottery'];
-  if (step === 'warroom') return ['board', 'mock', 'lottery', 'trades'];
-  if (step === 'draft') return ['live', 'board', 'trades'];
+  if (step === 'draft') return ['live', 'consensus', 'warroom'];
+  if (step === 'warroom') return ['consensus', 'warroom', 'office'];
   return DRAFT_TABS.map(([k]) => k).filter(k => k !== 'live' || liveReady(L));
 }
 const liveReady = (L = league()) => L.season.phase === PHASE_PRE_DRAFT && lotteryDone(L) && L.draftClass?.length > 0;
@@ -1943,12 +1943,12 @@ screens.draft = (args) => {
   const L = league();
   const okTabs = draftTabsNow(L);
   const tab = okTabs.includes(args.tab) ? args.tab : okTabs[0];
-  if (!L.draftClass?.length && tab !== 'trades') {
+  if (!L.draftClass?.length) {
     const rookies = leagueRookies(L);
     layout({
       title: 'Draft Room',
       body: rookies.length ? `
-        <div class="tabs"><button class="btn on focus">Rookie Class</button><button class="btn off" data-act="draftTab" data-t="trades">Trades</button></div>
+        <div class="tabs"><button class="btn on focus">Rookie Class</button></div>
         <p class="note muted small">The draft is done. Floor = ratings after the −${DRAFT_DROP} drop${state.summer[state.leagueIdx] || summerDone() ? ' and summer league' : ' plus projected summer league recovery (when pre-draft ratings are known)'}; ceiling = top ratings.</p>
         <div class="list">${rookies.map(r => {
           const c = rookieCompsFor(r.p);
@@ -1959,47 +1959,222 @@ screens.draft = (args) => {
             <span class="chg">${compLine(c)}</span>
           </button>`;
         }).join('')}</div>`
-      : `<p class="note">This file has no draft class yet. Prospects appear once the offseason starts (before the lottery).</p>
-        <button class="btn" data-act="draftTab" data-t="trades">Pick Trades</button>`,
+      : `<p class="note">This file has no draft class yet. Prospects appear once the offseason starts (before the lottery).</p>`,
     });
     return;
   }
   const allowed = draftTabsNow(L);
   const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
-  const body = { live: draftLive, board: draftBoard, lottery: draftLottery, mock: draftMock, trades: draftTrades }[tab](args);
-  layout({ title: 'Draft Room', body: tabs + body.html, action: body.action });
+  const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
+  layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
 };
 
 actions.draftTab = d => replace('draft', { tab: d.t });
 
-function draftBoard(args = {}) {
-  const view = args.view || 'consensus';
-  const drafted = draftedMap();
-  const watch = new Set(boardStore().watch);
-  const rows = view === 'mine' ? myBoardOrder() : view === 'watch' ? myBoardOrder().filter(p => watch.has(p.id)) : boardOrder();
-  const views = [['consensus', 'Consensus'], ['mine', 'My Board'], ['watch', `Watch (${watch.size})`]];
+// Your teams at a glance: stage, needs and draft capital.
+function outlookCard() {
+  const L = league();
+  const mine = L.teams.filter(isUserTeam);
+  if (!mine.length) return '';
+  const order = actualDraftOrder(L) || [];
+  const yr = L.season.currentYear;
+  const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  return mine.map(t => {
+    const o = teamOutlook(t);
+    const now = order.filter(q => q.owner.id === t.id).map(q => `#${q.overall}${q.orig.id !== t.id ? ` <span class="muted">(${esc(q.orig.shortName)})</span>` : ''}`);
+    const byYear = new Map();
+    for (const pk of [...t.draftPicks].filter(pk => pk.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
+      if (!byYear.has(pk.yr)) byYear.set(pk.yr, []);
+      byYear.get(pk.yr).push(`R${pk.rd}${pk.otid !== t.id ? ` <span class="muted">(${esc(tname(pk.otid))})</span>` : ''}`);
+    }
+    const future = [...byYear].map(([y, list]) => `<span class="nowrap">${y}: ${list.join(', ')}</span>`);
+    return `<div class="outlook">
+      <div class="outlook-top">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(o.status)}</div>
+      <div class="outlook-row"><span class="muted small">Needs</span>${needChips(o.needs)}</div>
+      <div class="outlook-row"><span class="muted small">This draft</span><span class="small">${now.join(' · ') || 'No picks'}</span></div>
+      <div class="outlook-row"><span class="muted small">Future</span><span class="small">${future.join(' · ') || '—'}</span></div>
+    </div>`;
+  }).join('');
+}
+
+const prospectRow = (p, extra = '') => `<button class="prow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
+  <span class="name">${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
+  <span class="right">${valueChip(p)}</span>
+  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
+  <span class="chg">${compLine(compsFor(p))}${(() => { const t = league().teams.find(isUserTeam); const f = t ? fillsFor(t, p) : []; return f.length ? ` · <span class="up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''; })()}${extra}</span>
+</button>`;
+
+// Consensus: the whole class, ranked by the scouts.
+function draftConsensus() {
+  const rows = boardOrder();
   return {
-    html: `
-      ${league().teams.filter(isUserTeam).map(t => { const o = teamOutlook(t); return `<div class="needs-row">${logoImg(t)}<b>${esc(t.shortName)}</b>${statusTag(o.status)}${needChips(o.needs)}</div>`; }).join('')}
-      <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
-      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. Grades are where we project them to go.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'}</p>
-      <div class="list">${rows.map((p, i) => {
-        const pk = drafted.get(p.id);
-        const row = `<button class="prow ${watch.has(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
-          <span class="name">${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
-          <span class="right">
-            ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : valueChip(p)}</span>
-          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
-          <span class="chg">${compLine(compsFor(p))}${(() => { const t = league().teams.find(isUserTeam); const f = t ? fillsFor(t, p) : []; return f.length ? ` · <span class="up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''; })()}</span>
-        </button>`;
-        return view === 'mine'
-          ? `<div class="board-row">${row}<div class="mv"><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up">▲</button><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down">▼</button></div></div>`
-          : row;
-      }).join('') || '<p class="note muted">Star prospects from their page to add them here.</p>'}</div>`,
-    action: view === 'mine' ? { act: 'resetBoard', label: 'Reset' } : null,
+    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. Tap + to add a prospect to your War Room board.</p>
+      <div class="list">${rows.map(p => `<div class="board-row">${prospectRow(p)}
+        <div class="mv"><button class="btn square ${onBoard(p.id) ? 'on focus' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button></div></div>`).join('')}</div>`,
   };
 }
+
+// War Room: your board, then the first-round mock draft.
+function draftWarRoom() {
+  const board = myBoard();
+  const mock = mock30();
+  const byId = new Map(league().draftClass.map(p => [p.id, p]));
+  return {
+    html: `<fieldset class="frame"><legend>Your Board</legend>
+        ${board.length ? `<div class="list">${board.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="gold">${i + 1}.</span> `)}
+          <div class="mv"><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up">▲</button><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down">▼</button><button class="btn square" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></div></div>`).join('')}</div>`
+        : '<p class="note">Your board is empty. Add prospects from Consensus with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
+      </fieldset>
+      <fieldset class="frame"><legend>Mock Draft · First Round</legend>
+        <p class="note muted small" style="margin-bottom:8px">How the first round could go, from each team's stage, needs and board. Trades in the front office change who picks where.</p>
+        <div class="list">${mock.map(m => {
+          const p = byId.get(m.pid);
+          const t = league().teams.find(x => x.id === m.tid);
+          return `<div class="lot-row ${isUserTeam(t) ? 'mine' : ''}"><span class="pk">${m.overall}</span>${logoImg(t)}
+            <span class="grow"><b class="small">${esc(t.shortName)}</b> <span class="small">${p ? `${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))} · ${esc(posName(p))}` : '—'}</span></span>${p ? valueChip(p) : ''}</div>`;
+        }).join('')}</div>
+        <button class="btn" data-act="mockRerun" style="margin-top:10px">🔄 Re-run Mock</button>
+      </fieldset>`,
+  };
+}
+
+// First-round mock from the real order, using every team's own picks logic.
+function mock30() {
+  const ds = draftState();
+  const order = (actualDraftOrder(league()) || draftOrder(league(), null, 1)).filter(o => o.rd === 1);
+  const sig = order.map(o => o.owner.id).join(',');
+  if (!ds.mock30 || ds.mock30.sig !== sig) {
+    const rng = mulberry32(ds.mockSeed ||= Math.floor(Math.random() * 1e9));
+    const taken = new Set();
+    const picks = order.map(o => {
+      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng);
+      if (p) taken.add(p.id);
+      return { overall: o.overall, tid: o.owner.id, pid: p?.id };
+    });
+    ds.mock30 = { sig, picks };
+  }
+  return ds.mock30.picks;
+}
+actions.mockRerun = () => { const ds = draftState(); ds.mockSeed = Math.floor(Math.random() * 1e9); ds.mock30 = null; render(); };
+
+// Front Office: your trade block, offers from around the league, and your
+// own trades.
+function draftOffice() {
+  const L = league();
+  const ds = draftState();
+  const mine = L.teams.filter(isUserTeam);
+  if (!mine.length) return { html: '<p class="note">Pick your teams first.</p>' };
+  const team = L.teams.find(t => t.id === (ds.officeTeam ?? mine[0].id)) || mine[0];
+  const assets = liveAssets(team).filter(x => !x.prospect);
+  const block = (ds.block ||= new Set());
+  const offers = (ds.offers ||= frontOfficeOffers(team));
+  const live = liveState();
+  return {
+    html: `
+      ${mine.length > 1 ? `<div class="opts">${mine.map(t => `<button class="btn small ${t === team ? 'on focus' : 'off'}" data-act="officeTeam" data-id="${t.id}">${esc(t.shortName)}</button>`).join('')}</div>` : ''}
+      <fieldset class="frame"><legend>Offers</legend>
+        ${offers.length ? `<div class="stack">${offers.map((o, i) => `<div class="offer"><p class="note small"><b>${esc(o.team.shortName)}</b> ${o.kind === 'up' ? 'want to move up' : 'offer'}: ${esc(o.give.map(x => x.text).join(' + '))}<br><span class="muted">for ${esc(o.get.map(x => x.text).join(' + '))}</span></p>
+          <button class="btn small" data-act="officeAccept" data-i="${i}">Accept</button></div>`).join('')}</div>`
+        : `<p class="note">No offers yet. Put players or picks on the block below${block.size ? ', then field offers' : ''}.</p>`}
+        <div class="grid2" style="margin-top:10px">
+          <button class="btn focus" data-act="officeField">📞 Field Offers</button>
+          <button class="btn" data-act="liveTrade">🔁 Build a Trade</button>
+        </div>
+      </fieldset>
+      <fieldset class="frame"><legend>Trade Block</legend>
+        <p class="note muted small" style="margin-bottom:8px">Tap to put a player or pick on the block. Teams pick up the phone for what's on it; teams behind your picks may call about moving up anyway.</p>
+        <div class="list">${assets.map(x => `<button class="pick ${block.has(x.key) ? 'sel' : ''}" data-act="officeBlock" data-k="${x.key}">
+          <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('')}</div>
+      </fieldset>
+      ${live.trades.length ? `<fieldset class="frame"><legend>Trades Made</legend><div class="stack">
+        ${live.trades.map((t, i) => `<div class="row"><p class="note grow small">${esc(t.text)}</p>${t.cpu ? '' : `<button class="btn small" data-act="liveUndoTrade" data-i="${i}">Undo</button>`}</div>`).join('')}
+      </div></fieldset>` : ''}`,
+  };
+}
+
+// Offers for what's on the block (and calls to move up into your picks):
+// each CPU team builds a package worth a bit less than what it gets, from
+// its own picks and players (never its two best players).
+function frontOfficeOffers(team) {
+  const L = league();
+  const ds = draftState();
+  const block = ds.block || new Set();
+  const rng = mulberry32((ds.offerSeed ||= Math.floor(Math.random() * 1e9)));
+  const mineAll = liveAssets(team);
+  const onBlock = mineAll.filter(x => block.has(x.key));
+  const out = [];
+  const ly = lastYear();
+  const others = L.teams.filter(t => !isUserTeam(t)).sort(() => rng() - 0.5);
+  const text = x => x.pick ? (x.key.startsWith('c:') ? `#${x.key.slice(2)}` : pickLabel(x.pick)) : playerName(x.player);
+  for (const want of onBlock) {
+    let n = 0;
+    for (const t of others) {
+      if (n >= 3) break;
+      if (rng() < 0.45) continue;
+      const stars = new Set([...t.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly)).slice(0, 2));
+      const theirs = liveAssets(t).filter(x => !x.prospect && !(x.player && stars.has(x.player))).sort((a, b) => a.value - b.value);
+      const lo = want.value * 0.8, hi = want.value * 1.0;
+      let pack = theirs.find(x => x.value >= lo && x.value <= hi);
+      if (!pack) {
+        outer: for (let i = 0; i < theirs.length; i++) for (let j = i + 1; j < theirs.length; j++) {
+          const v = theirs[i].value + theirs[j].value;
+          if (v >= lo && v <= hi) { pack = [theirs[i], theirs[j]]; break outer; }
+        }
+      }
+      if (!pack) continue;
+      const give = [pack].flat();
+      // Skip pointless swaps (their 2030 R1 for your 2030 R1).
+      if (give.length === 1 && give[0].pick && want.pick && give[0].pick.yr === want.pick.yr && give[0].pick.rd === want.pick.rd) continue;
+      out.push({ team: t, kind: 'block', give: give.map(x => ({ ...x, text: text(x) })), get: [{ ...want, text: text(want) }] });
+      n++;
+    }
+  }
+  // Teams a few slots behind your picks calling to move up.
+  const order = actualDraftOrder(L) || [];
+  order.forEach((o, idx) => {
+    if (o.owner.id !== team.id) return;
+    for (const x of tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng, count: 1, eager: 0.7 })) {
+      out.push({ team: x.team, kind: 'up',
+        give: x.give.map(pk => ({ pick: pk, key: pk.yr === L.season.currentYear ? `c:${order.find(q => slotPick(L, q) === pk)?.overall}` : `f:${pk.yr}:${pk.rd}:${pk.otid}`, text: pk.yr === L.season.currentYear ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk) })),
+        get: [{ pick: x.get, key: `c:${o.overall}`, text: `#${o.overall}` }] });
+    }
+  });
+  return out;
+}
+
+actions.officeTeam = d => { const ds = draftState(); ds.officeTeam = +d.id; ds.offers = null; render(); };
+actions.officeBlock = d => {
+  const ds = draftState();
+  const b = (ds.block ||= new Set());
+  if (b.has(d.k)) b.delete(d.k); else b.add(d.k);
+  render();
+};
+actions.officeField = () => {
+  const ds = draftState();
+  ds.offerSeed = Math.floor(Math.random() * 1e9);
+  const L = league();
+  const mine = L.teams.filter(isUserTeam);
+  const team = L.teams.find(t => t.id === (ds.officeTeam ?? mine[0]?.id)) || mine[0];
+  ds.offers = frontOfficeOffers(team);
+  render();
+  toast(ds.offers.length ? `${ds.offers.length} offer${ds.offers.length > 1 ? 's' : ''} came in` : 'No takers right now');
+};
+actions.officeAccept = async d => {
+  const ds = draftState();
+  const L = league();
+  const o = ds.offers?.[+d.i];
+  if (!o) return;
+  const mine = L.teams.filter(isUserTeam);
+  const team = L.teams.find(t => t.id === (ds.officeTeam ?? mine[0].id)) || mine[0];
+  if (!(await confirmBox(`Send ${esc(o.get.map(x => x.text).join(' + '))} to ${esc(o.team.shortName)} for ${esc(o.give.map(x => x.text).join(' + '))}?`, 'Accept'))) return;
+  const side = (t, items) => ({ team: t, picks: items.filter(x => x.pick).map(x => x.pick), players: items.filter(x => x.player).map(x => x.player), prospects: [] });
+  liveExecute(side(team, o.get), side(o.team, o.give));
+  for (const x of o.get) ds.block?.delete(x.key);
+  ds.offers = null;
+  ds.mock30 = null;
+  render();
+};
 
 // College prospects carry the college league's logo.
 const COLLEGE_LOGO = '<img class="college-logo" src="icons/league-ball.png" alt="">';
@@ -2053,7 +2228,7 @@ screens.prospect = (args) => {
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note muted small">${esc(p.home || '')}</p>
       </div>
-      <button class="btn small ${boardStore().watch.includes(p.id) ? 'on focus' : 'off'}" data-act="toggleWatch" data-id="${p.id}">${boardStore().watch.includes(p.id) ? '★ On Watch List' : '☆ Add to Watch List'}</button>
+      <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
       ${collegeBox(p)}
       ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
@@ -2392,7 +2567,7 @@ actions.liveChoose = () => {
   const order = liveOrder();
   const idx = clockIndex(live, order);
   const o = order[idx];
-  const watch = new Set(boardStore().watch);
+  const watch = new Set(boardStore().board);
   const avail = myBoardOrder().filter(p => !takenIds(live).has(p.id));
   const box = overlay(`
     <p class="note">${esc(o.owner.shortName)} · Pick #${o.overall} · your board order</p>
@@ -2446,12 +2621,16 @@ function liveExecute(A, B, cpu = false) {
   const text = `${A.team.shortName} send ${label(A)} · ${B.team.shortName} send ${label(B)}`;
   live.trades.push({ rec, moves, text, cpu });
   live.offers = {};
+  draftState().offers = null;
+  draftState().mock30 = null;
   state.dirty = true;
   if (!cpu) toast('Trade complete');
 }
 
 function liveUndo(t) {
   const live = liveState();
+  draftState().offers = null;
+  draftState().mock30 = null;
   undoTrade(t.rec);
   for (const m of t.moves) if (live.sel[m.ov]) live.sel[m.ov].to = m.from;
 }

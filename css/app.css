@@ -591,3 +591,14 @@ body::before {
 .pick-row .pr-top b { font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pick-row .pr-meta { font-size: 13.5px; font-weight: 600; color: var(--dim); }
 .pick-row .pr-fill { font-size: 13px; font-weight: 700; color: var(--up); }
+
+/* ---------- War Room outlook ---------- */
+.outlook { display: flex; flex-direction: column; gap: 6px; background: var(--btn); border: 4px solid var(--btn-edge); box-shadow: 0 4px 0 var(--btn-shadow); padding: 12px; }
+.outlook-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.outlook-top b { font-size: 17px; font-weight: 800; flex: 1; min-width: 0; }
+.outlook-row { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
+.outlook-row > .muted { min-width: 72px; }
+.board-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+.board-row .mv { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
+.board-row .mv .btn.square { width: 44px; min-height: 40px; font-size: 18px; }
+.nowrap { white-space: nowrap; }

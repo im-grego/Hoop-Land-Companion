@@ -135,10 +135,16 @@ Available once the file has a draft class (offseason, before the lottery).
   Free throws are capped at 16.
 - **Scouting report:** two strengths and a weakness per prospect, judged against active players at similar positions
   and weighted by what matters for the role (guard / wing / big); free throws only count as a weakness when awful.
-- **War room:** each prospect page shows last season's **college stats** (per game, shooting splits), **fit on your
-  team** (where they'd rank on each of your rosters as a rookie, in year 3 and at their ceiling, overall and among
-  guards/wings/bigs), the scouting report and comps. Star prospects to a **watch list**, and build **your own big
-  board** (reorder with ▲▼; remembered per season) next to the consensus board.
+- **War Room step:** your teams' stage, needs and draft capital (this year's picks with their slots, future picks by
+  year) sit at the top, over three tabs:
+  - **Consensus:** the whole class ranked by the scouts, with a draft grade on each prospect. Tap **+** to add a
+    prospect to your board.
+  - **War Room:** your board (the order you set with ▲▼; it comes first in your pick list on draft night) and a
+    first-round **mock draft** from every team's stage, needs and board (re-run any time).
+  - **Front Office:** your **trade block**. Put players or picks on it and **Field Offers**: CPU teams build
+    packages from their picks and players (never their two best players), and teams behind your picks call about
+    moving up. Accept an offer, or **Build a Trade** yourself. Trades are written to the file and can be undone.
+  Each prospect page shows college stats, fit on your team, the scouting report and comps.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
