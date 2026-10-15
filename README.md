@@ -152,6 +152,40 @@ The game signs this year's picks on Free Agency Day 1: first-rounders get a 4-ye
 $2M) with a team option, second-rounders 4 years at the minimum. The offseason screen shortens second-round deals to
 **2 years** with the team option kept (Settings → Rookies: 2, 3 or the game's 4). Undo is available until export.
 
+## Free agency (Days 1–3)
+
+**Main menu → Free Agency** on a Free Agency save runs that day's market: players with expiring deals and unsigned
+free agents, each with an **asking price** (from last season's production, youth and upside; capped by the save's
+max contract for their years in the league) and a **motivation**:
+
+| | Motivation | Weighs most |
+|---|---|---|
+| 💰 | Money | salary vs. the ask |
+| 🛡️ | Security | years |
+| 🎛️ | Control | a player option (and a shorter deal) |
+| 🏆 | Contender | team quality (last season + best players) |
+| ⏱️ | Role | where they'd rank on the roster |
+
+Veterans lean contender, stars money or control, young players security or role.
+
+- **Day 1 — open market:** offers need cap space (cap from the save). A player's old team can go over the cap to
+  re-sign them (Bird rights, up to 5 years).
+- **Day 2 — mid-level exception:** one per team over the cap: up to $15M for 1–2 years with an option.
+- **Day 3 — veteran minimum:** $3M for 1 year (ages 30+). Asking prices drop each day (×0.9, ×0.75; veterans a
+  further ×0.85 on day 3).
+
+Make offers for your teams (salary, years, no / team / player option; the app checks the rules and shows whether
+you're ahead), then **Open Bidding**: CPU teams bid on the best players they can afford plus a value signing, and
+**bidding wars** push prices up (up to 30% over the ask). Raise if you're behind, then **Players Decide** — CPU teams
+get one last raise, and each player takes the offer that best fits what they want (if it's close enough to the
+ask). Rosters max out at 15 signed players.
+
+Signings are written the way the game writes them (roster, status, contract, new-season stats row and number, a
+signing news item) and the player's pending game offers are removed. By default the game's own pending CPU offers
+are cleared too, so the game doesn't sign players over the app's results (Settings → Rookies). **Undo Today**
+restores the file exactly. Export, advance a day in the game, and load the next day's save. Bidding wars feed the
+storylines.
+
 ## Summer league (right after the draft)
 
 Older rookies win back part of the draft drop: 18–19 +0 (keep the full −4), 20–21 +1 (net −3), 22+ +2 (net −2), never past their
@@ -209,4 +243,5 @@ node tests/rookies.test.mjs     pre-draft post-draft   # real draft order, draft
 node tests/mentorship.test.mjs  path/to/season-file   # mentor/mentee rules
 node tests/storylines.test.mjs  path/to/season-file   # top 10 storylines
 node tests/livedraft.test.mjs   pre-draft post-draft fa-day-1   # draft writer matches the game, live draft + trades, rookie deals
+node tests/freeagency.test.mjs  fa-file [day]          # free agency rules, signings, exact undo
 ```

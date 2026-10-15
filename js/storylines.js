@@ -208,7 +208,17 @@ export function buildStorylines(league, opts = {}) {
     if (!arrivals.has(team.id)) arrivals.set(team.id, []);
     arrivals.get(team.id).push({ p, l, from: teams.get(l.tid), c: signings.get(p.id) });
   }
+  // Bidding wars from the app's free agency day.
+  const wars = (opts.faSignings || []).filter(x => x.bidders >= 3 && star(x.p) >= 10).sort((a, b) => b.bidders - a.bidders || star(b.p) - star(a.p));
+  const warIds = new Set();
+  for (const x of wars.slice(0, 2)) {
+    warIds.add(x.p.id);
+    const l = lines.get(x.p.id);
+    add('war', 40 + star(x.p) * 2 + x.bidders * 2, '🔨', pick([`Bidding war: ${playerName(x.p)} picks ${Place(x.team)}`, `${Place(x.team)} wins the ${x.p.ln} sweepstakes`], x.p.id),
+      `${Word(x.bidders)} teams chased ${x.p.fn}${l ? ` after ${statLine(l)} a game` : ''}. ${Place(x.team)} won it with a ${money(x.offer)} deal${x.from && x.from.id !== x.team.id ? `, pulling ${x.p.fn} away from ${full(x.from)}` : ''}.`, x.p.id);
+  }
   for (const [tid, list] of arrivals) {
+    if (list.length === 1 && warIds.has(list[0].p.id)) continue;
     const team = teams.get(tid);
     list.sort((a, b) => star(b.p) - star(a.p));
     const top = list[0];

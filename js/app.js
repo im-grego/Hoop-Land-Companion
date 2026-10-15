@@ -13,9 +13,10 @@ import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers } from './livedraft.js';
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade } from './trades.js';
+import * as FA from './freeagency.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.14.1';
+const APP_VERSION = '0.15.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@ const state = {
   summer: {},              // leagueIdx -> { players, points } once summer league ran this session
   mentor: {},              // leagueIdx -> { seed, list: [{ teamId, mentorId, menteeId, skill, cpu }] }
   contracts: {},           // leagueIdx -> rookie contract changes (for undo)
+  fa: {},                  // leagueIdx -> free agency day state
   awards: {},              // leagueIdx -> Map pid -> points awarded
   draft: {},               // leagueIdx -> { lottery, mock, trades }
   compPools: {},
@@ -273,6 +275,7 @@ async function loadFile(file) {
     state.mentor = {};
     state.contracts = {};
     state.jerseys = {};
+    state.fa = {};
     state.awards = {};
     state.draft = {};
     state.compPools = {};
@@ -408,6 +411,7 @@ screens.main = () => {
             <button class="btn left" data-act="nav" data-to="teams"><span class="ico">👥</span> Your Teams</button>
             <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
             <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
+            <button class="btn left" data-act="nav" data-to="fa"><span class="ico">✍️</span> Free Agency</button>
             <button class="btn left" data-act="nav" data-to="storylines"><span class="ico">📰</span> Storylines</button>
             <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
           </div>
@@ -1395,6 +1399,7 @@ screens.settings = (args) => {
       options('Live Draft: CPU Trade-Ups', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
       options('Draft-and-Trade Window', 'draftTradeWindow', [[3, '3 picks'], [5, '5 picks'], [8, '8 picks']]) +
       options('2nd-Round Rookie Deals', 'rookieR2Years', [[2, '2 years'], [3, '3 years'], [4, 'Game default (4)']]) +
+      options('Free Agency: Game\'s CPU Offers', 'faClearCpuOffers', [[true, 'Clear after each day'], [false, 'Keep']]) +
       `<p class="note muted small">How often CPU teams trade up before a first-round pick, and how long a just-drafted rookie can still be traded.</p>`;
   } else {
     body = `<p class="note">Optional: let the bump also unlock or level up skills. Off (0%) by default.</p>` +
@@ -2271,6 +2276,205 @@ actions.undoTrade = d => {
 };
 
 // ---------------------------------------------------------------------------
+// Free agency
+
+const FA_DAY_RULES = {
+  1: 'Open market: teams bid with cap space; a player\'s old team can go over the cap to re-sign them (Bird rights).',
+  2: `Adds the mid-level exception: one per team over the cap, up to $${FA.FA_DEFAULTS.mle}M for 1–${FA.FA_DEFAULTS.mleMaxYears} years with an option.`,
+  3: `Adds veteran minimums ($${FA.FA_DEFAULTS.vetMin}M, 1 year, ages ${FA.FA_DEFAULTS.vetMinAge}+). Asking prices drop, most for veterans.`,
+};
+const mleKey = () => `hlc:mle:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
+function loadMle() { try { return new Set(JSON.parse(localStorage.getItem(mleKey())) || []); } catch { return new Set(); } }
+function saveMle(set) { try { localStorage.setItem(mleKey(), JSON.stringify([...set])); } catch { /* ignore */ } }
+
+function faState() {
+  const L = league();
+  const li = state.leagueIdx;
+  const day = Math.max(1, Math.min(3, L.season.currentDay || 1));
+  let s = state.fa[li];
+  if (!s || s.day !== day) {
+    s = state.fa[li] = { day, stage: 'open', bids: new Map(), used: { mle: loadMle() }, rng: mulberry32(Math.floor(Math.random() * 1e9)), signings: [], cleared: null };
+    s.market = FA.buildMarket(L, day);
+  }
+  return s;
+}
+const faValue = p => playerValue(p, state.leagueIdx, lastYear());
+const offerText = o => `$${o.sal}M × ${o.yrs}${o.opt === FA.OPT_PLAYER ? ' · player opt' : o.opt === FA.OPT_TEAM ? ' · team opt' : ''}`;
+const faBest = (s, m) => {
+  const list = s.bids.get(m.p.id) || [];
+  if (!list.length) return null;
+  const score = b => FA.offerScore(league(), m.p, b, m.ask, m.motive, m.from?.id);
+  return [...list].sort((a, b) => score(b) - score(a))[0];
+};
+
+screens.fa = (args = {}) => {
+  const L = league();
+  if (L.season.phase !== BUMP_PHASES[0]) {
+    layout({ title: 'Free Agency', body: `<p class="note">Free agency runs on a Free Agency save (Day 1–3). This file is at ${esc(phaseName(L.season))}.</p>` });
+    return;
+  }
+  const s = faState();
+  const view = args.view || 'top';
+  const mine = L.teams.filter(isUserTeam);
+  const teamName = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  let rows = [...s.market].sort((a, b) => faValue(b.p) - faValue(a.p));
+  if (view === 'bids') rows = rows.filter(m => s.bids.get(m.p.id)?.length);
+  if (view === 'mine') rows = rows.filter(m => (s.bids.get(m.p.id) || []).some(b => isUserTeam({ id: b.tid })) || isUserTeam(m.from));
+  if (view === 'vets') rows = rows.filter(m => m.p.age >= FA.FA_DEFAULTS.vetMinAge);
+  const total = rows.length;
+  rows = rows.slice(0, args.all ? 400 : 60);
+  const signedIds = new Set(s.signings.map(x => x.p.id));
+  const views = [['top', 'Best'], ['bids', 'Bidding'], ['mine', 'Yours'], ['vets', 'Vets']];
+  const stageBtn = s.stage === 'open'
+    ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
+    : s.stage === 'bidding'
+      ? '<button class="btn big focus" data-act="faDecide">✅ Players Decide</button>'
+      : '<button class="btn" data-act="faUndo">↺ Undo Today</button>';
+  layout({
+    title: `Free Agency · Day ${s.day}`,
+    body: `
+      <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
+      ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
+        const space = FA.capSpace(L, t);
+        return `<div class="row"><span class="grow">${logoImg(t)} ${esc(t.shortName)}</span><span class="small ${space >= 0 ? 'up' : 'down'}">${space >= 0 ? `$${space}M space` : `$${-space}M over`}</span>
+          <span class="small muted">· ${FA.signedRoster(t).length}/${FA.FA_DEFAULTS.rosterMax}${s.day >= 2 && space < FA.FA_DEFAULTS.mle ? ` · MLE ${s.used.mle.has(t.id) ? 'used' : 'open'}` : ''}</span></div>`;
+      }).join('')}</div></fieldset>` : '<p class="note muted small">Pick your teams to make offers.</p>'}
+      ${s.stage === 'done' ? faResults(s) : ''}
+      <div class="stack">${stageBtn}</div>
+      <p class="note muted small">${s.stage === 'open' ? 'Make your offers (tap a player), then open bidding: CPU teams bid, and bidding wars push prices up.' : s.stage === 'bidding' ? 'Check where you stand and raise if you\'re behind. When players decide, CPU teams get one last chance to outbid you.' : 'Signings are written to the file. Export, advance a day in the game, and load the next day\'s save.'}</p>
+      <div class="tabs">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="list">${rows.map(m => {
+        const list = s.bids.get(m.p.id) || [];
+        const best = faBest(s, m);
+        const mineBid = list.find(b => isUserTeam({ id: b.tid }));
+        const l = seasonLine(m.p, state.leagueIdx, lastYear());
+        const M = FA.MOTIVES[m.motive];
+        const signed = s.signings.find(x => x.p === m.p);
+        return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
+          <span class="name">${esc(playerName(m.p))}</span>
+          <span class="right"><span class="small">Ask $${m.ask}M</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
+          <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
+          ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
+          : list.length ? `<span class="chg">${list.length} bid${list.length > 1 ? 's' : ''} · leading ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
+        </button>`;
+      }).join('')}</div>
+      ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`,
+  });
+};
+
+function faResults(s) {
+  if (!s.signings.length) return '<p class="note">No one signed today.</p>';
+  const wars = s.signings.filter(x => x.bidders >= 3).length;
+  return `<fieldset class="frame"><legend>Day ${s.day} Signings (${s.signings.length})</legend>
+    ${wars ? `<p class="note small gold">${wars} bidding war${wars > 1 ? 's' : ''}</p>` : ''}
+    <div class="stack">${s.signings.map(x => `<div class="${isUserTeam(x.team) ? 'up' : ''}">
+      <p class="note small"><b>${esc(playerName(x.p))}</b> → ${esc(x.team.shortName)} · ${offerText(x.offer)} <span class="muted">(${{ space: 'cap space', bird: 'Bird rights', mle: 'MLE', vetMin: 'vet min' }[x.kind]}${x.bidders > 1 ? `, ${x.bidders} teams bid` : ''})</span><br><span class="muted">${esc(x.why)}</span></p></div>`).join('')}
+    </div>${s.cleared ? `<p class="note muted small">The game's own CPU offers (${s.cleared.length}) were cleared so it doesn't sign players over the app's results.</p>` : ''}</fieldset>`;
+}
+
+actions.faView = d => replace('fa', { view: d.v });
+actions.faAll = () => replace('fa', { ...state.stack[state.stack.length - 1].args, all: true });
+
+actions.faOpen = () => {
+  const s = faState();
+  const L = league();
+  FA.cpuBids(L, s.market, s.bids, s.day, state.userTeams, s.rng, s.used);
+  FA.raiseRound(L, s.market, s.bids, s.day, s.rng, s.used);
+  s.stage = 'bidding';
+  render();
+};
+
+actions.faDecide = async () => {
+  const s = faState();
+  const L = league();
+  if (!(await confirmBox('Let players decide? Signings are written to the file.', 'Decide'))) return;
+  for (let i = 0; i < 2; i++) FA.raiseRound(L, s.market, s.bids, s.day, s.rng, s.used);
+  s.signings = FA.decide(L, s.market, s.bids, s.day, s.used);
+  saveMle(s.used.mle);
+  if (state.params.faClearCpuOffers) {
+    s.cleared = L.contractOffers.map((o, i) => [o, i]).filter(([o]) => !state.userTeams.has(o.tid));
+    L.contractOffers = L.contractOffers.filter(o => state.userTeams.has(o.tid));
+  }
+  s.stage = 'done';
+  state.dirty = true;
+  render();
+  const mineSigned = s.signings.filter(x => isUserTeam(x.team)).length;
+  toast(`${s.signings.length} signed${mineSigned ? `, ${mineSigned} with your teams` : ''}`);
+};
+
+actions.faUndo = async () => {
+  const s = faState();
+  const L = league();
+  if (!(await confirmBox('Undo today\'s signings?', 'Undo'))) return;
+  if (s.cleared) for (const [o, i] of s.cleared) L.contractOffers.splice(i, 0, o);
+  for (const x of [...s.signings].reverse()) FA.unsignPlayer(L, x.rec);
+  for (const x of s.signings) if (x.kind === 'mle') s.used.mle.delete(x.team.id);
+  saveMle(s.used.mle);
+  s.signings = [];
+  s.cleared = null;
+  s.stage = 'bidding';
+  render();
+};
+
+actions.faOffer = d => {
+  const s = faState();
+  const L = league();
+  const m = s.market.find(x => x.p.id === +d.id);
+  const mine = L.teams.filter(isUserTeam);
+  if (!mine.length) { toast('Pick your teams first'); return; }
+  const list = () => (s.bids.get(m.p.id) || []);
+  const existing = list().find(b => isUserTeam({ id: b.tid }));
+  const draft = existing ? { ...existing } : { tid: (isUserTeam(m.from) ? m.from : mine[0]).id, sal: m.ask, yrs: m.p.age >= 31 ? 1 : 3, opt: 0 };
+  const box = overlay('');
+  const M = FA.MOTIVES[m.motive];
+  const paint = () => {
+    const team = L.teams.find(t => t.id === draft.tid);
+    const err = FA.checkOffer(L, team, m.p, draft, s.day, s.used);
+    const kind = err ? null : FA.offerKind(L, team, m.p, draft, s.day, s.used);
+    const others = list().filter(b => b.tid !== draft.tid);
+    const score = b => FA.offerScore(L, m.p, b, m.ask, m.motive, m.from?.id);
+    const rival = [...others].sort((a, b) => score(b) - score(a))[0];
+    const accept = FA.FA_DEFAULTS.acceptPct[s.day - 1];
+    const standing = draft.sal < m.ask * accept ? '<span class="down">Below what they\'ll take</span>'
+      : !rival ? (s.stage === 'open' ? 'No other bids yet' : '<span class="up">Only offer</span>')
+      : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
+      : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
+    box.querySelector('.box').innerHTML = `
+      <p class="note"><b>${esc(playerName(m.p))}</b> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M · max $${FA.maxSalary(L, m.p)}M</p>
+      <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
+      ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
+      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
+      <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
+      <div class="tabs">${[[0, 'No option'], [1, 'Team opt'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      <p class="note small">Total $${draft.sal * draft.yrs}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', vetMin: 'the vet minimum' }[kind]}`}</p>
+      <p class="note small">${standing}</p>
+      <div class="grid2">
+        <button class="btn off" data-k="close">${existing ? 'Withdraw' : 'Cancel'}</button>
+        <button class="btn focus" data-k="submit" ${err ? 'disabled' : ''}>${existing ? 'Update Offer' : 'Make Offer'}</button>
+      </div>`;
+  };
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-k]');
+    if (!b || b.tagName === 'SELECT') return;
+    const k = b.dataset.k;
+    if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p), draft.sal + +b.dataset.d));
+    else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
+    else if (k === 'opt') draft.opt = +b.dataset.v;
+    else if (k === 'close') {
+      if (existing) s.bids.set(m.p.id, list().filter(x => x !== existing));
+      box.remove(); render(); return;
+    } else if (k === 'submit') {
+      const rest = list().filter(x => x !== existing && x.tid !== draft.tid);
+      s.bids.set(m.p.id, [...rest, { ...draft, cpu: false }]);
+      box.remove(); render(); return;
+    }
+    paint();
+  });
+  box.addEventListener('change', e => { if (e.target.dataset.k === 'tid') { draft.tid = +e.target.value; paint(); } });
+  paint();
+};
+
+// ---------------------------------------------------------------------------
 // Storylines
 
 function currentStorylines() {
@@ -2281,7 +2485,8 @@ function currentStorylines() {
     .map(m => ({ mentor: players.get(m.mentorId), mentee: players.get(m.menteeId), skill: m.skill }))
     .filter(m => m.mentor && m.mentee);
   const dev = p => { const snap = state.snaps.get(snapKey(p.id, li)); return snap ? diffPlayer(p, snap) : null; };
-  return { stories: buildStorylines(L, { leagueIdx: li, leagues: state.data.seasonLeagues, params: state.params, dev, mentorships }), players };
+  const faSignings = state.fa[li]?.signings || [];
+  return { stories: buildStorylines(L, { leagueIdx: li, leagues: state.data.seasonLeagues, params: state.params, dev, mentorships, faSignings }), players };
 }
 
 function storylinesText(stories) {
