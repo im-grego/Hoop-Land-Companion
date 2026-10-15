@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.4';
+const APP_VERSION = '0.27.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1333,13 +1333,18 @@ screens.roster = (args) => {
 // League ranks for last season's per-game numbers. Qualified = played at
 // least half as many games as the league leader in games.
 const RANK_STATS = [['PTS', 'Points'], ['REB', 'Rebounds'], ['AST', 'Assists'], ['STL', 'Steals'], ['BLK', 'Blocks']];
-function seasonRanks(yr) {
+// `li` = the league the stats were played in (the NBA, or a college league:
+// its players plus this year's draft class).
+function seasonRanks(yr, li = state.leagueIdx) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
-  const key = `ranks:${yr}`;
+  const key = `ranks:${li}:${yr}`;
   if (!cache.has(key)) {
     const rows = [];
-    for (const { p } of leaguePlayers(league(), true)) {
-      const st = (p.stats || []).find(x => x.league === state.leagueIdx && x.yr === yr);
+    const pool = new Map();
+    for (const { p } of leaguePlayers(state.data.seasonLeagues[li], true)) pool.set(p.id, p);
+    if (li !== state.leagueIdx) for (const p of league().draftClass || []) pool.set(p.id, p);
+    for (const p of pool.values()) {
+      const st = (p.stats || []).find(x => x.league === li && x.yr === yr);
       const t = { GP: 0 };
       for (const r of st?.season || []) { t.GP += r.GP; for (const [k] of RANK_STATS) t[k] = (t[k] || 0) + r[k]; }
       if (t.GP) rows.push({ id: p.id, gp: t.GP, pg: Object.fromEntries(RANK_STATS.map(([k]) => [k, t[k] / t.GP])) });
@@ -2354,6 +2359,14 @@ actions.officeAccept = async d => {
 // College prospects carry the college league's logo.
 const COLLEGE_LOGO = '<img class="college-logo" src="icons/league-ball.png" alt="">';
 
+function collegeRank(p, c, k) {
+  if (c.li == null) return '';
+  const n = seasonRanks(c.yr, c.li).ranks.get(p.id)?.rank[k];
+  if (!n) return '';
+  const ord = n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+  return `<span class="small ${n <= 10 ? 'gold' : n <= 30 ? 'up' : 'muted'}">${ord}</span>`;
+}
+
 function collegeBox(p) {
   const c = collegeLine(p, state.data.seasonLeagues);
   if (!c) return '';
@@ -2363,8 +2376,8 @@ function collegeBox(p) {
     <div class="statline">
       ${[['PTS', f(c.pts)], ['REB', f(c.reb)], ['AST', f(c.ast)], ['STL', f(c.stl)], ['BLK', f(c.blk)],
          ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)], ['TOV', f(c.tov)]]
-        .map(([k, v]) => `<div><span class="muted small">${k}</span><b>${v}</b></div>`).join('')}
-    </div></fieldset>`;
+        .map(([k, v], i) => `<div><span class="muted small">${k}</span><b>${v}</b>${i < 5 ? collegeRank(p, c, RANK_STATS[i][0]) : ''}</div>`).join('')}
+    </div>${c.li != null && seasonRanks(c.yr, c.li).ranks.get(p.id)?.qualified ? `<p class="note muted small" style="margin-top:6px">Ranks among ${seasonRanks(c.yr, c.li).of} college players with enough games.</p>` : ''}</fieldset>`;
 }
 
 // Where the prospect would slot on each of your teams, as a rookie and at

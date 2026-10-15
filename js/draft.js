@@ -582,7 +582,7 @@ export function collegeLine(p, leagues) {
       const pg = k => r[k] / r.GP;
       const pct = (m, a) => (r[a] ? r[m] / r[a] * 100 : null);
       best = {
-        yr: s.yr, team: team ? `${team.city} ${team.name}` : L.shortName, gp: r.GP, mpg: r.MIN / 60 / r.GP,
+        yr: s.yr, li: s.league, team: team ? `${team.city} ${team.name}` : L.shortName, gp: r.GP, mpg: r.MIN / 60 / r.GP,
         pts: pg('PTS'), reb: pg('REB'), ast: pg('AST'), stl: pg('STL'), blk: pg('BLK'), tov: pg('TO'),
         fg: pct('FGM', 'FGA'), tp: pct('TPM', 'TPA'), ft: pct('FTM', 'FTA'), tpa: pg('TPA'),
       };
