@@ -142,7 +142,10 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
-- **Draft value (the gold 1–99 number next to every prospect):** prospects whose floor and ceiling comps are both
+- **Draft grades** next to every prospect: Consensus #1, Top 5, Lottery, First Round, Second Round, UDFA, or N/A
+  (projected to go unsigned). They follow the board with a fixed scouting nudge near the cutoffs, so they read like
+  projections rather than exact ranks.
+- **Board order:** prospects whose floor and ceiling comps are both
   All-Star or better rank first, and the comp tiers count directly (a Hall of Fame ceiling beats a Superstar one, a
   Starter floor beats Bench Depth).
 - **How teams value prospects:** expected potential first (the projected ceiling at the scouted tier), then the floor

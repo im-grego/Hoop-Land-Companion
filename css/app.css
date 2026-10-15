@@ -529,3 +529,14 @@ fieldset.frame > legend {
   font-family: var(--pixel); font-weight: 700; font-size: 16px; color: var(--marquee);
   background: var(--gold); border: 2px solid var(--btn-shadow); vertical-align: middle;
 }
+.grade {
+  display: inline-block; padding: 3px 8px; font-size: 13px; font-weight: 800; letter-spacing: .3px;
+  border: 2px solid currentColor; background: var(--bg-dark); white-space: nowrap; vertical-align: middle;
+}
+.grade.g-one { color: var(--marquee); background: var(--gold); border-color: var(--gold); }
+.grade.g-top5 { color: #ff9f43; }
+.grade.g-lot { color: var(--cyan); }
+.grade.g-r1 { color: var(--up); }
+.grade.g-r2 { color: #8fc3ff; }
+.grade.g-udfa { color: var(--dim); }
+.grade.g-na { color: #8a9bb8; border-style: dashed; }

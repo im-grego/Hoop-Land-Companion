@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.4';
+const APP_VERSION = '0.19.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1822,7 +1822,29 @@ function fillsFor(team, p) {
   const c = v.fns.ceilOf(p), f = v.fns.floorOf(p);
   return needsFilled(p, o.needs, o.baseline, c.map((x, i) => (x + f[i]) / 2));
 }
-const valueChip = p => `<span class="value-chip" title="Draft value">${valueNum(p)}</span>`;
+// Draft grade: where the board projects them, with a stable scouting
+// nudge near the cutoffs so grades read like real projections, not ranks.
+const GRADES = [
+  ['Consensus #1', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
+  ['Second Round', 'g-r2'], ['UDFA', 'g-udfa'], ['N/A', 'g-na'],
+];
+function gradeOf(p) {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has('ranks')) cache.set('ranks', new Map(boardOrder().map((x, i) => [x.id, i + 1])));
+  const rank = cache.get('ranks').get(p.id);
+  if (!rank) return GRADES[6];
+  if (rank === 1) return GRADES[0];
+  const n = cache.get('ranks').size;
+  const jitter = ((Math.imul(p.id + 7919, 2654435761) >>> 0) / 4294967296 - 0.5) * 0.4;   // ±20%
+  const eff = Math.max(2, Math.round(rank * (1 + jitter)));
+  if (eff <= 5) return GRADES[1];
+  if (eff <= 14) return GRADES[2];
+  if (eff <= 30) return GRADES[3];
+  if (eff <= 60) return GRADES[4];
+  if (eff <= 60 + Math.max(5, Math.ceil((n - 60) / 2))) return GRADES[5];
+  return GRADES[6];
+}
+const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
 const needChips = needs => needs.map(n => `<span class="badge need">${esc(n.label)}</span>`).join('');
 
 function rookieCompsFor(p) {
@@ -1951,7 +1973,7 @@ function draftBoard(args = {}) {
     html: `
       ${league().teams.filter(isUserTeam).map(t => { const o = teamOutlook(t); return `<div class="needs-row">${logoImg(t)}<b>${esc(t.shortName)}</b><span class="small muted">${o.winNow ? 'Win now' : 'Building'}</span>${needChips(o.needs)}</div>`; }).join('')}
       <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
-      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by draft value (the gold number, 1–99): All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'}</p>
+      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. Grades are where we project them to go.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'}</p>
       <div class="list">${rows.map((p, i) => {
         const pk = drafted.get(p.id);
         const row = `<button class="prow ${watch.has(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
@@ -2420,7 +2442,7 @@ function liveAssets(team) {
   }
   for (const s of tradeableProspects(live, order, team.id, state.params.draftTradeWindow)) {
     const p = prospectById(s.pid);
-    out.push({ key: `d:${s.overall}`, label: `${playerName(p)} (just drafted, value ${valueNum(p)})`, value: slotValue(boardRank(p)), prospect: s.overall });
+    out.push({ key: `d:${s.overall}`, label: `${playerName(p)} (just drafted, ${gradeOf(p)[0]})`, value: slotValue(boardRank(p)), prospect: s.overall });
   }
   for (const p of [...team.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly))) {
     const l = seasonLine(p, state.leagueIdx, ly);
