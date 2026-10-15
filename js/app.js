@@ -10,8 +10,10 @@ import {
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
+import { buildStorylines } from './storylines.js';
+import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.12.0';
+const APP_VERSION = '0.13.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -401,6 +403,7 @@ screens.main = () => {
             <button class="btn left" data-act="nav" data-to="teams"><span class="ico">👥</span> Your Teams</button>
             <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
             <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
+            <button class="btn left" data-act="nav" data-to="storylines"><span class="ico">📰</span> Storylines</button>
             <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
           </div>
         </div>
@@ -1909,6 +1912,55 @@ actions.undoTrade = d => {
 };
 
 // ---------------------------------------------------------------------------
+// Storylines
+
+function currentStorylines() {
+  const li = state.leagueIdx;
+  const L = league();
+  const players = new Map(leaguePlayers(L, true).map(e => [e.p.id, e.p]));
+  const mentorships = (state.mentor[li]?.list || [])
+    .map(m => ({ mentor: players.get(m.mentorId), mentee: players.get(m.menteeId), skill: m.skill }))
+    .filter(m => m.mentor && m.mentee);
+  const dev = p => { const snap = state.snaps.get(snapKey(p.id, li)); return snap ? diffPlayer(p, snap) : null; };
+  return { stories: buildStorylines(L, { leagueIdx: li, params: state.params, dev, mentorships }), players };
+}
+
+function storylinesText(stories) {
+  const L = league();
+  return `${L.shortName || L.leagueName} ${L.season.currentYear} · Top storylines\n\n` +
+    stories.map((s, i) => `${i + 1}. ${s.icon} ${s.title}\n${s.text}`).join('\n\n');
+}
+
+screens.storylines = () => {
+  const { stories, players } = currentStorylines();
+  const L = league();
+  layout({
+    title: 'Top Storylines',
+    body: `
+      <p class="note">${esc(L.shortName || L.leagueName)} · ${esc(phaseName(L.season))}. Built from the save (awards, moves,
+        retirements, the draft, injuries) and this session's development.</p>
+      ${stories.length ? `<ol class="stories">${stories.map((s, i) => `
+        <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
+          <span class="story-n">${i + 1}</span>
+          <div><b>${s.icon} ${esc(s.title)}</b><p class="note small">${esc(s.text)}</p></div>
+        </li>`).join('')}</ol>` : '<p class="note">Nothing to report yet.</p>'}
+      <div class="stack">
+        <button class="btn" data-act="copyStories">📋 Copy as Text</button>
+      </div>`,
+  });
+};
+
+actions.copyStories = async () => {
+  const text = storylinesText(currentStorylines().stories);
+  try {
+    if (navigator.share && /iPhone|iPad|Android/i.test(navigator.userAgent)) await navigator.share({ text });
+    else { await navigator.clipboard.writeText(text); toast('Storylines copied'); }
+  } catch (err) {
+    if (err.name !== 'AbortError') toast('Copy failed');
+  }
+};
+
+// ---------------------------------------------------------------------------
 // Export
 
 screens.export = () => {
@@ -1942,8 +1994,96 @@ screens.export = () => {
         <button class="btn big focus" data-act="download">💾 Download File</button>
         ${canShare ? '<button class="btn" data-act="share">📤 Share / Save to Files</button>' : ''}
       </div>
-      <p class="note muted small">Replace the original in your Hoop Land saves folder (keep a backup), then load it and continue the offseason.</p>`,
+      <p class="note muted small">Replace the original in your Hoop Land saves folder (keep a backup), then load it and continue the offseason.</p>
+      ${dropboxFrame()}`,
   });
+};
+
+function dropboxFrame() {
+  const c = dropboxConfig();
+  if (dropboxConnected()) {
+    return `<fieldset class="frame"><legend>Dropbox</legend>
+      <p class="note small">Saves to <b>${esc(dropboxPath(state.fileName, c.folder))}</b>${c.overwrite ? ' (replacing the file there)' : ' (a copy is renamed if the file exists)'}.</p>
+      <div class="stack">
+        <button class="btn focus" data-act="dbxUpload">☁️ Upload to Dropbox</button>
+        <button class="btn small" data-act="dbxUploadStories">📰 Upload Storylines (.txt)</button>
+      </div>
+      <label class="field"><span>Folder</span><input type="text" data-dbx="folder" value="${esc(c.folder)}"></label>
+      <label class="toggle-row"><input type="checkbox" data-dbx="overwrite"${c.overwrite ? ' checked' : ''}> Replace the file if it exists</label>
+      <button class="btn small" data-act="dbxDisconnect">Disconnect</button>
+    </fieldset>`;
+  }
+  return `<fieldset class="frame"><legend>Dropbox</legend>
+    <p class="note small">On iPhone, <b>Share → Save to Files → Dropbox</b> works with no setup. To upload straight from the app,
+      create a free Dropbox app once at <b>dropbox.com/developers/apps</b> (Scoped access, App folder or Full Dropbox,
+      permission <b>files.content.write</b>) and paste its App key here.</p>
+    <label class="field"><span>App key</span><input type="text" data-dbx="appKey" value="${esc(c.appKey || '')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <label class="field"><span>Folder</span><input type="text" data-dbx="folder" value="${esc(c.folder)}"></label>
+    <div class="stack">
+      <button class="btn" data-act="dbxConnect">🔗 Connect Dropbox</button>
+      ${c.verifier ? `<label class="field"><span>Code from Dropbox</span><input type="text" id="dbxCode" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <button class="btn focus" data-act="dbxFinish">✅ Finish Connecting</button>` : ''}
+    </div>
+  </fieldset>`;
+}
+
+function readDropboxFields() {
+  const patch = {};
+  for (const el of $app.querySelectorAll('[data-dbx]')) patch[el.dataset.dbx] = el.type === 'checkbox' ? el.checked : el.value.trim();
+  return saveDropboxConfig(patch);
+}
+
+actions.dbxConnect = async () => {
+  const c = readDropboxFields();
+  if (!c.appKey) { toast('Paste your Dropbox app key first'); return; }
+  const url = await dropboxAuthUrl(c.appKey);
+  window.open(url, '_blank', 'noopener');
+  render();
+  toast('Allow access, then paste the code here');
+};
+
+actions.dbxFinish = async () => {
+  readDropboxFields();
+  const code = document.getElementById('dbxCode')?.value || '';
+  if (!code.trim()) { toast('Paste the code Dropbox showed you'); return; }
+  try {
+    await dropboxFinishAuth(code);
+    toast('Dropbox connected');
+    render();
+  } catch (err) {
+    toast(`Dropbox: ${err.message}`);
+  }
+};
+
+actions.dbxDisconnect = () => { disconnectDropbox(); render(); };
+
+async function dbxSend(blob, name, what) {
+  readDropboxFields();
+  const o = overlay(`<div class="spinner"></div><p class="note">Uploading ${what}…</p>`);
+  try {
+    const path = await dropboxUpload(blob, name);
+    o.remove();
+    toast(`Saved to Dropbox: ${path}`);
+    return true;
+  } catch (err) {
+    o.remove();
+    const b = overlay(`<p class="note">Dropbox upload failed: ${esc(err.message)}</p><button class="btn">OK</button>`);
+    b.querySelector('button').onclick = () => b.remove();
+    return false;
+  }
+}
+
+actions.dbxUpload = async () => {
+  const o = overlay('<div class="spinner"></div><p class="note">Building file…</p>');
+  await nextFrame();
+  const file = buildExport();
+  o.remove();
+  if (await dbxSend(file, file.name, 'season file')) state.dirty = false;
+};
+
+actions.dbxUploadStories = async () => {
+  const text = storylinesText(currentStorylines().stories);
+  await dbxSend(new Blob([text], { type: 'text/plain' }), `${state.fileName} storylines ${league().season.currentYear}.txt`, 'storylines');
 };
 
 // ---------------------------------------------------------------------------

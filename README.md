@@ -139,6 +139,24 @@ After the draft (phase 5), rookies get their own bump: upgrade points by age (�
 ×1.25 for first-rounders, ×1.0 second round, ×0.75 undrafted (optional). Points go into `season.ap` like the
 offseason bump. Rookies' ratings already include the draft drop.
 
+## Storylines
+
+**Main menu → Storylines** ranks the top 10 stories of the offseason, built from the save: the champion and Finals
+MVP, MVP and other awards, notable retirements, free-agent signings and trades (players on a new team since last
+season), the best players still unsigned, the lottery winner and #1 pick, stars coming back from injuries, and
+stars entering decline. Development the app applied this session adds stories too: big rating jumps, potential up
+or down, regression age changes for stars and a notable mentorship. At most two stories of a kind (three for player
+moves). Tap a story to open the player; **Copy as Text** copies or shares the list.
+
+## Dropbox
+
+On iPhone, the export screen's **Share → Save to Files → Dropbox** works with no setup. To upload straight from the
+app, create a Dropbox app once at dropbox.com/developers/apps (Scoped access, permission `files.content.write`) and
+paste its App key on the export screen. **Connect Dropbox** opens Dropbox; allow access and paste back the code it
+shows (no redirect needed, so it works from the installed app). Uploads go to the folder you set (default
+`/Hoop Land`); by default an existing file is kept and the upload renamed, or turn on *Replace the file if it
+exists*. You can also upload the storylines as a `.txt`. The tokens are kept in this browser only.
+
 ## Save-file safety
 
 Only player upgrade points (`season.ap`), ratings/skills you edit, and draft-pick ownership from trades are modified. Everything else, including Unity's float formatting,
@@ -160,4 +178,5 @@ node tests/progression.test.mjs path/to/season-file   # progression rules hold
 node tests/draft.test.mjs       path/to/offseason-file # comps, lottery, mock draft, pick trades
 node tests/rookies.test.mjs     pre-draft post-draft   # real draft order, draft drop, rookie bump
 node tests/mentorship.test.mjs  path/to/season-file   # mentor/mentee rules
+node tests/storylines.test.mjs  path/to/season-file   # top 10 storylines
 ```
