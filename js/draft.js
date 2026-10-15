@@ -167,6 +167,44 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
   };
 }
 
+// One floor and one ceiling comp per player across a whole class, never
+// reusing a comp. `players` should be in priority order (best first): they
+// get first pick. Ceiling comps come from established players at or below the
+// player's (scouted) tier, and Legends only go to top-tier players, at most
+// `legendCap` per class. Floor comps are never Legends and never above tier.
+// Returns Map id -> { floor: [comp], ceiling: [comp] }.
+export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p => p.pot, legendCap = 2 }) {
+  const used = new Set();
+  const out = new Map(players.map(p => [p.id, { floor: [], ceiling: [] }]));
+  let legends = 0;
+  const fmt = e => ({ name: playerName(e.p), tier: tierFor(e.p.pot), pos: e.p.pos, ht: e.ht, wt: e.wt, id: e.p.id });
+  const pick = (p, vec, ok) => {
+    let best = null, bestD = Infinity;
+    for (const e of pool) {
+      if (used.has(e.p.id) || e.p.id === p.id || !ok(e)) continue;
+      const d = compDistance(vec, bodyOf(p), e);
+      if (d < bestD) { bestD = d; best = e; }
+    }
+    if (best) used.add(best.p.id);
+    return best;
+  };
+  for (const p of players) {
+    const pot = potOf(p);
+    const e = pick(p, ceilVec(p), c => c.established && c.p.pot <= pot &&
+      (c.p.pot < 10 || (pot >= 10 && legends < legendCap)));
+    if (e) {
+      if (e.p.pot >= 10) legends++;
+      out.get(p.id).ceiling = [fmt(e)];
+    }
+  }
+  for (const p of players) {
+    const pot = potOf(p);
+    const e = pick(p, floorVec(p), c => c.p.pot < 10 && c.p.pot <= pot);
+    if (e) out.get(p.id).floor = [fmt(e)];
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Scouting report: two strengths and a weakness, judged against active
 // players at similar positions (a center isn't dinged for his three-ball).

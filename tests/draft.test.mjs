@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { parseSave, serializeSave, playerName, POSITIONS, heightStr } from '../js/savefile.js';
-import { draftDrop, buildCompPool, prospectComps, prospectValue, lotteryOdds, runLottery, detectLotteryFormat,
+import { draftDrop, buildCompPool, prospectComps, prospectValue, assignClassComps, floorVector, projectedCeiling, lotteryOdds, runLottery, detectLotteryFormat,
   draftOrder, cpuPick, tradePicks } from '../js/draft.js';
 import { mulberry32 } from '../js/progression.js';
 
@@ -23,6 +23,26 @@ const board = [...L.draftClass].sort((a, b) => prospectValue(b) - prospectValue(
 for (const p of board.slice(0, 5)) {
   const c = prospectComps(p, pool);
   console.log(`${playerName(p).padEnd(22)} ${POSITIONS[p.pos].padEnd(3)} ${heightStr(p.ht)} age ${p.age} pot ${p.pot} | floor: ${c.floor[0].name} (${c.floor[0].group}, ${c.floor[0].sim}) | ceiling: ${c.ceiling[0].name} (${c.ceiling[0].group}, ${c.ceiling[0].sim})`);
+}
+
+// Class-wide comps: one each, no repeats, Legends rare and only for 10s.
+const classComps = assignClassComps(board, pool, { floorVec: x => floorVector(x), ceilVec: x => projectedCeiling(x) });
+const seen = new Set();
+let legends = 0;
+for (const p of board) {
+  const c = classComps.get(p.id);
+  for (const x of [...c.floor, ...c.ceiling]) {
+    assert.ok(!seen.has(x.id), 'comp used once per class');
+    seen.add(x.id);
+  }
+  if (c.ceiling[0]?.tier === 'Legend') { legends++; assert.equal(p.pot, 10, 'Legend comps only for 10s'); }
+  assert.notEqual(c.floor[0]?.tier, 'Legend', 'no Legend floors');
+}
+assert.ok(legends <= 2, 'at most 2 Legend comps per class');
+console.log(`class comps OK: ${seen.size} unique comps, ${legends} Legend`);
+for (const p of board.slice(0, 8)) {
+  const c = classComps.get(p.id);
+  console.log(`  ${playerName(p).padEnd(22)} pot ${p.pot} | floor ${c.floor[0]?.name} (${c.floor[0]?.tier}) | ceiling ${c.ceiling[0]?.name} (${c.ceiling[0]?.tier})`);
 }
 
 // Lottery odds sum to 100% per pick

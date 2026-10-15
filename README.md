@@ -84,6 +84,9 @@ Available once the file has a draft class (offseason, before the lottery).
   skill ratings, position, height and weight against active players, free agents, retirees and Hall of Famers.
   Every comp is tagged by its potential: 10 Legend, 9 Hall of Fame, 8 All-Star, 7 Starter, 6 Role Player,
   5 and under Bench Depth. A prospect's own potential is never shown (no stars or tier in the draft room).
+  One floor and one ceiling comp per prospect, assigned across the whole class so no player is used twice (best
+  prospects pick first). Ceiling comps are at or below the prospect's scouted tier; Legend comps only go to top-tier
+  prospects, at most 2 per class, and floors are never Legends.
 - **Fog of war:** projections use a scouted potential that's usually right but, 25% of the time by default, reads one
   step high or low (stable per prospect and save; Settings → Rookies → Scouting Report Accuracy). The board order,
   projected ceilings, ceiling comps and CPU mock picks all use it.

@@ -7,10 +7,11 @@ import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
+  assignClassComps, rookieFloorVector,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.9.2';
+const APP_VERSION = '0.9.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1394,10 +1395,19 @@ function compPool() {
   return (state.compPools[li] ||= buildCompPool(league()));
 }
 
+// Comps are assigned class-wide (no repeats, Legends rare), best prospects
+// first.
 function compsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
-  if (!cache.has(p.id)) cache.set(p.id, prospectComps(p, compPool(), state.params.recoveryBands, scoutPot(p)));
-  return cache.get(p.id);
+  if (!cache.has('class')) {
+    const bands = state.params.recoveryBands;
+    cache.set('class', assignClassComps(boardOrder(), compPool(), {
+      floorVec: x => floorVector(x, bands),
+      ceilVec: x => projectedCeiling(x, scoutPot(x)),
+      potOf: scoutPot,
+    }));
+  }
+  return cache.get('class').get(p.id) || { floor: [], ceiling: [] };
 }
 
 const TIER_CLASS = { Legend: 't-legend', 'Hall of Fame': 't-hof', 'All-Star': 't-star', Starter: 't-start', 'Role Player': 't-role', 'Bench Depth': 't-bench' };
@@ -1426,11 +1436,17 @@ const scoutValue = p => prospectValue(p, state.params.recoveryBands, scoutPot(p)
 
 function rookieCompsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
-  const key = `r${p.id}`;
-  const pending = !state.summer[state.leagueIdx] && !summerDone();
-  const orig = pending ? loadOriginals()[p.id] : null;
-  if (!cache.has(key)) cache.set(key, rookieComps(p, compPool(), orig, state.params.recoveryBands, scoutPot(p)));
-  return cache.get(key);
+  if (!cache.has('rookies')) {
+    const pending = !state.summer[state.leagueIdx] && !summerDone();
+    const origs = pending ? loadOriginals() : {};
+    const bands = state.params.recoveryBands;
+    cache.set('rookies', assignClassComps(leagueRookies(league()).map(r => r.p), compPool(), {
+      floorVec: x => rookieFloorVector(x, origs[x.id] || null, bands),
+      ceilVec: x => projectedCeiling(x, scoutPot(x)),
+      potOf: scoutPot,
+    }));
+  }
+  return cache.get('rookies').get(p.id) || { floor: [], ceiling: [] };
 }
 
 const avg = v => v.reduce((a, b) => a + b, 0) / v.length;
@@ -1511,8 +1527,7 @@ screens.prospect = (args) => {
   const rec = recoveryFor(p.age, state.params.recoveryBands);
   const fv = floorVector(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p, scoutPot(p));
   const compList = (list, cls) => list.map(x => `<div class="comp">
-    <span class="grow"><b class="${cls}">${esc(x.name)}</b> ${tierTag(x.tier)}<br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span>
-    <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
+    <span class="grow"><b class="${cls}">${esc(x.name)}</b><br>${tierTag(x.tier)}<br><span class="muted small">${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span></div>`).join('') || '<p class="note muted">—</p>';
   layout({
     title: 'Prospect',
     body: `
