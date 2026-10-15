@@ -265,7 +265,7 @@ const DOWN_IMPACT = {
 };
 // Strengths worth more than usual for a role (the stretch big).
 const UP_IMPACT = { big: { TPT: 1.1 } };
-const roleOf = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
+export const roleOf = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
 const AWFUL_FT = 6; // free throws only count as a weakness at or below this
 
 const statsCache = new WeakMap();
@@ -478,15 +478,67 @@ export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY, 
 // Best available for a team: value plus a small bonus for positions the
 // roster is thin at.
 // `valueOf` lets the mock draft use scouted values.
-export function cpuPick(team, available, valueOf = p => prospectValue(p)) {
-  const counts = {};
-  for (const p of team.roster) counts[p.pos] = (counts[p.pos] || 0) + 1;
+// `valueOf(p)` is the prospect's value on the board; teams add need, a
+// stronger lean toward younger players, and some draft-day noise (rng).
+export function cpuPick(team, available, valueOf = p => prospectValue(p), rng = null, opts = {}) {
+  const { ageWeight = 0.35, needWeight = 0.35, noise = 0.9 } = opts;
+  const groups = { guard: 0, wing: 0, big: 0 };
+  for (const p of team.roster) groups[roleOf(p.pos)]++;
+  const gauss = () => {
+    if (!rng) return 0;
+    const u = Math.max(1e-9, rng()), v = rng();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
   let best = null, bestScore = -Infinity;
   for (const p of available) {
-    const score = valueOf(p) + (counts[p.pos] ? 0 : 0.6);
+    const need = Math.max(0, 5 - groups[roleOf(p.pos)]) * needWeight;
+    const score = valueOf(p) + (20 - p.age) * ageWeight + need + gauss() * noise;
     if (score > bestScore) { best = p; bestScore = score; }
   }
   return best;
+}
+
+// ---------------------------------------------------------------------------
+// College stats and team fit
+
+// Last college season, per game: { yr, team, gp, mpg, pts, reb, ast, stl, blk, fg, tp, ft, tpa }.
+export function collegeLine(p, leagues) {
+  let best = null;
+  (p.stats || []).forEach(s => {
+    const L = leagues[s.league];
+    if (!L || L.leagueType === 0 || s.league === 0) return;
+    const r = (s.season || []).reduce((a, x) => {
+      for (const k of ['GP', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'FGM', 'FGA', 'TPM', 'TPA', 'FTM', 'FTA']) a[k] = (a[k] || 0) + x[k];
+      a.MIN = (a.MIN || 0) + x.MIN[0];
+      a.tid = x.tid;
+      return a;
+    }, {});
+    if (r.GP > 0 && (!best || s.yr > best.yr)) {
+      const team = L.teams.find(t => t.id === r.tid);
+      const pg = k => r[k] / r.GP;
+      const pct = (m, a) => (r[a] ? r[m] / r[a] * 100 : null);
+      best = {
+        yr: s.yr, team: team ? `${team.city} ${team.name}` : L.shortName, gp: r.GP, mpg: r.MIN / 60 / r.GP,
+        pts: pg('PTS'), reb: pg('REB'), ast: pg('AST'), stl: pg('STL'), blk: pg('BLK'),
+        fg: pct('FGM', 'FGA'), tp: pct('TPM', 'TPA'), ft: pct('FTM', 'FTA'), tpa: pg('TPA'),
+      };
+    }
+  });
+  return best;
+}
+
+// Where a skill line would rank on a roster: overall and within the role.
+// Ratings are compared on each player's best 8 skills (how specialists rate).
+export function rosterSlot(roster, line, pos) {
+  const top8 = v => [...v].sort((a, b) => b - a).slice(0, 8).reduce((a, b) => a + b, 0) / 8;
+  const mine = top8(line);
+  const vals = roster.map(p => ({ v: top8(SKILL_ATTRS.map(k => p.attributes[k][0])), role: roleOf(p.pos) }));
+  const role = roleOf(pos);
+  const peers = vals.filter(x => x.role === role);
+  return {
+    rank: vals.filter(x => x.v > mine).length + 1, of: vals.length + 1,
+    roleRank: peers.filter(x => x.v > mine).length + 1, roleOf: peers.length + 1, role,
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -7,11 +7,11 @@ import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
-  assignClassComps, rookieFloorVector,
+  assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.10.0';
+const APP_VERSION = '0.11.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1470,6 +1470,48 @@ function draftedMap() {
   return m;
 }
 
+// Your watch list and big board, remembered per league + season.
+function boardStore() {
+  try { return JSON.parse(localStorage.getItem(`hlc:board:${seasonKey()}`)) || { watch: [], order: [] }; }
+  catch { return { watch: [], order: [] }; }
+}
+function saveBoardStore(b) {
+  try { localStorage.setItem(`hlc:board:${seasonKey()}`, JSON.stringify(b)); } catch { /* ignore */ }
+}
+// Your board: your saved order first, then anyone new in consensus order.
+function myBoardOrder() {
+  const consensus = boardOrder();
+  const byId = new Map(consensus.map(p => [p.id, p]));
+  const order = boardStore().order.filter(id => byId.has(id));
+  const rest = consensus.filter(p => !order.includes(p.id)).map(p => p.id);
+  return [...order, ...rest].map(id => byId.get(id));
+}
+
+actions.toggleWatch = d => {
+  const b = boardStore();
+  const id = +d.id;
+  b.watch = b.watch.includes(id) ? b.watch.filter(x => x !== id) : [...b.watch, id];
+  saveBoardStore(b);
+  render();
+};
+
+actions.moveBoard = d => {
+  const ids = myBoardOrder().map(p => p.id);
+  const i = ids.indexOf(+d.id), j = i + +d.dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  saveBoardStore({ ...boardStore(), order: ids });
+  render();
+};
+
+actions.resetBoard = async () => {
+  if (!(await confirmBox('Reset your big board to the consensus order?', 'Reset'))) return;
+  saveBoardStore({ ...boardStore(), order: [] });
+  render();
+};
+
+actions.boardView = d => replace('draft', { tab: 'board', view: d.v });
+
 const DRAFT_TABS = [['board', 'Board'], ['lottery', 'Lottery'], ['mock', 'Mock'], ['trades', 'Trades']];
 
 screens.draft = (args) => {
@@ -1504,25 +1546,63 @@ screens.draft = (args) => {
 
 actions.draftTab = d => replace('draft', { tab: d.t });
 
-function draftBoard() {
+function draftBoard(args = {}) {
+  const view = args.view || 'consensus';
   const drafted = draftedMap();
-  const rows = boardOrder();
+  const watch = new Set(boardStore().watch);
+  const rows = view === 'mine' ? myBoardOrder() : view === 'watch' ? myBoardOrder().filter(p => watch.has(p.id)) : boardOrder();
+  const views = [['consensus', 'Consensus'], ['mine', 'My Board'], ['watch', `Watch (${watch.size})`]];
   return {
     html: `
-      <p class="note muted small">${rows.length} prospects · ranked by projection · Rookie = projected average skill rating after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and age-based summer league recovery. Ceiling totals are capped league-wide, so comps show the shape of each ceiling.</p>
+      <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
+      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouting.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'} Rookie = projected average skill rating after the draft drop and summer league.</p>
       <div class="list">${rows.map((p, i) => {
         const fl = avg(floorVector(p, state.params.recoveryBands));
-        const c = compsFor(p);
         const pk = drafted.get(p.id);
-        return `<button class="prow" data-act="openProspect" data-id="${p.id}">
-          <span class="name">${i + 1}. ${esc(playerName(p))}</span>
+        const row = `<button class="prow ${watch.has(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
+          <span class="name">${i + 1}. ${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
           <span class="right">
             ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
           <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
-          <span class="chg">${compLine(c)}</span>
+          <span class="chg">${compLine(compsFor(p))}</span>
         </button>`;
-      }).join('')}</div>`,
+        return view === 'mine'
+          ? `<div class="board-row">${row}<div class="mv"><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up">▲</button><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down">▼</button></div></div>`
+          : row;
+      }).join('') || '<p class="note muted">Star prospects from their page to add them here.</p>'}</div>`,
+    action: view === 'mine' ? { act: 'resetBoard', label: 'Reset' } : null,
   };
+}
+
+function collegeBox(p) {
+  const c = collegeLine(p, state.data.seasonLeagues);
+  if (!c) return '';
+  const f = (v, d = 1) => (v == null ? '—' : v.toFixed(d));
+  return `<fieldset class="frame"><legend>College · ${c.yr}</legend>
+    <p class="note small muted" style="margin-bottom:8px">${esc(c.team)} · ${c.gp} games · ${f(c.mpg)} MPG</p>
+    <div class="statline">
+      ${[['PTS', f(c.pts)], ['REB', f(c.reb)], ['AST', f(c.ast)], ['STL', f(c.stl)], ['BLK', f(c.blk)],
+         ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)]]
+        .map(([k, v]) => `<div><span class="muted small">${k}</span><b>${v}</b></div>`).join('')}
+    </div></fieldset>`;
+}
+
+// Where the prospect would slot on each of your teams, as a rookie and at
+// their projected ceiling.
+function slotBox(p, rookieLine, ceilLine) {
+  const mine = league().teams.filter(isUserTeam);
+  if (!mine.length) return '';
+  const role = { guard: 'guards', wing: 'wings', big: 'bigs' };
+  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+  const label = n => (n === 1 ? 'Franchise player' : n <= 3 ? 'Core starter' : n <= 5 ? 'Starter' : n <= 8 ? 'Rotation' : n <= 12 ? 'Bench' : 'End of bench');
+  const year3 = rookieLine.map((v, i) => Math.round((v + ceilLine[i]) / 2));
+  return `<fieldset class="frame"><legend>Fit On Your Team</legend><div class="stack">
+    ${mine.map(t => {
+      const stops = [['Rookie', rookieLine], ['Year 3', year3], ['Ceiling', ceilLine]].map(([k, line]) => [k, rosterSlot(t.roster, line, p.pos)]);
+      return `<div><p class="note"><b>${esc(t.city)} ${esc(t.name)}</b></p>
+        <div class="fit">${stops.map(([k, s]) => `<div><span class="muted small">${k}</span><b>${ord(s.rank)}</b><span class="small">${label(s.rank)}</span><span class="muted small">${ord(s.roleRank)} of ${s.roleOf} ${role[s.role]}</span></div>`).join('')}</div></div>`;
+    }).join('')}
+  </div></fieldset>`;
 }
 
 actions.openProspect = d => go('prospect', { id: +d.id });
@@ -1541,8 +1621,11 @@ screens.prospect = (args) => {
       <div>
         <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note muted small">${esc(p.home || '')}${p.history?.coll ? ' · College' : ''}</p>
+        <p class="note muted small">${esc(p.home || '')}</p>
       </div>
+      <button class="btn small ${boardStore().watch.includes(p.id) ? 'on focus' : 'off'}" data-act="toggleWatch" data-id="${p.id}">${boardStore().watch.includes(p.id) ? '★ On Watch List' : '☆ Add to Watch List'}</button>
+      ${collegeBox(p)}
+      ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       <div class="grid2">
         <fieldset class="frame"><legend>Floor</legend>${compList(c.floor, '')}</fieldset>
@@ -1652,12 +1735,13 @@ function mockAvailable(mock) {
   return league().draftClass.filter(p => !taken.has(p.id));
 }
 
-function simMock(untilUser) {
+function simMock(untilUser, auto = false) {
   const mock = ensureMock();
+  mock.rng ||= mulberry32(Math.floor(Math.random() * 1e9));
   for (const pk of mock.picks) {
     if (pk.pid != null) continue;
-    if (untilUser && isUserTeam(pk.owner)) break;
-    const p = cpuPick(pk.owner, mockAvailable(mock), scoutValue);
+    if (untilUser && !auto && isUserTeam(pk.owner)) break;
+    const p = cpuPick(pk.owner, mockAvailable(mock), scoutValue, mock.rng);
     if (!p) break;
     pk.pid = p.id;
   }

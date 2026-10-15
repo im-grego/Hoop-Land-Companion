@@ -356,3 +356,12 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .scout li::before { position: absolute; left: 0; top: -1px; font-weight: 900; font-size: 18px; }
 .scout .plus::before { content: "+"; color: var(--up); }
 .scout .minus::before { content: "−"; color: var(--down); }
+.board-row { display: grid; grid-template-columns: 1fr auto; gap: 6px; align-items: stretch; }
+.board-row .mv { display: flex; flex-direction: column; gap: 4px; }
+.board-row .mv .btn.square { width: 40px; min-height: 36px; font-size: 14px; flex: 1; }
+.statline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; text-align: center; }
+.statline > div { background: var(--bg-dark); border: 2px solid var(--btn-edge); padding: 4px 2px; display: flex; flex-direction: column; }
+.statline b { font-size: 16px; }
+.fit { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; margin-top: 6px; }
+.fit > div { background: var(--bg-dark); border: 2px solid var(--btn-edge); padding: 6px 2px; display: flex; flex-direction: column; gap: 2px; }
+.fit b { font-size: 20px; }

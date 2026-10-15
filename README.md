@@ -100,11 +100,16 @@ Available once the file has a draft class (offseason, before the lottery).
   Free throws are capped at 16.
 - **Scouting report:** two strengths and a weakness per prospect, judged against active players at similar positions
   and weighted by what matters for the role (guard / wing / big); free throws only count as a weakness when awful.
+- **War room:** each prospect page shows last season's **college stats** (per game, shooting splits), **fit on your
+  team** (where they'd rank on each of your rosters as a rookie, in year 3 and at their ceiling, overall and among
+  guards/wings/bigs), the scouting report and comps. Star prospects to a **watch list**, and build **your own big
+  board** (reorder with ▲▼; remembered per season) next to the consensus board.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
-- **Mock draft:** uses the simulated lottery (or record order), honours traded picks; CPU teams take the best fit,
-  you pick for your teams.
+- **Mock draft:** uses the simulated lottery (or record order), honours traded picks. Teams weigh scouted value,
+  roster need (guards/wings/bigs) and age, with some draft-day variance, so each run plays out differently. Sim All
+  drafts for your teams too; or stop at your pick and choose.
 - **Trades:** swap draft picks between any two teams, written to the season file (undo per trade).
 - After the lottery (phase 4) the lottery tab and mock draft use the real draft order from the save. After the
   draft (phase 5) the room shows the rookie class with comps.
