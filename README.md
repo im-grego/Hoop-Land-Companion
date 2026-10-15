@@ -207,7 +207,8 @@ Veterans lean contender, stars money or control, young players security or role.
   out the season (a contender-minded vet asking $13M signs for $3M with the best team that calls). CPU teams spread
   their bids instead of piling onto the same few names.
 
-Make offers for your teams (salary, years, no / team / player option; the app checks the rules and shows whether
+Make offers for your teams: one tap for the **MLE** ($15M × 2, then pick no / team / player option) from Day 2 when
+you're over the cap, one tap for the **vet minimum** ($3M × 1, sent right away) on Day 3; or set your own (salary, years, no / team / player option; the app checks the rules and shows whether
 you're ahead), then **Open Bidding**: CPU teams bid on the best players they can afford plus a value signing, and
 **bidding wars** push prices up (up to 30% over the ask). Raise if you're behind, then **Players Decide** — CPU teams
 get one last raise, and each player takes the offer that best fits what they want (if it's close enough to the

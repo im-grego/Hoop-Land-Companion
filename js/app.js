@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.2';
+const APP_VERSION = '0.19.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2728,6 +2728,17 @@ actions.faOffer = d => {
   const draft = existing ? { ...existing } : { tid: (isUserTeam(m.from) ? m.from : mine[0]).id, sal: m.ask, yrs: m.p.age >= 31 ? 1 : 3, opt: 0 };
   const box = overlay('');
   const M = FA.MOTIVES[m.motive];
+  const O = FA.FA_DEFAULTS;
+  // One-tap offers: the mid-level exception (Day 2+, teams over the cap) and
+  // the veterans' minimum (Day 3, ages 30+).
+  const vetMinOk = team => s.day >= 3 && m.p.age >= O.vetMinAge && !FA.checkOffer(L, team, m.p, { sal: O.vetMin, yrs: 1, opt: 0 }, s.day, s.used);
+  const mleOk = team => FA.offerRoom(L, team, m.p, s.day, s.used).mle;
+  const quick = team => {
+    const btns = [];
+    if (mleOk(team)) btns.push(`<button class="btn ${draft.sal === O.mle && draft.yrs === O.mleMaxYears ? 'on focus' : ''}" data-k="mle">📝 Offer MLE · $${O.mle}M × ${O.mleMaxYears}</button>`);
+    if (vetMinOk(team)) btns.push(`<button class="btn" data-k="vetmin">⚡ Offer Vet Min · $${O.vetMin}M × 1</button>`);
+    return btns.length ? `<div class="stack">${btns.join('')}</div>` : '';
+  };
   const paint = () => {
     const team = L.teams.find(t => t.id === draft.tid);
     const err = FA.checkOffer(L, team, m.p, draft, s.day, s.used);
@@ -2743,6 +2754,7 @@ actions.faOffer = d => {
       <p class="note"><b>${esc(playerName(m.p))}</b> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M · max $${FA.maxSalary(L, m.p)}M</p>
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
+      ${quick(team)}
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[0, 'No option'], [1, 'Team opt'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
@@ -2760,6 +2772,14 @@ actions.faOffer = d => {
     if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p), draft.sal + +b.dataset.d));
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
+    else if (k === 'mle') { draft.sal = O.mle; draft.yrs = O.mleMaxYears; }
+    else if (k === 'vetmin') {
+      const rest = list().filter(x => x !== existing && x.tid !== draft.tid);
+      s.bids.set(m.p.id, [...rest, { tid: draft.tid, sal: O.vetMin, yrs: 1, opt: 0, cpu: false }]);
+      box.remove(); render();
+      toast(`Vet minimum offered to ${playerName(m.p)}`);
+      return;
+    }
     else if (k === 'close') {
       if (existing) s.bids.set(m.p.id, list().filter(x => x !== existing));
       box.remove(); render(); return;
