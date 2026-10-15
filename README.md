@@ -31,8 +31,9 @@ All of these are adjustable under **Settings**.
 
 Available once the file has a draft class (offseason, before the lottery).
 
-- **Board:** prospects ranked by projection, with **floor** and **ceiling comps**. Floor = skill ratings after the
-  rookie drop (−4, never below 2; ratings already at 2 or lower stay). Ceiling = their top ratings. Comps match the 12
+- **Board:** prospects ranked by projection, with **floor** and **ceiling comps**. Floor = the projected rookie line:
+  the draft drop (−4, never below 2; ratings already at 2 or lower stay) minus what summer league gives back for their
+  age. Each rating shows its projected loss. Ceiling = their top ratings. Comps match the 12
   skill ratings plus height against active players, free agents, retirees and Hall of Famers.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
@@ -42,6 +43,14 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Trades:** swap draft picks between any two teams, written to the season file (undo per trade).
 - After the lottery (phase 4) the lottery tab and mock draft use the real draft order from the save. After the
   draft (phase 5) the room shows the rookie class with comps.
+
+## Summer league (right after the draft)
+
+Rookies win back part of the draft drop by age: 18–19 +4, 20–21 +3, 22–23 +2, 24+ none, never past their
+pre-draft rating (12 skill ratings only; physicals never drop). The app remembers prospects' pre-draft ratings
+whenever you load a save that has a draft class; at the post-draft phase you can also load a pre-draft save as a
+read-only reference. It only runs at the Post-Draft phase and is locked for that season once you export, so it
+can't be applied twice.
 
 ## Rookie bump
 

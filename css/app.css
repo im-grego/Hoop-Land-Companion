@@ -315,7 +315,7 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .comp { display: flex; align-items: center; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--btn-edge); font-size: 14px; }
 .comp .grow { flex: 1; min-width: 0; }
 .comp .sim { font-size: 18px; color: var(--gold); }
-.rk-head, .rk { display: grid; grid-template-columns: 1fr 40px 52px 52px; gap: 4px; align-items: center; text-align: right; font-size: 14px; }
+.rk-head, .rk { display: grid; grid-template-columns: 1fr 40px 64px 52px; gap: 4px; align-items: center; text-align: right; font-size: 14px; }
 .rk-head { color: var(--dim); font-size: 12px; padding-bottom: 4px; }
 .rk { padding: 4px 0; }
 .rk > :first-child { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

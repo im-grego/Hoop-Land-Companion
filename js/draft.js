@@ -12,8 +12,42 @@ export const DRAFT_DROP = 4;
 export const DRAFT_FLOOR = 2;
 export const draftDrop = v => (v <= DRAFT_FLOOR ? v : Math.max(DRAFT_FLOOR, v - DRAFT_DROP));
 
-export function floorVector(p) {
-  return SKILL_ATTRS.map(k => draftDrop(p.attributes[k][0]));
+// Summer league recovery right after the draft: rookies win back part of the
+// drop by age ([maxAge, points]); 24+ get nothing. A rating never recovers
+// past its pre-draft value.
+export const DEFAULT_RECOVERY = [[19, 4], [21, 3], [23, 2]];
+export const recoveryFor = (age, bands = DEFAULT_RECOVERY) => (bands.find(b => age <= b[0]) || [0, 0])[1];
+
+// Where a pre-draft rating ends up after the drop and summer league.
+export const projectedRookie = (v, age, bands = DEFAULT_RECOVERY) =>
+  Math.min(v, draftDrop(v) + recoveryFor(age, bands));
+
+// Prospect floor: the projected rookie line (net of drop and recovery).
+export function floorVector(p, bands = DEFAULT_RECOVERY) {
+  return SKILL_ATTRS.map(k => projectedRookie(p.attributes[k][0], p.age, bands));
+}
+
+// Pre-draft skill ratings, to remember across saves: { id: [12 values] }.
+export function originalRatings(league) {
+  const out = {};
+  for (const p of league.draftClass || []) out[p.id] = SKILL_ATTRS.map(k => p.attributes[k][0]);
+  return out;
+}
+
+// Apply summer league to a drafted rookie given their pre-draft ratings.
+// Only raises ratings. Returns { attr: gain }.
+export function applySummerLeague(p, original, bands = DEFAULT_RECOVERY) {
+  const gains = {};
+  SKILL_ATTRS.forEach((k, i) => {
+    const target = projectedRookie(original[i], p.age, bands);
+    const a = p.attributes[k];
+    if (a[0] < target) {
+      gains[k] = target - a[0];
+      a[0] = target;
+      if (a[1] < a[0]) a[1] = a[0];
+    }
+  });
+  return gains;
 }
 export function ceilingVector(p) {
   return SKILL_ATTRS.map(k => Math.max(p.attributes[k][0], p.attributes[k][1]));
@@ -61,9 +95,9 @@ export function findComps(v, ht, pool, n = 3, excludeId = null) {
     .map(e => ({ name: playerName(e.p), group: e.group, ht: e.ht, pos: e.p.pos, sim: Math.max(0, Math.round(100 - e.dist * 3)), id: e.p.id }));
 }
 
-export function prospectComps(p, pool) {
+export function prospectComps(p, pool, bands = DEFAULT_RECOVERY) {
   return {
-    floor: findComps(floorVector(p), p.ht, pool, 3, p.id),
+    floor: findComps(floorVector(p, bands), p.ht, pool, 3, p.id),
     ceiling: findComps(ceilingVector(p), p.ht, pool, 3, p.id),
   };
 }
@@ -74,9 +108,9 @@ export function prospectComps(p, pool) {
 const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
 const topN = (a, n) => [...a].sort((x, y) => y - x).slice(0, n);
 
-export function prospectValue(p) {
+export function prospectValue(p, bands = DEFAULT_RECOVERY) {
   const ceil = mean(topN(ceilingVector(p), 8));
-  const floor = mean(topN(floorVector(p), 8));
+  const floor = mean(topN(floorVector(p, bands), 8));
   return ceil * 0.65 + floor * 0.35 + p.pot * 0.4 + (21 - p.age) * 0.25;
 }
 
@@ -209,9 +243,18 @@ export function actualDraftOrder(league) {
 }
 
 // Comps for a player already drafted (ratings already include the drop).
-export function rookieComps(p, pool) {
+// With pre-draft ratings and summer league still to come, the floor is the
+// projected post-summer-league line.
+export function rookieFloorVector(p, original = null, bands = DEFAULT_RECOVERY) {
+  return SKILL_ATTRS.map((k, i) => {
+    const cur = p.attributes[k][0];
+    return original ? Math.max(cur, projectedRookie(original[i], p.age, bands)) : cur;
+  });
+}
+
+export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY) {
   return {
-    floor: findComps(SKILL_ATTRS.map(k => p.attributes[k][0]), p.ht, pool, 3, p.id),
+    floor: findComps(rookieFloorVector(p, original, bands), p.ht, pool, 3, p.id),
     ceiling: findComps(ceilingVector(p), p.ht, pool, 3, p.id),
   };
 }

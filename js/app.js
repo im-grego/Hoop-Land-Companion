@@ -1,14 +1,15 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
+  recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -24,6 +25,7 @@ const state = {
   userTeams: new Set(),    // team ids the user controls (current league)
   auto: {},                // leagueIdx -> bump summary
   rookieAuto: {},          // leagueIdx -> rookie bump summary
+  summer: {},              // leagueIdx -> { players, points } once summer league ran this session
   awards: {},              // leagueIdx -> Map pid -> points awarded
   draft: {},               // leagueIdx -> { lottery, mock, trades }
   compPools: {},
@@ -64,6 +66,24 @@ function loadUserTeams() {
 }
 
 const league = () => state.data.seasonLeagues[state.leagueIdx];
+
+// Pre-draft ratings and the summer-league-done flag are remembered per
+// league + season so they survive switching save files.
+const seasonKey = (L = league()) => `${L.shortName}:${L.season.currentYear}`;
+function loadOriginals(L = league()) {
+  try { return JSON.parse(localStorage.getItem(`hlc:orig:${seasonKey(L)}`)) || {}; } catch { return {}; }
+}
+function saveOriginals(L, map) {
+  const merged = { ...loadOriginals(L), ...map };
+  try { localStorage.setItem(`hlc:orig:${seasonKey(L)}`, JSON.stringify(merged)); } catch { /* ignore */ }
+  return merged;
+}
+function summerDone(L = league()) {
+  try { return localStorage.getItem(`hlc:summer:${seasonKey(L)}`) === '1'; } catch { return false; }
+}
+function markSummerDone(L) {
+  try { localStorage.setItem(`hlc:summer:${seasonKey(L)}`, '1'); } catch { /* ignore */ }
+}
 const snapKey = (pid, li = state.leagueIdx) => `${li}:${pid}`;
 const snapOf = p => state.snaps.get(snapKey(p.id));
 const isUserTeam = t => t && state.userTeams.has(t.id);
@@ -205,6 +225,7 @@ $app.addEventListener('click', e => {
 
 $app.addEventListener('change', e => {
   if (e.target.id === 'fileInput' && e.target.files[0]) loadFile(e.target.files[0]);
+  if (e.target.id === 'origInput' && e.target.files[0]) loadReference(e.target.files[0]);
 });
 
 // ---------------------------------------------------------------------------
@@ -226,6 +247,7 @@ async function loadFile(file) {
     state.leagueAvg = [];
     state.auto = {};
     state.rookieAuto = {};
+    state.summer = {};
     state.awards = {};
     state.draft = {};
     state.compPools = {};
@@ -238,6 +260,7 @@ async function loadFile(file) {
       for (const p of players) ATTRS.forEach((k, i) => { avg[i] += p.attributes[k][0] / players.length; });
       state.leagueAvg[li] = avg;
     });
+    data.seasonLeagues.forEach(L => { if (L.draftClass?.length) saveOriginals(L, originalRatings(L)); });
     loadUserTeams();
     state.dirty = false;
     o.remove();
@@ -251,7 +274,31 @@ async function loadFile(file) {
   }
 }
 
+// Read a pre-draft save only to remember the prospects' original ratings.
+async function loadReference(file) {
+  const o = overlay('<div class="spinner"></div><p class="note">Reading pre-draft ratings…</p>');
+  await nextFrame();
+  try {
+    const ref = parseSave(await file.text());
+    const L = ref.seasonLeagues.find(x => x.shortName === league().shortName) || ref.seasonLeagues[0];
+    if (!L.draftClass?.length) throw new Error('That file has no draft class. Use a save from before the draft.');
+    const rookies = new Set(leagueRookies(league()).map(r => r.p.id));
+    const found = Object.keys(originalRatings(L)).filter(id => rookies.has(+id)).length;
+    if (!found) throw new Error("None of that file's prospects match this season's rookies.");
+    saveOriginals(league(), originalRatings(L));
+    state.compCache = {};
+    o.remove();
+    toast(`Pre-draft ratings found for ${found} rookies`);
+    render();
+  } catch (err) {
+    o.remove();
+    const b = overlay(`<p class="note">${esc(err.message)}</p><button class="btn">OK</button>`);
+    b.querySelector('button').onclick = () => b.remove();
+  }
+}
+
 function buildExport() {
+  state.data.seasonLeagues.forEach((L, li) => { if (state.summer[li]) markSummerDone(L); });
   const text = serializeSave(state.data);
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
@@ -457,7 +504,8 @@ actions.undoAuto = async () => {
 function applyRookieBump(seed) {
   const li = state.leagueIdx;
   const rookies = leagueRookies(league());
-  for (const r of rookies) restore(r.p, snapOf(r.p));
+  // Reset only the points so summer league gains stay.
+  for (const r of rookies) if (r.p.season?.ap) r.p.season.ap = [...snapOf(r.p).ap];
   const entries = rookies.map(r => ({ ...r, spend: state.params.spendCpuPoints && !isUserTeam(r.team) }));
   const awards = runRookieBump(entries, { ...state.params, seed });
   const all = (state.awards[li] ||= new Map());
@@ -482,7 +530,10 @@ actions.runRookies = async () => {
 
 actions.undoRookies = async () => {
   if (!(await confirmBox('Undo the rookie bump?', 'Undo'))) return;
-  for (const r of leagueRookies(league())) { restore(r.p, snapOf(r.p)); state.awards[state.leagueIdx]?.delete(r.p.id); }
+  for (const r of leagueRookies(league())) {
+    if (r.p.season?.ap) r.p.season.ap = [...snapOf(r.p).ap];
+    state.awards[state.leagueIdx]?.delete(r.p.id);
+  }
   delete state.rookieAuto[state.leagueIdx];
   render();
 };
@@ -541,12 +592,71 @@ screens.offseason = () => {
   });
 };
 
+function summerEligible() {
+  const orig = loadOriginals();
+  return leagueRookies(league())
+    .filter(r => r.round > 0 || state.params.rookieIncludeUndrafted)
+    .filter(r => orig[r.p.id]);
+}
+
+actions.runSummer = async () => {
+  const bands = state.params.recoveryBands;
+  const orig = loadOriginals();
+  let players = 0, points = 0;
+  for (const r of summerEligible()) {
+    const g = applySummerLeague(r.p, orig[r.p.id], bands);
+    const n = Object.values(g).reduce((a, b) => a + b, 0);
+    if (n) { players++; points += n; }
+  }
+  state.summer[state.leagueIdx] = { players, points };
+  state.compCache = {};
+  state.dirty = true;
+  render();
+  toast(`Summer league: +${points} ratings across ${players} rookies`);
+};
+
+actions.undoSummer = async () => {
+  if (!(await confirmBox('Undo summer league? Rookie ratings go back to their post-draft values.', 'Undo'))) return;
+  for (const r of leagueRookies(league())) {
+    const snap = snapOf(r.p);
+    for (const k of SKILL_ATTRS) r.p.attributes[k] = [...snap.attributes[k]];
+  }
+  delete state.summer[state.leagueIdx];
+  state.compCache = {};
+  render();
+};
+
+function summerSection() {
+  const L = league();
+  const done = state.summer[state.leagueIdx];
+  const bands = state.params.recoveryBands;
+  const bandText = bands.map((b, i) => `${i === 0 ? '≤' : `${bands[i - 1][0] + 1}–`}${b[0]}: +${b[1]}`).join(' · ');
+  let body;
+  if (done) {
+    body = `<p class="note up">Applied: +${done.points} ratings across ${done.players} rookies. It's locked for this season once you export.</p>
+      <button class="btn small" data-act="undoSummer">↺ Undo Summer League</button>`;
+  } else if (summerDone(L)) {
+    body = `<p class="note">Summer league was already applied for ${L.season.currentYear}, so it won't run again.</p>`;
+  } else if (L.season.phase !== PHASE_POST_DRAFT) {
+    body = `<p class="note muted">Summer league runs right after the draft (Post-Draft phase). This file is at ${esc(PHASE_NAMES[L.season.phase] ?? `phase ${L.season.phase}`)}.</p>`;
+  } else {
+    const eligible = summerEligible();
+    const total = leagueRookies(L).filter(r => r.round > 0 || state.params.rookieIncludeUndrafted).length;
+    body = eligible.length
+      ? `<p class="note">Rookies win back part of the −${DRAFT_DROP} draft drop by age (${bandText}; 24+ none), never past their pre-draft rating. Pre-draft ratings found for ${eligible.length} / ${total} rookies.</p>
+        <button class="btn big focus" data-act="runSummer">▶ Apply Summer League</button>`
+      : `<p class="note">Summer league needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
+    if (eligible.length < total) body += `<label class="btn small">📂 Load Pre-Draft Save<input type="file" id="origInput"></label>`;
+  }
+  return `<fieldset class="frame"><legend>Summer League</legend><div class="stack">${body}</div></fieldset>`;
+}
+
 function rookieCard() {
   const rookies = leagueRookies(league());
   if (!rookies.length) return '';
   const r = state.rookieAuto[state.leagueIdx];
   const drafted = rookies.filter(x => x.round > 0).length;
-  return `<fieldset class="frame"><legend>Rookie Bump</legend>
+  return summerSection() + `<fieldset class="frame"><legend>Rookie Bump</legend>
     <div class="stack">
       ${r ? `<dl class="info">
           <dt>Rookies bumped</dt><dd class="up">${r.players} / ${r.total}</dd>
@@ -555,7 +665,7 @@ function rookieCard() {
         </dl>
         <button class="btn focus" data-act="nav" data-to="rookies">📋 View Rookies</button>
         <div class="grid2"><button class="btn" data-act="runRookies">🎲 Re-roll</button><button class="btn" data-act="undoRookies">↺ Undo</button></div>`
-      : `<p class="note">${drafted} drafted rookies${rookies.length > drafted ? ` + ${rookies.length - drafted} undrafted` : ''}. Their ratings already took the −4 draft drop; give them a development bump in upgrade points (by age and draft round).</p>
+      : `<p class="note">${drafted} drafted rookies${rookies.length > drafted ? ` + ${rookies.length - drafted} undrafted` : ''}. Give them a development bump in upgrade points (by age and draft round), on top of summer league.</p>
         <button class="btn big focus" data-act="runRookies">▶ Run Rookie Bump</button>
         <button class="btn small" data-act="nav" data-to="rookies">📋 View Rookies</button>`}
     </div>
@@ -574,7 +684,7 @@ screens.rookies = () => {
           <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
           <span class="right"><span class="stars">${stars(r.p.pot)}</span><br>${award ? `<span class="up">+${award} pts</span>` : '<span class="muted">—</span>'}</span>
           <span class="meta">${r.team ? esc(r.team.shortName) : 'Undrafted'} · ${r.round ? `R${r.round}` : 'FA'} · ${esc(POSITIONS[r.p.pos] ?? '')} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
-          ${d.changed ? `<span class="chg">${esc(apSummary(d))}</span>` : ''}
+          ${d.changed ? `<span class="chg">${esc([d.points ? `Summer +${d.points}: ${changeSummary(d)}` : '', apSummary(d)].filter(Boolean).join(' · '))}</span>` : ''}
         </button>`;
       }).join('')}</div>`,
   });
@@ -944,6 +1054,12 @@ screens.settings = (args) => {
           <button class="btn square" data-act="rband" data-i="${i}" data-j="${j}" data-dir="1" aria-label="Increase">+</button></div></div>`;
         return `<fieldset class="frame"><legend>${label}</legend><div class="grid2">${st(1, b[1], 'Min pts')}${st(2, b[2], 'Max pts')}</div></fieldset>`;
       }).join('') +
+      `<fieldset class="frame"><legend>Summer League Recovery</legend><div class="stack">${P.recoveryBands.map((b, i) => `<div class="pts-row">
+        <span class="grow">Age ${i === 0 ? 'up to ' : `${P.recoveryBands[i - 1][0] + 1}–`}${b[0]}</span>
+        <button class="btn square" data-act="recBand" data-i="${i}" data-dir="-1" aria-label="Less recovery">−</button>
+        <span class="pts-val">+${b[1]}</span>
+        <button class="btn square" data-act="recBand" data-i="${i}" data-dir="1" aria-label="More recovery">+</button></div>`).join('')}
+        <p class="note muted small">Draft-drop points won back right after the draft. Older rookies get none.</p></div></fieldset>` +
       options('1st Round', 'rookieR1Mult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]) +
       options('2nd Round', 'rookieR2Mult', [[0.75, '×0.75'], [1, '×1.0'], [1.25, '×1.25']]) +
       options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
@@ -994,6 +1110,13 @@ actions.band = d => {
   saveParams();
   render();
 };
+actions.recBand = d => {
+  const b = state.params.recoveryBands[+d.i];
+  b[1] = Math.max(0, Math.min(4, b[1] + +d.dir));
+  state.compCache = {};
+  saveParams();
+  render();
+};
 actions.rband = d => {
   const b = state.params.rookieBands[+d.i];
   const j = +d.j;
@@ -1030,14 +1153,16 @@ function compPool() {
 
 function compsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
-  if (!cache.has(p.id)) cache.set(p.id, prospectComps(p, compPool()));
+  if (!cache.has(p.id)) cache.set(p.id, prospectComps(p, compPool(), state.params.recoveryBands));
   return cache.get(p.id);
 }
 
 function rookieCompsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
   const key = `r${p.id}`;
-  if (!cache.has(key)) cache.set(key, rookieComps(p, compPool()));
+  const pending = !state.summer[state.leagueIdx] && !summerDone();
+  const orig = pending ? loadOriginals()[p.id] : null;
+  if (!cache.has(key)) cache.set(key, rookieComps(p, compPool(), orig, state.params.recoveryBands));
   return cache.get(key);
 }
 
@@ -1045,7 +1170,8 @@ const avg = v => v.reduce((a, b) => a + b, 0) / v.length;
 const posName = p => POSITIONS[p.pos] ?? p.pos;
 
 function boardOrder() {
-  return [...league().draftClass].sort((a, b) => prospectValue(b) - prospectValue(a));
+  const bands = state.params.recoveryBands;
+  return [...league().draftClass].sort((a, b) => prospectValue(b, bands) - prospectValue(a, bands));
 }
 
 function draftedMap() {
@@ -1065,7 +1191,7 @@ screens.draft = (args) => {
       title: 'Draft Room',
       body: rookies.length ? `
         <div class="tabs"><button class="btn on focus">Rookie Class</button><button class="btn off" data-act="draftTab" data-t="trades">Trades</button></div>
-        <p class="note muted small">The draft is done. Floor = current ratings (the −${DRAFT_DROP} drop is already applied), ceiling = top ratings.</p>
+        <p class="note muted small">The draft is done. Floor = ratings after the −${DRAFT_DROP} drop${state.summer[state.leagueIdx] || summerDone() ? ' and summer league' : ' plus projected summer league recovery (when pre-draft ratings are known)'}; ceiling = top ratings.</p>
         <div class="list">${rookies.map(r => {
           const c = rookieCompsFor(r.p);
           return `<button class="prow ${isUserTeam(r.team) ? 'sel' : ''}" data-act="openPlayer" data-id="${r.p.id}">
@@ -1093,9 +1219,9 @@ function draftBoard() {
   const rows = boardOrder();
   return {
     html: `
-      <p class="note muted small">${rows.length} prospects · ranked by projection · Rookie = average skill rating after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}). Ceiling totals are capped league-wide, so comps show the shape of each ceiling.</p>
+      <p class="note muted small">${rows.length} prospects · ranked by projection · Rookie = projected average skill rating after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and age-based summer league recovery. Ceiling totals are capped league-wide, so comps show the shape of each ceiling.</p>
       <div class="list">${rows.map((p, i) => {
-        const fl = avg(floorVector(p));
+        const fl = avg(floorVector(p, state.params.recoveryBands));
         const c = compsFor(p);
         const pk = drafted.get(p.id);
         return `<button class="prow" data-act="openProspect" data-id="${p.id}">
@@ -1115,7 +1241,8 @@ screens.prospect = (args) => {
   const p = league().draftClass.find(x => x.id === args.id);
   if (!p) { back(); return; }
   const c = compsFor(p);
-  const fv = floorVector(p), cv = ceilingVector(p);
+  const rec = recoveryFor(p.age, state.params.recoveryBands);
+  const fv = floorVector(p, state.params.recoveryBands), cv = ceilingVector(p);
   const compList = (list, cls) => list.map(x => `<div class="comp">
     <span class="grow"><b class="${cls}">${esc(x.name)}</b><br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}</span></span>
     <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
@@ -1136,12 +1263,12 @@ screens.prospect = (args) => {
         ${SKILL_ATTRS.map((k, i) => `<div class="rk">
           <span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span>
           <span>${p.attributes[k][0]}</span>
-          <span class="${fv[i] < p.attributes[k][0] ? 'down' : ''}">${fv[i]}</span>
+          <span class="${fv[i] < p.attributes[k][0] ? 'down' : ''}">${fv[i]}${fv[i] < p.attributes[k][0] ? `<span class="small"> −${p.attributes[k][0] - fv[i]}</span>` : ''}</span>
           <span class="up">${cv[i]}</span>
           <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
         </div>`).join('')}
         ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
-        <p class="note muted small" style="margin-top:8px">Comps match skill ratings and height against active players, free agents, retirees and Hall of Famers.</p>
+        <p class="note muted small" style="margin-top:8px">Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
       </fieldset>`,
   });
 };
