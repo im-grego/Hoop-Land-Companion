@@ -23,11 +23,14 @@ export function ceilingVector(p) {
 // Comps
 
 // Comparison pool: active players + free agents (current ratings), retirees
-// and Hall of Famers (best of their two stored values).
+// and Hall of Famers (best of their two stored values). This year's rookies
+// are left out so prospects aren't compared with each other.
 export function buildCompPool(league) {
   const pool = [];
+  const yr = league.season.currentYear;
+  const isRookie = p => p.history?.draft?.yr === yr || p.history?.yearDeclared === yr;
   const add = (p, group, vec) => {
-    if (!p?.attributes || !p.ht) return;
+    if (!p?.attributes || !p.ht || isRookie(p)) return;
     const v = vec(p);
     if (v.reduce((a, b) => a + b, 0) < 40) return; // empty/placeholder records
     pool.push({ p, group, v, ht: p.ht });
@@ -174,6 +177,8 @@ export function pickOwner(league, year, round, originalTid) {
 // teams); everything else goes worst to best record.
 export function draftOrder(league, lottery, rounds = 2) {
   const year = league.season.currentYear;
+  const actual = actualDraftOrder(league);
+  if (actual) return actual;
   const table = standings(league).map(r => r.team);
   const r1 = lottery ? [...lottery, ...table.filter(t => !lottery.includes(t))] : table;
   const order = [];
@@ -184,6 +189,31 @@ export function draftOrder(league, lottery, rounds = 2) {
     });
   }
   return order;
+}
+
+// After the lottery the game numbers this year's picks (pk, 0-based within
+// each round). Returns the real order, or null before the lottery.
+export function lotteryDone(league) {
+  const yr = league.season.currentYear;
+  return league.teams.some(t => t.draftPicks.some(pk => pk.yr === yr && pk.rd === 1 && pk.pk > 0));
+}
+
+export function actualDraftOrder(league) {
+  if (!lotteryDone(league)) return null;
+  const yr = league.season.currentYear;
+  const byId = new Map(league.teams.map(t => [t.id, t]));
+  const picks = [];
+  for (const t of league.teams) for (const pk of t.draftPicks) if (pk.yr === yr) picks.push({ pk, owner: t });
+  picks.sort((a, b) => a.pk.rd - b.pk.rd || a.pk.pk - b.pk.pk);
+  return picks.map((x, i) => ({ rd: x.pk.rd, orig: byId.get(x.pk.otid) || x.owner, owner: x.owner, overall: i + 1 }));
+}
+
+// Comps for a player already drafted (ratings already include the drop).
+export function rookieComps(p, pool) {
+  return {
+    floor: findComps(SKILL_ATTRS.map(k => p.attributes[k][0]), p.ht, pool, 3, p.id),
+    ceiling: findComps(ceilingVector(p), p.ht, pool, 3, p.id),
+  };
 }
 
 // Best available for a team: value plus a small bonus for positions the

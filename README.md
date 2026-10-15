@@ -40,6 +40,14 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Mock draft:** uses the simulated lottery (or record order), honours traded picks; CPU teams take the best fit,
   you pick for your teams.
 - **Trades:** swap draft picks between any two teams, written to the season file (undo per trade).
+- After the lottery (phase 4) the lottery tab and mock draft use the real draft order from the save. After the
+  draft (phase 5) the room shows the rookie class with comps.
+
+## Rookie bump
+
+After the draft (phase 5), rookies get their own bump: upgrade points by age (≤19: 3–5, 20–21: 2–4, 22+: 1–3),
+×1.25 for first-rounders, ×1.0 second round, ×0.75 undrafted (optional). Points go into `season.ap` like the
+offseason bump. Rookies' ratings already include the draft drop.
 
 ## Save-file safety
 
@@ -60,4 +68,5 @@ It's a static site with no build step.
 node tests/roundtrip.test.mjs   path/to/season-file   # load + save is byte-identical
 node tests/progression.test.mjs path/to/season-file   # progression rules hold
 node tests/draft.test.mjs       path/to/offseason-file # comps, lottery, mock draft, pick trades
+node tests/rookies.test.mjs     pre-draft post-draft   # real draft order, draft drop, rookie bump
 ```

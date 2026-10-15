@@ -104,11 +104,17 @@ export const MODE_NAMES = { 0: 'Franchise', 1: 'Commissioner' };
 // Known season.phase values:
 // 11 = champion crowned, offseason not started (ages not yet +1)
 // 2  = offseason start, before the lottery (new year, ages +1, retirees gone)
+// 4  = lottery done, before the draft (current-year picks get a 0-based pk)
+// 5  = draft done (rookies on rosters / undrafted in free agency)
 export const PHASE_SEASON_COMPLETE = 11;
 export const PHASE_PRE_LOTTERY = 2;
+export const PHASE_PRE_DRAFT = 4;
+export const PHASE_POST_DRAFT = 5;
 export const PHASE_NAMES = {
   [PHASE_SEASON_COMPLETE]: 'Season Complete',
   [PHASE_PRE_LOTTERY]: 'Offseason · Pre-Lottery',
+  [PHASE_PRE_DRAFT]: 'Offseason · Pre-Draft',
+  [PHASE_POST_DRAFT]: 'Offseason · Post-Draft',
 };
 // Phases where the bump is meant to run (final choice pending).
 export const BUMP_PHASES = [PHASE_SEASON_COMPLETE];
@@ -141,6 +147,21 @@ export function leaguePlayers(league, includeFreeAgents = true) {
   for (const t of league.teams) for (const p of t.roster) out.push({ p, team: t });
   if (includeFreeAgents) for (const p of league.freeAgents || []) out.push({ p, team: null });
   return out;
+}
+
+// This year's rookies: drafted (history.draft.yr = this year) and undrafted
+// prospects who declared this year. `round` is 0 for undrafted.
+export function leagueRookies(league) {
+  const yr = league.season.currentYear;
+  const out = [];
+  const check = (p, team) => {
+    const h = p.history || {};
+    if (h.draft?.yr === yr && h.draft.rd > 0) out.push({ p, team, round: h.draft.rd, pick: h.draft.pk });
+    else if (h.yearDeclared === yr && !(h.draft?.yr)) out.push({ p, team, round: 0, pick: 0 });
+  };
+  for (const t of league.teams) for (const p of t.roster) check(p, t);
+  for (const p of league.freeAgents || []) check(p, null);
+  return out.sort((a, b) => (a.pick || 999) - (b.pick || 999));
 }
 
 export function snapshot(p) {

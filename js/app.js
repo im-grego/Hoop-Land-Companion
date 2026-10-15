@@ -1,14 +1,14 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32 } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
-  lotterySetup, lotteryOdds, runLottery, draftOrder, cpuPick, tradePicks, pickValue,
+  lotterySetup, lotteryOdds, runLottery, draftOrder, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
 } from './draft.js';
 
-const APP_VERSION = '0.3.1';
+const APP_VERSION = '0.4.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -23,6 +23,7 @@ const state = {
   leagueAvg: [],           // per league average attribute vector
   userTeams: new Set(),    // team ids the user controls (current league)
   auto: {},                // leagueIdx -> bump summary
+  rookieAuto: {},          // leagueIdx -> rookie bump summary
   awards: {},              // leagueIdx -> Map pid -> points awarded
   draft: {},               // leagueIdx -> { lottery, mock, trades }
   compPools: {},
@@ -224,6 +225,7 @@ async function loadFile(file) {
     state.profiles = [];
     state.leagueAvg = [];
     state.auto = {};
+    state.rookieAuto = {};
     state.awards = {};
     state.draft = {};
     state.compPools = {};
@@ -390,14 +392,22 @@ actions.toggleTeam = async d => {
 // ---------------------------------------------------------------------------
 // Offseason bump
 
+const rookieIds = () => new Set(leagueRookies(league()).map(r => r.p.id));
+
+// Veteran bump: everyone except this year's rookies (they have their own).
 function bumpEntries() {
-  return leaguePlayers(league(), state.params.includeFreeAgents);
+  const rk = rookieIds();
+  return leaguePlayers(league(), state.params.includeFreeAgents).filter(e => !rk.has(e.p.id));
+}
+function vetPlayers() {
+  const rk = rookieIds();
+  return leaguePlayers(league(), true).filter(e => !rk.has(e.p.id)).map(e => e.p);
 }
 
 function applyBump(seed) {
   const li = state.leagueIdx;
   // Start from the original file each time so re-rolls don't stack.
-  for (const { p } of leaguePlayers(league(), true)) restore(p, snapOf(p));
+  for (const p of vetPlayers()) restore(p, snapOf(p));
   const entries = bumpEntries().map(e => ({
     ...e, leagueIdx: li, spend: state.params.spendCpuPoints && !isUserTeam(e.team),
   }));
@@ -409,7 +419,9 @@ function applyBump(seed) {
     points += n;
   }
   for (const e of entries) if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
-  state.awards[li] = awards;
+  const all = (state.awards[li] ||= new Map());
+  for (const p of vetPlayers()) all.delete(p.id);
+  for (const [k, v] of awards) all.set(k, v);
   state.auto[li] = { seed, players, points, mine, total: entries.length, spent: state.params.spendCpuPoints };
   state.dirty = true;
 }
@@ -436,10 +448,42 @@ actions.reroll = async () => {
 };
 
 actions.undoAuto = async () => {
-  if (!(await confirmBox('Undo the offseason bump? Every player returns to the original file.', 'Undo'))) return;
-  for (const { p } of leaguePlayers(league(), true)) restore(p, snapOf(p));
+  if (!(await confirmBox('Undo the offseason bump? Those players return to the original file.', 'Undo'))) return;
+  for (const p of vetPlayers()) { restore(p, snapOf(p)); state.awards[state.leagueIdx]?.delete(p.id); }
   delete state.auto[state.leagueIdx];
-  delete state.awards[state.leagueIdx];
+  render();
+};
+
+function applyRookieBump(seed) {
+  const li = state.leagueIdx;
+  const rookies = leagueRookies(league());
+  for (const r of rookies) restore(r.p, snapOf(r.p));
+  const entries = rookies.map(r => ({ ...r, spend: state.params.spendCpuPoints && !isUserTeam(r.team) }));
+  const awards = runRookieBump(entries, { ...state.params, seed });
+  const all = (state.awards[li] ||= new Map());
+  let players = 0, points = 0, mine = 0;
+  for (const r of rookies) {
+    const n = awards.get(r.p.id) || 0;
+    all.set(r.p.id, n);
+    if (n) players++;
+    points += n;
+    if (isUserTeam(r.team)) mine += n;
+  }
+  state.rookieAuto[li] = { seed, players, points, mine, total: rookies.length };
+  state.dirty = true;
+}
+
+actions.runRookies = async () => {
+  if (state.rookieAuto[state.leagueIdx] && !(await confirmBox('Re-roll the rookie bump? Manual changes to rookies are reset.', 'Re-roll'))) return;
+  const seed = state.rookieAuto[state.leagueIdx] ? Math.floor(Math.random() * 1e6) : state.params.seed;
+  applyRookieBump(seed);
+  render();
+};
+
+actions.undoRookies = async () => {
+  if (!(await confirmBox('Undo the rookie bump?', 'Undo'))) return;
+  for (const r of leagueRookies(league())) { restore(r.p, snapOf(r.p)); state.awards[state.leagueIdx]?.delete(r.p.id); }
+  delete state.rookieAuto[state.leagueIdx];
   render();
 };
 
@@ -479,6 +523,7 @@ screens.offseason = () => {
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
       </fieldset>
+      ${rookieCard()}
       <fieldset class="frame"><legend>2 · Your Teams</legend>
         <div class="stack">
           ${mine.length ? mine.map(t => `
@@ -493,6 +538,45 @@ screens.offseason = () => {
           <button class="btn" data-act="nav" data-to="export">💾 Export Season File</button>
         </div>
       </fieldset>`,
+  });
+};
+
+function rookieCard() {
+  const rookies = leagueRookies(league());
+  if (!rookies.length) return '';
+  const r = state.rookieAuto[state.leagueIdx];
+  const drafted = rookies.filter(x => x.round > 0).length;
+  return `<fieldset class="frame"><legend>Rookie Bump</legend>
+    <div class="stack">
+      ${r ? `<dl class="info">
+          <dt>Rookies bumped</dt><dd class="up">${r.players} / ${r.total}</dd>
+          <dt>Points awarded</dt><dd class="up">+${r.points}</dd>
+          <dt>Your rookies</dt><dd class="up">+${r.mine}</dd>
+        </dl>
+        <button class="btn focus" data-act="nav" data-to="rookies">📋 View Rookies</button>
+        <div class="grid2"><button class="btn" data-act="runRookies">🎲 Re-roll</button><button class="btn" data-act="undoRookies">↺ Undo</button></div>`
+      : `<p class="note">${drafted} drafted rookies${rookies.length > drafted ? ` + ${rookies.length - drafted} undrafted` : ''}. Their ratings already took the −4 draft drop; give them a development bump in upgrade points (by age and draft round).</p>
+        <button class="btn big focus" data-act="runRookies">▶ Run Rookie Bump</button>
+        <button class="btn small" data-act="nav" data-to="rookies">📋 View Rookies</button>`}
+    </div>
+  </fieldset>`;
+}
+
+screens.rookies = () => {
+  const rookies = leagueRookies(league());
+  layout({
+    title: 'Rookie Class',
+    body: `<p class="note muted small">${rookies.length} rookies by draft slot · tap to adjust</p>
+      <div class="list">${rookies.map(r => {
+        const d = diffPlayer(r.p, snapOf(r.p));
+        const award = awardOf(r.p);
+        return `<button class="prow ${isUserTeam(r.team) ? 'sel' : ''}" data-act="openPlayer" data-id="${r.p.id}">
+          <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
+          <span class="right"><span class="stars">${stars(r.p.pot)}</span><br>${award ? `<span class="up">+${award} pts</span>` : '<span class="muted">—</span>'}</span>
+          <span class="meta">${r.team ? esc(r.team.shortName) : 'Undrafted'} · ${r.round ? `R${r.round}` : 'FA'} · ${esc(POSITIONS[r.p.pos] ?? '')} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
+          ${d.changed ? `<span class="chg">${esc(apSummary(d))}</span>` : ''}
+        </button>`;
+      }).join('')}</div>`,
   });
 };
 
@@ -847,6 +931,23 @@ screens.settings = (args) => {
             <button class="btn square" data-act="band" data-i="${i}" data-j="0" data-dir="1" aria-label="Increase">+</button></div>
         </fieldset>`;
       }).join('');
+  } else if (tab === 'rookies') {
+    let lo = 0;
+    body = `<p class="note">Rookie bump after the draft: upgrade points by age, times a multiplier by draft round.</p>` +
+      P.rookieBands.map((b, i) => {
+        const last = i === P.rookieBands.length - 1;
+        const label = last ? `Age ${lo}+` : `Age ${lo === 0 ? 'up to ' : `${lo}–`}${b[0]}`;
+        lo = b[0] + 1;
+        const st = (j, v, lbl) => `<div><p class="note muted small center">${lbl}</p><div class="stepper">
+          <button class="btn square" data-act="rband" data-i="${i}" data-j="${j}" data-dir="-1" aria-label="Decrease">−</button>
+          <div class="val">${v}</div>
+          <button class="btn square" data-act="rband" data-i="${i}" data-j="${j}" data-dir="1" aria-label="Increase">+</button></div></div>`;
+        return `<fieldset class="frame"><legend>${label}</legend><div class="grid2">${st(1, b[1], 'Min pts')}${st(2, b[2], 'Max pts')}</div></fieldset>`;
+      }).join('') +
+      options('1st Round', 'rookieR1Mult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]) +
+      options('2nd Round', 'rookieR2Mult', [[0.75, '×0.75'], [1, '×1.0'], [1.25, '×1.25']]) +
+      options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
+      options('Undrafted Multiplier', 'rookieUndraftedMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']]);
   } else {
     body = `<p class="note">Optional: let the bump also unlock or level up skills. Off (0%) by default.</p>` +
       STEP_FIELDS.skills.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('') +
@@ -856,7 +957,7 @@ screens.settings = (args) => {
     title: 'Bump Settings',
     body: `
       <div class="tabs">
-        ${[['general', 'General'], ['ages', 'Ages'], ['skills', 'Skills']].map(([k, l]) =>
+        ${[['general', 'General'], ['ages', 'Ages'], ['rookies', 'Rookies'], ['skills', 'Skills']].map(([k, l]) =>
           `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="setTab" data-t="${k}">${l}</button>`).join('')}
       </div>
       ${body}
@@ -893,6 +994,15 @@ actions.band = d => {
   saveParams();
   render();
 };
+actions.rband = d => {
+  const b = state.params.rookieBands[+d.i];
+  const j = +d.j;
+  b[j] = Math.max(0, Math.min(20, b[j] + +d.dir));
+  if (j === 1 && b[1] > b[2]) b[2] = b[1];
+  if (j === 2 && b[2] < b[1]) b[1] = b[2];
+  saveParams();
+  render();
+};
 actions.resetParams = async () => {
   if (!(await confirmBox('Reset all bump settings to defaults?', 'Reset'))) return;
   state.params = structuredClone(DEFAULT_PARAMS);
@@ -924,6 +1034,13 @@ function compsFor(p) {
   return cache.get(p.id);
 }
 
+function rookieCompsFor(p) {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  const key = `r${p.id}`;
+  if (!cache.has(key)) cache.set(key, rookieComps(p, compPool()));
+  return cache.get(key);
+}
+
 const avg = v => v.reduce((a, b) => a + b, 0) / v.length;
 const posName = p => POSITIONS[p.pos] ?? p.pos;
 
@@ -943,9 +1060,22 @@ screens.draft = (args) => {
   const L = league();
   const tab = args.tab || 'board';
   if (!L.draftClass?.length && tab !== 'trades') {
+    const rookies = leagueRookies(L);
     layout({
       title: 'Draft Room',
-      body: `<p class="note">This file has no draft class yet. Prospects appear once the offseason starts (before the lottery).</p>
+      body: rookies.length ? `
+        <div class="tabs"><button class="btn on focus">Rookie Class</button><button class="btn off" data-act="draftTab" data-t="trades">Trades</button></div>
+        <p class="note muted small">The draft is done. Floor = current ratings (the −${DRAFT_DROP} drop is already applied), ceiling = top ratings.</p>
+        <div class="list">${rookies.map(r => {
+          const c = rookieCompsFor(r.p);
+          return `<button class="prow ${isUserTeam(r.team) ? 'sel' : ''}" data-act="openPlayer" data-id="${r.p.id}">
+            <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
+            <span class="right"><span class="stars">${stars(r.p.pot)}</span><br><span class="small">${r.team ? esc(r.team.shortName) : 'FA'}</span></span>
+            <span class="meta">${esc(posName(r.p))} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
+            <span class="chg">Floor: ${esc(c.floor[0]?.name || '—')} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span></span>
+          </button>`;
+        }).join('')}</div>`
+      : `<p class="note">This file has no draft class yet. Prospects appear once the offseason starts (before the lottery).</p>
         <button class="btn" data-act="draftTab" data-t="trades">Pick Trades</button>`,
     });
     return;
@@ -1028,7 +1158,22 @@ function draftLottery() {
   const { table } = setup;
   const rec = new Map(table.map(r => [r.team.id, r]));
   const totalW = odds.reduce((a, r) => a + r.weight, 0) || 1;
-  const result = ds.lottery;
+  const actual = lotteryDone(L);
+  const result = actual
+    ? actualDraftOrder(L).filter(o => o.rd === 1).slice(0, setup.lotteryTeams.length)
+        .map(o => ({ team: o.orig, seed: setup.lotteryTeams.indexOf(o.orig) }))
+    : ds.lottery;
+  if (actual) return {
+    html: `<fieldset class="frame"><legend>Lottery Result</legend>
+      <p class="note muted small" style="margin-bottom:8px">The lottery has been drawn in this save. The mock draft uses this order.</p>
+      <div class="list">${result.map((r, i) => {
+        const move = r.seed - i;
+        const rr = rec.get(r.team.id);
+        return `<div class="lot-row ${isUserTeam(r.team) ? 'mine' : ''}"><span class="pk">${i + 1}</span>${logoImg(r.team)}<span class="grow">${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span>
+          ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
+      }).join('')}</div>
+      <button class="btn" data-act="draftTab" data-t="mock" style="margin-top:10px">▶ Mock Draft</button></fieldset>`,
+  };
   return {
     html: `
       ${options('Lottery Format', 'lotteryFormat', [['auto', 'Auto'], ['321', '3-2-1'], ['classic', 'Classic']])}
@@ -1109,7 +1254,7 @@ function draftMock() {
   const userOnClock = onClock && isUserTeam(onClock.owner);
   return {
     html: `
-      <p class="note muted small">${ds.lottery ? 'Using your simulated lottery.' : 'No lottery simulated: order is by record.'} ${state.userTeams.size ? 'You pick for your teams.' : 'Pick your teams to draft for them.'}</p>
+      <p class="note muted small">${lotteryDone(league()) ? 'Using the real draft order from this save.' : ds.lottery ? 'Using your simulated lottery.' : 'No lottery simulated: order is by record.'} ${state.userTeams.size ? 'You pick for your teams.' : 'Pick your teams to draft for them.'}</p>
       <div class="grid2">
         <button class="btn" data-act="mockSim" data-u="1" ${onClock ? '' : 'disabled'}>⏩ To My Pick</button>
         <button class="btn" data-act="mockSim" data-u="0" ${onClock ? '' : 'disabled'}>⏭ Sim All</button>
