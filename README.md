@@ -27,6 +27,9 @@ Every team gets the same rules, so CPU teams stay even with yours.
   for commissioner saves where the CPU doesn't spend. Spending raises the ceiling with the rating (13/14 +2 → 15/15).
 - **Longevity:** regression starts once a player's age passes their `regressionAge`. Players in their first season
   of decline have a 30% chance (10% later on, scaled by minutes) to have `regressionAge` pushed back a year.
+- **Earned longevity:** the game itself adds +1 regression age to players 30+ who play every game at 30+ MPG
+  (62.5% of minutes). The app lowers that bar to 90% of games and 60% of minutes (28.8 MPG); players the game
+  already rewarded are skipped, and those who earn it skip the random roll.
 - **Potential:** players 25 and under have a rare 4% chance (scaled by minutes) of +1 potential (half a star, max 10).
 - **Injuries:** players who missed 15+ games to injury last season (`history.injuries`) risk −1 potential:
   0.6% per game missed, ×0.8–1.1 by major severity (1–4; minor injuries ×0.6), ×1.2 lower body, ×1.25 at 30+.

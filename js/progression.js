@@ -30,6 +30,15 @@ export const DEFAULT_PARAMS = {
   // Longevity: chance to push regressionAge back a year (scaled by minutes).
   regFirstYearChance: 30, // % for players in their first regression year
   regLaterChance: 10,     // % for players further into regression
+  // Earned longevity: the game itself adds +1 regressionAge to players 30+
+  // (season age) who play 100% of games at 62.5%+ of minutes (30 of 48).
+  // The app lowers that bar; players the game already rewarded are skipped.
+  naturalMinAge: 30,
+  naturalGamesPct: 90,
+  naturalMinutesPct: 60,
+  gameNaturalGamesPct: 100,
+  gameNaturalMinutesPct: 62.5,
+  gameMinutes: 48,
   // Rare potential upgrade (+1 = half a star), scaled by minutes.
   potUpChance: 4,         // %
   potUpMaxAge: 25,
@@ -223,6 +232,18 @@ export function runRookieBump(entries, params) {
   return awards;
 }
 
+// Lowered bar for the game's own regression-age bonus. `ctx` = { totalGames,
+// rolled } (rolled: ages already ticked over for the new season).
+export function earnsNaturalLongevity(p, mpgInfo, ctx, params) {
+  if (!mpgInfo || !ctx?.totalGames) return false;
+  const seasonAge = p.age - (ctx.rolled ? 1 : 0);
+  if (seasonAge < params.naturalMinAge) return false;
+  const gamesPct = mpgInfo.gp / ctx.totalGames * 100;
+  const minPct = mpgInfo.mpg / params.gameMinutes * 100;
+  const gameDid = gamesPct >= params.gameNaturalGamesPct && minPct >= params.gameNaturalMinutesPct;
+  return !gameDid && gamesPct >= params.naturalGamesPct && minPct >= params.naturalMinutesPct;
+}
+
 // Push regressionAge back a year: likeliest in the first year of decline.
 // `injury` is the injury class ('standard' | 'nagging' | 'structural') when
 // the player had a qualifying injury last season.
@@ -304,7 +325,7 @@ export function maybeSkills(p, points, params, profiles, rng) {
   }
 }
 
-// Run the offseason bump. `entries` are { p, team, leagueIdx, spend, injuryYear }.
+// Run the offseason bump. `entries` are { p, team, leagueIdx, spend, injuryYear, totalGames, rolled }.
 // `spend` spends the player's held points into ratings afterwards.
 // Returns Map pid -> points awarded.
 export function runProgression(entries, params, profiles) {
@@ -322,7 +343,8 @@ export function runProgression(entries, params, profiles) {
     // Seriously injured players are less likely to delay regression, risk
     // losing potential and can't gain it.
     const injured = !!risk?.chance;
-    maybeLongevity(e.p, mult, params, rng, injured ? risk.cls : null);
+    if (earnsNaturalLongevity(e.p, mpg, e, params)) e.p.regressionAge++;
+    else maybeLongevity(e.p, mult, params, rng, injured ? risk.cls : null);
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
     else maybePotential(e.p, mult, params, rng);
     maybeSkills(e.p, pts, params, profiles, rng);

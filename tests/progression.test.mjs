@@ -1,8 +1,8 @@
 // Usage: node tests/progression.test.mjs <path-to-season-file>
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS } from '../js/savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, AWARD_CATEGORIES, injuryPotChance } from '../js/progression.js';
+import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS, lastSeasonMpg } from '../js/savefile.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, AWARD_CATEGORIES, injuryPotChance, earnsNaturalLongevity } from '../js/progression.js';
 import { teamRecord } from '../js/draft.js';
 
 const text = readFileSync(process.argv[2], 'utf8');
@@ -13,7 +13,8 @@ function run(spend, params = P) {
   const data = parseSave(text);
   const L = data.seasonLeagues[0];
   const injuryYear = Math.max(...L.teams.map(t => teamRecord(t).yr || 0));
-  const entries = leaguePlayers(L).map(e => ({ ...e, leagueIdx: 0, spend, injuryYear }));
+  const ctx = { leagueIdx: 0, injuryYear, totalGames: L.season.totalGames, rolled: L.season.currentYear > injuryYear };
+  const entries = leaguePlayers(L).map(e => ({ ...e, ...ctx, spend }));
   const snaps = new Map(entries.map(e => [e.p.id, snapshot(e.p)]));
   const awards = runProgression(entries, params, buildSkillProfiles(entries.map(e => e.p)));
   return { data, entries, snaps, awards, injuryYear };
@@ -22,7 +23,7 @@ function run(spend, params = P) {
 // 1. Default: points are added to season.ap, ratings untouched.
 {
   const { entries, snaps, awards, injuryYear } = run(false);
-  let bumped = 0, total = 0, delayed = 0, potUps = 0, potDowns = 0, atRisk = 0;
+  let bumped = 0, total = 0, delayed = 0, potUps = 0, potDowns = 0, atRisk = 0, earnedN = 0;
   for (const { p } of entries) {
     const d = diffPlayer(p, snaps.get(p.id));
     const award = awards.get(p.id);
@@ -41,14 +42,17 @@ function run(spend, params = P) {
     total += award;
     const snap = snaps.get(p.id);
     assert.ok(d.regDelta === 0 || d.regDelta === 1, 'regression delayed at most a year');
-    if (d.regDelta) { assert.ok(p.age > snap.regressionAge, 'only players already past their regression age'); delayed++; }
+    const earned = earnsNaturalLongevity(p, lastSeasonMpg(p, 0), entries[0], P);
+    if (earned) { assert.equal(d.regDelta, 1, 'earned longevity is guaranteed'); earnedN++; }
+    if (d.regDelta && !earned) assert.ok(p.age > snap.regressionAge, 'random delay only once past regression age');
+    if (d.regDelta) delayed++;
     const risk = injuryPotChance(p, injuryYear, P);
     assert.ok([-1, 0, 1].includes(d.potDelta), 'potential moves by 1 at most');
     if (d.potDelta > 0) { assert.ok(!risk && p.age <= P.potUpMaxAge && p.pot <= 10, 'young, uninjured, max 10'); potUps++; }
     if (d.potDelta < 0) { assert.ok(risk > 0 && p.pot >= 4, 'only seriously injured players lose potential'); potDowns++; }
     if (risk) atRisk++;
   }
-  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points, ${delayed} regressions delayed, ${potUps} potential upgrades, ${potDowns}/${atRisk} injured players lost potential`);
+  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points, ${delayed} regressions delayed (${earnedN} earned), ${potUps} potential upgrades, ${potDowns}/${atRisk} injured players lost potential`);
 }
 
 // 2. Determinism.

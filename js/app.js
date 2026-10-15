@@ -2,14 +2,14 @@ import {
   parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.9';
+const APP_VERSION = '0.7.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -451,6 +451,13 @@ function lastSeasonYear() {
   return Math.max(...league().teams.map(t => teamRecord(t).yr || 0));
 }
 
+// What the bump needs to know about the season just played.
+function bumpContext() {
+  const L = league();
+  const injuryYear = lastSeasonYear();
+  return { leagueIdx: state.leagueIdx, injuryYear, totalGames: L.season.totalGames, rolled: L.season.currentYear > injuryYear };
+}
+
 const rookieIds = () => new Set(leagueRookies(league()).map(r => r.p.id));
 
 // Veteran bump: everyone except this year's rookies (they have their own).
@@ -467,10 +474,7 @@ function applyBump(seed) {
   const li = state.leagueIdx;
   // Start from the original file each time so re-rolls don't stack.
   for (const p of vetPlayers()) restore(p, snapOf(p));
-  const injuryYear = lastSeasonYear();
-  const entries = bumpEntries().map(e => ({
-    ...e, leagueIdx: li, injuryYear, spend: state.params.spendCpuPoints && !isUserTeam(e.team),
-  }));
+  const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team) }));
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   let players = 0, points = 0, mine = 0;
   for (const [pid, n] of awards) {
@@ -478,8 +482,9 @@ function applyBump(seed) {
     players++;
     points += n;
   }
-  let longevity = 0, potUps = 0, potDowns = 0;
+  let longevity = 0, potUps = 0, potDowns = 0, earned = 0;
   for (const e of entries) {
+    if (earnsNaturalLongevity(e.p, lastSeasonMpg(e.p, li), e, state.params)) earned++;
     if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
     const d = diffPlayer(e.p, snapOf(e.p));
     if (d.regDelta > 0) longevity++;
@@ -489,7 +494,7 @@ function applyBump(seed) {
   const all = (state.awards[li] ||= new Map());
   for (const p of vetPlayers()) all.delete(p.id);
   for (const [k, v] of awards) all.set(k, v);
-  state.auto[li] = { seed, players, points, mine, longevity, potUps, potDowns, total: entries.length, spent: state.params.spendCpuPoints };
+  state.auto[li] = { seed, players, points, mine, longevity, earned, potUps, potDowns, total: entries.length, spent: state.params.spendCpuPoints };
   state.dirty = true;
 }
 
@@ -580,7 +585,7 @@ screens.offseason = () => {
               <dt>Players bumped</dt><dd class="up">${auto.players} / ${auto.total}</dd>
               <dt>Points awarded</dt><dd class="up">+${auto.points}</dd>
               <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
-              <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}</dd>
+              <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}${auto.earned ? ` <span class="small">(${auto.earned} earned)</span>` : ''}</dd>
               <dt>Potential upgrades</dt><dd class="up">${auto.potUps ?? 0}</dd>
               <dt>Lost potential (injury)</dt><dd class="down">${auto.potDowns ?? 0}</dd>
               <dt>CPU points</dt><dd>${auto.spent ? 'Spent into ratings' : 'Held for the game'}</dd>
@@ -951,6 +956,14 @@ function injuryText(p) {
 }
 
 function regressionText(p) {
+  const ctx = bumpContext();
+  const mpg = lastSeasonMpg(p, state.leagueIdx);
+  const earned = earnsNaturalLongevity(p, mpg, ctx, state.params)
+    ? ` · earned +1 (${mpg.gp} GP, ${mpg.mpg.toFixed(1)} MPG)` : '';
+  return regressionStatus(p) + earned;
+}
+
+function regressionStatus(p) {
   const y = regressionYear(p);
   if (y < 1) return `Declines after age ${p.regressionAge} (${-y + 1} season${-y + 1 === 1 ? '' : 's'} away)`;
   return y === 1 ? `First season of decline (age ${p.age})` : `Season ${y} of decline (age ${p.age})`;
@@ -1037,7 +1050,7 @@ actions.autoOne = () => {
   const li = state.leagueIdx;
   const e = findPlayer(state.stack[state.stack.length - 1].args.id);
   restore(e.p, snapOf(e.p));
-  const awards = runProgression([{ ...e, leagueIdx: li, spend: state.params.spendCpuPoints && !isUserTeam(e.team) }],
+  const awards = runProgression([{ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team) }],
     { ...state.params, seed: Math.floor(Math.random() * 1e6) }, state.profiles[li]);
   (state.awards[li] ||= new Map()).set(e.p.id, awards.get(e.p.id));
   state.dirty = true;
@@ -1062,6 +1075,9 @@ const STEP_FIELDS = {
     ['benchMpg', 'Bench MPG (penalty below)', 1, 0, 48],
     ['regFirstYearChance', 'Delay Regression: 1st Year %', 5, 0, 100],
     ['regLaterChance', 'Delay Regression: Later Years %', 5, 0, 100],
+    ['naturalGamesPct', 'Earned Longevity: % Of Games', 5, 0, 100],
+    ['naturalMinutesPct', 'Earned Longevity: % Of Minutes', 2.5, 0, 100],
+    ['naturalMinAge', 'Earned Longevity: Min Age', 1, 18, 45],
     ['potUpChance', 'Potential Upgrade %', 1, 0, 100],
     ['potUpMaxAge', 'Potential Upgrade Max Age', 1, 18, 40],
     ['injuryMinGames', 'Injury: Min Games Missed', 1, 0, 82],
