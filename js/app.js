@@ -8,7 +8,7 @@ import {
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
-  needBaseline, teamNeeds, needsFilled, isWinNow, classScales, draftScore,
+  needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.5';
+const APP_VERSION = '0.19.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1770,6 +1770,7 @@ function draftVecs() {
     const fns = {
       ceilOf: p => { if (!ceil.has(p.id)) ceil.set(p.id, projectedCeiling(p, scoutPot(p))); return ceil.get(p.id); },
       floorOf: p => { if (!floor.has(p.id)) floor.set(p.id, floorVector(p, bands)); return floor.get(p.id); },
+      potOf: p => scoutPot(p),
     };
     const cls = league().draftClass || [];
     cache.set('vecs', { fns, scales: cls.length ? classScales(cls, fns.ceilOf, fns.floorOf) : { cm: 0, cs: 1, fm: 0, fs: 1 } });
@@ -1786,9 +1787,9 @@ function eliteBonus(p) {
   if (!f || !ce) return 0;
   // The comp tiers count directly (a Hall of Fame ceiling beats a
   // Superstar one, a Starter floor beats Bench Depth)...
-  const tiers = 0.65 * (ce - ALL_STAR) + 0.65 * (f - 6);
+  const tiers = 0.9 * (ce - ALL_STAR) + 0.3 * (f - 6);
   // ...and All-Star-or-better on both ends goes to the top.
-  return tiers + (f >= ALL_STAR && ce >= ALL_STAR ? 2.5 + (f - ALL_STAR) * 0.5 : 0);
+  return tiers + (f >= ALL_STAR && ce >= ALL_STAR ? 1.5 + (f - ALL_STAR) * 0.3 : 0);
 }
 const scoutValue = p => baseValue(p) + eliteBonus(p);
 // Draft value shown next to prospects: 1–99.
@@ -1799,7 +1800,8 @@ function teamOutlook(team) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
   if (!cache.has('needBase')) cache.set('needBase', needBaseline(league()));
   const baseline = cache.get('needBase');
-  return { winNow: isWinNow(team), needs: teamNeeds(league(), team, baseline), baseline };
+  const status = teamStatus(league(), team);
+  return { status, winNow: status === 'contending', needs: teamNeeds(league(), team, baseline), baseline };
 }
 
 // A CPU team's pick: its own value of each prospect plus draft-day noise.
@@ -1845,6 +1847,7 @@ function gradeOf(p) {
   return GRADES[6];
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
+const statusTag = st => `<span class="status s-${st}">${STATUS_NAMES[st]}</span>`;
 const needChips = needs => needs.map(n => `<span class="badge need">${esc(n.label)}</span>`).join('');
 
 function rookieCompsFor(p) {
@@ -1971,7 +1974,7 @@ function draftBoard(args = {}) {
   const views = [['consensus', 'Consensus'], ['mine', 'My Board'], ['watch', `Watch (${watch.size})`]];
   return {
     html: `
-      ${league().teams.filter(isUserTeam).map(t => { const o = teamOutlook(t); return `<div class="needs-row">${logoImg(t)}<b>${esc(t.shortName)}</b><span class="small muted">${o.winNow ? 'Win now' : 'Building'}</span>${needChips(o.needs)}</div>`; }).join('')}
+      ${league().teams.filter(isUserTeam).map(t => { const o = teamOutlook(t); return `<div class="needs-row">${logoImg(t)}<b>${esc(t.shortName)}</b>${statusTag(o.status)}${needChips(o.needs)}</div>`; }).join('')}
       <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. Grades are where we project them to go.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'}</p>
       <div class="list">${rows.map((p, i) => {
@@ -2291,7 +2294,7 @@ function draftLive() {
       ${done ? `<button class="btn big focus" data-act="liveFinish">✅ Finish Draft &amp; Write to File</button>` : `
       <div class="clock-card">
         <span class="pk">#${o.overall}</span>${logoImg(o.owner)}
-        <span class="grow"><b>${esc(o.owner.city)} ${esc(o.owner.name)}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''} · ${teamOutlook(o.owner).winNow ? 'Win now' : 'Building'}</span>
+        <span class="grow"><b>${esc(o.owner.city)} ${esc(o.owner.name)}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''}</span> ${statusTag(teamOutlook(o.owner).status)}
           <span class="needs-line">${needChips(teamOutlook(o.owner).needs)}</span></span>
       </div>
       ${user ? `<button class="btn big focus" data-act="liveChoose">🎯 Make Pick #${o.overall}</button>` : ''}

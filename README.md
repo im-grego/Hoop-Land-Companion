@@ -148,9 +148,12 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Board order:** prospects whose floor and ceiling comps are both
   All-Star or better rank first, and the comp tiers count directly (a Hall of Fame ceiling beats a Superstar one, a
   Starter floor beats Bench Depth).
-- **How teams value prospects:** expected potential first (the projected ceiling at the scouted tier), then the floor
-  (rookie line plus development), with a bonus for prospects strong in both. Rebuilding teams lean young; **win-now**
-  teams (last season .560+) weigh the floor more and mind age less, so older high-floor prospects go to contenders.
+- **How teams value prospects:** expected potential (the scouted tier) leads, then the projected ceiling, then the
+  floor, and youth counts for a lot: about three years younger beats a matching ceiling and floor. Team tags come from
+  last season's finish (record and playoff run) and the roster's current talent:
+  - **Rebuilding** teams lean hardest on ceiling and youth;
+  - **Developing** teams are close behind;
+  - **Contending** teams weigh the floor and barely mind age, so older, ready-now prospects go to contenders.
 - **Team needs:** every team has two needs, a position group (guards: PG/G/SG, wings: GF/SF/F, bigs: PF/FC/C) and a skill (playmaking,
   shooting, finishing, post scoring, rebounding, perimeter D, rim protection), from its top two players at each group
   against the league average. A prospect who projects at or above the league average there fills the need, and teams

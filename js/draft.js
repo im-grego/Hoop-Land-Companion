@@ -697,11 +697,22 @@ export function needsFilled(p, needs, baseline, vec) {
   return needs.filter(n => groupOf(p.pos) === n.group && skillOf(vec, NEED_SKILLS[n.skill].attrs) >= baseline[n.group][n.skill]);
 }
 
-// Win-now teams: last season's record.
-export function isWinNow(team) {
+// Where a team is: 'contending', 'developing' or 'rebuilding', from last
+// season's finish (record and playoff run) and the talent on the roster now
+// (its best three players against the league).
+export const STATUS_NAMES = { contending: 'Contending', developing: 'Developing', rebuilding: 'Rebuilding' };
+export function teamStatus(league, team) {
   const r = teamRecord(team);
-  return r.W + r.L > 0 && r.pct >= 0.56;
+  const row = (team.season || []).find(x => x.yr === r.yr);
+  const round = row?.round || 0;                               // deepest playoff round (4 = Finals)
+  const top3 = t => mean(t.roster.filter(p => p.status !== 4).map(strength).sort((a, b) => b - a).slice(0, 3));
+  const all = league.teams.map(top3);
+  const m = mean(all), sd = Math.sqrt(mean(all.map(x => (x - m) ** 2))) || 1;
+  const talent = (top3(team) - m) / sd;                        // z vs the league
+  const score = (r.W + r.L ? r.pct : 0.5) + 0.04 * round + 0.06 * talent;
+  return score >= 0.7 ? 'contending' : score <= 0.42 ? 'rebuilding' : 'developing';
 }
+export const isWinNow = (team, league = null) => (league ? teamStatus(league, team) === 'contending' : teamRecord(team).pct >= 0.6);
 
 // Spread of ceilings and floors across the class, so the two weigh evenly.
 export function classScales(players, ceilOf, floorOf) {
@@ -713,19 +724,28 @@ export function classScales(players, ceilOf, floorOf) {
 
 // Draft value in class standard deviations. `team` = { winNow, needs,
 // baseline } for a team's pick, or null for the consensus board.
-export function draftScore(p, scales, { ceilOf, floorOf }, team = null) {
+export function draftScore(p, scales, { ceilOf, floorOf, potOf = null }, team = null) {
   const ceil = ceilOf(p), floor = floorOf(p);
   const zc = (mean(topN(ceil, 8)) - scales.cm) / scales.cs;
   const zf = (mean(topN(floor, 8)) - scales.fm) / scales.fs;
-  const winNow = !!team?.winNow;
-  // Ceiling leads; win-now teams flip toward the floor.
-  const wc = winNow ? 1.0 : team ? 1.7 : 1.6, wf = winNow ? 1.1 : team ? 0.5 : 0.6;
-  const both = Math.max(0, Math.min(zc, zf)) * 0.8;          // high floor + high ceiling
-  const age = (20 - p.age) * (winNow ? 0.04 : team ? 0.2 : 0.15);
+  // Ceiling leads and youth matters; contenders flip toward the floor and
+  // barely mind age. (Three years younger outweighs a matching ceiling and
+  // floor for everyone else.)
+  const W = {
+    contending: { c: 1.0, f: 1.2, age: 0.05 },
+    developing: { c: 1.8, f: 0.4, age: 0.5 },
+    rebuilding: { c: 2.0, f: 0.3, age: 0.6 },
+    consensus: { c: 1.9, f: 0.35, age: 0.55 },
+  }[team?.status || (team?.winNow ? 'contending' : team ? 'developing' : 'consensus')];
+  const wc = W.c, wf = W.f;
+  const both = Math.max(0, Math.min(zc, zf)) * 0.4;          // high floor + high ceiling
+  const age = (20 - p.age) * W.age;
+  // Expected potential (the scouted tier) leads everything.
+  const tier = potOf ? (potOf(p) - 8) * W.c * 0.65 : 0;
   let need = 0;
   if (team?.needs) {
     const vec = ceil.map((c, i) => (c + floor[i]) / 2);
     need = needsFilled(p, team.needs, team.baseline, vec).length * 0.35;
   }
-  return wc * zc + wf * zf + both + age + need;
+  return wc * zc + wf * zf + both + age + need + tier;
 }
