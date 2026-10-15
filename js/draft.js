@@ -22,9 +22,23 @@ export const recoveryFor = (age, bands = DEFAULT_RECOVERY) => (bands.find(b => a
 export const projectedRookie = (v, age, bands = DEFAULT_RECOVERY) =>
   Math.min(v, draftDrop(v) + recoveryFor(age, bands));
 
-// Prospect floor: the projected rookie line (net of drop and recovery).
-export function floorVector(p, bands = DEFAULT_RECOVERY) {
+// The projected rookie line (net of drop and recovery).
+export function rookieLine(p, bands = DEFAULT_RECOVERY) {
   return SKILL_ATTRS.map(k => projectedRookie(p.attributes[k][0], p.age, bands));
+}
+
+// Prospect floor: the rookie line plus natural development (+2 a rating),
+// never past their ceiling, 20, or 16 for free throws.
+export const FLOOR_DEVELOPMENT = 2;
+export function floorVector(p, bands = DEFAULT_RECOVERY) {
+  return withDevelopment(p, rookieLine(p, bands));
+}
+function withDevelopment(p, line) {
+  return line.map((v, i) => {
+    const k = SKILL_ATTRS[i];
+    const top = Math.max(p.attributes[k][0], p.attributes[k][1]);
+    return Math.max(v, Math.min(v + FLOOR_DEVELOPMENT, top, k === 'FTS' ? 16 : 20));
+  });
 }
 
 // Pre-draft skill ratings, to remember across saves: { id: [12 values] }.
@@ -93,7 +107,8 @@ export function projectedCeiling(p, pot = p.pot) {
 // Tiers (by potential) and comps
 
 export const TIERS = [
-  [10, 'Legend'], [9, 'Hall of Fame'], [8, 'All-Star'], [7, 'Starter'], [6, 'Role Player'], [0, 'Bench Depth'],
+  [11, 'Legend'], [10, 'Hall of Fame'], [9, 'Superstar'], [8, 'All-Star'], [7, 'Starter'], [6, 'Role Player'],
+  [5, 'Bench Depth'], [0, 'Project'],
 ];
 export const tierFor = pot => TIERS.find(([min]) => pot >= min)[1];
 
@@ -170,13 +185,16 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
 // One floor and one ceiling comp per player across a whole class, never
 // reusing a comp. `players` should be in priority order (best first): they
 // get first pick. Ceiling comps come from established players at or below the
-// player's (scouted) tier, and Legends only go to top-tier players, at most
-// `legendCap` per class. Floor comps are never Legends and never above tier.
+// player's (scouted) tier, and the very top comps (potential 10+: Hall of Fame
+// and Legend) only go to top-tier players, at most `legendCap` per class.
+// Floor comps never come from that top group and never above tier.
 // Returns Map id -> { floor: [comp], ceiling: [comp] }.
 // Share of each class's comps tagged "+" (prospect projects a bit better) or
 // "lite" (a bit short), picked by the biggest gaps; never on tiny gaps.
 const QUALIFIER_SHARE = 0.15;
 const QUALIFIER_MIN_GAP = 4; // skill-total points
+
+const TOP_COMP = 10; // Wilt / LeBron territory
 
 export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p => p.pot, legendCap = 2 }) {
   const used = new Set();
@@ -200,15 +218,15 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
   for (const p of players) {
     const pot = potOf(p);
     const e = pick(p, ceilVec(p), c => c.established && c.p.pot <= pot &&
-      (c.p.pot < 10 || (pot >= 10 && legends < legendCap)));
+      (c.p.pot < TOP_COMP || (pot >= TOP_COMP && legends < legendCap)));
     if (e) {
-      if (e.p.pot >= 10) legends++;
+      if (e.p.pot >= TOP_COMP) legends++;
       out.get(p.id).ceiling = [fmt(e, ceilVec(p))];
     }
   }
   for (const p of players) {
     const pot = potOf(p);
-    const e = pick(p, floorVec(p), c => c.p.pot < 10 && c.p.pot <= pot);
+    const e = pick(p, floorVec(p), c => c.p.pot < TOP_COMP && c.p.pot <= pot);
     if (e) out.get(p.id).floor = [fmt(e, floorVec(p))];
   }
   // Sprinkle "+" / "lite" on the comps furthest from the class's typical
@@ -462,10 +480,10 @@ export function actualDraftOrder(league) {
 // With pre-draft ratings and summer league still to come, the floor is the
 // projected post-summer-league line.
 export function rookieFloorVector(p, original = null, bands = DEFAULT_RECOVERY) {
-  return SKILL_ATTRS.map((k, i) => {
+  return withDevelopment(p, SKILL_ATTRS.map((k, i) => {
     const cur = p.attributes[k][0];
     return original ? Math.max(cur, projectedRookie(original[i], p.age, bands)) : cur;
-  });
+  }));
 }
 
 export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY, pot = p.pot) {

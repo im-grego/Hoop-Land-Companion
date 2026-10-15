@@ -4,14 +4,14 @@ import {
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity } from './progression.js';
 import {
-  SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
+  SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.11.0';
+const APP_VERSION = '0.11.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1417,7 +1417,7 @@ function compsFor(p) {
   return cache.get('class').get(p.id) || { floor: [], ceiling: [] };
 }
 
-const TIER_CLASS = { Legend: 't-legend', 'Hall of Fame': 't-hof', 'All-Star': 't-star', Starter: 't-start', 'Role Player': 't-role', 'Bench Depth': 't-bench' };
+const TIER_CLASS = { Legend: 't-legend', 'Hall of Fame': 't-hof', Superstar: 't-super', 'All-Star': 't-star', Starter: 't-start', 'Role Player': 't-role', 'Bench Depth': 't-bench', Project: 't-proj' };
 const tierTag = tier => `<span class="tier ${TIER_CLASS[tier] || ''}">${esc(tier)}</span>`;
 const compLine = c => c.floor[0] || c.ceiling[0]
   ? `Floor: ${esc(c.floor[0]?.name || '—')} ${c.floor[0] ? tierTag(c.floor[0].tier) : ''} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span> ${c.ceiling[0] ? tierTag(c.ceiling[0].tier) : ''}`
@@ -1557,7 +1557,7 @@ function draftBoard(args = {}) {
       <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouting.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'} Rookie = projected average skill rating after the draft drop and summer league.</p>
       <div class="list">${rows.map((p, i) => {
-        const fl = avg(floorVector(p, state.params.recoveryBands));
+        const fl = avg(rookieLine(p, state.params.recoveryBands));
         const pk = drafted.get(p.id);
         const row = `<button class="prow ${watch.has(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
           <span class="name">${i + 1}. ${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
@@ -1612,7 +1612,7 @@ screens.prospect = (args) => {
   if (!p) { back(); return; }
   const c = compsFor(p);
   const rec = recoveryFor(p.age, state.params.recoveryBands);
-  const fv = floorVector(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p, scoutPot(p));
+  const fv = rookieLine(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p, scoutPot(p));
   const compList = (list, cls) => list.map(x => `<div class="comp">
     <span class="grow"><b class="${cls}">${esc(x.name)}</b><br>${tierTag(x.tier)}<br><span class="muted small">${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span></div>`).join('') || '<p class="note muted">—</p>';
   layout({
@@ -1641,7 +1641,7 @@ screens.prospect = (args) => {
           <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
         </div>`).join('')}
         ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
-        <p class="note muted small" style="margin-top:8px">Ceiling is projected from our scouting: the game caps every prospect's ceiling at an All-Star level, so the projection adds to their strengths for high-upside prospects (and trims it for low-upside ones). Scouting isn't perfect. Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
+        <p class="note muted small" style="margin-top:8px">Ceiling is projected from our scouting: the game caps every prospect's ceiling at an All-Star level, so the projection adds to their strengths for high-upside prospects (and trims it for low-upside ones). Scouting isn't perfect. Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comp adds +2 a rating of natural development to this line.</p>
       </fieldset>`,
   });
 };

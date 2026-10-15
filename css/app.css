@@ -365,3 +365,5 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .fit { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; text-align: center; margin-top: 6px; }
 .fit > div { background: var(--bg-dark); border: 2px solid var(--btn-edge); padding: 6px 2px; display: flex; flex-direction: column; gap: 2px; }
 .fit b { font-size: 20px; }
+.t-super { color: #ff9f6b; border-color: #ff9f6b; }
+.t-proj { color: #8fa7c9; border-color: #8fa7c9; border-style: dashed; }

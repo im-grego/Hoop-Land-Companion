@@ -35,11 +35,11 @@ for (const p of board) {
     assert.ok(!seen.has(x.id), 'comp used once per class');
     seen.add(x.id);
   }
-  if (c.ceiling[0]?.tier === 'Legend') { legends++; assert.equal(p.pot, 10, 'Legend comps only for 10s'); }
-  assert.notEqual(c.floor[0]?.tier, 'Legend', 'no Legend floors');
+  if ((c.ceiling[0]?.tier === 'Hall of Fame' || c.ceiling[0]?.tier === 'Legend')) { legends++; assert.equal(p.pot, 10, 'top comps only for 10s'); }
+  assert.ok(!['Hall of Fame', 'Legend'].includes(c.floor[0]?.tier), 'no top-tier floors');
 }
 assert.ok(legends <= 2, 'at most 2 Legend comps per class');
-console.log(`class comps OK: ${seen.size} unique comps, ${legends} Legend`);
+console.log(`class comps OK: ${seen.size} unique comps, ${legends} top-tier (10+)`);
 for (const p of board.slice(0, 8)) {
   const c = classComps.get(p.id);
   console.log(`  ${playerName(p).padEnd(22)} pot ${p.pot} | floor ${c.floor[0]?.name} (${c.floor[0]?.tier}) | ceiling ${c.ceiling[0]?.name} (${c.ceiling[0]?.tier})`);

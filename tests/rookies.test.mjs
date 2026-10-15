@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { parseSave, leagueRookies, snapshot, diffPlayer, PHYSICAL } from '../js/savefile.js';
 import { actualDraftOrder, lotteryDone, draftDrop, SKILL_ATTRS, buildCompPool, rookieComps, originalRatings,
-  applySummerLeague, projectedRookie, recoveryFor, floorVector } from '../js/draft.js';
+  applySummerLeague, projectedRookie, recoveryFor, rookieLine } from '../js/draft.js';
 import { DEFAULT_PARAMS, runRookieBump, AWARD_CATEGORIES } from '../js/progression.js';
 
 const pre = parseSave(readFileSync(process.argv[2], 'utf8')).seasonLeagues[0];
@@ -40,7 +40,7 @@ const orig = originalRatings(pre);
 let regained = 0;
 for (const { p } of rookies) {
   const b = before.get(p.id);
-  const projected = floorVector(b);
+  const projected = rookieLine(b);
   const gains = applySummerLeague(p, orig[p.id]);
   const n = recoveryFor(p.age);
   SKILL_ATTRS.forEach((k, i) => {
@@ -48,7 +48,7 @@ for (const { p } of rookies) {
     assert.ok(now <= orig[p.id][i], 'never past pre-draft rating');
     assert.ok(now - draftDrop(orig[p.id][i]) <= n, 'recovers at most the age amount');
     assert.equal(now, projectedRookie(orig[p.id][i], p.age));
-    assert.equal(now, projected[i], 'matches the prospect floor projection');
+    assert.equal(now, projected[i], 'matches the projected rookie line');
   });
   regained += Object.values(gains).reduce((a, x) => a + x, 0);
   // Applying again changes nothing.

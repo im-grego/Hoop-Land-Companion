@@ -84,11 +84,11 @@ Available once the file has a draft class (offseason, before the lottery).
   the draft drop (−4, never below 2; ratings already at 2 or lower stay) minus what summer league gives back for their
   age. Each rating shows its projected loss. Ceiling = their top ratings. Comps weigh the 12
   skill ratings, position, height and weight against active players, free agents, retirees and Hall of Famers.
-  Every comp is tagged by its potential: 10 Legend, 9 Hall of Fame, 8 All-Star, 7 Starter, 6 Role Player,
-  5 and under Bench Depth. A prospect's own potential is never shown (no stars or tier in the draft room).
+  Every comp is tagged by its potential: 11 Legend, 10 Hall of Fame, 9 Superstar, 8 All-Star, 7 Starter,
+  6 Role Player, 5 Bench Depth, 4 Project. Floor comps use the rookie line plus +2 a rating of natural development. A prospect's own potential is never shown (no stars or tier in the draft room).
   One floor and one ceiling comp per prospect, assigned across the whole class so no player is used twice (best
-  prospects pick first). Ceiling comps are at or below the prospect's scouted tier; Legend comps only go to top-tier
-  prospects, at most 2 per class, and floors are never Legends. Like real scouting reports, some comps get a "+"
+  prospects pick first). Ceiling comps are at or below the prospect's scouted tier; 10+ potential comps (Hall of Fame,
+  Legend) only go to top-tier prospects, at most 2 per class, and never as floors. Like real scouting reports, some comps get a "+"
   (the prospect projects a bit better than the comp) or "lite" (a bit short) — about 15% each per class.
 - **Fog of war:** projections use a scouted potential that's usually right but, 25% of the time by default, reads one
   step high or low (stable per prospect and save; Settings → Rookies → Scouting Report Accuracy). The board order,
