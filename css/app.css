@@ -28,10 +28,6 @@ body {
   font-weight: 600;
   color: var(--text);
   background-color: var(--bg);
-  background-image:
-    linear-gradient(90deg, rgba(255,255,255,.035) 50%, transparent 50%),
-    linear-gradient(rgba(0,0,0,.08) 50%, transparent 50%);
-  background-size: 24px 24px, 24px 24px;
   overscroll-behavior: none;
 }
 
@@ -544,3 +540,13 @@ fieldset.frame > legend {
 .status.s-contending { color: var(--gold); }
 .status.s-developing { color: var(--cyan); }
 .status.s-rebuilding { color: #b5a3ff; }
+
+/* ---------- Scrolling Hoop Land background (like the game's menus) ---------- */
+body::before {
+  content: ""; position: fixed; inset: -720px 0 0 -1080px; z-index: -1; pointer-events: none;
+  background: var(--bg) url("../icons/bg-tile.jpg") 0 0 / 540px 360px repeat;
+  image-rendering: pixelated;
+  animation: bg-scroll 40s linear infinite;
+}
+@keyframes bg-scroll { to { transform: translate(540px, 360px); } }
+@media (prefers-reduced-motion: reduce) { body::before { animation: none; } }

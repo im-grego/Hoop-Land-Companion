@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.6';
+const APP_VERSION = '0.19.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
