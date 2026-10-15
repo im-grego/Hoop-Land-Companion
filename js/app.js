@@ -11,7 +11,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.9.3';
+const APP_VERSION = '0.10.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -50,13 +50,14 @@ function loadParams() {
       if (saved.version < 5) for (const k of ['injuryMinGames', 'injuryPotPerGame']) delete saved[k];
       if (saved.version < 7) for (const k of ['softTissueParts', 'softTissueMult', 'softTissuePointsMult', 'structuralParts', 'structuralMult']) delete saved[k]; // v7 injury classes
       if (saved.version < 8) delete saved.structuralParts; // v8 added Ankle, Back
+      if (saved.version < 9) for (const k of ['mentorMinAge', 'menteeMaxAge', 'mentorPosRange']) delete saved[k]; // v9 mentorship rules
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 8 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 9 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -595,7 +596,7 @@ screens.offseason = () => {
           ${auto ? `
             <dl class="info">
               <dt>Players bumped</dt><dd class="up">${auto.players} / ${auto.total}</dd>
-              <dt>Points awarded</dt><dd class="up">+${auto.points}</dd>
+              <dt>${state.params.bumpMode === 'train' ? 'Rating upgrades' : 'Points awarded'}</dt><dd class="up">+${auto.points}</dd>
               <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
               <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}${auto.earned ? ` <span class="small">(${auto.earned} earned)</span>` : ''}</dd>
               <dt>Potential upgrades</dt><dd class="up">${auto.potUps ?? 0}</dd>
@@ -609,7 +610,7 @@ screens.offseason = () => {
               <button class="btn" data-act="undoAuto">↺ Undo</button>
             </div>`
           : `
-            <p class="note">Players aged ${bands[bands.length - 1][0]} and under (new age) earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to injury (or keep re-injuring the same thing) risk losing potential. Every team gets the same rules, so CPU teams stay even.</p>
+            <p class="note">${P.bumpMode === 'train' ? `Development coach: players aged ${bands[bands.length - 1][0]} and under get real rating upgrades (e.g. MID 13/18 → 15/18), more for younger players and heavier minutes. Ceilings rise with the rating; free throws stop at 16.` : `Players aged ${bands[bands.length - 1][0]} and under earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game.`} Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to injury (or keep re-injuring the same thing) risk losing potential. Every team gets the same rules, so CPU teams stay even.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
@@ -742,7 +743,7 @@ function mentorCard() {
   const mine = ms.list.filter(m => !m.cpu);
   const P = state.params;
   return `<fieldset class="frame"><legend>Mentorship</legend><div class="stack">
-    <p class="note">Veterans (${P.mentorMinAge}+) teach a young teammate (${P.menteeMaxAge} and under) at a similar position one of their skills, unlocked right away. One mentee per mentor, one skill per mentee. Free skills are never taught${P.mentorTeachElite ? `; elite ones only if the young player already has ${ELITE_MIN}+ in the rating they need` : ', nor elite ones'}.</p>
+    <p class="note">Veterans (${P.mentorMinAge}+) teach one of their skills to up to ${P.mentorMaxMentees} young teammates (${P.menteeMaxAge} and under) within ${P.mentorPosRange} position step, unlocked right away. One skill per vet, one skill per young player. Free skills are never taught${P.mentorTeachElite ? `; elite ones only if the young player already has ${ELITE_MIN}+ in the rating they need` : ', nor elite ones'}.</p>
     ${ms.seed != null
       ? `<p class="note">CPU teams: <span class="up">${cpu.length} mentorships</span>.</p>
         <div class="grid2"><button class="btn" data-act="rerollMentor">🎲 Re-roll</button><button class="btn" data-act="undoMentor">↺ Undo</button></div>`
@@ -759,10 +760,14 @@ screens.mentor = () => {
   const posOf = p => POSITIONS[p.pos] ?? p.pos;
   const body = mine.length ? mine.map(t => {
     const pairs = ms.list.filter(m => m.teamId === t.id);
-    const usedMentors = new Set(pairs.map(m => m.mentorId));
+    // A mentor teaches one skill, to up to mentorMaxMentees players.
+    const mentorSkill = new Map(pairs.map(m => [m.mentorId, m.skill]));
+    const mentorCount = id => pairs.filter(m => m.mentorId === id).length;
     const taught = new Set(pairs.map(m => m.menteeId));
     const options = mentorPairs(t.roster, state.params, state.profiles[state.leagueIdx])
-      .filter(x => !usedMentors.has(x.mentor.id) && !taught.has(x.mentee.id));
+      .filter(x => mentorCount(x.mentor.id) < state.params.mentorMaxMentees && !taught.has(x.mentee.id))
+      .map(x => mentorSkill.has(x.mentor.id) ? { ...x, skills: x.skills.filter(s => s === mentorSkill.get(x.mentor.id)) } : x)
+      .filter(x => x.skills.length);
     const byMentor = new Map();
     for (const o of options) (byMentor.get(o.mentor) || byMentor.set(o.mentor, []).get(o.mentor)).push(o);
     return `<fieldset class="frame"><legend>${esc(t.city)} ${esc(t.name)}</legend><div class="stack">
@@ -883,7 +888,7 @@ function playerRow(p, d) {
     <span class="name">${esc(playerName(p))}</span>
     <span class="right">
       <span class="stars">${stars(p.pot)}</span><br>
-      ${award ? `<span class="up">+${award} pts</span>` : '<span class="muted">—</span>'}
+      ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
     <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · AVG ${avgRating(p).toFixed(1)}</span>
     ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
@@ -1205,6 +1210,7 @@ const STEP_FIELDS = {
     ['mentorMinAge', 'Mentor: Min Age', 1, 25, 45],
     ['menteeMaxAge', 'Mentee: Max Age', 1, 18, 30],
     ['mentorPosRange', 'Mentor: Position Steps Apart', 1, 0, 8],
+    ['mentorMaxMentees', 'Mentor: Players Per Vet', 1, 1, 5],
     ['mentorshipChance', 'Mentor: CPU Chance %', 5, 0, 100],
     ['injuryMinGames', 'Injury: Min Games Missed', 1, 0, 82],
     ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
@@ -1252,6 +1258,7 @@ screens.settings = (args) => {
         ${state.data.seasonLeagues.map((L, i) => `<button class="btn ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}
       </div></fieldset>` : ''}
       ${options('Include Free Agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']])}
+      ${options('Offseason Bump', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']])}
       ${options('Mentors Teach Elite Skills', 'mentorTeachElite', [[false, 'No'], [true, 'Yes']])}
       ${options('CPU Points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']])}
       <p class="note muted small">Commissioner saves: the CPU holds points unless in-game auto progression is on. "Spend Now" applies CPU points to ratings in this app instead.</p>

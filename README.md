@@ -12,7 +12,9 @@ Everything runs on-device; the file never leaves your phone.
 
 ## How the offseason bump works
 
-Run it in **free agency, Day 3** (the last day before advancing to the new season). Ratings don't change anywhere
+Run it in **free agency, Day 3** (the last day before advancing to the new season). By default it's a meeting with
+the **development coach**: players get real rating upgrades (e.g. MID 13/18 → 15/18, at most +3 per rating;
+ceilings rise with the rating, free throws stop at 16). The older *Upgrade Points* mode is still in Settings. Ratings don't change anywhere
 in the offseason; the game applies progression/regression once the new season starts. Ages are the new-season ages.
 
 The bump sits on top of the game's normal in-season progression. Young players earn extra **upgrade points**,
@@ -53,9 +55,9 @@ All of these are adjustable under **Settings**.
 
 ## Mentorship
 
-Also in free agency: veterans (30+) teach a young teammate (24 and under) within two position steps one of their
-skills — one they have at Lv 2+ that the youngster lacks — and it unlocks right away (keeping
-any XP already built toward it). One mentee per mentor and one skill per mentee each offseason. CPU teams pair up
+Also in free agency: veterans (33+) teach one of their skills — one they have at Lv 2+ — to up to two young
+teammates (25 and under) within one position step (a GF teaches SG, GF, SF), and it unlocks right away (keeping any
+XP already built toward it). One skill per vet, one skill per young player each offseason. CPU teams pair up
 automatically (50% per eligible mentor, best-fit skill); for your teams you pick the pairing and skill. Free skills
 are never taught, and elite skills only if allowed in settings (off by default).
 
@@ -86,7 +88,8 @@ Available once the file has a draft class (offseason, before the lottery).
   5 and under Bench Depth. A prospect's own potential is never shown (no stars or tier in the draft room).
   One floor and one ceiling comp per prospect, assigned across the whole class so no player is used twice (best
   prospects pick first). Ceiling comps are at or below the prospect's scouted tier; Legend comps only go to top-tier
-  prospects, at most 2 per class, and floors are never Legends.
+  prospects, at most 2 per class, and floors are never Legends. Like real scouting reports, some comps get a "+"
+  (the prospect projects a bit better than the comp) or "lite" (a bit short) — about 15% each per class.
 - **Fog of war:** projections use a scouted potential that's usually right but, 25% of the time by default, reads one
   step high or low (stable per prospect and save; Settings → Rookies → Scouting Report Accuracy). The board order,
   projected ceilings, ceiling comps and CPU mock picks all use it.

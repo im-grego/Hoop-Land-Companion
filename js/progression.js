@@ -23,6 +23,11 @@ export const DEFAULT_PARAMS = {
   rotationMult: 1.0,
   benchMult: 0.75,
   strengthBias: 0.5,      // 0 = favour room to grow, 1 = favour strengths
+  // 'train': the development coach raises ratings directly (ceilings rise
+  // with them; free throws stop at 16). 'points': add upgrade points to
+  // season.ap for spending in-game.
+  bumpMode: 'train',
+  trainMaxPerAttr: 3,
   includeFreeAgents: true,
   // Commissioner saves: CPU teams hold points without spending them. On =
   // spend CPU points into ratings now (raising ceilings as needed).
@@ -67,9 +72,10 @@ export const DEFAULT_PARAMS = {
   structuralRiskMult: 1.25,
   structuralLongevityCut: 75,  // % cut to the regression-delay chance
   // Mentorship (see mentorship.js)
-  mentorMinAge: 30,
-  menteeMaxAge: 24,
-  mentorPosRange: 2,      // position steps apart (PG..C)
+  mentorMinAge: 33,
+  menteeMaxAge: 25,
+  mentorPosRange: 1,      // position steps apart (PG..C): a GF teaches SG, GF, SF
+  mentorMaxMentees: 2,    // one skill per vet, taught to up to this many players
   mentorSkillMinLevel: 2, // leveled skills must be at least this level to teach
   mentorshipChance: 50,   // % per eligible CPU mentor
   mentorTeachElite: false, // elite skills (last two per category) need 16/20 in-game
@@ -183,6 +189,30 @@ function attrWeight(p, k, params) {
   if (cur >= ATTR_MAX) return 0;
   const room = Math.max(1, ceil - cur);
   return room * ((1 - params.strengthBias) + params.strengthBias * (cur / ATTR_MAX) * 2);
+}
+
+const trainCap = k => (k === 'FTS' ? 16 : ATTR_MAX);
+
+// Development coach: spend `points` straight into ratings in the four skill
+// categories, weighted toward where the player has room and strengths.
+// Ceilings don't stop it (they rise with the rating), except free throws at
+// 16. At most `trainMaxPerAttr` per rating. Returns points applied.
+export function trainPoints(p, points, params, rng) {
+  const gained = {};
+  const ok = k => p.attributes[k][0] < trainCap(k) && (gained[k] || 0) < params.trainMaxPerAttr;
+  const w = k => (ok(k) ? Math.max(0.5, attrWeight(p, k, params)) : 0);
+  let given = 0;
+  for (let n = 0; n < points; n++) {
+    const cat = weightedPick(rng, AWARD_CATEGORIES, i => CATEGORIES[i].attrs.reduce((a, k) => a + w(k), 0));
+    if (cat == null) break;
+    const k = weightedPick(rng, CATEGORIES[cat].attrs, w);
+    const a = p.attributes[k];
+    a[0]++;
+    if (a[1] < a[0]) a[1] = a[0];
+    gained[k] = (gained[k] || 0) + 1;
+    given++;
+  }
+  return given;
 }
 
 // Add `points` to season.ap, split across the award categories.
@@ -346,7 +376,7 @@ export function runProgression(entries, params, profiles) {
     const risk = e.injuryYear != null ? injuryRisk(e.p, e.injuryYear, params) : null;
     let pts = pointsFor(e.p, mpg, params, rng);
     if (risk?.cls === 'nagging') pts = Math.round(pts * params.naggingPointsMult);
-    awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
+    awards.set(e.p.id, params.bumpMode === 'train' ? trainPoints(e.p, pts, params, rng) : awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
     // Seriously injured players are less likely to delay regression, risk
     // losing potential and can't gain it.

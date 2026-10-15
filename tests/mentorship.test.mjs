@@ -21,11 +21,14 @@ for (const { mentor, mentee, skills } of pairs) {
 }
 const before = new Map(L.teams.flatMap(t => t.roster).map(p => [p.id, p.skills.filter(s => s.level >= 1).length]));
 const done = runMentorship(L.teams, P, profiles, 2027);
-const mentees = new Set(), mentors = new Set();
+const mentees = new Set(), mentorSkills = new Map(), mentorCount = new Map();
 for (const m of done) {
-  assert.ok(!mentees.has(m.mentee.id), 'one skill per mentee');
-  assert.ok(!mentors.has(m.mentor.id), 'one mentee per mentor');
-  mentees.add(m.mentee.id); mentors.add(m.mentor.id);
+  assert.ok(!mentees.has(m.mentee.id), 'one skill per young player');
+  mentees.add(m.mentee.id);
+  if (mentorSkills.has(m.mentor.id)) assert.equal(mentorSkills.get(m.mentor.id), m.skill, 'one skill per vet');
+  mentorSkills.set(m.mentor.id, m.skill);
+  mentorCount.set(m.mentor.id, (mentorCount.get(m.mentor.id) || 0) + 1);
+  assert.ok(mentorCount.get(m.mentor.id) <= P.mentorMaxMentees, 'up to 2 players per vet');
   const s = m.mentee.skills.find(x => x.id === m.skill);
   assert.ok(s && s.level === 1 && s.equipped, 'skill unlocked');
   assert.equal(m.mentee.skills.filter(x => x.level >= 1).length, before.get(m.mentee.id) + 1);

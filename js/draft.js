@@ -173,11 +173,20 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
 // player's (scouted) tier, and Legends only go to top-tier players, at most
 // `legendCap` per class. Floor comps are never Legends and never above tier.
 // Returns Map id -> { floor: [comp], ceiling: [comp] }.
+// Share of each class's comps tagged "+" (prospect projects a bit better) or
+// "lite" (a bit short), picked by the biggest gaps; never on tiny gaps.
+const QUALIFIER_SHARE = 0.15;
+const QUALIFIER_MIN_GAP = 4; // skill-total points
+
 export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p => p.pot, legendCap = 2 }) {
   const used = new Set();
   const out = new Map(players.map(p => [p.id, { floor: [], ceiling: [] }]));
   let legends = 0;
-  const fmt = e => ({ name: playerName(e.p), tier: tierFor(e.p.pot), pos: e.p.pos, ht: e.ht, wt: e.wt, id: e.p.id });
+  const sum = v => v.reduce((a, b) => a + b, 0);
+  const fmt = (e, vec) => ({
+    name: playerName(e.p), tier: tierFor(e.p.pot), pos: e.p.pos, ht: e.ht, wt: e.wt, id: e.p.id,
+    gap: sum(vec) - sum(e.v),
+  });
   const pick = (p, vec, ok) => {
     let best = null, bestD = Infinity;
     for (const e of pool) {
@@ -194,13 +203,23 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
       (c.p.pot < 10 || (pot >= 10 && legends < legendCap)));
     if (e) {
       if (e.p.pot >= 10) legends++;
-      out.get(p.id).ceiling = [fmt(e)];
+      out.get(p.id).ceiling = [fmt(e, ceilVec(p))];
     }
   }
   for (const p of players) {
     const pot = potOf(p);
     const e = pick(p, floorVec(p), c => c.p.pot < 10 && c.p.pot <= pot);
-    if (e) out.get(p.id).floor = [fmt(e)];
+    if (e) out.get(p.id).floor = [fmt(e, floorVec(p))];
+  }
+  // Sprinkle "+" / "lite" on the comps furthest from the class's typical
+  // gap (floors usually sit under their comp, ceilings over), so both show up.
+  for (const kind of ['floor', 'ceiling']) {
+    const comps = [...out.values()].map(c => c[kind][0]).filter(Boolean).sort((a, b) => b.gap - a.gap);
+    if (!comps.length) continue;
+    const median = comps[Math.floor(comps.length / 2)].gap;
+    const n = Math.round(comps.length * QUALIFIER_SHARE);
+    comps.slice(0, n).filter(c => c.gap - median >= QUALIFIER_MIN_GAP).forEach(c => { c.name += '+'; });
+    comps.slice(-n).filter(c => c.gap - median <= -QUALIFIER_MIN_GAP).forEach(c => { c.name += ' lite'; });
   }
   return out;
 }

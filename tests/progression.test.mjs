@@ -20,9 +20,9 @@ function run(spend, params = P) {
   return { data, entries, snaps, awards, injuryYear };
 }
 
-// 1. Default: points are added to season.ap, ratings untouched.
+// 1. Points mode: points are added to season.ap, ratings untouched.
 {
-  const { entries, snaps, awards, injuryYear } = run(false);
+  const { entries, snaps, awards, injuryYear } = run(false, { ...P, bumpMode: 'points' });
   let bumped = 0, total = 0, delayed = 0, potUps = 0, potDowns = 0, atRisk = 0, earnedN = 0;
   for (const { p } of entries) {
     const d = diffPlayer(p, snaps.get(p.id));
@@ -53,6 +53,28 @@ function run(spend, params = P) {
     if (risk) atRisk++;
   }
   console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points, ${delayed} regressions delayed (${earnedN} earned), ${potUps} potential upgrades, ${potDowns}/${atRisk} injured players lost potential`);
+}
+
+// 1b. Train mode (default): ratings go up directly, ap untouched.
+{
+  const { entries, snaps, awards } = run(false);
+  let total = 0;
+  for (const { p } of entries) {
+    const snap = snaps.get(p.id);
+    const d = diffPlayer(p, snap);
+    assert.equal(d.points, awards.get(p.id), 'rating gains equal the award');
+    assert.ok(d.apDelta.every(v => v === 0), 'no upgrade points added');
+    for (const k of ATTRS) {
+      const g = p.attributes[k][0] - snap.attributes[k][0];
+      assert.ok(g >= 0 && g <= P.trainMaxPerAttr, 'at most +3 per rating');
+      if (g) {
+        assert.ok(p.attributes[k][0] <= (k === 'FTS' ? 16 : 20), 'free throws stop at 16');
+        assert.ok(p.attributes[k][1] >= p.attributes[k][0], 'ceiling rises with rating');
+      }
+    }
+    total += d.points;
+  }
+  console.log(`train OK: +${total} rating upgrades`);
 }
 
 // 2. Determinism.
