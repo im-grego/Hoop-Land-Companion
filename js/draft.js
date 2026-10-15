@@ -622,10 +622,10 @@ export function pickValue(league, pk) {
 // position group and a skill, e.g. "Guards · Playmaking") from its roster
 // against the league average.
 
-export const POS_GROUPS = ['guards', 'wings', 'forwards', 'bigs'];
-export const GROUP_NAMES = { guards: 'Guards', wings: 'Wings', forwards: 'Forwards', bigs: 'Bigs' };
-// POSITIONS: PG G SG | GF SF | F PF | FC C
-export const groupOf = pos => (pos <= 2 ? 'guards' : pos <= 4 ? 'wings' : pos <= 6 ? 'forwards' : 'bigs');
+export const POS_GROUPS = ['guards', 'wings', 'bigs'];
+export const GROUP_NAMES = { guards: 'Guards', wings: 'Wings', bigs: 'Bigs' };
+// POSITIONS: PG G SG | GF SF F | PF FC C
+export const groupOf = pos => (pos <= 2 ? 'guards' : pos <= 5 ? 'wings' : 'bigs');
 
 export const NEED_SKILLS = {
   playmaking: { label: 'Playmaking', attrs: ['PAS', 'DRB'] },
@@ -639,17 +639,16 @@ export const NEED_SKILLS = {
 // The skills that matter for each group.
 export const GROUP_SKILLS = {
   guards: ['playmaking', 'shooting', 'perimeterD', 'finishing'],
-  wings: ['shooting', 'perimeterD', 'finishing', 'playmaking'],
-  forwards: ['rebounding', 'finishing', 'shooting', 'rimProtection'],
+  wings: ['shooting', 'perimeterD', 'finishing', 'playmaking', 'rebounding'],
   bigs: ['rebounding', 'rimProtection', 'finishing', 'post'],
 };
 
 const skillOf = (vecOrPlayer, attrs) => mean(attrs.map(k => (Array.isArray(vecOrPlayer)
   ? vecOrPlayer[SKILL_ATTRS.indexOf(k)] : vecOrPlayer.attributes[k][0])));
 // A team's top two signed players in a group (the ones who play). A thin
-// group borrows from the neighboring ones (a PF-less team plays its bigs
-// and wings there).
-const NEIGHBORS = { guards: ['wings'], wings: ['guards', 'forwards'], forwards: ['wings', 'bigs'], bigs: ['forwards'] };
+// group borrows from the neighboring one (a team short on bigs plays its
+// wings there).
+const NEIGHBORS = { guards: ['wings'], wings: ['guards', 'bigs'], bigs: ['wings'] };
 const strength = p => mean(topN(SKILL_ATTRS.map(k => p.attributes[k][0]), 8));
 function groupTop(team, group) {
   const signed = team.roster.filter(p => p.status !== 4);

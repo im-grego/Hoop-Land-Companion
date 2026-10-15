@@ -145,7 +145,7 @@ Available once the file has a draft class (offseason, before the lottery).
 - **How teams value prospects:** expected potential first (the projected ceiling at the scouted tier), then the floor
   (rookie line plus development), with a bonus for prospects strong in both. Rebuilding teams lean young; **win-now**
   teams (last season .560+) weigh the floor more and mind age less, so older high-floor prospects go to contenders.
-- **Team needs:** every team has two needs, a position group (guards, wings, forwards, bigs) and a skill (playmaking,
+- **Team needs:** every team has two needs, a position group (guards: PG/G/SG, wings: GF/SF/F, bigs: PF/FC/C) and a skill (playmaking,
   shooting, finishing, post scoring, rebounding, perimeter D, rim protection), from its top two players at each group
   against the league average. A prospect who projects at or above the league average there fills the need, and teams
   lean toward those picks. Your teams' needs show on the board, on the clock, and next to prospects who fill them.
