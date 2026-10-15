@@ -504,7 +504,7 @@ fieldset.frame > legend {
 .tabs .btn { white-space: nowrap; min-width: 0; padding: 10px 12px; font-size: 15px; }
 
 /* ---------- Brand art ---------- */
-.hero { display: block; width: 100%; max-width: 100%; height: auto; border: 4px solid var(--panel-edge); box-shadow: 0 4px 0 var(--btn-shadow); }
+.hero { display: block; width: 100%; max-width: 100%; height: auto; image-rendering: pixelated; border: 4px solid var(--panel-edge); box-shadow: 0 4px 0 var(--btn-shadow); }
 .league-card {
   display: flex; align-items: center; gap: 14px;
   background: var(--btn); border: 4px solid var(--btn-edge); box-shadow: 0 4px 0 var(--btn-shadow);
@@ -786,13 +786,3 @@ details.dbx { padding: 10px 12px; }
 details.dbx summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 details.dbx[open] summary { margin-bottom: 8px; }
 
-/* Outlook card filled with the team's colors */
-.outlook.tcard { --ink: #fff; color: var(--ink); background: var(--tc1); border-color: var(--tc2); }
-.outlook.tcard.light { --ink: #111; }
-.outlook.tcard .outlook-top.tc { background: color-mix(in srgb, var(--tc1) 78%, #000); border-bottom-color: var(--tc2); }
-.outlook.tcard.light .outlook-top.tc { background: color-mix(in srgb, var(--tc1) 88%, #000); text-shadow: none; }
-.outlook.tcard .ol-grid dt, .outlook.tcard .ol-yr b { color: var(--ink); opacity: .75; }
-.outlook.tcard .muted { color: var(--ink); opacity: .7; }
-.outlook.tcard .ol-need { background: #0b2f6bd9; }
-.outlook.tcard .ol-pick { background: #0b2f6bd9; color: #fff; }
-.outlook.tcard .ol-pick .muted { color: #fff; }
