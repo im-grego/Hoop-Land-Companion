@@ -10,6 +10,23 @@ An installable web app (PWA) for running an **offseason development phase** on H
 
 Everything runs on-device; the file never leaves your phone.
 
+## One import, one export
+
+Load the save from the **start of the offseason (Pre-Lottery)** and run the whole offseason in the app. The main
+menu's **Offseason** card walks through it and advances the save the way the game does:
+
+1. **Lottery** — preview the class and odds, then **Run the Lottery** (writes the draft order).
+2. **Draft** — the live draft; **Finish Draft** moves the save to Post-Draft.
+3. **Summer League** — summer league and the rookie bump, then **Open Free Agency** (draft picks sign: first round
+   on the rookie scale for 4 years, second round for 2, both with a team option).
+4. **Free Agency Day 1 → Day 2 → Day 3** — run each day's market, then **Advance**.
+5. **Day 3 · Development** — the offseason bump, mentorship, jersey numbers; then **Export** once and load the file
+   in Hoop Land.
+
+Each advance can be undone once (the save goes back to just before it). Saves from later in the offseason pick up
+from their phase. Checked against the game's own saves: the draft writer reproduces the game's post-draft save, and
+opening free agency signs rookies to the same contracts the game gives.
+
 ## How the offseason bump works
 
 Run it in **free agency, Day 3** (the last day before advancing to the new season). By default it's a meeting with
@@ -244,4 +261,5 @@ node tests/mentorship.test.mjs  path/to/season-file   # mentor/mentee rules
 node tests/storylines.test.mjs  path/to/season-file   # top 10 storylines
 node tests/livedraft.test.mjs   pre-draft post-draft fa-day-1   # draft writer matches the game, live draft + trades, rookie deals
 node tests/freeagency.test.mjs  fa-file [day]          # free agency rules, signings, exact undo
+node tests/phases.test.mjs      pre-lottery [post-draft fa-day-1]  # whole offseason in code; rookie deals match the game
 ```

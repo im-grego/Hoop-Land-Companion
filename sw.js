@@ -1,6 +1,6 @@
 // Offline support: cache-first for the app shell, stale-while-revalidate for
 // fonts and team logos.
-const VERSION = 'hlc-v0.15.0';
+const VERSION = 'hlc-v0.16.0';
 const SHELL = [
   './',
   'index.html',
@@ -15,6 +15,7 @@ const SHELL = [
   'js/livedraft.js',
   'js/trades.js',
   'js/freeagency.js',
+  'js/phases.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/icon-192.png',

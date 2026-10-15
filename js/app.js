@@ -5,7 +5,7 @@ import {
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
-  lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
+  lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
 } from './draft.js';
@@ -14,9 +14,10 @@ import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers } from './livedraft.js';
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade } from './trades.js';
 import * as FA from './freeagency.js';
+import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.15.0';
+const APP_VERSION = '0.16.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -103,7 +104,13 @@ function markSummerDone(L) {
   try { localStorage.setItem(`hlc:summer:${seasonKey(L)}`, '1'); } catch { /* ignore */ }
 }
 const snapKey = (pid, li = state.leagueIdx) => `${li}:${pid}`;
-const snapOf = p => state.snaps.get(snapKey(p.id));
+// Baseline ratings for a player: taken at load, or the first time a player
+// shows up later (prospects joining rosters or free agency in-app).
+const snapOf = p => {
+  const k = snapKey(p.id);
+  if (!state.snaps.has(k)) state.snaps.set(k, snapshot(p));
+  return state.snaps.get(k);
+};
 const isUserTeam = t => t && state.userTeams.has(t.id);
 
 function allEntries() { return leaguePlayers(league(), true); }
@@ -264,9 +271,27 @@ async function loadFile(file) {
     const data = parseSave(text);
     if (!Array.isArray(data.seasonLeagues) || !data.seasonLeagues.length) throw new Error('No seasonLeagues found');
     state.fileName = file.name;
+    state.undo = null;
+    installData(data);
+    state.dirty = false;
+    o.remove();
+    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`);
+    render();
+  } catch (err) {
+    o.remove();
+    console.error(err);
+    const b = overlay(`<p class="note">Couldn't read that file as a Hoop Land season.<br><span class="muted small">${esc(err.message)}</span></p><button class="btn">OK</button>`);
+    b.querySelector('button').onclick = () => b.remove();
+  }
+}
+
+// Put parsed season data in place. `keepSnaps` keeps the original
+// baselines (used when undoing an in-app phase advance).
+function installData(data, keepSnaps = false) {
+  {
     state.data = data;
     state.leagueIdx = 0;
-    state.snaps.clear();
+    if (!keepSnaps) state.snaps.clear();
     state.profiles = [];
     state.leagueAvg = [];
     state.auto = {};
@@ -282,7 +307,7 @@ async function loadFile(file) {
     state.compCache = {};
     data.seasonLeagues.forEach((L, li) => {
       const players = leaguePlayers(L, true).map(e => e.p);
-      for (const p of players) state.snaps.set(snapKey(p.id, li), snapshot(p));
+      for (const p of players) if (!keepSnaps || !state.snaps.has(snapKey(p.id, li))) state.snaps.set(snapKey(p.id, li), snapshot(p));
       state.profiles[li] = buildSkillProfiles(players);
       const avg = ATTRS.map(() => 0);
       for (const p of players) ATTRS.forEach((k, i) => { avg[i] += p.attributes[k][0] / players.length; });
@@ -290,15 +315,6 @@ async function loadFile(file) {
     });
     data.seasonLeagues.forEach(L => { if (L.draftClass?.length) saveOriginals(L, originalRatings(L)); });
     loadUserTeams();
-    state.dirty = false;
-    o.remove();
-    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`);
-    render();
-  } catch (err) {
-    o.remove();
-    console.error(err);
-    const b = overlay(`<p class="note">Couldn't read that file as a Hoop Land season.<br><span class="muted small">${esc(err.message)}</span></p><button class="btn">OK</button>`);
-    b.querySelector('button').onclick = () => b.remove();
   }
 }
 
@@ -384,6 +400,116 @@ actions.share = async () => {
 };
 
 // ---------------------------------------------------------------------------
+// Offseason timeline: advance the save phase by phase inside the app
+
+const STEPS = [
+  { key: 'lottery', label: 'Lottery', phase: 2 },
+  { key: 'draft', label: 'Draft', phase: 4 },
+  { key: 'summer', label: 'Summer League', phase: 5 },
+  { key: 'fa1', label: 'Free Agency Day 1', phase: 6, day: 1 },
+  { key: 'fa2', label: 'Day 2', phase: 6, day: 2 },
+  { key: 'fa3', label: 'Day 3 · Development', phase: 6, day: 3 },
+];
+function stepIndex(s) {
+  if (s.phase === 6) return 2 + Math.max(1, Math.min(3, s.currentDay || 1));
+  return { 2: 0, 4: 1, 5: 2 }[s.phase] ?? -1;
+}
+
+// Keep the file as it was before an advance, so it can be undone once.
+function checkpoint(label) {
+  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty };
+}
+
+function timelineCard() {
+  const L = league();
+  const s = L.season;
+  const idx = stepIndex(s);
+  const steps = `<ol class="timeline">${STEPS.map((st, i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${esc(st.label)}</li>`).join('')}</ol>`;
+  let body;
+  if (idx < 0) {
+    body = `<p class="note small">This save is at ${esc(phaseName(s))}. To run the whole offseason here, load the save from the start of the offseason (Pre-Lottery): advance once in the game after the season ends.</p>`;
+  } else if (s.phase === 2) {
+    body = `<p class="note small">Preview the class on the Board and the odds on the Lottery tab, then draw the real lottery.</p>
+      <div class="grid2"><button class="btn" data-act="nav" data-to="draft">🎓 Draft Room</button><button class="btn focus" data-act="advLottery">🎱 Run the Lottery</button></div>`;
+  } else if (s.phase === 4) {
+    body = `<p class="note small">Run the draft on the Live tab. Finishing the draft moves the save to Post-Draft.</p>
+      <button class="btn focus" data-act="nav" data-to="draft">🎓 Go to the Live Draft</button>`;
+  } else if (s.phase === 5) {
+    const summer = state.summer[state.leagueIdx] || summerDone();
+    body = `<p class="note small">Summer league ${summer ? '<span class="up">done</span>' : '<span class="gold">not run yet</span>'} · rookie bump ${state.rookieAuto[state.leagueIdx] ? '<span class="up">done</span>' : '<span class="muted">optional</span>'}. Both are on the Development screen. Opening free agency signs the draft picks (first round on the rookie scale, second round for ${state.params.rookieR2Years} years).</p>
+      <div class="grid2"><button class="btn" data-act="nav" data-to="offseason">🏀 Summer League</button><button class="btn focus" data-act="advFreeAgency">✍️ Open Free Agency</button></div>`;
+  } else {
+    const fa = state.fa[state.leagueIdx];
+    const ran = fa && fa.day === s.currentDay && fa.stage === 'done';
+    const last = s.currentDay >= (s.signingDays || 3);
+    body = last
+      ? `<p class="note small">Last day: run free agency, then the offseason bump, mentorship and jersey numbers on the Development screen, and export.</p>
+        <div class="grid2"><button class="btn ${ran ? '' : 'focus'}" data-act="nav" data-to="fa">✍️ Free Agency</button><button class="btn ${ran ? 'focus' : ''}" data-act="nav" data-to="offseason">🏆 Development</button></div>
+        <button class="btn" data-act="nav" data-to="export">💾 Export Season File</button>`
+      : `<p class="note small">Free agency ${ran ? '<span class="up">done for today</span>' : '<span class="gold">not run today</span>'}. ${s.currentDay === 1 ? 'Day 2 adds the mid-level exception.' : 'Day 3 adds veteran minimums.'}</p>
+        <div class="grid2"><button class="btn ${ran ? '' : 'focus'}" data-act="nav" data-to="fa">✍️ Free Agency</button><button class="btn ${ran ? 'focus' : ''}" data-act="advDay">▶ Advance to Day ${s.currentDay + 1}</button></div>`;
+  }
+  return `<fieldset class="frame"><legend>Offseason</legend><div class="stack">${steps}${body}
+    ${state.undo ? `<button class="btn small" data-act="undoAdvance">↺ Undo ${esc(state.undo.label)}</button>` : ''}
+  </div></fieldset>`;
+}
+
+actions.advLottery = async () => {
+  const L = league();
+  const P = state.params;
+  if (!(await confirmBox('Draw the lottery? The draft order is written to the season file.', 'Draw'))) return;
+  checkpoint('Lottery');
+  const setup = lotterySetup(L, P.lotteryFormat, P.lotteryDraws);
+  const order = preLotteryOrder(L);
+  const drawn = drawLottery(order.slice(0, setup.lotteryTeams.length), setup.odds, setup.draws, mulberry32(Math.floor(Math.random() * 1e9)), setup.floor);
+  const r1 = drawn.map(r => r.team);
+  applyLottery(L, [...r1, ...order.filter(t => !r1.includes(t))]);
+  draftState().lottery = null;
+  draftState().mock = null;
+  state.compCache = {};
+  state.dirty = true;
+  const jump = order.indexOf(r1[0]) + 1;
+  go('draft', { tab: 'lottery' });
+  toast(`${`${r1[0].city} ${r1[0].name}`.trim()} win the lottery${jump > 1 ? ` from the ${jump}${[, 'st', 'nd', 'rd'][jump] || 'th'} slot` : ''}!`);
+};
+
+actions.advFreeAgency = async () => {
+  const L = league();
+  const summer = state.summer[state.leagueIdx] || summerDone();
+  if (!(await confirmBox(`${summer ? '' : 'Summer league hasn\'t run yet. '}Open free agency? Draft picks sign their rookie deals and the save moves to Day 1.`, 'Open'))) return;
+  checkpoint('Open Free Agency');
+  const signed = startFreeAgency(L, { r2Years: state.params.rookieR2Years });
+  state.dirty = true;
+  render();
+  toast(`Free agency is open: ${signed.length} rookies signed`);
+};
+
+actions.advDay = async () => {
+  const L = league();
+  const fa = state.fa[state.leagueIdx];
+  const ran = fa && fa.day === L.season.currentDay && fa.stage === 'done';
+  if (!(await confirmBox(`${ran ? '' : 'Free agency hasn\'t run today. '}Advance to Day ${L.season.currentDay + 1}?`, 'Advance'))) return;
+  checkpoint(`Day ${L.season.currentDay + 1}`);
+  nextFreeAgencyDay(L);
+  state.dirty = true;
+  render();
+};
+
+actions.undoAdvance = async () => {
+  const u = state.undo;
+  if (!u || !(await confirmBox(`Undo ${esc(u.label)}? The save goes back to how it was just before.`, 'Undo'))) return;
+  const o = overlay('<div class="spinner"></div><p class="note">Restoring…</p>');
+  await nextFrame();
+  installData(parseSave(u.text), true);
+  state.undo = null;
+  state.dirty = u.dirty;
+  o.remove();
+  state.stack = [{ name: 'main', args: {} }];
+  render();
+  toast(`${u.label} undone`);
+};
+
+// ---------------------------------------------------------------------------
 // Main menu
 
 screens.main = () => {
@@ -393,7 +519,7 @@ screens.main = () => {
       body: `
         <fieldset class="frame"><legend>Hoop Land Companion</legend>
           <div class="stack">
-            <p class="note">Load an end-of-season file to run an offseason bump: players 25 and under earn extra upgrade points based on age and minutes, for every team. Adjust your own players, then export the file back into the game.</p>
+            <p class="note">Load a save from the start of the offseason (Pre-Lottery) and run the whole offseason here: the lottery, the draft, summer league, free agency and player development. Export once at the end and load it in the game. Saves from later in the offseason pick up from where they are.</p>
             <label class="btn big focus"><span class="ico">📂</span> Load Season File
               <input type="file" id="fileInput"></label>
             <p class="note muted small">Your file is read on this device only. Keep a backup of the original.</p>
@@ -425,16 +551,17 @@ screens.main = () => {
         </dl>
         ${phaseWarning(s)}
       </fieldset>
+      ${timelineCard()}
       <fieldset class="frame"><legend>Modes</legend>
         <div class="stack">
-          <button class="btn big left focus" data-act="nav" data-to="offseason"><span class="ico">🏆</span> Offseason Development</button>
           <div class="grid2">
             <button class="btn left" data-act="nav" data-to="draft"><span class="ico">🎓</span> Draft Room</button>
+            <button class="btn left" data-act="nav" data-to="fa"><span class="ico">✍️</span> Free Agency</button>
+            <button class="btn left" data-act="nav" data-to="offseason"><span class="ico">🏆</span> Development</button>
+            <button class="btn left" data-act="nav" data-to="storylines"><span class="ico">📰</span> Storylines</button>
             <button class="btn left" data-act="nav" data-to="teams"><span class="ico">👥</span> Your Teams</button>
             <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
             <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
-            <button class="btn left" data-act="nav" data-to="fa"><span class="ico">✍️</span> Free Agency</button>
-            <button class="btn left" data-act="nav" data-to="storylines"><span class="ico">📰</span> Storylines</button>
             <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
           </div>
         </div>
@@ -2100,6 +2227,7 @@ actions.liveFinish = async () => {
   const order = liveOrder();
   if (clockIndex(live, order) >= 0) { toast('Finish every pick first'); return; }
   if (!(await confirmBox('Write the draft to the season file? Rookies join their teams, the rest become free agents, and the save moves to the Post-Draft phase.', 'Finish'))) return;
+  checkpoint('Draft');
   const res = applyDraft(L, livePicks(live, order), state.leagueIdx);
   for (const r of leagueRookies(L)) state.snaps.set(snapKey(r.p.id), snapshot(r.p));
   state.compCache = {};
@@ -2553,7 +2681,9 @@ screens.export = () => {
   let players = 0, points = 0, ap = 0, skills = 0;
   state.data.seasonLeagues.forEach((L, li) => {
     for (const { p } of leaguePlayers(L, true)) {
-      const d = diffPlayer(p, state.snaps.get(snapKey(p.id, li)));
+      const snap = state.snaps.get(snapKey(p.id, li));
+      if (!snap) continue;
+      const d = diffPlayer(p, snap);
       if (!d.changed) continue;
       players++;
       points += d.points;
