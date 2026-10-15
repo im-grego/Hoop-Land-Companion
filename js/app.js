@@ -17,9 +17,9 @@ import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractVa
 import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
-import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
+import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.26.0';
+const APP_VERSION = '0.27.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3418,40 +3418,20 @@ actions.copyStories = async () => {
 // Export
 
 screens.export = () => {
-  let players = 0, points = 0, ap = 0, skills = 0;
-  state.data.seasonLeagues.forEach((L, li) => {
-    for (const { p } of leaguePlayers(L, true)) {
-      const snap = state.snaps.get(snapKey(p.id, li));
-      if (!snap) continue;
-      const d = diffPlayer(p, snap);
-      if (!d.changed) continue;
-      players++;
-      points += d.points;
-      ap += d.apDelta.reduce((a, b) => a + b, 0);
-      skills += d.added.length;
-    }
-  });
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
     navigator.canShare({ files: [new File(['x'], 'x', { type: 'application/octet-stream' })] });
   layout({
-    title: 'Export Season',
+    title: 'Opening Night',
     body: `
-      <fieldset class="frame"><legend>Changes</legend>
-        <dl class="info">
-          <dt>File</dt><dd>${esc(state.fileName)}</dd>
-          <dt>Players changed</dt><dd class="up">${players}</dd>
-          <dt>Upgrade points (net)</dt><dd class="up">${ap >= 0 ? '+' : ''}${ap}</dd>
-          <dt>Rating changes</dt><dd class="up">${points >= 0 ? '+' : ''}${points}</dd>
-          <dt>Skills added</dt><dd class="up">${skills}</dd>
-        </dl>
+      <fieldset class="frame"><legend>Season File</legend>
+        <p class="note file-name">${esc(state.fileName)}</p>
+        <div class="stack">
+          ${canShare ? '<button class="btn big focus" data-act="share">📤 Save to Files / Dropbox</button>' : ''}
+          <button class="btn ${canShare ? '' : 'big focus'}" data-act="download">💾 Download File</button>
+        </div>
+        ${inArtifact() ? `<p class="note gold small">Saves as <b>${esc(artifactName(state.fileName))}</b>: rename it to <b>${esc(state.fileName)}</b> (remove ".json") so Hoop Land can load it.</p>` : ''}
+        <p class="note muted small">Load it in Hoop Land and start the season. Keep a backup of the original.</p>
       </fieldset>
-      <p class="note">Only upgrade points, ratings and skills are changed. Everything else in the file is written back exactly as it was, so the game picks up right where you left off.</p>
-      <div class="stack">
-        <button class="btn big focus" data-act="download">💾 Download File</button>
-        ${canShare ? '<button class="btn" data-act="share">📤 Share / Save to Files</button>' : ''}
-      </div>
-      ${inArtifact() ? `<p class="note gold small">The file saves as <b>${esc(artifactName(state.fileName))}</b>. In the Files app, rename it to <b>${esc(state.fileName)}</b> (remove ".json") so Hoop Land can load it. To save into Dropbox, pick Dropbox in the save sheet.</p>` : ''}
-      <p class="note muted small">Replace the original in your Hoop Land saves folder (keep a backup), then load it and continue the offseason.</p>
       ${inArtifact() ? '' : dropboxFrame()}`,
   });
 };
@@ -3470,18 +3450,16 @@ function dropboxFrame() {
       <button class="btn small" data-act="dbxDisconnect">Disconnect</button>
     </fieldset>`;
   }
-  return `<fieldset class="frame"><legend>Dropbox</legend>
-    <p class="note small">On iPhone, <b>Share → Save to Files → Dropbox</b> works with no setup. To upload straight from the app,
-      create a free Dropbox app once at <b>dropbox.com/developers/apps</b> (Scoped access, App folder or Full Dropbox,
-      permission <b>files.content.write</b>) and paste its App key here.</p>
-    <label class="field"><span>App key</span><input type="text" data-dbx="appKey" value="${esc(c.appKey || '')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+  return `<details class="frame dbx"><summary>☁️ Upload straight to Dropbox</summary>
+    ${BUILT_IN_APP_KEY ? '' : `<p class="note small">One-time setup: create a free Dropbox app at <b>dropbox.com/developers/apps</b> (Scoped access, permission <b>files.content.write</b>) and paste its App key.</p>
+    <label class="field"><span>App key</span><input type="text" data-dbx="appKey" value="${esc(c.appKey || '')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>`}
     <label class="field"><span>Folder</span><input type="text" data-dbx="folder" value="${esc(c.folder)}"></label>
     <div class="stack">
       <button class="btn" data-act="dbxConnect">🔗 Connect Dropbox</button>
       ${c.verifier ? `<label class="field"><span>Code from Dropbox</span><input type="text" id="dbxCode" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <button class="btn focus" data-act="dbxFinish">✅ Finish Connecting</button>` : ''}
     </div>
-  </fieldset>`;
+  </details>`;
 }
 
 function readDropboxFields() {

@@ -3,13 +3,17 @@
 // in this browser's storage.
 
 const KEY = 'hlc:dropbox';
+// The app's own Dropbox app key (public; PKCE needs no secret). When set,
+// nobody has to create a Dropbox app: Connect just works.
+export const BUILT_IN_APP_KEY = '';
 const AUTH_URL = 'https://www.dropbox.com/oauth2/authorize';
 const TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
 const UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
 
 export function dropboxConfig() {
-  try { return { folder: '/Hoop Land', overwrite: false, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
-  catch { return { folder: '/Hoop Land', overwrite: false }; }
+  const base = { folder: '/Hoop Land', overwrite: false, appKey: BUILT_IN_APP_KEY || '' };
+  try { const c = { ...base, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; if (!c.appKey) c.appKey = base.appKey; return c; }
+  catch { return base; }
 }
 export function saveDropboxConfig(patch) {
   const c = { ...dropboxConfig(), ...patch };

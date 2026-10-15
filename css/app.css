@@ -768,3 +768,9 @@ body::before {
 .trainer-row .tr-top .badge { margin-left: auto; }
 .prow.rrow { cursor: default; }
 .report-nav .tsel-team.mine { border-color: var(--cyan); }
+
+/* Export */
+.file-name { font-weight: 700; overflow-wrap: anywhere; word-break: break-word; hyphens: auto; }
+details.dbx { padding: 10px 12px; }
+details.dbx summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+details.dbx[open] summary { margin-bottom: 8px; }
