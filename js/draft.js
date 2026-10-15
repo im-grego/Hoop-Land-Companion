@@ -423,10 +423,24 @@ export function drawLottery(lotteryTeams, odds, drawn, rng, floor = null) {
   return [...order, ...pool].map(x => ({ team: x.t, seed: x.seed }));
 }
 
+// The game's lottery seeding (worst first). It isn't pure record: the
+// lottery is the non-playoff teams, play-in losers included. Before the
+// lottery each team's new-season row holds its seed in `pick`; after it,
+// `poll` keeps the seed and `pick` the drawn slot. Falls back to record.
+export function seedOrder(league) {
+  const yr = league.season.currentYear;
+  const key = league.season.phase <= 2 ? 'pick' : 'poll';
+  const slot = t => (t.season || []).find(x => x.yr === yr)?.[key];
+  const slots = league.teams.map(slot);
+  const valid = slots.every(x => Number.isInteger(x)) && new Set(slots).size === league.teams.length;
+  if (!valid) return standings(league);
+  return [...league.teams].sort((a, b) => slot(a) - slot(b)).map(t => ({ team: t, ...teamRecord(t) }));
+}
+
 // `format` is 'auto', 'classic' or '321'; `classicDraws` is used for classic.
 export function lotterySetup(league, format = 'auto', classicDraws = 4) {
   const s = league.season;
-  const table = standings(league);
+  const table = seedOrder(league);
   const n = Math.min(s.lotteryTeams || 14, table.length);
   const fmt = format === 'auto' ? detectLotteryFormat(league) : format;
   return {

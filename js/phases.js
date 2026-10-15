@@ -15,20 +15,14 @@
 // - Each day: currentDay + 1 (signings are the app's free agency).
 
 import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY } from './savefile.js';
-import { standings } from './draft.js';
+import { seedOrder } from './draft.js';
 
 const row = (team, yr) => (team.season || []).find(s => s.yr === yr);
 
 // Teams worst to best before the lottery: the game's own slot (`pick` on
 // the new-season row) when the save has one, else by record.
 export function preLotteryOrder(league) {
-  const yr = league.season.currentYear;
-  const slots = league.teams.map(t => row(t, yr)?.pick);
-  const valid = slots.every(x => Number.isInteger(x)) && new Set(slots).size === league.teams.length;
-  if (league.season.phase === PHASE_PRE_LOTTERY && valid) {
-    return [...league.teams].sort((a, b) => row(a, yr).pick - row(b, yr).pick);
-  }
-  return standings(league).map(r => r.team);
+  return seedOrder(league).map(r => r.team);
 }
 
 // `r1` = all teams in first-round order (lottery winners first). Second

@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.20.0';
+const APP_VERSION = '0.20.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -495,7 +495,7 @@ function stepActions(key) {
   const s = L.season;
   switch (key) {
     case 'office': return `<div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Pick Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
-    case 'lottery': return `<div class="grid2"><button class="btn" data-act="nav" data-to="draft">📊 Lottery Odds</button><button class="btn focus" data-act="advLottery">🎱 Run the Lottery</button></div>`;
+    case 'lottery': return `<div class="grid2"><button class="btn" data-act="nav" data-to="lotteryOdds">⚙️ Set Odds</button><button class="btn focus" data-act="advLottery">🎱 Run the Lottery</button></div>`;
     case 'warroom': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Open the War Room</button><button class="btn" data-act="calDone" data-k="warroom">✅ Lock the Board</button></div>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
     case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🏀 Summer League</button><button class="btn" data-act="calCamp">✅ Wrap Up</button></div>`;
@@ -546,7 +546,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  office: ['teams'], lottery: ['draft'], warroom: ['draft', 'prospect'], draft: ['draft', 'prospect', 'liveTrade'],
+  office: ['teams'], lottery: ['lotteryOdds'], warroom: ['draft', 'prospect', 'lotteryResult'], draft: ['draft', 'prospect', 'liveTrade'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies'], media: ['storylines'], export: ['export'],
 };
@@ -573,7 +573,9 @@ actions.advLottery = async () => {
   state.compCache = {};
   state.dirty = true;
   const jump = order.indexOf(r1[0]) + 1;
-  go('draft', { tab: 'lottery' });
+  // Show the result in place of the odds screen (back = the calendar).
+  if (state.stack.length > 1) { state.stack = [{ name: 'main', args: {} }, { name: 'lotteryResult', args: {} }]; render(); }
+  else go('lotteryResult');
   toast(`${`${r1[0].city} ${r1[0].name}`.trim()} win the lottery${jump > 1 ? ` from the ${jump}${[, 'st', 'nd', 'rd'][jump] || 'th'} slot` : ''}!`);
 };
 
@@ -2133,6 +2135,59 @@ function draftLottery() {
       </fieldset>`,
   };
 }
+
+// Lottery step: set the format and see the odds, then run it.
+screens.lotteryOdds = () => {
+  const L = league();
+  const P = state.params;
+  const setup = lotterySetup(L, P.lotteryFormat, P.lotteryDraws);
+  const draws = setup.draws;
+  const odds = lotteryOdds(L, P.lotteryFormat, P.lotteryDraws, 5000, 1);
+  const rec = new Map(setup.table.map(r => [r.team.id, r]));
+  const totalW = odds.reduce((a, r) => a + r.weight, 0) || 1;
+  layout({
+    title: 'Draft Lottery',
+    body: `
+      ${options('Lottery Format', 'lotteryFormat', [['auto', 'Auto'], ['321', '3-2-1'], ['classic', 'Classic']])}
+      ${setup.format === '321'
+        ? `<p class="note small">${P.lotteryFormat === 'auto' ? 'Detected from your league settings. ' : ''}3-2-1 lottery (NBA 2027+): all ${draws} lottery picks are drawn; the 3 worst teams pick no lower than #12.</p>`
+        : `<div class="stepper">
+        <button class="btn square" data-act="lotteryDraws" data-dir="-1" aria-label="Fewer picks drawn">−</button>
+        <div class="val small">Top ${draws} pick${draws > 1 ? 's' : ''} drawn</div>
+        <button class="btn square" data-act="lotteryDraws" data-dir="1" aria-label="More picks drawn">+</button>
+      </div>`}
+      <fieldset class="frame"><legend>Odds</legend>
+        <div class="odds-head"><span>Seed</span><span>Team</span><span>Weight</span><span>#1</span><span>Top ${setup.format === '321' ? 4 : draws}</span></div>
+        ${odds.map(r => {
+          const rr = rec.get(r.team.id);
+          const top = r.pct.slice(0, setup.format === '321' ? 4 : draws).reduce((a, b) => a + b, 0);
+          return `<div class="odds-row ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${(r.weight / totalW * 100).toFixed(1)}%</span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span></div>`;
+        }).join('')}
+        <p class="note muted small" style="margin-top:8px">Weights come from your league's lottery settings (worst record = seed 1). Odds from 5,000 simulations.</p>
+      </fieldset>`,
+    action: { act: 'advLottery', label: 'Run Lottery' },
+  });
+};
+
+// The real lottery's result, right after it's drawn.
+screens.lotteryResult = () => {
+  const L = league();
+  const setup = lotterySetup(L, state.params.lotteryFormat, state.params.lotteryDraws);
+  const pre = setup.table.map(r => r.team);
+  const rec = new Map(setup.table.map(r => [r.team.id, r]));
+  const order = (actualDraftOrder(L) || []).filter(o => o.rd === 1).slice(0, setup.lotteryTeams.length);
+  layout({
+    title: 'Lottery Results',
+    body: `<div class="list">${order.map((o, i) => {
+        const move = pre.indexOf(o.orig) - i;
+        const rr = rec.get(o.orig.id);
+        return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
+          <span class="grow">${esc(o.orig.shortName)} <span class="muted small">${rr ? `${rr.W}-${rr.L}` : ''}</span>${o.owner.id !== o.orig.id ? ` <span class="small gold">→ ${esc(o.owner.shortName)}</span>` : ''}</span>
+          ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
+      }).join('')}</div>
+      <button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button>`,
+  });
+};
 
 actions.lotteryDraws = d => {
   const n = lotterySetup(league()).lotteryTeams.length;
