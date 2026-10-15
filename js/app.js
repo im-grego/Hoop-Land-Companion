@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.6';
+const APP_VERSION = '0.27.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2127,7 +2127,7 @@ screens.draft = (args) => {
   const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
-  const hero = tab === 'live' ? '<img class="hero tall" src="icons/hero-draft.jpg" alt="">' : tab === 'consensus' ? '<img class="hero" src="icons/hero-warroom.jpg" alt="">' : '';
+  const hero = tab === 'live' ? '<img class="hero" src="icons/hero-draft.jpg" alt="">' : tab === 'consensus' ? '<img class="hero" src="icons/hero-warroom.jpg" alt="">' : '';
   layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: hero + (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
 };
 
