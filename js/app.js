@@ -1,15 +1,15 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, seriousInjury, injuryArea, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryArea, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryPotChance } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.2';
+const APP_VERSION = '0.6.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -43,13 +43,15 @@ function loadParams() {
       if ((saved.version || 0) < 3) return structuredClone(DEFAULT_PARAMS);
       // v4 flipped summer league recovery (older rookies win back more).
       if (saved.version < 4) delete saved.recoveryBands;
+      // v5 rescaled injury risk for natural (unedited) injuries.
+      if (saved.version < 5) for (const k of ['injuryMinGames', 'injuryPotPerGame']) delete saved[k];
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 4 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 5 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -588,7 +590,7 @@ screens.offseason = () => {
               <button class="btn" data-act="undoAuto">↺ Undo</button>
             </div>`
           : `
-            <p class="note">Players aged ${bands[bands.length - 1][0]} and under (new age) earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to a serious injury risk losing potential. Every team gets the same rules, so CPU teams stay even.</p>
+            <p class="note">Players aged ${bands[bands.length - 1][0]} and under (new age) earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to injury (or keep re-injuring the same thing) risk losing potential. Every team gets the same rules, so CPU teams stay even.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
@@ -927,10 +929,12 @@ actions.attr = d => {
 
 function injuryText(p) {
   const yr = lastSeasonYear();
-  const inj = seriousInjury(p, yr);
-  if (!inj) return '';
-  const c = injuryPotChance(p, yr, state.params);
-  return `<br><span class="small down">${yr} injury: ${inj.gamesOut} games out (${esc(injuryArea(inj) || 'serious')})${c ? ` · ${Math.round(c)}% risk` : ''}</span>`;
+  const r = injuryRisk(p, yr, state.params);
+  if (!r) return '';
+  const w = r.worst;
+  const kind = w.majorSeverity > 0 ? `major (sev ${w.majorSeverity})` : 'minor';
+  const linger = [r.sameType ? `${r.sameType}× same injury` : '', r.sameArea ? `${r.sameArea}× same area` : ''].filter(Boolean).join(', ');
+  return `<br><span class="small down">${yr}: ${r.games} games out · ${esc(injuryArea(w))} ${kind}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
 }
 
 function regressionText(p) {
@@ -1047,7 +1051,7 @@ const STEP_FIELDS = {
     ['regLaterChance', 'Delay Regression: Later Years %', 5, 0, 100],
     ['potUpChance', 'Potential Upgrade %', 1, 0, 100],
     ['potUpMaxAge', 'Potential Upgrade Max Age', 1, 18, 40],
-    ['injuryMinGames', 'Injury: Min Games Missed', 5, 0, 82],
+    ['injuryMinGames', 'Injury: Min Games Missed', 1, 0, 82],
     ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
     ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],

@@ -131,15 +131,30 @@ export const POT_MIN = 4;
 export const POT_MAX = 10; // 11 exists as a secret level; never set by the app
 export const regressionYear = p => p.age - p.regressionAge; // 1 = first year of decline
 
-// Serious injuries are logged in history.injuries (majorSeverity > 0).
-// Returns the worst one from a season, or null.
-export function seriousInjury(p, year) {
-  let worst = null;
-  for (const i of p.history?.injuries || []) {
-    if (i.yr === year && i.majorSeverity > 0 && (!worst || i.gamesOut > worst.gamesOut)) worst = i;
-  }
-  return worst;
+// Injury type: body area + code (core 1-5, upperBody 1-6, lowerBody 1-10).
+export const INJURY_AREAS = ['core', 'upperBody', 'lowerBody'];
+export const injuryType = i => {
+  const a = INJURY_AREAS.find(k => i[k]);
+  return a ? `${a}:${i[a]}` : null;
+};
+
+// Time-loss injuries (major or minor) over the last `window` seasons ending at
+// `year`: the worst one in `year`, plus how many others were the same type or
+// the same body area (lingering / recurring injuries).
+export function injuryHistory(p, year, window = 3) {
+  const list = (p.history?.injuries || []).filter(i => i.gamesOut > 0 && i.yr <= year && i.yr > year - window);
+  const cur = list.filter(i => i.yr === year);
+  if (!cur.length) return null;
+  const worst = cur.reduce((a, b) => (b.majorSeverity > a.majorSeverity || (b.majorSeverity === a.majorSeverity && b.gamesOut > a.gamesOut) ? b : a));
+  const type = injuryType(worst);
+  const area = type?.split(':')[0];
+  const others = list.filter(i => i !== worst);
+  const sameType = others.filter(i => injuryType(i) === type).length;
+  const sameArea = others.filter(i => injuryType(i) !== type && i[area]).length;
+  const games = cur.reduce((a, i) => a + i.gamesOut, 0);
+  return { worst, type, games, sameType, sameArea };
 }
+
 export const injuryArea = i => ['core', 'upperBody', 'lowerBody'].filter(k => i[k])
   .map(k => ({ core: 'core', upperBody: 'upper body', lowerBody: 'lower body' })[k]).join(', ');
 

@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, seriousInjury } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryType } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
 export const AWARD_CATEGORIES = [0, 1, 2, 3];
@@ -34,13 +34,19 @@ export const DEFAULT_PARAMS = {
   potUpChance: 4,         // %
   potUpMaxAge: 25,
   // Serious injuries last season: chance to lose 1 potential.
-  injuryMinGames: 20,     // games missed before there's any risk
-  injuryPotPerGame: 0.3,  // % chance per game missed
+  injuryMinGames: 15,     // games missed before there's any risk (recurring injuries always count)
+  injuryPotPerGame: 0.6,  // % chance per game missed
   injuryOldAge: 30,       // at this age and up the chance is x1.25
   injuryPotMax: 50,       // % cap
   injurySevStep: 0.1,     // severity 1-4 -> x0.8 .. x1.1
   injuryLowerBodyMult: 1.2,
   injuryLongevityCut: 50, // % cut to the regression-delay chance after a serious injury
+  injuryMinorMult: 0.6,   // non-major (minor) time-loss injuries
+  injuryWindow: 3,        // seasons looked back for lingering injuries
+  injuryRepeatType: 0.5,  // +50% per earlier injury of the same type
+  injuryRepeatArea: 0.25, // +25% per earlier injury in the same body area
+  softTissueCodes: [],    // injury types ('lowerBody:3', ...) treated as soft tissue
+  softTissueMult: 1.25,
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -226,14 +232,25 @@ export function maybePotential(p, mult, params, rng) {
 }
 
 // A serious injury last season can cost half a star of potential.
-export function injuryPotChance(p, year, params) {
-  const inj = seriousInjury(p, year);
-  if (!inj || inj.gamesOut < params.injuryMinGames) return 0;
-  const sev = 0.7 + params.injurySevStep * Math.min(4, inj.majorSeverity);
-  const area = inj.lowerBody ? params.injuryLowerBodyMult : 1;
-  const c = inj.gamesOut * params.injuryPotPerGame * sev * area * (p.age >= params.injuryOldAge ? 1.25 : 1);
-  return Math.min(params.injuryPotMax, c);
+// Risk of losing potential from last season's injuries. Lingering or
+// recurring injuries (same type or area within the window) raise the risk
+// and count even below the games threshold.
+export function injuryRisk(p, year, params) {
+  const h = injuryHistory(p, year, params.injuryWindow);
+  if (!h) return null;
+  const recurring = h.sameType + h.sameArea > 0;
+  if (h.games < params.injuryMinGames && !recurring) return { ...h, chance: 0 };
+  const w = h.worst;
+  const sev = w.majorSeverity > 0 ? 0.7 + params.injurySevStep * Math.min(4, w.majorSeverity) : params.injuryMinorMult;
+  const area = w.lowerBody ? params.injuryLowerBodyMult : 1;
+  const repeat = 1 + h.sameType * params.injuryRepeatType + h.sameArea * params.injuryRepeatArea;
+  const soft = params.softTissueCodes.includes(injuryType(w)) ? params.softTissueMult : 1;
+  const age = p.age >= params.injuryOldAge ? 1.25 : 1;
+  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * soft * age);
+  return { ...h, chance };
 }
+
+export const injuryPotChance = (p, year, params) => injuryRisk(p, year, params)?.chance || 0;
 
 export function maybeInjuryPotLoss(p, year, params, rng) {
   const chance = injuryPotChance(p, year, params);
