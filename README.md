@@ -54,9 +54,21 @@ All of these are adjustable under **Settings**.
 ## Mentorship
 
 Also in free agency: veterans (30+) teach a young teammate (24 and under) within two position steps one of their
-skills — one they have at Lv 2+ (or a no-level skill) that the youngster lacks — and it unlocks right away (keeping
+skills — one they have at Lv 2+ that the youngster lacks — and it unlocks right away (keeping
 any XP already built toward it). One mentee per mentor and one skill per mentee each offseason. CPU teams pair up
-automatically (50% per eligible mentor, best-fit skill); for your teams you pick the pairing and skill.
+automatically (50% per eligible mentor, best-fit skill); for your teams you pick the pairing and skill. Free skills
+are never taught, and elite skills only if allowed in settings (off by default).
+
+Skills (code → name; first in each category is free, last two are elite and need 16/20 in a related rating):
+
+| Finishing | Shooting | Creating | Defense |
+|---|---|---|---|
+| HIG Highlight Reel (free) | SPA Spark Plug (free) | DIM Dimer (free) | CLA Clamps (free) |
+| CRA Crafty | CLU Clutch Gene | CHE Chef | LOC Locked In |
+| SOF Soft Touch | SPO Spot Up | CLE Cleanup Crew | MAG Magnet |
+| TEA Tear Dropper | VOL Volume Shooter | STE Step Dancer | TWO Two Way |
+| BUL Bully (elite) | LIM Limitless (elite) | FOO Foot Surgeon (elite) | BAL Ball Hawk (elite) |
+| DUN Dunk Artist (elite) | UNF Unfazed (elite) | HOT Hot Potato (elite) | SNA Snatcher (elite) |
 
 ## Draft room
 

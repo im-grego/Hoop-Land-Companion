@@ -93,7 +93,27 @@ export const ATTR_MAX = 20;
 export const attrMin = k => (PHYSICAL.includes(k) ? 8 : 0);
 export const SKILL_MAX_LEVEL = 3;
 // Skills with no levels: they are only equipped or not (stored as level 1).
-export const UNLEVELED_SKILLS = ['CLA', 'DIM', 'HIG', 'SPA'];
+// Skills by category, in the game's order: the first in each is free (no
+// levels), the last two are elite (need 16/20 in a related rating).
+export const SKILL_CATEGORIES = [
+  { name: 'Finishing', skills: ['HIG', 'CRA', 'SOF', 'TEA', 'BUL', 'DUN'] },
+  { name: 'Shooting', skills: ['SPA', 'CLU', 'SPO', 'VOL', 'LIM', 'UNF'] },
+  { name: 'Creating', skills: ['DIM', 'CHE', 'CLE', 'STE', 'FOO', 'HOT'] },
+  { name: 'Defense', skills: ['CLA', 'LOC', 'MAG', 'TWO', 'BAL', 'SNA'] },
+];
+export const SKILL_NAMES = {
+  HIG: 'Highlight Reel', CRA: 'Crafty', SOF: 'Soft Touch', TEA: 'Tear Dropper', BUL: 'Bully', DUN: 'Dunk Artist',
+  SPA: 'Spark Plug', CLU: 'Clutch Gene', SPO: 'Spot Up', VOL: 'Volume Shooter', LIM: 'Limitless', UNF: 'Unfazed',
+  DIM: 'Dimer', CHE: 'Chef', CLE: 'Cleanup Crew', STE: 'Step Dancer', FOO: 'Foot Surgeon', HOT: 'Hot Potato',
+  CLA: 'Clamps', LOC: 'Locked In', MAG: 'Magnet', TWO: 'Two Way', BAL: 'Ball Hawk', SNA: 'Snatcher',
+};
+export const skillName = id => SKILL_NAMES[id] || id;
+export const skillCategory = id => SKILL_CATEGORIES.find(c => c.skills.includes(id))?.name || '';
+export const FREE_SKILLS = SKILL_CATEGORIES.map(c => c.skills[0]);
+export const ELITE_SKILLS = SKILL_CATEGORIES.flatMap(c => c.skills.slice(4));
+export const isFreeSkill = id => FREE_SKILLS.includes(id);
+export const isEliteSkill = id => ELITE_SKILLS.includes(id);
+export const UNLEVELED_SKILLS = FREE_SKILLS;
 export const isLeveled = id => !UNLEVELED_SKILLS.includes(id);
 
 // Verified against the in-game roster screen (PG = 0, F = 5, C = 8).

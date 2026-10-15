@@ -72,6 +72,7 @@ export const DEFAULT_PARAMS = {
   mentorPosRange: 2,      // position steps apart (PG..C)
   mentorSkillMinLevel: 2, // leveled skills must be at least this level to teach
   mentorshipChance: 50,   // % per eligible CPU mentor
+  mentorTeachElite: false, // elite skills (last two per category) need 16/20 in-game
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,

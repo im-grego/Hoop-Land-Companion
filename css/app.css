@@ -340,3 +340,5 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .badge.chip { font-family: var(--pixel); font-size: 14px; padding: 6px 10px; cursor: pointer; background: var(--btn); color: var(--text); }
 .badge.chip:active { border-color: var(--cyan); }
+.sk-name { font-size: 16px; }
+.badge.chip { font-family: var(--font); }

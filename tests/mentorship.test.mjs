@@ -1,7 +1,7 @@
 // Usage: node tests/mentorship.test.mjs <season file with rosters>
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { parseSave, isLeveled, POSITIONS } from '../js/savefile.js';
+import { parseSave, isLeveled, isFreeSkill, isEliteSkill, POSITIONS } from '../js/savefile.js';
 import { DEFAULT_PARAMS as P, buildSkillProfiles } from '../js/progression.js';
 import { mentorPairs, runMentorship, describe } from '../js/mentorship.js';
 
@@ -15,6 +15,8 @@ for (const { mentor, mentee, skills } of pairs) {
     const s = mentor.skills.find(x => x.id === id);
     assert.ok(s.level >= (isLeveled(id) ? P.mentorSkillMinLevel : 1), 'mentor knows it well enough');
     assert.ok(!mentee.skills.some(x => x.id === id && x.level >= 1), 'mentee lacks it');
+    assert.ok(!isFreeSkill(id), 'free skills are not taught');
+    assert.ok(!isEliteSkill(id), 'elite skills are not taught by default');
   }
 }
 const before = new Map(L.teams.flatMap(t => t.roster).map(p => [p.id, p.skills.filter(s => s.level >= 1).length]));

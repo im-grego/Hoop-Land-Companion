@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity } from './progression.js';
@@ -10,7 +10,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.8.0';
+const APP_VERSION = '0.8.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -157,9 +157,14 @@ function changeSummary(d) {
 }
 
 function skillBadges(d) {
-  return d.added.map(id => `<span class="badge new">+${esc(id)}</span>`).join('') +
-    d.leveled.map(id => `<span class="badge lvl">${esc(id)}↑</span>`).join('') +
-    d.removed.map(id => `<span class="badge">−${esc(id)}</span>`).join('');
+  return d.added.map(id => `<span class="badge new">+${esc(skillName(id))}</span>`).join('') +
+    d.leveled.map(id => `<span class="badge lvl">${esc(skillName(id))}↑</span>`).join('') +
+    d.removed.map(id => `<span class="badge">−${esc(skillName(id))}</span>`).join('');
+}
+
+// "Shooting · elite · TPT · MID"
+function skillTag(id) {
+  return [skillCategory(id), isFreeSkill(id) ? 'free' : isEliteSkill(id) ? 'elite (16/20)' : '', skillHint(id)].filter(Boolean).join(' · ');
 }
 
 function skillHint(id) {
@@ -735,7 +740,7 @@ function mentorCard() {
   const mine = ms.list.filter(m => !m.cpu);
   const P = state.params;
   return `<fieldset class="frame"><legend>Mentorship</legend><div class="stack">
-    <p class="note">Veterans (${P.mentorMinAge}+) teach a young teammate (${P.menteeMaxAge} and under) at a similar position one of their skills, unlocked right away. One mentee per mentor, one skill per mentee.</p>
+    <p class="note">Veterans (${P.mentorMinAge}+) teach a young teammate (${P.menteeMaxAge} and under) at a similar position one of their skills, unlocked right away. One mentee per mentor, one skill per mentee. Free skills are never taught${P.mentorTeachElite ? '' : ', nor elite ones'}.</p>
     ${ms.seed != null
       ? `<p class="note">CPU teams: <span class="up">${cpu.length} mentorships</span>.</p>
         <div class="grid2"><button class="btn" data-act="rerollMentor">🎲 Re-roll</button><button class="btn" data-act="undoMentor">↺ Undo</button></div>`
@@ -759,12 +764,12 @@ screens.mentor = () => {
     const byMentor = new Map();
     for (const o of options) (byMentor.get(o.mentor) || byMentor.set(o.mentor, []).get(o.mentor)).push(o);
     return `<fieldset class="frame"><legend>${esc(t.city)} ${esc(t.name)}</legend><div class="stack">
-      ${pairs.map(m => `<div class="row"><p class="note grow"><span class="up">✓</span> ${esc(name(m.mentorId))} taught ${esc(name(m.menteeId))} <span class="code" style="font-family:var(--pixel)">${esc(m.skill)}</span></p>
+      ${pairs.map(m => `<div class="row"><p class="note grow"><span class="up">✓</span> ${esc(name(m.mentorId))} taught ${esc(name(m.menteeId))} <b>${esc(skillName(m.skill))}</b></p>
         <button class="btn small" data-act="unteach" data-mentee="${m.menteeId}">Undo</button></div>`).join('')}
       ${[...byMentor].map(([mentor, list]) => `<div class="mentor">
         <p class="note"><b>${esc(playerName(mentor))}</b> <span class="muted small">${mentor.age}y · ${esc(posOf(mentor))}</span> can teach:</p>
         ${list.map(o => `<div class="mentee"><span class="small">${esc(playerName(o.mentee))} <span class="muted">${o.mentee.age}y · ${esc(posOf(o.mentee))}</span></span>
-          <div class="chips">${o.skills.map(id => `<button class="badge chip" data-act="teach" data-team="${t.id}" data-mentor="${mentor.id}" data-mentee="${o.mentee.id}" data-skill="${esc(id)}">${esc(id)}</button>`).join('')}</div></div>`).join('')}
+          <div class="chips">${o.skills.map(id => `<button class="badge chip" data-act="teach" data-team="${t.id}" data-mentor="${mentor.id}" data-mentee="${o.mentee.id}" data-skill="${esc(id)}">${esc(skillName(id))}</button>`).join('')}</div></div>`).join('')}
       </div>`).join('') || (pairs.length ? '' : '<p class="note muted">No eligible mentor/mentee pairs on this roster.</p>')}
     </div></fieldset>`;
   }).join('') : '<p class="note">Pick your teams first.</p><button class="btn" data-act="nav" data-to="teams">👥 Pick Your Teams</button>';
@@ -780,7 +785,7 @@ actions.teach = d => {
   mentorState().list.push({ teamId: +d.team, mentorId: +d.mentor, menteeId: +d.mentee, skill: d.skill, cpu: false });
   state.dirty = true;
   render();
-  toast(`${playerName(e.p)} learned ${d.skill}`);
+  toast(`${playerName(e.p)} learned ${skillName(d.skill)}`);
 };
 
 actions.unteach = d => {
@@ -984,7 +989,7 @@ screens.player = (args) => {
         <div class="stack">
           ${p.skills.map((s, i) => s.level < 1 ? '' : `
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
-              <div><span class="code">${esc(s.id)}</span> <span class="hint">${esc(skillHint(s.id))}</span></div>
+              <div><span class="sk-name">${esc(skillName(s.id))}</span><br><span class="hint">${esc(skillTag(s.id))}</span></div>
               <div class="ctrls">
                 <button class="btn ${s.equipped ? 'on' : 'off'}" data-act="equip" data-i="${i}" aria-label="Toggle equipped">${s.equipped ? 'ON' : 'OFF'}</button>
                 ${isLeveled(s.id) ? `
@@ -1121,7 +1126,7 @@ actions.skillLv = d => {
 actions.skillDel = async d => {
   const p = currentPlayer();
   const s = p.skills[+d.i];
-  if (!(await confirmBox(`Remove ${esc(s.id)} from ${esc(playerName(p))}? Its XP is kept.`, 'Remove'))) return;
+  if (!(await confirmBox(`Remove ${esc(skillName(s.id))} from ${esc(playerName(p))}? Its XP is kept.`, 'Remove'))) return;
   if (snapOf(p).skills.some(x => x.id === s.id)) { s.level = 0; s.equipped = false; }
   else p.skills.splice(+d.i, 1);
   state.dirty = true;
@@ -1140,8 +1145,7 @@ actions.addSkill = () => {
     <p class="note">Add a skill to ${esc(playerName(p))}<br><span class="muted small">Sorted by fit with their ratings</span></p>
     <div class="stack" style="max-height:55vh;overflow:auto">
       ${ranked.map(s => `<button class="btn left" data-id="${esc(s.id)}">
-        <span class="code" style="font-family:var(--pixel)">${esc(s.id)}</span>
-        <span class="muted small" style="flex:1;text-align:left">${esc(skillHint(s.id))}</span>
+        <span style="flex:1;text-align:left">${esc(skillName(s.id))}<br><span class="muted small">${esc(skillTag(s.id))}</span></span>
         ${lockedXp(p, s.id) ? `<span class="muted small">${lockedXp(p, s.id)} xp</span>` : ''}
         <span class="${s.fit > 0.3 ? 'up' : s.fit > 0 ? '' : 'muted'}">${Math.round(Math.max(0, s.fit) * 100)}%</span>
       </button>`).join('') || '<p class="note">Already has every skill.</p>'}
@@ -1246,6 +1250,7 @@ screens.settings = (args) => {
         ${state.data.seasonLeagues.map((L, i) => `<button class="btn ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}
       </div></fieldset>` : ''}
       ${options('Include Free Agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']])}
+      ${options('Mentors Teach Elite Skills', 'mentorTeachElite', [[false, 'No'], [true, 'Yes']])}
       ${options('CPU Points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']])}
       <p class="note muted small">Commissioner saves: the CPU holds points unless in-game auto progression is on. "Spend Now" applies CPU points to ratings in this app instead.</p>
       ${options('Point Focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']])}
