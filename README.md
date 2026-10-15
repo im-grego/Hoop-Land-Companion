@@ -177,10 +177,12 @@ Available once the file has a draft class (offseason, before the lottery).
 
 The **Live** tab in the draft room runs the real draft from the save's order. CPU teams pick by scouted value,
 roster need and age with some variance; you pick for your teams from your own big board (watch-listed prospects
-starred). Nothing is written until you finish, and **Reset** starts over (undoing draft-day trades).
+starred). Nothing is written until you finish. Trades are final; with **Commissioner Mode** on you can undo them
+and **Reset** the draft.
 
-- **Trades at any point:** picks in this draft, future picks, players, and **draft-and-trade** of a rookie for up to
-  8 picks after being taken (Settings → Rookies). CPU teams accept when they get a bit more value back than they give;
+- **Trades at any point:** picks in this draft, future picks, players, and **draft-and-trade** of a rookie any time
+  after they're taken. A **Trade Alert** banner announces every trade. When the last pick is in, the **Draft Recap**
+  lists every pick in team colors with the rookie's projected level after the draft dip (sort by pick or level). CPU teams accept when they get a bit more value back than they give;
   With **Commissioner Mode** on (Settings) you can trade for any team and **Force** pushes a trade through; off (the
   default), your side is limited to the teams you control. Pick teams with the ◀ ▶ arrows. Players whose contracts are up (pending free
   agents) can't be traded: they're listed last, greyed out with a 🔒 Pending FA tag. A balance bar
