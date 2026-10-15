@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, phaseName, BUMP_PHASES, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump } from './progression.js';
@@ -369,7 +369,7 @@ screens.main = () => {
           <dt>League</dt><dd>${esc(L.shortName)}</dd>
           <dt>Year</dt><dd>${s.currentYear}</dd>
           <dt>Mode</dt><dd>${esc(MODE_NAMES[s.mode] ?? s.mode)}</dd>
-          <dt>Phase</dt><dd>${esc(PHASE_NAMES[s.phase] ?? `Phase ${s.phase}`)}</dd>
+          <dt>Phase</dt><dd>${esc(phaseName(s))}</dd>
           <dt>Players</dt><dd>${players}</dd>
           <dt>Your teams</dt><dd>${esc(yourTeams)}</dd>
           <dt>Offseason bump</dt><dd>${auto ? `<span class="up">Applied</span>` : '<span class="muted">Not run</span>'}</dd>
@@ -395,7 +395,7 @@ screens.main = () => {
 
 function phaseWarning(s) {
   if (BUMP_PHASES.includes(s.phase)) return '';
-  return `<p class="note gold small" style="margin-top:10px">The bump is meant to run after the champion is crowned (Season Complete). This file is at ${esc(PHASE_NAMES[s.phase] ?? `phase ${s.phase}`)}.</p>`;
+  return `<p class="note gold small" style="margin-top:10px">The bump is meant to run after the champion is crowned (Season Complete). This file is at ${esc(phaseName(s))}.</p>`;
 }
 
 actions.nav = d => go(d.to, d.arg ? { arg: d.arg } : {});
@@ -640,7 +640,7 @@ function summerSection() {
   } else if (summerDone(L)) {
     body = `<p class="note">Summer league was already applied for ${L.season.currentYear}, so it won't run again.</p>`;
   } else if (L.season.phase !== PHASE_POST_DRAFT) {
-    body = `<p class="note muted">Summer league runs right after the draft (Post-Draft phase). This file is at ${esc(PHASE_NAMES[L.season.phase] ?? `phase ${L.season.phase}`)}.</p>`;
+    body = `<p class="note muted">Summer league runs right after the draft (Post-Draft phase). This file is at ${esc(phaseName(L.season))}.</p>`;
   } else {
     const eligible = summerEligible();
     const total = leagueRookies(L).filter(r => r.round > 0 || state.params.rookieIncludeUndrafted).length;
@@ -1061,7 +1061,7 @@ screens.settings = (args) => {
         <button class="btn square" data-act="recBand" data-i="${i}" data-dir="-1" aria-label="Less recovery">−</button>
         <span class="pts-val">+${b[1]}</span>
         <button class="btn square" data-act="recBand" data-i="${i}" data-dir="1" aria-label="More recovery">+</button></div>`).join('')}
-        <p class="note muted small">Draft-drop points won back right after the draft (of the −${DRAFT_DROP}).</p></div></fieldset>` +
+        <p class="note muted small">Draft-drop points won back right after the draft (of the −${DRAFT_DROP}, at most +2).</p></div></fieldset>` +
       options('1st Round', 'rookieR1Mult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]) +
       options('2nd Round', 'rookieR2Mult', [[0.75, '×0.75'], [1, '×1.0'], [1.25, '×1.25']]) +
       options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
@@ -1114,7 +1114,7 @@ actions.band = d => {
 };
 actions.recBand = d => {
   const b = state.params.recoveryBands[+d.i];
-  b[1] = Math.max(0, Math.min(4, b[1] + +d.dir));
+  b[1] = Math.max(0, Math.min(2, b[1] + +d.dir)); // capped at +2
   state.compCache = {};
   saveParams();
   render();

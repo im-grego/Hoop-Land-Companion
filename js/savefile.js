@@ -106,16 +106,26 @@ export const MODE_NAMES = { 0: 'Franchise', 1: 'Commissioner' };
 // 2  = offseason start, before the lottery (new year, ages +1, retirees gone)
 // 4  = lottery done, before the draft (current-year picks get a 0-based pk)
 // 5  = draft done (rookies on rosters / undrafted in free agency)
+// 6  = free agency, season.currentDay 1-3 (rookie contracts signed on day 1;
+//      advancing past day 3 starts the new season)
 export const PHASE_SEASON_COMPLETE = 11;
 export const PHASE_PRE_LOTTERY = 2;
 export const PHASE_PRE_DRAFT = 4;
 export const PHASE_POST_DRAFT = 5;
+export const PHASE_FREE_AGENCY = 6;
 export const PHASE_NAMES = {
   [PHASE_SEASON_COMPLETE]: 'Season Complete',
   [PHASE_PRE_LOTTERY]: 'Offseason · Pre-Lottery',
   [PHASE_PRE_DRAFT]: 'Offseason · Pre-Draft',
   [PHASE_POST_DRAFT]: 'Offseason · Post-Draft',
+  [PHASE_FREE_AGENCY]: 'Free Agency',
 };
+
+export function phaseName(season) {
+  const name = PHASE_NAMES[season.phase];
+  if (!name) return `Phase ${season.phase}`;
+  return season.phase === PHASE_FREE_AGENCY ? `${name} · Day ${season.currentDay}` : name;
+}
 // Phases where the bump is meant to run (final choice pending).
 export const BUMP_PHASES = [PHASE_SEASON_COMPLETE];
 
