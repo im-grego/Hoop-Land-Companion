@@ -1,10 +1,10 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, ATTR_MIN, ATTR_MAX, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, ATTR_MIN, ATTR_MAX, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor } from './progression.js';
 
-const APP_VERSION = '0.1.0';
+const APP_VERSION = '0.1.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -41,7 +41,12 @@ function saveUserTeams() {
 function loadUserTeams() {
   let ids = null;
   try { ids = JSON.parse(localStorage.getItem(teamsKey())); } catch { /* ignore */ }
-  if (!Array.isArray(ids)) ids = league().teams.filter(t => t.isPlayer).map(t => t.id);
+  if (!Array.isArray(ids)) {
+    const L = league();
+    ids = L.teams.filter(t => t.isPlayer).map(t => t.id);
+    // Franchise saves: default to the team the save is built around.
+    if (!ids.length && L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId)) ids = [L.season.teamId];
+  }
   state.userTeams = new Set(ids);
 }
 
@@ -142,11 +147,14 @@ function layout({ title, left = '', right = '', body, action = null }) {
     </div>
     <main class="panel">${body}</main>
     <div class="bottom">
-      ${state.stack.length > 1 ? '<button class="btn back" data-act="back" aria-label="Back">🡐</button>' : '<span></span>'}
+      ${state.stack.length > 1 ? `<button class="btn back" data-act="back" aria-label="Back">${BACK_ARROW}</button>` : '<span></span>'}
       ${action ? `<button class="btn action" data-act="${action.act}">${esc(action.label)}</button>` : ''}
     </div>`;
   window.scrollTo(0, 0);
 }
+
+const BACK_ARROW = `<svg width="40" height="28" viewBox="0 0 10 7" shape-rendering="crispEdges" aria-hidden="true">
+  <path fill="#fff" d="M3 0h1v1h-1zM2 1h2v1h-2zM1 2h9v3h-9zM0 3h1v1h-1zM2 5h2v1h-2zM3 6h1v1h-1z"/></svg>`;
 
 const screens = {};
 const actions = {};
@@ -297,11 +305,13 @@ screens.main = () => {
           <dt>League</dt><dd>${esc(L.shortName)}</dd>
           <dt>Year</dt><dd>${s.currentYear}</dd>
           <dt>Mode</dt><dd>${esc(MODE_NAMES[s.mode] ?? s.mode)}</dd>
-          <dt>Phase</dt><dd>${s.phase}</dd>
+          <dt>Phase</dt><dd>${esc(PHASE_NAMES[s.phase] ?? `Phase ${s.phase}`)}</dd>
           <dt>Players</dt><dd>${players}</dd>
           <dt>Your teams</dt><dd>${esc(yourTeams)}</dd>
           <dt>CPU progression</dt><dd>${auto ? `<span class="up">Applied</span>` : '<span class="muted">Not run</span>'}</dd>
+          <dt>In-game CPU progression</dt><dd>${s.cpuProgression ? '<span class="gold">On</span>' : 'Off'}</dd>
         </dl>
+        ${phaseWarning(s)}
       </fieldset>
       <fieldset class="frame"><legend>Modes</legend>
         <div class="stack">
@@ -317,6 +327,11 @@ screens.main = () => {
       <p class="center muted small">Version ${APP_VERSION}</p>`,
   });
 };
+
+function phaseWarning(s) {
+  if (s.phase === PHASE_SEASON_COMPLETE) return '';
+  return `<p class="note gold small" style="margin-top:10px">Development is meant to run at the end of the season, after the champion is crowned and before the offseason starts. This file is at phase ${s.phase}.</p>`;
+}
 
 actions.nav = d => go(d.to, d.arg ? { arg: d.arg } : {});
 
@@ -413,6 +428,7 @@ screens.offseason = () => {
   layout({
     title: 'Offseason Development',
     body: `
+      ${phaseWarning(L.season)}
       <fieldset class="frame"><legend>1 · CPU Teams</legend>
         <div class="stack">
           ${auto ? `

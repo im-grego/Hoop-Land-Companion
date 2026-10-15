@@ -83,7 +83,12 @@ export const SKILL_MAX_LEVEL = 3;
 // Verified against the in-game roster screen (PG = 0, F = 5, C = 8).
 export const POSITIONS = ['PG', 'G', 'SG', 'GF', 'SF', 'F', 'PF', 'FC', 'C'];
 
-export const MODE_NAMES = { 0: 'Commissioner', 1: 'Career', 2: 'Franchise' };
+export const MODE_NAMES = { 0: 'Franchise', 1: 'Commissioner' };
+
+// season.phase when the champion has been crowned and the offseason hasn't
+// started yet. This is when the development phase is meant to run.
+export const PHASE_SEASON_COMPLETE = 11;
+export const PHASE_NAMES = { [PHASE_SEASON_COMPLETE]: 'Season Complete' };
 
 export function playerName(p) { return `${p.fn} ${p.ln}`; }
 
