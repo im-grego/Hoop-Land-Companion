@@ -66,6 +66,12 @@ export const DEFAULT_PARAMS = {
   structuralParts: ['Achilles', 'ACL', 'MCL', 'Knee', 'Ankle', 'Foot', 'Hip', 'Back'],
   structuralRiskMult: 1.25,
   structuralLongevityCut: 75,  // % cut to the regression-delay chance
+  // Mentorship (see mentorship.js)
+  mentorMinAge: 30,
+  menteeMaxAge: 24,
+  mentorPosRange: 2,      // position steps apart (PG..C)
+  mentorSkillMinLevel: 2, // leveled skills must be at least this level to teach
+  mentorshipChance: 50,   // % per eligible CPU mentor
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,

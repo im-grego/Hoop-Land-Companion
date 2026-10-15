@@ -8,8 +8,9 @@ import {
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
+import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.7.0';
+const APP_VERSION = '0.8.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -26,6 +27,7 @@ const state = {
   auto: {},                // leagueIdx -> bump summary
   rookieAuto: {},          // leagueIdx -> rookie bump summary
   summer: {},              // leagueIdx -> { players, points } once summer league ran this session
+  mentor: {},              // leagueIdx -> { seed, list: [{ teamId, mentorId, menteeId, skill, cpu }] }
   awards: {},              // leagueIdx -> Map pid -> points awarded
   draft: {},               // leagueIdx -> { lottery, mock, trades }
   compPools: {},
@@ -254,6 +256,7 @@ async function loadFile(file) {
     state.auto = {};
     state.rookieAuto = {};
     state.summer = {};
+    state.mentor = {};
     state.awards = {};
     state.draft = {};
     state.compPools = {};
@@ -474,6 +477,7 @@ function applyBump(seed) {
   const li = state.leagueIdx;
   // Start from the original file each time so re-rolls don't stack.
   for (const p of vetPlayers()) restore(p, snapOf(p));
+  reapplyMentorship();
   const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team) }));
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   let players = 0, points = 0, mine = 0;
@@ -522,6 +526,7 @@ actions.reroll = async () => {
 actions.undoAuto = async () => {
   if (!(await confirmBox('Undo the offseason bump? Those players return to the original file.', 'Undo'))) return;
   for (const p of vetPlayers()) { restore(p, snapOf(p)); state.awards[state.leagueIdx]?.delete(p.id); }
+  reapplyMentorship();
   delete state.auto[state.leagueIdx];
   render();
 };
@@ -603,6 +608,7 @@ screens.offseason = () => {
         </div>
       </fieldset>
       ${rookieCard()}
+      ${mentorCard()}
       <fieldset class="frame"><legend>2 · Your Teams</legend>
         <div class="stack">
           ${mine.length ? mine.map(t => `
@@ -678,6 +684,113 @@ function summerSection() {
   }
   return `<fieldset class="frame"><legend>Summer League</legend><div class="stack">${body}</div></fieldset>`;
 }
+
+// ---- Mentorship
+
+const mentorState = () => (state.mentor[state.leagueIdx] ||= { seed: null, list: [] });
+const byId = id => findPlayer(id);
+
+// Put the mentee's taught skill back the way the file had it.
+function unteach(m) {
+  const e = byId(m.menteeId);
+  if (!e) return;
+  const orig = snapOf(e.p).skills.find(s => s.id === m.skill);
+  const i = e.p.skills.findIndex(s => s.id === m.skill);
+  if (orig && i >= 0) e.p.skills[i] = { ...orig };
+  else if (i >= 0) e.p.skills.splice(i, 1);
+}
+
+// Bump resets start from the original file; put taught skills back.
+function reapplyMentorship() {
+  for (const m of state.mentor[state.leagueIdx]?.list || []) {
+    const e = byId(m.menteeId);
+    if (e) unlockSkill(e.p, m.skill);
+  }
+}
+
+function applyCpuMentorship(seed) {
+  const ms = mentorState();
+  for (const m of ms.list.filter(x => x.cpu)) unteach(m);
+  ms.list = ms.list.filter(x => !x.cpu);
+  const cpuTeams = league().teams.filter(t => !isUserTeam(t));
+  const done = runMentorship(cpuTeams, state.params, state.profiles[state.leagueIdx], seed);
+  ms.seed = seed;
+  ms.list.push(...done.map(d => ({ teamId: d.team.id, mentorId: d.mentor.id, menteeId: d.mentee.id, skill: d.skill, cpu: true })));
+  state.dirty = true;
+}
+
+actions.runMentor = () => { applyCpuMentorship(state.params.seed); render(); };
+actions.rerollMentor = () => { applyCpuMentorship(Math.floor(Math.random() * 1e6)); render(); };
+actions.undoMentor = async () => {
+  if (!(await confirmBox('Undo all mentorships (CPU and yours)?', 'Undo'))) return;
+  const ms = mentorState();
+  for (const m of ms.list) unteach(m);
+  state.mentor[state.leagueIdx] = { seed: null, list: [] };
+  render();
+};
+
+function mentorCard() {
+  const ms = mentorState();
+  const cpu = ms.list.filter(m => m.cpu);
+  const mine = ms.list.filter(m => !m.cpu);
+  const P = state.params;
+  return `<fieldset class="frame"><legend>Mentorship</legend><div class="stack">
+    <p class="note">Veterans (${P.mentorMinAge}+) teach a young teammate (${P.menteeMaxAge} and under) at a similar position one of their skills, unlocked right away. One mentee per mentor, one skill per mentee.</p>
+    ${ms.seed != null
+      ? `<p class="note">CPU teams: <span class="up">${cpu.length} mentorships</span>.</p>
+        <div class="grid2"><button class="btn" data-act="rerollMentor">🎲 Re-roll</button><button class="btn" data-act="undoMentor">↺ Undo</button></div>`
+      : `<button class="btn big focus" data-act="runMentor">▶ Run CPU Mentorship</button>`}
+    <button class="btn" data-act="nav" data-to="mentor">🎓 Your Mentorships${mine.length ? ` (${mine.length})` : ''}</button>
+  </div></fieldset>`;
+}
+
+screens.mentor = () => {
+  const L = league();
+  const mine = L.teams.filter(isUserTeam);
+  const ms = mentorState();
+  const name = id => { const e = byId(id); return e ? playerName(e.p) : '?'; };
+  const posOf = p => POSITIONS[p.pos] ?? p.pos;
+  const body = mine.length ? mine.map(t => {
+    const pairs = ms.list.filter(m => m.teamId === t.id);
+    const usedMentors = new Set(pairs.map(m => m.mentorId));
+    const taught = new Set(pairs.map(m => m.menteeId));
+    const options = mentorPairs(t.roster, state.params, state.profiles[state.leagueIdx])
+      .filter(x => !usedMentors.has(x.mentor.id) && !taught.has(x.mentee.id));
+    const byMentor = new Map();
+    for (const o of options) (byMentor.get(o.mentor) || byMentor.set(o.mentor, []).get(o.mentor)).push(o);
+    return `<fieldset class="frame"><legend>${esc(t.city)} ${esc(t.name)}</legend><div class="stack">
+      ${pairs.map(m => `<div class="row"><p class="note grow"><span class="up">✓</span> ${esc(name(m.mentorId))} taught ${esc(name(m.menteeId))} <span class="code" style="font-family:var(--pixel)">${esc(m.skill)}</span></p>
+        <button class="btn small" data-act="unteach" data-mentee="${m.menteeId}">Undo</button></div>`).join('')}
+      ${[...byMentor].map(([mentor, list]) => `<div class="mentor">
+        <p class="note"><b>${esc(playerName(mentor))}</b> <span class="muted small">${mentor.age}y · ${esc(posOf(mentor))}</span> can teach:</p>
+        ${list.map(o => `<div class="mentee"><span class="small">${esc(playerName(o.mentee))} <span class="muted">${o.mentee.age}y · ${esc(posOf(o.mentee))}</span></span>
+          <div class="chips">${o.skills.map(id => `<button class="badge chip" data-act="teach" data-team="${t.id}" data-mentor="${mentor.id}" data-mentee="${o.mentee.id}" data-skill="${esc(id)}">${esc(id)}</button>`).join('')}</div></div>`).join('')}
+      </div>`).join('') || (pairs.length ? '' : '<p class="note muted">No eligible mentor/mentee pairs on this roster.</p>')}
+    </div></fieldset>`;
+  }).join('') : '<p class="note">Pick your teams first.</p><button class="btn" data-act="nav" data-to="teams">👥 Pick Your Teams</button>';
+  layout({
+    title: 'Mentorship',
+    body: `<p class="note muted small">Tap a skill to have the veteran teach it. Skills are listed best fit first for the young player.</p>${body}`,
+  });
+};
+
+actions.teach = d => {
+  const e = byId(+d.mentee);
+  unlockSkill(e.p, d.skill);
+  mentorState().list.push({ teamId: +d.team, mentorId: +d.mentor, menteeId: +d.mentee, skill: d.skill, cpu: false });
+  state.dirty = true;
+  render();
+  toast(`${playerName(e.p)} learned ${d.skill}`);
+};
+
+actions.unteach = d => {
+  const ms = mentorState();
+  const i = ms.list.findIndex(m => m.menteeId === +d.mentee && !m.cpu);
+  if (i < 0) return;
+  unteach(ms.list[i]);
+  ms.list.splice(i, 1);
+  render();
+};
 
 function rookieCard() {
   const rookies = leagueRookies(league());
@@ -1050,6 +1163,7 @@ actions.autoOne = () => {
   const li = state.leagueIdx;
   const e = findPlayer(state.stack[state.stack.length - 1].args.id);
   restore(e.p, snapOf(e.p));
+  reapplyMentorship();
   const awards = runProgression([{ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team) }],
     { ...state.params, seed: Math.floor(Math.random() * 1e6) }, state.profiles[li]);
   (state.awards[li] ||= new Map()).set(e.p.id, awards.get(e.p.id));
@@ -1061,6 +1175,8 @@ actions.revertOne = () => {
   const p = currentPlayer();
   restore(p, snapOf(p));
   state.awards[state.leagueIdx]?.set(p.id, 0);
+  const ms = state.mentor[state.leagueIdx];
+  if (ms) ms.list = ms.list.filter(m => m.menteeId !== p.id);
   render();
   toast('Reverted to original');
 };
@@ -1080,6 +1196,10 @@ const STEP_FIELDS = {
     ['naturalMinAge', 'Earned Longevity: Min Age', 1, 18, 45],
     ['potUpChance', 'Potential Upgrade %', 1, 0, 100],
     ['potUpMaxAge', 'Potential Upgrade Max Age', 1, 18, 40],
+    ['mentorMinAge', 'Mentor: Min Age', 1, 25, 45],
+    ['menteeMaxAge', 'Mentee: Max Age', 1, 18, 30],
+    ['mentorPosRange', 'Mentor: Position Steps Apart', 1, 0, 8],
+    ['mentorshipChance', 'Mentor: CPU Chance %', 5, 0, 100],
     ['injuryMinGames', 'Injury: Min Games Missed', 1, 0, 82],
     ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
@@ -1358,7 +1478,7 @@ screens.prospect = (args) => {
   const rec = recoveryFor(p.age, state.params.recoveryBands);
   const fv = floorVector(p, state.params.recoveryBands), cv = ceilingVector(p);
   const compList = (list, cls) => list.map(x => `<div class="comp">
-    <span class="grow"><b class="${cls}">${esc(x.name)}</b><br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}</span></span>
+    <span class="grow"><b class="${cls}">${esc(x.name)}</b><br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span>
     <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
   layout({
     title: 'Prospect',
@@ -1382,7 +1502,7 @@ screens.prospect = (args) => {
           <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
         </div>`).join('')}
         ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
-        <p class="note muted small" style="margin-top:8px">Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
+        <p class="note muted small" style="margin-top:8px">Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
       </fieldset>`,
   });
 };
@@ -1508,7 +1628,7 @@ function draftMock() {
           return `<div class="lot-row ${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}">
             <span class="pk">${pk.overall}</span>${logoImg(pk.owner)}
             <span class="grow">${esc(pk.owner.shortName)}${traded ? ` <span class="muted small">via ${esc(pk.orig.shortName)}</span>` : ''}${pk.rd > 1 ? ` <span class="muted small">R${pk.rd}</span>` : ''}<br>
-              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
+              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></span><br><span class="small muted">Floor ${esc(compsFor(p).floor[0]?.name || '—')} · Ceiling <span class="up">${esc(compsFor(p).ceiling[0]?.name || '—')}</span></span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
           </div>`;
         }).join('')}
       </div>`,

@@ -67,7 +67,7 @@ export function buildCompPool(league) {
     if (!p?.attributes || !p.ht || isRookie(p)) return;
     const v = vec(p);
     if (v.reduce((a, b) => a + b, 0) < 40) return; // empty/placeholder records
-    pool.push({ p, group, v, ht: p.ht });
+    pool.push({ p, group, v, ht: p.ht, wt: p.wt || 0, pos: p.pos });
   };
   for (const t of league.teams) for (const p of t.roster) add(p, 'Active', x => SKILL_ATTRS.map(k => x.attributes[k][0]));
   for (const p of league.freeAgents || []) add(p, 'Free Agent', x => SKILL_ATTRS.map(k => x.attributes[k][0]));
@@ -76,29 +76,38 @@ export function buildCompPool(league) {
   return pool;
 }
 
-const HEIGHT_WEIGHT = 1.5; // one inch counts like 1.5 rating points
+// How much size and position count against rating differences:
+// 1 inch = 1.5 rating points, 10 lb = 0.8, one position step (PG..C) = 2.
+const HEIGHT_WEIGHT = 1.5;
+const WEIGHT_WEIGHT = 0.08;
+const POSITION_WEIGHT = 2;
 
-export function compDistance(v, ht, entry) {
+// `body` = { ht, wt, pos } of the player being compared.
+export function compDistance(v, body, entry) {
   let d = 0;
   for (let i = 0; i < v.length; i++) d += (v[i] - entry.v[i]) ** 2;
-  d += (HEIGHT_WEIGHT * (ht - entry.ht)) ** 2;
+  d += (HEIGHT_WEIGHT * (body.ht - entry.ht)) ** 2;
+  if (body.wt && entry.wt) d += (WEIGHT_WEIGHT * (body.wt - entry.wt)) ** 2;
+  if (body.pos != null && entry.pos != null) d += (POSITION_WEIGHT * (body.pos - entry.pos)) ** 2;
   return Math.sqrt(d);
 }
 
+const bodyOf = p => ({ ht: p.ht, wt: p.wt, pos: p.pos });
+
 // Closest pool players to a vector. Similarity is 0-100.
-export function findComps(v, ht, pool, n = 3, excludeId = null) {
+export function findComps(v, body, pool, n = 3, excludeId = null) {
   return pool
     .filter(e => e.p.id !== excludeId)
-    .map(e => ({ ...e, dist: compDistance(v, ht, e) }))
+    .map(e => ({ ...e, dist: compDistance(v, body, e) }))
     .sort((a, b) => a.dist - b.dist)
     .slice(0, n)
-    .map(e => ({ name: playerName(e.p), group: e.group, ht: e.ht, pos: e.p.pos, sim: Math.max(0, Math.round(100 - e.dist * 3)), id: e.p.id }));
+    .map(e => ({ name: playerName(e.p), group: e.group, ht: e.ht, wt: e.wt, pos: e.p.pos, sim: Math.max(0, Math.round(100 - e.dist * 3)), id: e.p.id }));
 }
 
 export function prospectComps(p, pool, bands = DEFAULT_RECOVERY) {
   return {
-    floor: findComps(floorVector(p, bands), p.ht, pool, 3, p.id),
-    ceiling: findComps(ceilingVector(p), p.ht, pool, 3, p.id),
+    floor: findComps(floorVector(p, bands), bodyOf(p), pool, 3, p.id),
+    ceiling: findComps(ceilingVector(p), bodyOf(p), pool, 3, p.id),
   };
 }
 
@@ -254,8 +263,8 @@ export function rookieFloorVector(p, original = null, bands = DEFAULT_RECOVERY) 
 
 export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY) {
   return {
-    floor: findComps(rookieFloorVector(p, original, bands), p.ht, pool, 3, p.id),
-    ceiling: findComps(ceilingVector(p), p.ht, pool, 3, p.id),
+    floor: findComps(rookieFloorVector(p, original, bands), bodyOf(p), pool, 3, p.id),
+    ceiling: findComps(ceilingVector(p), bodyOf(p), pool, 3, p.id),
   };
 }
 

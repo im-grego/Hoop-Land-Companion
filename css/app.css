@@ -335,3 +335,8 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .trade .list { max-height: 50vh; overflow: auto; }
 .tabs .btn { min-width: 0; padding: 8px 4px; font-size: 15px; }
 .badge.down-b { border-color: var(--down); color: var(--down); }
+.mentor { border-top: 2px solid var(--btn-edge); padding-top: 8px; }
+.mentee { display: flex; flex-direction: column; gap: 4px; padding: 6px 0 6px 10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge.chip { font-family: var(--pixel); font-size: 14px; padding: 6px 10px; cursor: pointer; background: var(--btn); color: var(--text); }
+.badge.chip:active { border-color: var(--cyan); }

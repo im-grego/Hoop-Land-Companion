@@ -51,14 +51,21 @@ severity 1–4 Broken, Dislocated, Fractured, Torn. Capped at 50%. Injured playe
 
 All of these are adjustable under **Settings**.
 
+## Mentorship
+
+Also in free agency: veterans (30+) teach a young teammate (24 and under) within two position steps one of their
+skills — one they have at Lv 2+ (or a no-level skill) that the youngster lacks — and it unlocks right away (keeping
+any XP already built toward it). One mentee per mentor and one skill per mentee each offseason. CPU teams pair up
+automatically (50% per eligible mentor, best-fit skill); for your teams you pick the pairing and skill.
+
 ## Draft room
 
 Available once the file has a draft class (offseason, before the lottery).
 
 - **Board:** prospects ranked by projection, with **floor** and **ceiling comps**. Floor = the projected rookie line:
   the draft drop (−4, never below 2; ratings already at 2 or lower stay) minus what summer league gives back for their
-  age. Each rating shows its projected loss. Ceiling = their top ratings. Comps match the 12
-  skill ratings plus height against active players, free agents, retirees and Hall of Famers.
+  age. Each rating shows its projected loss. Ceiling = their top ratings. Comps weigh the 12
+  skill ratings, position, height and weight against active players, free agents, retirees and Hall of Famers.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
@@ -102,4 +109,5 @@ node tests/roundtrip.test.mjs   path/to/season-file   # load + save is byte-iden
 node tests/progression.test.mjs path/to/season-file   # progression rules hold
 node tests/draft.test.mjs       path/to/offseason-file # comps, lottery, mock draft, pick trades
 node tests/rookies.test.mjs     pre-draft post-draft   # real draft order, draft drop, rookie bump
+node tests/mentorship.test.mjs  path/to/season-file   # mentor/mentee rules
 ```
