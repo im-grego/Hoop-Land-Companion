@@ -761,3 +761,10 @@ body::before {
 .box-score b { font-size: 18px; }
 .mvp-card { display: flex; align-items: center; gap: 10px; padding: 10px; background: linear-gradient(90deg, #6b4a00, #0b2f6b); border: 3px solid var(--gold); }
 .mvp-card .grow { flex: 1; }
+
+/* Training camp */
+.trainer-row { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.trainer-row .tr-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.trainer-row .tr-top .badge { margin-left: auto; }
+.prow.rrow { cursor: default; }
+.report-nav .tsel-team.mine { border-color: var(--cyan); }

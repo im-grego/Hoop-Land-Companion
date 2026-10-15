@@ -46,9 +46,10 @@ function run(spend, params = P) {
     const earned = earnsNaturalLongevity(p, lastSeasonMpg(p, 0), entries[0], P);
     const z = entries[0].production.get(p.id) ?? null;
     if (earned) { assert.equal(d.regDelta, 1, 'earned longevity is guaranteed'); earnedN++; }
-    if (d.regDelta > 0 && !earned) assert.ok(p.age > snap.regressionAge, 'random delay only once past regression age');
+    if (d.regDelta > 0) assert.ok(p.age >= snap.regressionAge - 1 && p.age <= snap.regressionAge, 'delay only at the regression age or the year before');
     if (d.regDelta < 0) {
-      assert.ok(p.age >= snap.regressionAge - P.regDownWindow, 'only near or in regression');
+      assert.ok(p.age >= snap.regressionAge - P.regDownWindow, 'only near regression');
+      assert.ok(p.age < snap.regressionAge, 'never once already regressing');
       assert.ok(injuryPotChance(p, injuryYear, P) > 0 || (z != null && z <= P.regDownProdZ), 'sooner only after injury or a poor season');
       sooner++;
     }
@@ -58,7 +59,7 @@ function run(spend, params = P) {
     if (d.potDelta > 0) { assert.ok(!risk && p.age <= P.potUpMaxAge && p.pot <= 10, 'young, uninjured, max 10'); potUps++; }
     if (d.potDelta < 0) {
       assert.ok(p.pot >= 4, 'never below 4');
-      assert.ok(risk > 0 || (p.age <= P.potUpMaxAge && z != null && z <= P.prodPotDownZ), 'injury or a poor young season');
+      assert.ok(risk > 0 || p.age <= P.potUpMaxAge, 'injury, or a young player (poor season or bad luck)');
       potDowns++;
     }
     if (risk) atRisk++;

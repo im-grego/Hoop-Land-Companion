@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.25.0';
+const APP_VERSION = '0.26.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -63,13 +63,14 @@ function loadParams() {
       if (saved.version < 8) delete saved.structuralParts; // v8 added Ankle, Back
       if (saved.version < 9) for (const k of ['mentorMinAge', 'menteeMaxAge', 'mentorPosRange']) delete saved[k]; // v9 mentorship rules
       if (saved.version < 10) for (const k of ['regDownProdZ', 'regDownProdChance']) delete saved[k]; // v10 trainer tuning
+      if (saved.version < 11) for (const k of ['potUpChance', 'prodPotUpPerZ', 'prodPotDownZ', 'prodPotDownChance', 'potDownChance', 'rookieR1Mult', 'rookieR2Mult', 'rookieUndraftedMult']) delete saved[k]; // v11 potential balance
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 10 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 11 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -464,11 +465,11 @@ const CALENDAR = [
     done: () => faDone(2) },
   { key: 'fa3', date: 'Jul 8', title: 'Free Agency · Day 3', blurb: 'Last call: veteran minimums, asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
-  { key: 'dev', date: 'Sep 15', title: 'Player Development', blurb: 'Development coach, trainer, mentorship and jersey numbers.',
+  { key: 'dev', date: 'Sep 15', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
-  { key: 'media', date: 'Sep 29', title: 'Media Day', blurb: 'The top 10 storylines heading into the season.',
+  { key: 'media', date: 'Sep 29', title: 'Media Day', blurb: 'Jersey numbers, then the season preview: the top 10 storylines.',
     done: () => calFlags().media },
-  { key: 'export', date: 'Oct 21', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
+  { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
     done: () => false },
 ];
 const currentStep = () => CALENDAR.find(st => !st.done());
@@ -494,7 +495,7 @@ function stepSummary(key) {
     const log = calFlags().faLog?.[+key[2]];
     return log ? `${log.n} signings${log.wars ? `, ${log.wars} bidding war${log.wars > 1 ? 's' : ''}` : ''}${log.top ? `. Biggest: ${log.top}` : ''}.` : 'Done in the game.';
   }
-  if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in rating upgrades across ${a.players} players.` : 'Done.'; }
+  if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
   return '';
 }
@@ -516,8 +517,8 @@ function stepActions(key) {
       if (s.currentDay < day) return `<button class="btn big focus" data-act="advDay">▶ Start Day ${day}</button>`;
       return `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
-    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
-    case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">📰 Storylines</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
+    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
+    case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
     case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
     default: return '';
   }
@@ -559,7 +560,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], lottery: ['lottery'], warroom: ['draft', 'prospect', 'lottery', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies'], media: ['storylines'], export: ['export'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], media: ['storylines'], export: ['export'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player'];
 function screenAllowed(name) {
@@ -885,43 +886,36 @@ actions.undoContracts = () => {
 };
 
 screens.offseason = () => {
-  const L = league();
   const auto = state.auto[state.leagueIdx];
-  const mine = L.teams.filter(isUserTeam);
   const P = state.params;
   const bands = P.ageBands;
   layout({
     title: 'Training Camp',
     body: `
-      <fieldset class="frame"><legend>Development Coach &amp; Trainer</legend>
+      ${mentorCard()}
+      <fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
           ${auto ? `
             <dl class="info">
-              <dt>Players bumped</dt><dd class="up">${auto.players} / ${auto.total}</dd>
-              <dt>${state.params.bumpMode === 'train' ? 'Rating upgrades' : 'Points awarded'}</dt><dd class="up">+${auto.points}</dd>
+              <dt>Players improved</dt><dd class="up">${auto.players}</dd>
+              <dt>Ratings upgrades</dt><dd class="up">+${auto.points}</dd>
               <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
-              <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}${auto.earned ? ` <span class="small">(${auto.earned} earned)</span>` : ''}</dd>
-              <dt>Regression sooner</dt><dd class="down">${auto.regDowns ?? 0}</dd>
               <dt>Potential up</dt><dd class="up">${auto.potUps ?? 0}</dd>
               <dt>Potential down</dt><dd class="down">${auto.potDowns ?? 0}</dd>
-              <dt>CPU points</dt><dd>${auto.spent ? 'Spent into ratings' : 'Held for the game'}</dd>
-              <dt>Seed</dt><dd>${auto.seed}</dd>
+              <dt>Regression age +1</dt><dd class="up">${auto.longevity ?? 0}</dd>
+              <dt>Regression age −1</dt><dd class="down">${auto.regDowns ?? 0}</dd>
             </dl>
-            <button class="btn focus" data-act="nav" data-to="report">📋 View Bump Report</button>
-            <div class="grid2">
-              <button class="btn" data-act="reroll">🎲 Re-roll</button>
-              <button class="btn" data-act="undoAuto">↺ Undo</button>
-            </div>`
+            <button class="btn focus" data-act="nav" data-to="report">📋 Progression Report</button>
+            <button class="btn" data-act="nav" data-to="trainer">🩺 Meet with the Trainer</button>
+            ${P.commissioner ? '<button class="btn small" data-act="undoAuto">↺ Undo</button>' : ''}`
           : `
-            <p class="note">${P.bumpMode === 'train' ? `Development coach: players aged ${bands[bands.length - 1][0]} and under get real rating upgrades (e.g. MID 13/18 → 15/18), more for younger players and heavier minutes. Ceilings rise with the rating; free throws stop at 16.` : `Players aged ${bands[bands.length - 1][0]} and under earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game.`} Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to injury (or keep re-injuring the same thing) risk losing potential. The trainer also weighs last season's production against players of the same role and age: standouts can gain potential or delay regression, poor seasons and injuries can cost potential or bring regression a year sooner. Every team gets the same rules, so CPU teams stay even.</p>
-            <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
-            <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
+            <p class="note"><b>Development coach:</b> players ${bands[bands.length - 1][0]} and under get ratings upgrades, based on youth and usage.</p>
+            <p class="note"><b>Trainer:</b> last season's production is weighed against players in the same role and age. Standouts can gain potential, or push their regression age back a year if they're at it (or a year away). Poor seasons and injuries can cost potential or bring regression a year sooner, but never for a player who's already declining.</p>
+            <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
       </fieldset>
-      ${mentorCard()}
-      ${jerseyCard()}
       ${contractCard()}
-      <button class="btn big ${state.auto[state.leagueIdx] ? 'focus' : ''}" data-act="calDevBack" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up Training Camp</button>`,
+      <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up Training Camp</button>`,
   });
 };
 
@@ -937,6 +931,33 @@ screens.camp = () => {
 };
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
 actions.calDevBack = () => { calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.'); };
+
+// Meet with the trainer: your players' health, physicals and what changed.
+screens.trainer = () => {
+  const L = league();
+  const yr = lastSeasonYear();
+  const body = L.teams.filter(isUserTeam).map(t => {
+    const rows = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).map(p => {
+      const snap = snapOf(p);
+      const d = diffPlayer(p, snap);
+      const h = injuryRisk(p, yr, state.params);
+      const status = !h ? ['Healthy', 'up'] : h.cls === 'structural' ? ['Structural', 'down'] : h.cls === 'nagging' ? ['Nagging', 'gold'] : ['Recovered', 'muted'];
+      const phys = PHYSICAL.map(k => `${k} ${p.attributes[k][0]}`).join(' · ');
+      const changes = [
+        d.potDelta > 0 ? '<span class="badge new">Potential ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">Potential ▼</span>' : '',
+        d.regDelta > 0 ? `<span class="badge lvl">Regression ${p.regressionAge}</span>` : d.regDelta < 0 ? `<span class="badge down-b">Regression ${p.regressionAge}</span>` : '',
+      ].join('');
+      return `<div class="trainer-row">
+        <div class="tr-top"><b>${esc(playerName(p))}</b> <span class="gold small">Lv ${levelOf(p)}</span><span class="badge ${status[1] === 'up' ? 'lvl' : status[1] === 'down' ? 'down-b' : ''}">${status[0]}</span></div>
+        <span class="small muted">${esc(posName(p))} · ${p.age}y · ${phys}</span>
+        ${h ? `<span class="small">${esc(injuryName(h.worst))}${h.games ? ` · ${h.games} games missed` : ''}${h.sameType + h.sameArea ? ' · recurring' : ''}</span>` : ''}
+        ${changes ? `<span>${changes}</span>` : ''}
+      </div>`;
+    }).join('');
+    return `<fieldset class="frame"><legend>${esc(t.city)} ${esc(t.name)}</legend><div class="stack">${rows}</div></fieldset>`;
+  }).join('') || '<p class="note">Select your teams first.</p>';
+  layout({ title: 'Trainer', body });
+};
 
 
 function summerEligible() {
@@ -1105,12 +1126,12 @@ function mentorCard() {
   const mine = ms.list.filter(m => !m.cpu);
   const P = state.params;
   return `<fieldset class="frame"><legend>Mentorship</legend><div class="stack">
-    <p class="note">Veterans (${P.mentorMinAge}+) teach one of their skills to up to ${P.mentorMaxMentees} young teammates (${P.menteeMaxAge} and under) within ${P.mentorPosRange} position step, unlocked right away. One skill per vet, one skill per young player. Free skills are never taught${P.mentorTeachElite ? `; elite ones only if the young player already has ${ELITE_MIN}+ in the rating they need` : ', nor elite ones'}.</p>
+    <p class="note">Veterans (${P.mentorMinAge}+) teach one of their skills to up to ${P.mentorMaxMentees} young teammates (${P.menteeMaxAge} and under) within ${P.mentorPosRange} position step.</p>
+    <button class="btn big focus" data-act="nav" data-to="mentor">🎓 Your Mentorships${mine.length ? ` (${mine.length})` : ''}</button>
     ${ms.seed != null
-      ? `<p class="note">CPU teams: <span class="up">${cpu.length} mentorships</span>.</p>
-        <div class="grid2"><button class="btn" data-act="rerollMentor">🎲 Re-roll</button><button class="btn" data-act="undoMentor">↺ Undo</button></div>`
-      : `<button class="btn big focus" data-act="runMentor">▶ Run CPU Mentorship</button>`}
-    <button class="btn" data-act="nav" data-to="mentor">🎓 Your Mentorships${mine.length ? ` (${mine.length})` : ''}</button>
+      ? `<p class="note">Around the league: <span class="up">${cpu.length} mentorships</span>.</p>
+        ${P.commissioner ? '<button class="btn small" data-act="undoMentor">↺ Undo</button>' : ''}`
+      : `<button class="btn" data-act="runMentor">▶ Run League Mentorship</button>`}
   </div></fieldset>`;
 }
 
@@ -1187,6 +1208,9 @@ screens.rookies = () => {
 // ---------------------------------------------------------------------------
 // Bump report (all teams)
 
+// Stars for a player's current level (Lv 100 = 5, 93 = 4.5, 86 = 4).
+const levelStars = p => Math.max(1, Math.min(10, Math.round((5 - (100 - levelOf(p)) / 14) * 2)));
+
 screens.report = (args) => {
   const L = league();
   const groups = [
@@ -1196,22 +1220,42 @@ screens.report = (args) => {
   if (state.params.includeFreeAgents && L.freeAgents?.length) groups.push({ team: null, title: 'Free Agents', players: L.freeAgents });
   const gi = ((args.g ?? 0) % groups.length + groups.length) % groups.length;
   const g = groups[gi];
-  const rows = g.players
-    .map(p => ({ p, d: diffPlayer(p, snapOf(p)) }))
-    .sort((a, b) => awardOf(b.p) - awardOf(a.p) || a.p.age - b.p.age);
-  const prevT = groups[(gi - 1 + groups.length) % groups.length];
-  const nextT = groups[(gi + 1) % groups.length];
+  const rows = g.players.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => a.p.age - b.p.age);
+  const improved = rows.filter(r => awardOf(r.p));
   const total = rows.reduce((a, r) => a + awardOf(r.p), 0);
+  const count = f => rows.filter(f).length;
+  const summary = [
+    `${improved.length} improved <span class="up">+${total}</span>`,
+    count(r => r.d.potDelta > 0) && `<span class="up">${count(r => r.d.potDelta > 0)} gained potential</span>`,
+    count(r => r.d.potDelta < 0) && `<span class="down">${count(r => r.d.potDelta < 0)} lost potential</span>`,
+    count(r => r.d.regDelta > 0) && `<span class="up">${count(r => r.d.regDelta > 0)} regression age +1</span>`,
+    count(r => r.d.regDelta < 0) && `<span class="down">${count(r => r.d.regDelta < 0)} regression age −1</span>`,
+  ].filter(Boolean).join(' · ');
   layout({
-    title: 'Bump Report',
-    left: `<button class="nav-btn" data-act="reportNav" data-g="${gi - 1}" aria-label="Previous team">${prevT.team ? logoImg(prevT.team) : ''}◀</button>`,
-    right: `<button class="nav-btn" data-act="reportNav" data-g="${gi + 1}" aria-label="Next team">▶${nextT.team ? logoImg(nextT.team) : ''}</button>`,
+    title: 'Progression Report',
     body: `
-      <h2 class="team-title">${g.team ? logoImg(g.team) : ''}${esc(g.title)}${isUserTeam(g.team) ? ' <span class="badge you">YOU</span>' : ''}</h2>
-      <p class="note muted small">${rows.filter(r => awardOf(r.p)).length} players bumped · <span class="up">+${total}</span> points · tap a player to adjust</p>
-      <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
+      <div class="tsel report-nav">
+        <button class="tsel-arrow" data-act="reportNav" data-g="${gi - 1}" aria-label="Previous team">◀</button>
+        <span class="tsel-team ${isUserTeam(g.team) ? 'mine' : ''}">${g.team ? logoImg(g.team) : ''}<span class="tsel-name"><b>${esc(g.team ? g.team.shortName : 'FA')}</b><span class="small muted">${esc(g.title)}</span></span></span>
+        <button class="tsel-arrow" data-act="reportNav" data-g="${gi + 1}" aria-label="Next team">▶</button>
+      </div>
+      <p class="note small" style="margin:10px 0">${summary}</p>
+      <div class="list">${rows.map(({ p, d }) => reportRow(p, d)).join('')}</div>`,
   });
 };
+
+// One player in the progression report (read-only).
+function reportRow(p, d) {
+  const mpg = lastSeasonMpg(p, state.leagueIdx);
+  const award = awardOf(p);
+  const ups = Object.entries(d.attrs).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${k} ${v > 0 ? '+' : ''}${v}</span>`).join(' ');
+  return `<div class="prow rrow">
+    <span class="name"><span class="gold">${esc(playerName(p))}</span> <span class="small">Lv ${levelOf(p)}</span></span>
+    <span class="right"><span class="stars">${stars(levelStars(p))}</span><br>${award ? `<span class="up">+${award}</span>` : '<span class="muted">—</span>'}</span>
+    <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · ${p.yrs ? `${p.yrs} yr${p.yrs > 1 ? 's' : ''} exp` : 'Rookie'} · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'}</span>
+    ${ups || d.potDelta || d.regDelta ? `<span class="chg">${ups}${longevityBadges(p, d)}</span>` : ''}
+  </div>`;
+}
 
 actions.reportNav = d => replace('report', { g: +d.g });
 
@@ -3342,10 +3386,10 @@ screens.storylines = () => {
   const { stories, players } = currentStorylines();
   const L = league();
   layout({
-    title: 'Top Storylines',
+    title: 'Media Day',
     body: `
-      <p class="note">${esc(L.shortName || L.leagueName)} · ${esc(phaseName(L.season))}. Built from the save (awards, moves,
-        retirements, the draft, injuries) and this session's development.</p>
+      ${jerseyCard()}
+      <h2 class="team-title">Season Preview</h2>
       ${stories.length ? `<ol class="stories">${stories.map((s, i) => `
         <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
           <span class="story-n">${i + 1}</span>

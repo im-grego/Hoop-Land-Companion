@@ -50,9 +50,9 @@ export const DEFAULT_PARAMS = {
   trainerMinMpg: 10,
   prodAgeRange: 1,          // production peers: same role, within this many years of age
   prodPotUpZ: 1.5,          // z at which standout production starts to raise potential
-  prodPotUpPerZ: 12,        // % per z above that
-  prodPotDownZ: -1.5,       // z at which poor production can cost potential
-  prodPotDownChance: 6,     // %
+  prodPotUpPerZ: 8,         // % per z above that
+  prodPotDownZ: -1.0,       // z at which poor production can cost potential
+  prodPotDownChance: 9,     // %
   prodLongevityPerZ: 0.4,   // regression-delay chance x(1 + 0.4 z), clamped
   regDownStructural: 25,    // % chance regressionAge drops a year after a structural injury
   regDownNagging: 15,
@@ -60,8 +60,10 @@ export const DEFAULT_PARAMS = {
   regDownProdZ: -1.0,       // veterans near regression with production this poor...
   regDownProdChance: 15,    // ...can have regressionAge drop a year
   regDownWindow: 3,         // "near regression": within this many years of regressionAge
-  // Rare potential upgrade (+1 = half a star), scaled by minutes.
-  potUpChance: 4,         // %
+  // Rare potential change (1 = half a star): up scaled by minutes, down a
+  // flat chance, so ups only slightly outnumber downs.
+  potUpChance: 3,         // %
+  potDownChance: 1,       // %
   potUpMaxAge: 25,
   // Serious injuries last season: chance to lose 1 potential.
   injuryMinGames: 15,     // games missed before there's any risk (recurring injuries always count)
@@ -297,6 +299,8 @@ export function earnsNaturalLongevity(p, mpgInfo, ctx, params) {
   if (!mpgInfo || !ctx?.totalGames) return false;
   const seasonAge = p.age - (ctx.rolled ? 1 : 0);
   if (seasonAge < params.naturalMinAge) return false;
+  // Same window as the trainer: at the regression age or the year before.
+  if (p.age < p.regressionAge - 1 || p.age > p.regressionAge) return false;
   const gamesPct = mpgInfo.gp / ctx.totalGames * 100;
   const minPct = mpgInfo.mpg / params.gameMinutes * 100;
   const gameDid = gamesPct >= params.gameNaturalGamesPct && minPct >= params.gameNaturalMinutesPct;
@@ -347,10 +351,12 @@ export function productionScores(players, leagueIdx, year, params) {
   return out;
 }
 
-// Regression age can also drop a year: after an injury (by class) for anyone
-// near or in regression, or after a poor season from a veteran near it.
+// Regression age can also drop a year: after an injury (by class) or a poor
+// season from a veteran near regression. Never once a player is already
+// regressing: age is doing that already.
 export function maybeRegressionDown(p, injuryClass, z, params, rng) {
   if (p.age < p.regressionAge - params.regDownWindow) return false;
+  if (p.age >= p.regressionAge) return false;
   let chance = 0;
   if (injuryClass === 'structural') chance = params.regDownStructural;
   else if (injuryClass === 'nagging') chance = params.regDownNagging;
@@ -361,12 +367,13 @@ export function maybeRegressionDown(p, injuryClass, z, params, rng) {
   return true;
 }
 
-// Push regressionAge back a year: likeliest in the first year of decline.
-// `injury` is the injury class ('standard' | 'nagging' | 'structural') when
-// the player had a qualifying injury last season.
+// Push regressionAge back a year. Only at the regression age or the year
+// before it (a 33 regression age can be earned at 32 or 33); likeliest at
+// the regression age itself. `injury` is the injury class ('standard' |
+// 'nagging' | 'structural') when the player had a qualifying injury.
 export function maybeLongevity(p, mult, params, rng, injury = null) {
-  const year = p.age - p.regressionAge;
-  if (year < 1) return false;
+  const year = p.age - p.regressionAge + 1; // 1 = at the regression age, 0 = the year before
+  if (year < 0 || year > 1) return false;
   const pct = injury === 'structural' ? params.structuralLongevityCut : injury ? params.injuryLongevityCut : 0;
   const cut = 1 - pct / 100;
   const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut;
@@ -381,7 +388,7 @@ export function maybePotential(p, mult, params, rng, z = null) {
   if (p.age > params.potUpMaxAge) return false;
   let up = params.potUpChance * mult;
   if (z != null && z >= params.prodPotUpZ) up += (z - params.prodPotUpZ + 1) * params.prodPotUpPerZ;
-  const down = z != null && z <= params.prodPotDownZ ? params.prodPotDownChance : 0;
+  const down = (params.potDownChance || 0) + (z != null && z <= params.prodPotDownZ ? params.prodPotDownChance : 0);
   const r = rng() * 100;
   if (p.pot < POT_MAX && r < up) { p.pot++; return true; }
   if (p.pot > POT_MIN && r >= 100 - down) { p.pot--; return true; }

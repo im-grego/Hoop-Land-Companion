@@ -34,7 +34,7 @@ phase change (lottery, draft, opening free agency, a new day) can be undone unti
 from later in the offseason start at their step, with earlier ones marked done. The draft writer reproduces the game's
 post-draft save, and opening free agency signs rookies to the same contracts the game gives.
 
-## How the offseason bump works
+## Training camp: off-season progression
 
 Run it in **free agency, Day 3** (the last day before advancing to the new season). By default it's a meeting with
 the **development coach**: players get real rating upgrades (e.g. MID 13/18 → 15/18, at most +3 per rating;
@@ -83,6 +83,13 @@ severity 1–4 Broken, Dislocated, Fractured, Torn. Capped at 50%. Injured playe
 - Runs are **seeded**, so the same seed reproduces the same offseason. Re-roll for a different one.
 
 All of these are adjustable under **Settings**.
+
+- **Regression age** can only be pushed back a year at the regression age or the year before it (a 33 can be
+  earned at 32 or 33), and it never moves sooner once a player is already declining.
+- **Potential** changes are rare and close to balanced: ups (youth, minutes, standout production) slightly
+  outnumber downs (injuries, poor seasons, bad luck).
+- **Meet with the Trainer** lists your players' health (healthy / recovered / nagging / structural), physicals,
+  recent injuries and any potential or regression-age changes. The **Progression Report** is read-only.
 
 ## Mentorship
 
