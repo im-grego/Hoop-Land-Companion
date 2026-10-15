@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.21.1';
+const APP_VERSION = '0.21.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1996,12 +1996,15 @@ function outlookCard() {
       if (!byYear.has(pk.yr)) byYear.set(pk.yr, []);
       byYear.get(pk.yr).push(`R${pk.rd}${pk.otid !== t.id ? ` <span class="muted">(${esc(tname(pk.otid))})</span>` : ''}`);
     }
-    const future = [...byYear].map(([y, list]) => `<span class="nowrap">${y}: ${list.join(', ')}</span>`);
+    const future = [...byYear].map(([y, list]) => `<span class="ol-yr"><b>${y}</b> ${list.join(' · ')}</span>`);
+    const need = n => { const [g, k] = n.label.split(' · '); return `<span class="ol-need"><b>${esc(g)}</b>${k ? `<span>${esc(k)}</span>` : ''}</span>`; };
     return `<div class="outlook">
       <div class="outlook-top">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(o.status)}</div>
-      <div class="outlook-row"><span class="muted small">Needs</span>${needChips(o.needs)}</div>
-      <div class="outlook-row"><span class="muted small">This draft</span><span class="small">${now.join(' · ') || 'No picks'}</span></div>
-      <div class="outlook-row"><span class="muted small">Future</span><span class="small">${future.join(' · ') || '—'}</span></div>
+      <dl class="ol-grid">
+        <dt>Needs</dt><dd class="ol-needs">${o.needs.map(need).join('') || '<span class="muted">—</span>'}</dd>
+        <dt>This draft</dt><dd class="ol-picks">${now.map(x => `<span class="ol-pick">${x}</span>`).join('') || '<span class="muted">No picks</span>'}</dd>
+        <dt>Future</dt><dd class="ol-future">${future.join('') || '<span class="muted">—</span>'}</dd>
+      </dl>
     </div>`;
   }).join('');
 }

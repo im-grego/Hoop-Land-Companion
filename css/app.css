@@ -598,6 +598,19 @@ body::before {
 .outlook-top b { font-size: 17px; font-weight: 800; flex: 1; min-width: 0; }
 .outlook-row { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; }
 .outlook-row > .muted { min-width: 72px; }
+.outlook-top { padding-bottom: 8px; border-bottom: 2px solid var(--btn-edge); }
+.outlook-top .status { margin-left: auto; }
+.ol-grid { display: grid; grid-template-columns: 78px 1fr; gap: 8px 10px; margin: 4px 0 0; align-items: start; }
+.ol-grid dt { color: var(--cyan); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding-top: 4px; }
+.ol-grid dd { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.ol-needs { flex-direction: column; }
+.ol-need { display: flex; align-items: baseline; gap: 8px; padding: 3px 8px; border: 2px solid var(--gold); color: var(--gold); font-size: 13px; }
+.ol-need b { font-weight: 800; min-width: 52px; }
+.ol-need span { color: #fff; }
+.ol-pick { padding: 2px 8px; background: var(--btn-shadow); border: 2px solid var(--btn-edge); font-weight: 800; font-size: 14px; }
+.ol-future { display: grid !important; grid-template-columns: 1fr 1fr; gap: 4px 12px !important; font-size: 13px; }
+.ol-yr { white-space: nowrap; }
+.ol-yr b { color: var(--cyan); margin-right: 4px; }
 .board-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
 .board-row .mv { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
 .board-row .mv .btn.square { width: 44px; min-height: 40px; font-size: 18px; }
