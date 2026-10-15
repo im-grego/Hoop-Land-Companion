@@ -88,8 +88,10 @@ Available once the file has a draft class (offseason, before the lottery).
   6 Role Player, 5 Bench Depth, 4 Project. Floor comps use the rookie line plus +2 a rating of natural development. A prospect's own potential is never shown (no stars or tier in the draft room).
   One floor and one ceiling comp per prospect, assigned across the whole class so no player is used twice (best
   prospects pick first). Ceiling comps are at or below the prospect's scouted tier; 10+ potential comps (Hall of Fame,
-  Legend) only go to top-tier prospects, at most 2 per class, and never as floors. Like real scouting reports, some comps get a "+"
-  (the prospect projects a bit better than the comp) or "lite" (a bit short) — about 15% each per class.
+  Legend) only go to top-tier prospects, at most 2 per class, and never as floors. Ceiling comps sit within one tier of the
+  scouted tier; floors sit at least one tier under the ceiling comp and skip actives under 24. Current players are
+  preferred (retirees and Hall of Famers only win clear matches, about 1 in 4 ceilings). Like real scouting reports,
+  a couple of comps per class get a "+" (the prospect projects a bit better) or "lite" (a bit short) — 2 of each.
 - **Fog of war:** projections use a scouted potential that's usually right but, 25% of the time by default, reads one
   step high or low (stable per prospect and save; Settings → Rookies → Scouting Report Accuracy). The board order,
   projected ceilings, ceiling comps and CPU mock picks all use it.

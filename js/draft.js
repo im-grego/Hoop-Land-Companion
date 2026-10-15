@@ -191,8 +191,10 @@ export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
 // Returns Map id -> { floor: [comp], ceiling: [comp] }.
 // Share of each class's comps tagged "+" (prospect projects a bit better) or
 // "lite" (a bit short), picked by the biggest gaps; never on tiny gaps.
-const QUALIFIER_SHARE = 0.15;
+const QUALIFIER_MAX = 2;      // at most this many "+" and "lite" per class
 const QUALIFIER_MIN_GAP = 4; // skill-total points
+const HISTORIC_PENALTY = 6;  // distance added to retirees / Hall of Famers so current players win close calls
+const FLOOR_MIN_AGE = 24;    // younger actives haven't settled into their level yet
 
 const TOP_COMP = 10; // Wilt / LeBron territory
 
@@ -202,14 +204,15 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
   let legends = 0;
   const sum = v => v.reduce((a, b) => a + b, 0);
   const fmt = (e, vec) => ({
-    name: playerName(e.p), tier: tierFor(e.p.pot), pos: e.p.pos, ht: e.ht, wt: e.wt, id: e.p.id,
+    name: playerName(e.p), tier: tierFor(e.p.pot), pot: e.p.pot, pos: e.p.pos, ht: e.ht, wt: e.wt, id: e.p.id,
     gap: sum(vec) - sum(e.v),
   });
+  const historic = e => e.group === 'Retired' || e.group === 'Hall of Fame';
   const pick = (p, vec, ok) => {
     let best = null, bestD = Infinity;
     for (const e of pool) {
       if (used.has(e.p.id) || e.p.id === p.id || !ok(e)) continue;
-      const d = compDistance(vec, bodyOf(p), e);
+      const d = compDistance(vec, bodyOf(p), e) + (historic(e) ? HISTORIC_PENALTY : 0);
       if (d < bestD) { bestD = d; best = e; }
     }
     if (best) used.add(best.p.id);
@@ -217,8 +220,10 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
   };
   for (const p of players) {
     const pot = potOf(p);
-    const e = pick(p, ceilVec(p), c => c.established && c.p.pot <= pot &&
-      (c.p.pot < TOP_COMP || (pot >= TOP_COMP && legends < legendCap)));
+    // Within one tier of the scouted tier (falling back to anything lower).
+    const okCeil = c => c.established && c.p.pot <= pot &&
+      (c.p.pot < TOP_COMP || (pot >= TOP_COMP && legends < legendCap));
+    const e = pick(p, ceilVec(p), c => okCeil(c) && c.p.pot >= pot - 1) || pick(p, ceilVec(p), okCeil);
     if (e) {
       if (e.p.pot >= TOP_COMP) legends++;
       out.get(p.id).ceiling = [fmt(e, ceilVec(p))];
@@ -226,19 +231,27 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
   }
   for (const p of players) {
     const pot = potOf(p);
-    const e = pick(p, floorVec(p), c => c.p.pot < TOP_COMP && c.p.pot <= pot);
+    // A floor sits at least one tier under the ceiling comp, and skips young
+    // actives who haven't reached their level yet.
+    const ceil = out.get(p.id).ceiling[0];
+    const cap = Math.min(pot, ceil ? ceil.pot - 1 : pot) ;
+    const e = pick(p, floorVec(p), c => c.p.pot < TOP_COMP && c.p.pot <= cap &&
+      (historic(c) || c.p.age >= FLOOR_MIN_AGE));
     if (e) out.get(p.id).floor = [fmt(e, floorVec(p))];
   }
-  // Sprinkle "+" / "lite" on the comps furthest from the class's typical
-  // gap (floors usually sit under their comp, ceilings over), so both show up.
+  // A couple of "+" / "lite" per class, on the comps furthest from their
+  // list's typical gap (floors usually sit under their comp, ceilings over).
+  const all = [];
   for (const kind of ['floor', 'ceiling']) {
-    const comps = [...out.values()].map(c => c[kind][0]).filter(Boolean).sort((a, b) => b.gap - a.gap);
+    const comps = [...out.values()].map(c => c[kind][0]).filter(Boolean);
     if (!comps.length) continue;
-    const median = comps[Math.floor(comps.length / 2)].gap;
-    const n = Math.round(comps.length * QUALIFIER_SHARE);
-    comps.slice(0, n).filter(c => c.gap - median >= QUALIFIER_MIN_GAP).forEach(c => { c.name += '+'; });
-    comps.slice(-n).filter(c => c.gap - median <= -QUALIFIER_MIN_GAP).forEach(c => { c.name += ' lite'; });
+    const sorted = comps.map(c => c.gap).sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    comps.forEach(c => all.push({ c, rel: c.gap - median }));
   }
+  all.sort((a, b) => b.rel - a.rel);
+  all.filter(x => x.rel >= QUALIFIER_MIN_GAP).slice(0, QUALIFIER_MAX).forEach(x => { x.c.name += '+'; });
+  all.reverse().filter(x => x.rel <= -QUALIFIER_MIN_GAP).slice(0, QUALIFIER_MAX).forEach(x => { x.c.name += ' lite'; });
   return out;
 }
 
