@@ -31,8 +31,8 @@ Every team gets the same rules, so CPU teams stay even with yours.
 - **Injuries:** players who missed 15+ games to injury last season (`history.injuries`) risk −1 potential:
   0.6% per game missed, ×0.8–1.1 by major severity (1–4; minor injuries ×0.6), ×1.2 lower body, ×1.25 at 30+.
   **Lingering injuries** (looking back 3 seasons): ×1.5 per earlier injury of the same type, ×1.25 per earlier
-  injury in the same area, and recurring injuries count even under 15 games. **Soft-tissue** injuries
-  (groin, abs, calf, hamstring, thigh), which tend to linger and recur, hold players back: ×1.25 risk and ×0.75
+  injury in the same area, and recurring injuries count even under 15 games. **Lingering** injuries
+  (soft tissue: groin, abs, calf, hamstring, thigh; plus back), which tend to recur, hold players back: ×1.25 risk and ×0.75
   offseason bump points. Torn ACLs and Achilles are ×1.25 risk.
 
 Injury codes, as the game names them: core 1–5 Head, Abs, Back, Groin, Hip · upper body 1–6 Thumb, Finger, Hand,

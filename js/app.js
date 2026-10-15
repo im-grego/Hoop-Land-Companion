@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.5';
+const APP_VERSION = '0.6.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -45,13 +45,14 @@ function loadParams() {
       if (saved.version < 4) delete saved.recoveryBands;
       // v5 rescaled injury risk for natural (unedited) injuries.
       if (saved.version < 5) for (const k of ['injuryMinGames', 'injuryPotPerGame']) delete saved[k];
+      if (saved.version < 6) delete saved.softTissueParts; // v6 added Back
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 5 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 6 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -765,7 +766,7 @@ function playerRow(p, d) {
 
 function injuryBadge(p) {
   const r = injuryRisk(p, lastSeasonYear(), state.params);
-  return r ? `<span class="badge down-b">${esc(injuryName(r.worst))}${r.softTissue ? ' · soft tissue' : ''}</span>` : '';
+  return r ? `<span class="badge down-b">${esc(injuryName(r.worst))}${r.softTissue ? ' · lingering' : ''}</span>` : '';
 }
 
 function longevityBadges(p, d) {
@@ -939,7 +940,7 @@ function injuryText(p) {
   if (!r) return '';
   const w = r.worst;
   const linger = [r.sameType ? `${r.sameType}× same injury` : '', r.sameArea ? `${r.sameArea}× same area` : ''].filter(Boolean).join(', ');
-  return `<br><span class="small down">${yr}: ${esc(injuryName(w))}, ${r.games} games out${r.softTissue ? ' · soft tissue (held back)' : ''}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
+  return `<br><span class="small down">${yr}: ${esc(injuryName(w))}, ${r.games} games out${r.softTissue ? ' · lingering (held back)' : ''}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
 }
 
 function regressionText(p) {
@@ -1061,7 +1062,7 @@ const STEP_FIELDS = {
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
     ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],
     ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 10, 0, 100],
-    ['softTissuePointsMult', 'Soft Tissue: Bump Points ×', 0.05, 0, 1],
+    ['softTissuePointsMult', 'Lingering Injury: Bump Points ×', 0.05, 0, 1],
   ],
   skills: [
     ['newSkillChance', 'New Skill Chance %', 5, 0, 100],

@@ -45,8 +45,8 @@ export const DEFAULT_PARAMS = {
   injuryWindow: 3,        // seasons looked back for lingering injuries
   injuryRepeatType: 0.5,  // +50% per earlier injury of the same type
   injuryRepeatArea: 0.25, // +25% per earlier injury in the same body area
-  // Soft-tissue injuries tend to linger and recur, holding players back.
-  softTissueParts: ['Groin', 'Abs', 'Calf', 'Hamstring', 'Thigh'],
+  // Lingering injuries (soft tissue + back) tend to recur, holding players back.
+  softTissueParts: ['Groin', 'Abs', 'Calf', 'Hamstring', 'Thigh', 'Back'],
   softTissueMult: 1.25,       // x potential-loss risk
   softTissuePointsMult: 0.75, // x offseason bump points
   // Torn ACL / Achilles: career-altering, extra potential-loss risk.
