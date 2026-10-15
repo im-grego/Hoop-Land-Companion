@@ -46,7 +46,7 @@ Available once the file has a draft class (offseason, before the lottery).
 
 ## Summer league (right after the draft)
 
-Rookies win back part of the draft drop by age: 18–19 +4, 20–21 +3, 22–23 +2, 24+ none, never past their
+Older rookies win back part of the draft drop: 18–19 +0 (keep the full −4), 20–21 +1 (net −3), 22+ +2 (net −2), never past their
 pre-draft rating (12 skill ratings only; physicals never drop). The app remembers prospects' pre-draft ratings
 whenever you load a save that has a draft class; at the post-draft phase you can also load a pre-draft save as a
 read-only reference. It only runs at the Post-Draft phase and is locked for that season once you export, so it

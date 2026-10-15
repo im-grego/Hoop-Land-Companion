@@ -12,10 +12,10 @@ export const DRAFT_DROP = 4;
 export const DRAFT_FLOOR = 2;
 export const draftDrop = v => (v <= DRAFT_FLOOR ? v : Math.max(DRAFT_FLOOR, v - DRAFT_DROP));
 
-// Summer league recovery right after the draft: rookies win back part of the
-// drop by age ([maxAge, points]); 24+ get nothing. A rating never recovers
-// past its pre-draft value.
-export const DEFAULT_RECOVERY = [[19, 4], [21, 3], [23, 2]];
+// Summer league recovery right after the draft: older rookies win back part
+// of the drop ([maxAge, points]): 18-19 keep the full -4, 20-21 net -3,
+// 22+ net -2. A rating never recovers past its pre-draft value.
+export const DEFAULT_RECOVERY = [[19, 0], [21, 1], [99, 2]];
 export const recoveryFor = (age, bands = DEFAULT_RECOVERY) => (bands.find(b => age <= b[0]) || [0, 0])[1];
 
 // Where a pre-draft rating ends up after the drop and summer league.

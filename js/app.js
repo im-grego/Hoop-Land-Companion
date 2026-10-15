@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.5.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -41,13 +41,15 @@ function loadParams() {
     if (saved) {
       // v3 changed the bump to award points; older settings don't apply.
       if ((saved.version || 0) < 3) return structuredClone(DEFAULT_PARAMS);
+      // v4 flipped summer league recovery (older rookies win back more).
+      if (saved.version < 4) delete saved.recoveryBands;
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 3 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 4 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -630,7 +632,7 @@ function summerSection() {
   const L = league();
   const done = state.summer[state.leagueIdx];
   const bands = state.params.recoveryBands;
-  const bandText = bands.map((b, i) => `${i === 0 ? '≤' : `${bands[i - 1][0] + 1}–`}${b[0]}: +${b[1]}`).join(' · ');
+  const bandText = bands.map((b, i) => `${i === 0 ? '≤' : `${bands[i - 1][0] + 1}`}${b[0] >= 99 ? '+' : i === 0 ? b[0] : `–${b[0]}`}: +${b[1]}`).join(' · ');
   let body;
   if (done) {
     body = `<p class="note up">Applied: +${done.points} ratings across ${done.players} rookies. It's locked for this season once you export.</p>
@@ -643,7 +645,7 @@ function summerSection() {
     const eligible = summerEligible();
     const total = leagueRookies(L).filter(r => r.round > 0 || state.params.rookieIncludeUndrafted).length;
     body = eligible.length
-      ? `<p class="note">Rookies win back part of the −${DRAFT_DROP} draft drop by age (${bandText}; 24+ none), never past their pre-draft rating. Pre-draft ratings found for ${eligible.length} / ${total} rookies.</p>
+      ? `<p class="note">Older rookies win back part of the −${DRAFT_DROP} draft drop (${bandText}), never past their pre-draft rating. Pre-draft ratings found for ${eligible.length} / ${total} rookies.</p>
         <button class="btn big focus" data-act="runSummer">▶ Apply Summer League</button>`
       : `<p class="note">Summer league needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
     if (eligible.length < total) body += `<label class="btn small">📂 Load Pre-Draft Save<input type="file" id="origInput"></label>`;
@@ -1055,11 +1057,11 @@ screens.settings = (args) => {
         return `<fieldset class="frame"><legend>${label}</legend><div class="grid2">${st(1, b[1], 'Min pts')}${st(2, b[2], 'Max pts')}</div></fieldset>`;
       }).join('') +
       `<fieldset class="frame"><legend>Summer League Recovery</legend><div class="stack">${P.recoveryBands.map((b, i) => `<div class="pts-row">
-        <span class="grow">Age ${i === 0 ? 'up to ' : `${P.recoveryBands[i - 1][0] + 1}–`}${b[0]}</span>
+        <span class="grow">Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}</span>
         <button class="btn square" data-act="recBand" data-i="${i}" data-dir="-1" aria-label="Less recovery">−</button>
         <span class="pts-val">+${b[1]}</span>
         <button class="btn square" data-act="recBand" data-i="${i}" data-dir="1" aria-label="More recovery">+</button></div>`).join('')}
-        <p class="note muted small">Draft-drop points won back right after the draft. Older rookies get none.</p></div></fieldset>` +
+        <p class="note muted small">Draft-drop points won back right after the draft (of the −${DRAFT_DROP}).</p></div></fieldset>` +
       options('1st Round', 'rookieR1Mult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]) +
       options('2nd Round', 'rookieR2Mult', [[0.75, '×0.75'], [1, '×1.0'], [1.25, '×1.25']]) +
       options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
