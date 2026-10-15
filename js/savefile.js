@@ -111,6 +111,15 @@ export const skillName = id => SKILL_NAMES[id] || id;
 export const skillCategory = id => SKILL_CATEGORIES.find(c => c.skills.includes(id))?.name || '';
 export const FREE_SKILLS = SKILL_CATEGORIES.map(c => c.skills[0]);
 export const ELITE_SKILLS = SKILL_CATEGORIES.flatMap(c => c.skills.slice(4));
+// Elite skills need 16/20 in a related rating. Creating's (Foot Surgeon,
+// Hot Potato) aren't known yet. Limitless/Unfazed mapping unconfirmed.
+export const ELITE_MIN = 16;
+export const ELITE_REQUIREMENTS = { BUL: 'INS', DUN: 'DNK', UNF: 'MID', LIM: 'TPT', BAL: 'STL', SNA: 'BLK' };
+// null = requirement unknown; true/false = meets it.
+export function meetsEliteRequirement(p, id) {
+  const k = ELITE_REQUIREMENTS[id];
+  return k ? p.attributes[k][0] >= ELITE_MIN : null;
+}
 export const isFreeSkill = id => FREE_SKILLS.includes(id);
 export const isEliteSkill = id => ELITE_SKILLS.includes(id);
 export const UNLEVELED_SKILLS = FREE_SKILLS;

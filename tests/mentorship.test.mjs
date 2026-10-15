@@ -1,7 +1,7 @@
 // Usage: node tests/mentorship.test.mjs <season file with rosters>
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { parseSave, isLeveled, isFreeSkill, isEliteSkill, POSITIONS } from '../js/savefile.js';
+import { parseSave, isLeveled, isFreeSkill, isEliteSkill, meetsEliteRequirement, POSITIONS } from '../js/savefile.js';
 import { DEFAULT_PARAMS as P, buildSkillProfiles } from '../js/progression.js';
 import { mentorPairs, runMentorship, describe } from '../js/mentorship.js';
 
@@ -30,5 +30,13 @@ for (const m of done) {
   assert.ok(s && s.level === 1 && s.equipped, 'skill unlocked');
   assert.equal(m.mentee.skills.filter(x => x.level >= 1).length, before.get(m.mentee.id) + 1);
 }
+// With elite teaching on, elite skills only go to players meeting 16/20.
+const elite = L.teams.flatMap(t => mentorPairs(t.roster, { ...P, mentorTeachElite: true }, profiles));
+let eliteN = 0;
+for (const { mentee, skills } of elite) for (const id of skills) if (isEliteSkill(id)) {
+  assert.equal(meetsEliteRequirement(mentee, id), true, 'mentee meets the elite requirement');
+  eliteN++;
+}
+console.log(`elite OK: ${eliteN} elite options when enabled`);
 console.log(`mentorship OK: ${pairs.length} possible pairs, ${done.length} CPU mentorships`);
 for (const m of done.slice(0, 6)) console.log(`  ${m.team.shortName}: ${describe(m)} (${m.mentor.age} ${POSITIONS[m.mentor.pos]} → ${m.mentee.age} ${POSITIONS[m.mentee.pos]})`);

@@ -1,17 +1,18 @@
 // Mentorship: in the offseason a veteran teaches a young teammate at a
 // similar position one of their skills, unlocking it (level 1).
 
-import { isLeveled, isFreeSkill, isEliteSkill, playerName, skillName } from './savefile.js';
+import { isLeveled, isFreeSkill, isEliteSkill, meetsEliteRequirement, playerName, skillName } from './savefile.js';
 import { rankSkillsFor, unlockSkill, mulberry32 } from './progression.js';
 
 const owns = (p, id) => p.skills.some(s => s.id === id && s.level >= 1);
 
 // Skills a mentor can pass on to a mentee, best fit for the mentee first.
 // Free skills (Highlight Reel, Spark Plug, Dimer, Clamps) aren't taught, and
-// elite skills only when allowed.
+// elite skills only when allowed and the mentee meets the 16/20 requirement.
 export function teachableSkills(mentor, mentee, params, profiles) {
+  const eliteOk = id => params.mentorTeachElite && meetsEliteRequirement(mentee, id) === true;
   const can = new Set(mentor.skills
-    .filter(s => !isFreeSkill(s.id) && (params.mentorTeachElite || !isEliteSkill(s.id)))
+    .filter(s => !isFreeSkill(s.id) && (!isEliteSkill(s.id) || eliteOk(s.id)))
     .filter(s => s.level >= 1 && (!isLeveled(s.id) || s.level >= params.mentorSkillMinLevel))
     .map(s => s.id)
     .filter(id => !owns(mentee, id)));

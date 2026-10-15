@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity } from './progression.js';
@@ -10,7 +10,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.8.1';
+const APP_VERSION = '0.8.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -164,7 +164,8 @@ function skillBadges(d) {
 
 // "Shooting · elite · TPT · MID"
 function skillTag(id) {
-  return [skillCategory(id), isFreeSkill(id) ? 'free' : isEliteSkill(id) ? 'elite (16/20)' : '', skillHint(id)].filter(Boolean).join(' · ');
+  const elite = isEliteSkill(id) ? `elite: ${ELITE_REQUIREMENTS[id] ? `${ELITE_REQUIREMENTS[id]} ${ELITE_MIN}+` : `${ELITE_MIN}/20`}` : '';
+  return [skillCategory(id), isFreeSkill(id) ? 'free' : elite, skillHint(id)].filter(Boolean).join(' · ');
 }
 
 function skillHint(id) {
@@ -740,7 +741,7 @@ function mentorCard() {
   const mine = ms.list.filter(m => !m.cpu);
   const P = state.params;
   return `<fieldset class="frame"><legend>Mentorship</legend><div class="stack">
-    <p class="note">Veterans (${P.mentorMinAge}+) teach a young teammate (${P.menteeMaxAge} and under) at a similar position one of their skills, unlocked right away. One mentee per mentor, one skill per mentee. Free skills are never taught${P.mentorTeachElite ? '' : ', nor elite ones'}.</p>
+    <p class="note">Veterans (${P.mentorMinAge}+) teach a young teammate (${P.menteeMaxAge} and under) at a similar position one of their skills, unlocked right away. One mentee per mentor, one skill per mentee. Free skills are never taught${P.mentorTeachElite ? `; elite ones only if the young player already has ${ELITE_MIN}+ in the rating they need` : ', nor elite ones'}.</p>
     ${ms.seed != null
       ? `<p class="note">CPU teams: <span class="up">${cpu.length} mentorships</span>.</p>
         <div class="grid2"><button class="btn" data-act="rerollMentor">🎲 Re-roll</button><button class="btn" data-act="undoMentor">↺ Undo</button></div>`
