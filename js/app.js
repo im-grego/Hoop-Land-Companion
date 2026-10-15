@@ -17,7 +17,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.18.2';
+const APP_VERSION = '0.18.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1893,7 +1893,7 @@ function draftBoard(args = {}) {
           <span class="name">${i + 1}. ${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
           <span class="right">
             ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
-          <span class="meta">${COLLEGE_LOGO_SM}${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
+          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
           <span class="chg">${compLine(compsFor(p))}</span>
         </button>`;
         return view === 'mine'
@@ -1906,7 +1906,6 @@ function draftBoard(args = {}) {
 
 // College prospects carry the college league's logo.
 const COLLEGE_LOGO = '<img class="college-logo" src="icons/league-ball.png" alt="">';
-const COLLEGE_LOGO_SM = '<img class="college-logo sm" src="icons/league-ball.png" alt="">';
 
 function collegeBox(p) {
   const c = collegeLine(p, state.data.seasonLeagues);
@@ -1953,7 +1952,7 @@ screens.prospect = (args) => {
     title: 'Prospect',
     body: `
       <div>
-        <h2 class="team-title">${COLLEGE_LOGO}${esc(playerName(p))}</h2>
+        <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note muted small">${esc(p.home || '')}</p>
       </div>
