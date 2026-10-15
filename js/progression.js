@@ -34,6 +34,9 @@ export const DEFAULT_PARAMS = {
   levelUpChance: 0,       // %
   levelUpMaxAge: 25,
   maxSkills: 8,
+  // Draft room
+  lotteryDraws: 4,
+  draftRounds: 2,
 };
 
 // Deterministic RNG so a seed reproduces the same offseason.

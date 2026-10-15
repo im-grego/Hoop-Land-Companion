@@ -27,9 +27,21 @@ Every team gets the same rules, so CPU teams stay even with yours.
 
 All of these are adjustable under **Settings**.
 
+## Draft room
+
+Available once the file has a draft class (offseason, before the lottery).
+
+- **Board:** prospects ranked by projection, with **floor** and **ceiling comps**. Floor = skill ratings after the
+  rookie drop (−4, never below 2; ratings already at 2 or lower stay). Ceiling = their top ratings. Comps match the 12
+  skill ratings plus height against active players, free agents, retirees and Hall of Famers.
+- **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
+- **Mock draft:** uses the simulated lottery (or record order), honours traded picks; CPU teams take the best fit,
+  you pick for your teams.
+- **Trades:** swap draft picks between any two teams, written to the season file (undo per trade).
+
 ## Save-file safety
 
-Only player upgrade points (`season.ap`), and ratings/skills when you edit them, are modified. Everything else, including Unity's float formatting,
+Only player upgrade points (`season.ap`), ratings/skills you edit, and draft-pick ownership from trades are modified. Everything else, including Unity's float formatting,
 is written back byte-for-byte (see `js/savefile.js`). Keep a backup of your original file anyway.
 
 ## Running it
@@ -45,4 +57,5 @@ It's a static site with no build step.
 ```sh
 node tests/roundtrip.test.mjs   path/to/season-file   # load + save is byte-identical
 node tests/progression.test.mjs path/to/season-file   # progression rules hold
+node tests/draft.test.mjs       path/to/offseason-file # comps, lottery, mock draft, pick trades
 ```

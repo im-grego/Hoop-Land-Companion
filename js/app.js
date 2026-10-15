@@ -1,10 +1,14 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32 } from './progression.js';
+import {
+  SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
+  lotterySetup, lotteryOdds, drawLottery, draftOrder, cpuPick, tradePicks, pickValue,
+} from './draft.js';
 
-const APP_VERSION = '0.2.1';
+const APP_VERSION = '0.3.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -20,6 +24,9 @@ const state = {
   userTeams: new Set(),    // team ids the user controls (current league)
   auto: {},                // leagueIdx -> bump summary
   awards: {},              // leagueIdx -> Map pid -> points awarded
+  draft: {},               // leagueIdx -> { lottery, mock, trades }
+  compPools: {},
+  compCache: {},
   params: loadParams(),
   dirty: false,
   stack: [],
@@ -218,6 +225,9 @@ async function loadFile(file) {
     state.leagueAvg = [];
     state.auto = {};
     state.awards = {};
+    state.draft = {};
+    state.compPools = {};
+    state.compCache = {};
     data.seasonLeagues.forEach((L, li) => {
       const players = leaguePlayers(L, true).map(e => e.p);
       for (const p of players) state.snaps.set(snapKey(p.id, li), snapshot(p));
@@ -320,6 +330,7 @@ screens.main = () => {
         <div class="stack">
           <button class="btn big left focus" data-act="nav" data-to="offseason"><span class="ico">🏆</span> Offseason Development</button>
           <div class="grid2">
+            <button class="btn left" data-act="nav" data-to="draft"><span class="ico">🎓</span> Draft Room</button>
             <button class="btn left" data-act="nav" data-to="teams"><span class="ico">👥</span> Your Teams</button>
             <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
             <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
@@ -887,6 +898,337 @@ actions.setLeague = d => {
   state.leagueIdx = +d.i;
   loadUserTeams();
   render();
+};
+
+// ---------------------------------------------------------------------------
+// Draft room
+
+function draftState() {
+  const li = state.leagueIdx;
+  return (state.draft[li] ||= { lottery: null, mock: null, trades: [] });
+}
+
+function compPool() {
+  const li = state.leagueIdx;
+  return (state.compPools[li] ||= buildCompPool(league()));
+}
+
+function compsFor(p) {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has(p.id)) cache.set(p.id, prospectComps(p, compPool()));
+  return cache.get(p.id);
+}
+
+const avg = v => v.reduce((a, b) => a + b, 0) / v.length;
+const posName = p => POSITIONS[p.pos] ?? p.pos;
+
+function boardOrder() {
+  return [...league().draftClass].sort((a, b) => prospectValue(b) - prospectValue(a));
+}
+
+function draftedMap() {
+  const m = new Map();
+  for (const pk of draftState().mock?.picks || []) if (pk.pid != null) m.set(pk.pid, pk);
+  return m;
+}
+
+const DRAFT_TABS = [['board', 'Board'], ['lottery', 'Lottery'], ['mock', 'Mock'], ['trades', 'Trades']];
+
+screens.draft = (args) => {
+  const L = league();
+  const tab = args.tab || 'board';
+  if (!L.draftClass?.length && tab !== 'trades') {
+    layout({
+      title: 'Draft Room',
+      body: `<p class="note">This file has no draft class yet. Prospects appear once the offseason starts (before the lottery).</p>
+        <button class="btn" data-act="draftTab" data-t="trades">Pick Trades</button>`,
+    });
+    return;
+  }
+  const tabs = `<div class="tabs">${DRAFT_TABS.map(([k, l]) =>
+    `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  const body = { board: draftBoard, lottery: draftLottery, mock: draftMock, trades: draftTrades }[tab](args);
+  layout({ title: 'Draft Room', body: tabs + body.html, action: body.action });
+};
+
+actions.draftTab = d => replace('draft', { tab: d.t });
+
+function draftBoard() {
+  const drafted = draftedMap();
+  const rows = boardOrder();
+  return {
+    html: `
+      <p class="note muted small">${rows.length} prospects · ranked by projection · Rookie = average skill rating after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}). Ceiling totals are capped league-wide, so comps show the shape of each ceiling.</p>
+      <div class="list">${rows.map((p, i) => {
+        const fl = avg(floorVector(p));
+        const c = compsFor(p);
+        const pk = drafted.get(p.id);
+        return `<button class="prow" data-act="openProspect" data-id="${p.id}">
+          <span class="name">${i + 1}. ${esc(playerName(p))}</span>
+          <span class="right"><span class="stars">${stars(p.pot)}</span><br>
+            ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
+          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${esc(p.home || '')}</span>
+          <span class="chg">Floor: ${esc(c.floor[0]?.name || '—')} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span></span>
+        </button>`;
+      }).join('')}</div>`,
+  };
+}
+
+actions.openProspect = d => go('prospect', { id: +d.id });
+
+screens.prospect = (args) => {
+  const p = league().draftClass.find(x => x.id === args.id);
+  if (!p) { back(); return; }
+  const c = compsFor(p);
+  const fv = floorVector(p), cv = ceilingVector(p);
+  const compList = (list, cls) => list.map(x => `<div class="comp">
+    <span class="grow"><b class="${cls}">${esc(x.name)}</b><br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}</span></span>
+    <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
+  layout({
+    title: 'Prospect',
+    body: `
+      <div>
+        <h2 class="team-title">${esc(playerName(p))}</h2>
+        <p class="note">${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb · <span class="stars">${stars(p.pot)}</span></p>
+        <p class="note muted small">${esc(p.home || '')}${p.history?.coll ? ' · College' : ''}</p>
+      </div>
+      <div class="grid2">
+        <fieldset class="frame"><legend>Floor</legend>${compList(c.floor, '')}</fieldset>
+        <fieldset class="frame"><legend>Ceiling</legend>${compList(c.ceiling, 'up')}</fieldset>
+      </div>
+      <fieldset class="frame"><legend>Ratings</legend>
+        <div class="rk-head"><span></span><span>Now</span><span>Rookie</span><span>Ceiling</span></div>
+        ${SKILL_ATTRS.map((k, i) => `<div class="rk">
+          <span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span>
+          <span>${p.attributes[k][0]}</span>
+          <span class="${fv[i] < p.attributes[k][0] ? 'down' : ''}">${fv[i]}</span>
+          <span class="up">${cv[i]}</span>
+          <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
+        </div>`).join('')}
+        ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
+        <p class="note muted small" style="margin-top:8px">Comps match skill ratings and height against active players, free agents, retirees and Hall of Famers.</p>
+      </fieldset>`,
+  });
+};
+
+// ---- Lottery
+
+function draftLottery() {
+  const L = league();
+  const ds = draftState();
+  const draws = state.params.lotteryDraws;
+  const odds = lotteryOdds(L, draws, 5000, 1);
+  const { table } = lotterySetup(L);
+  const rec = new Map(table.map(r => [r.team.id, r]));
+  const totalW = odds.reduce((a, r) => a + r.weight, 0) || 1;
+  const result = ds.lottery;
+  return {
+    html: `
+      <div class="stepper">
+        <button class="btn square" data-act="lotteryDraws" data-dir="-1" aria-label="Fewer picks drawn">−</button>
+        <div class="val small">Top ${draws} pick${draws > 1 ? 's' : ''} drawn</div>
+        <button class="btn square" data-act="lotteryDraws" data-dir="1" aria-label="More picks drawn">+</button>
+      </div>
+      <button class="btn big focus" data-act="simLottery">🎲 Simulate Lottery</button>
+      ${result ? `<fieldset class="frame"><legend>Lottery Result</legend><div class="list">
+        ${result.map((r, i) => {
+          const move = r.seed - i;
+          return `<div class="lot-row ${isUserTeam(r.team) ? 'mine' : ''}"><span class="pk">${i + 1}</span>${logoImg(r.team)}<span class="grow">${esc(r.team.shortName)} <span class="muted small">${rec.get(r.team.id).W}-${rec.get(r.team.id).L}</span></span>
+            ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
+        }).join('')}
+      </div>
+      <button class="btn" data-act="draftTab" data-t="mock" style="margin-top:10px">▶ Mock Draft With This Order</button></fieldset>` : ''}
+      <fieldset class="frame"><legend>Odds</legend>
+        <div class="odds-head"><span>Seed</span><span>Team</span><span>Weight</span><span>#1</span><span>Top ${draws}</span></div>
+        ${odds.map(r => {
+          const rr = rec.get(r.team.id);
+          const top = r.pct.slice(0, draws).reduce((a, b) => a + b, 0);
+          return `<div class="odds-row ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${(r.weight / totalW * 100).toFixed(1)}%</span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span></div>`;
+        }).join('')}
+        <p class="note muted small" style="margin-top:8px">Weights come from your league's lottery settings (worst record = seed 1). Odds from 5,000 simulations.</p>
+      </fieldset>`,
+  };
+}
+
+actions.lotteryDraws = d => {
+  const n = lotterySetup(league()).lotteryTeams.length;
+  state.params.lotteryDraws = Math.max(1, Math.min(n, state.params.lotteryDraws + +d.dir));
+  saveParams();
+  render();
+};
+
+actions.simLottery = () => {
+  const { lotteryTeams, odds } = lotterySetup(league());
+  const ds = draftState();
+  ds.lottery = drawLottery(lotteryTeams, odds, state.params.lotteryDraws, mulberry32(Math.floor(Math.random() * 1e9)));
+  ds.mock = null;
+  render();
+};
+
+// ---- Mock draft
+
+function ensureMock() {
+  const ds = draftState();
+  if (!ds.mock) {
+    const order = draftOrder(league(), ds.lottery?.map(r => r.team) || null, state.params.draftRounds);
+    ds.mock = { picks: order.map(o => ({ ...o, ownerShort: o.owner.shortName, pid: null })) };
+  }
+  return ds.mock;
+}
+
+function mockAvailable(mock) {
+  const taken = new Set(mock.picks.map(p => p.pid).filter(x => x != null));
+  return league().draftClass.filter(p => !taken.has(p.id));
+}
+
+function simMock(untilUser) {
+  const mock = ensureMock();
+  for (const pk of mock.picks) {
+    if (pk.pid != null) continue;
+    if (untilUser && isUserTeam(pk.owner)) break;
+    const p = cpuPick(pk.owner, mockAvailable(mock));
+    if (!p) break;
+    pk.pid = p.id;
+  }
+}
+
+function draftMock() {
+  const ds = draftState();
+  const mock = ensureMock();
+  const byId = new Map(league().draftClass.map(p => [p.id, p]));
+  const onClock = mock.picks.find(p => p.pid == null);
+  const userOnClock = onClock && isUserTeam(onClock.owner);
+  return {
+    html: `
+      <p class="note muted small">${ds.lottery ? 'Using your simulated lottery.' : 'No lottery simulated: order is by record.'} ${state.userTeams.size ? 'You pick for your teams.' : 'Pick your teams to draft for them.'}</p>
+      <div class="grid2">
+        <button class="btn" data-act="mockSim" data-u="1" ${onClock ? '' : 'disabled'}>⏩ To My Pick</button>
+        <button class="btn" data-act="mockSim" data-u="0" ${onClock ? '' : 'disabled'}>⏭ Sim All</button>
+      </div>
+      ${userOnClock ? `<button class="btn big focus" data-act="mockChoose">🎯 ${esc(onClock.owner.shortName)} on the clock: make pick #${onClock.overall}</button>` : ''}
+      <div class="list">
+        ${mock.picks.map(pk => {
+          const p = pk.pid != null ? byId.get(pk.pid) : null;
+          const traded = pk.owner.id !== pk.orig.id;
+          return `<div class="lot-row ${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}">
+            <span class="pk">${pk.overall}</span>${logoImg(pk.owner)}
+            <span class="grow">${esc(pk.owner.shortName)}${traded ? ` <span class="muted small">via ${esc(pk.orig.shortName)}</span>` : ''}${pk.rd > 1 ? ` <span class="muted small">R${pk.rd}</span>` : ''}<br>
+              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
+          </div>`;
+        }).join('')}
+      </div>`,
+    action: { act: 'mockReset', label: 'Reset' },
+  };
+}
+
+actions.mockSim = d => { simMock(d.u === '1'); render(); };
+actions.mockReset = () => { draftState().mock = null; render(); };
+actions.mockChoose = () => {
+  const mock = ensureMock();
+  const pk = mock.picks.find(p => p.pid == null);
+  const avail = mockAvailable(mock).sort((a, b) => prospectValue(b) - prospectValue(a));
+  const o = overlay(`
+    <p class="note">${esc(pk.owner.shortName)} · Pick #${pk.overall}</p>
+    <div class="stack" style="max-height:60vh;overflow:auto">
+      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span><span class="stars">${stars(p.pot)}</span></button>`).join('')}
+    </div>
+    <button class="btn off" data-close>Cancel</button>`);
+  o.addEventListener('click', e => {
+    const b = e.target.closest('[data-id],[data-close]');
+    if (!b) return;
+    if (b.dataset.id) pk.pid = +b.dataset.id;
+    o.remove();
+    render();
+  });
+};
+
+// ---- Pick trades
+
+function draftTrades(args) {
+  const L = league();
+  const teams = [...L.teams].sort((a, b) => a.shortName.localeCompare(b.shortName));
+  const mine = teams.filter(isUserTeam);
+  const aId = +(args.a ?? (mine[0] || teams[0]).id);
+  const bId = +(args.b ?? teams.find(t => t.id !== aId).id);
+  const A = L.teams.find(t => t.id === aId), B = L.teams.find(t => t.id === bId);
+  const selA = new Set(args.selA || []), selB = new Set(args.selB || []);
+  const key = pk => `${pk.yr}:${pk.rd}:${pk.otid}`;
+  const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  const picks = (T, sel, side) => [...T.draftPicks]
+    .filter(pk => pk.yr >= L.season.currentYear)
+    .sort((x, y) => x.yr - y.yr || x.rd - y.rd)
+    .map(pk => `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''}" data-act="togglePick" data-side="${side}" data-k="${key(pk)}">
+      <span class="check"></span><span class="grow">${pk.yr} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}</span>
+      <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`).join('') || '<p class="note muted">No picks.</p>';
+  const valueOf = (T, sel) => T.draftPicks.filter(pk => sel.has(key(pk))).reduce((a, pk) => a + pickValue(L, pk), 0);
+  const vA = valueOf(A, selA), vB = valueOf(B, selB);
+  const teamSelect = (side, cur, other) => `<select class="sel-team" data-change="tradeTeam" data-side="${side}">
+    ${teams.filter(t => t.id !== other).map(t => `<option value="${t.id}" ${t.id === cur ? 'selected' : ''}>${esc(t.shortName)} · ${esc(t.name)}${isUserTeam(t) ? ' (You)' : ''}</option>`).join('')}</select>`;
+  const log = draftState().trades;
+  return {
+    html: `
+      <p class="note muted small">Swap draft picks between any two teams. Trades are written to the season file. Value is a rough guide based on last season's record and how far out the pick is.</p>
+      <div class="grid2 trade">
+        <div class="stack">${teamSelect('a', aId, bId)}<div class="list">${picks(A, selA, 'a')}</div><p class="note center">Sends <b>${Math.round(vA)}</b></p></div>
+        <div class="stack">${teamSelect('b', bId, aId)}<div class="list">${picks(B, selB, 'b')}</div><p class="note center">Sends <b>${Math.round(vB)}</b></p></div>
+      </div>
+      ${log.length ? `<fieldset class="frame"><legend>Trades This Session</legend><div class="stack">
+        ${log.map((t, i) => `<div class="row"><p class="note grow small">${esc(t.text)}</p><button class="btn small" data-act="undoTrade" data-i="${i}">Undo</button></div>`).join('')}
+      </div></fieldset>` : ''}`,
+    action: { act: 'makeTrade', label: selA.size || selB.size ? 'Trade' : 'Pick Picks' },
+  };
+}
+
+function tradeArgs() { return state.stack[state.stack.length - 1].args; }
+
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'tradeTeam') return;
+  const a = tradeArgs();
+  replace('draft', { ...a, tab: 'trades', [e.target.dataset.side]: +e.target.value, selA: [], selB: [] });
+});
+
+actions.togglePick = d => {
+  const a = tradeArgs();
+  const k = d.side === 'a' ? 'selA' : 'selB';
+  const s = new Set(a[k] || []);
+  if (s.has(d.k)) s.delete(d.k); else s.add(d.k);
+  replace('draft', { ...a, tab: 'trades', [k]: [...s] });
+};
+
+actions.makeTrade = async () => {
+  const a = tradeArgs();
+  const L = league();
+  const teams = [...L.teams].sort((x, y) => x.shortName.localeCompare(y.shortName));
+  const mine = teams.filter(isUserTeam);
+  const aId = +(a.a ?? (mine[0] || teams[0]).id);
+  const bId = +(a.b ?? teams.find(t => t.id !== aId).id);
+  const A = L.teams.find(t => t.id === aId), B = L.teams.find(t => t.id === bId);
+  const key = pk => `${pk.yr}:${pk.rd}:${pk.otid}`;
+  const fromA = A.draftPicks.filter(pk => (a.selA || []).includes(key(pk)));
+  const fromB = B.draftPicks.filter(pk => (a.selB || []).includes(key(pk)));
+  if (!fromA.length && !fromB.length) { toast('Tap picks on either side first'); return; }
+  const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  const desc = list => list.map(pk => `${pk.yr} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
+  const text = `${A.shortName} send ${desc(fromA)} · ${B.shortName} send ${desc(fromB)}`;
+  if (!(await confirmBox(esc(text), 'Trade'))) return;
+  tradePicks(A, B, fromA, fromB);
+  draftState().trades.push({ text, a: A.id, b: B.id, fromA, fromB });
+  draftState().mock = null;
+  state.dirty = true;
+  replace('draft', { ...a, tab: 'trades', selA: [], selB: [] });
+  toast('Trade complete');
+};
+
+actions.undoTrade = d => {
+  const ds = draftState();
+  const t = ds.trades[+d.i];
+  const L = league();
+  const A = L.teams.find(x => x.id === t.a), B = L.teams.find(x => x.id === t.b);
+  tradePicks(A, B, t.fromB, t.fromA);
+  ds.trades.splice(+d.i, 1);
+  ds.mock = null;
+  render();
+  toast('Trade undone');
 };
 
 // ---------------------------------------------------------------------------
