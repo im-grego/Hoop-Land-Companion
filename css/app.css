@@ -334,3 +334,4 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 }
 .trade .list { max-height: 50vh; overflow: auto; }
 .tabs .btn { min-width: 0; padding: 8px 4px; font-size: 15px; }
+.badge.down-b { border-color: var(--down); color: var(--down); }

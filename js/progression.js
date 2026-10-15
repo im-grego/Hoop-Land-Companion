@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MAX, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, seriousInjury } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
 export const AWARD_CATEGORIES = [0, 1, 2, 3];
@@ -33,6 +33,11 @@ export const DEFAULT_PARAMS = {
   // Rare potential upgrade (+1 = half a star), scaled by minutes.
   potUpChance: 4,         // %
   potUpMaxAge: 25,
+  // Serious injuries last season: chance to lose 1 potential.
+  injuryMinGames: 20,     // games missed before there's any risk
+  injuryPotPerGame: 0.3,  // % chance per game missed
+  injuryOldAge: 30,       // at this age and up the chance is x1.25
+  injuryPotMax: 50,       // % cap
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -216,6 +221,22 @@ export function maybePotential(p, mult, params, rng) {
   return true;
 }
 
+// A serious injury last season can cost half a star of potential.
+export function injuryPotChance(p, year, params) {
+  const inj = seriousInjury(p, year);
+  if (!inj || inj.gamesOut < params.injuryMinGames) return 0;
+  const c = inj.gamesOut * params.injuryPotPerGame * (p.age >= params.injuryOldAge ? 1.25 : 1);
+  return Math.min(params.injuryPotMax, c);
+}
+
+export function maybeInjuryPotLoss(p, year, params, rng) {
+  const chance = injuryPotChance(p, year, params);
+  if (!chance || p.pot <= POT_MIN) return false;
+  if (rng() * 100 >= chance) return false;
+  p.pot--;
+  return true;
+}
+
 // Unlock a skill, reusing the locked (level 0) entry and its XP if present.
 export function unlockSkill(p, id) {
   const s = p.skills.find(x => x.id === id);
@@ -237,7 +258,7 @@ export function maybeSkills(p, points, params, profiles, rng) {
   }
 }
 
-// Run the offseason bump. `entries` are { p, team, leagueIdx, spend }.
+// Run the offseason bump. `entries` are { p, team, leagueIdx, spend, injuryYear }.
 // `spend` spends the player's held points into ratings afterwards.
 // Returns Map pid -> points awarded.
 export function runProgression(entries, params, profiles) {
@@ -251,7 +272,10 @@ export function runProgression(entries, params, profiles) {
     awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
     maybeLongevity(e.p, mult, params, rng);
-    maybePotential(e.p, mult, params, rng);
+    // Seriously injured players risk losing potential and can't gain it.
+    const injured = e.injuryYear != null && injuryPotChance(e.p, e.injuryYear, params) > 0;
+    if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
+    else maybePotential(e.p, mult, params, rng);
     maybeSkills(e.p, pts, params, profiles, rng);
     if (e.spend) spendHeldPoints(e.p, params, rng);
   }

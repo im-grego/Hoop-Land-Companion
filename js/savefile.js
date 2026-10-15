@@ -131,6 +131,18 @@ export const POT_MIN = 4;
 export const POT_MAX = 10; // 11 exists as a secret level; never set by the app
 export const regressionYear = p => p.age - p.regressionAge; // 1 = first year of decline
 
+// Serious injuries are logged in history.injuries (majorSeverity > 0).
+// Returns the worst one from a season, or null.
+export function seriousInjury(p, year) {
+  let worst = null;
+  for (const i of p.history?.injuries || []) {
+    if (i.yr === year && i.majorSeverity > 0 && (!worst || i.gamesOut > worst.gamesOut)) worst = i;
+  }
+  return worst;
+}
+export const injuryArea = i => ['core', 'upperBody', 'lowerBody'].filter(k => i[k])
+  .map(k => ({ core: 'core', upperBody: 'upper body', lowerBody: 'lower body' })[k]).join(', ');
+
 export function phaseName(season) {
   const name = PHASE_NAMES[season.phase];
   if (!name) return `Phase ${season.phase}`;

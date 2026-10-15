@@ -1,15 +1,15 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, seriousInjury, injuryArea, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryPotChance } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
-  lotterySetup, lotteryOdds, runLottery, draftOrder, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
+  lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -442,6 +442,11 @@ actions.toggleTeam = async d => {
 // ---------------------------------------------------------------------------
 // Offseason bump
 
+// The most recently completed season (the one injuries are judged on).
+function lastSeasonYear() {
+  return Math.max(...league().teams.map(t => teamRecord(t).yr || 0));
+}
+
 const rookieIds = () => new Set(leagueRookies(league()).map(r => r.p.id));
 
 // Veteran bump: everyone except this year's rookies (they have their own).
@@ -458,8 +463,9 @@ function applyBump(seed) {
   const li = state.leagueIdx;
   // Start from the original file each time so re-rolls don't stack.
   for (const p of vetPlayers()) restore(p, snapOf(p));
+  const injuryYear = lastSeasonYear();
   const entries = bumpEntries().map(e => ({
-    ...e, leagueIdx: li, spend: state.params.spendCpuPoints && !isUserTeam(e.team),
+    ...e, leagueIdx: li, injuryYear, spend: state.params.spendCpuPoints && !isUserTeam(e.team),
   }));
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   let players = 0, points = 0, mine = 0;
@@ -468,17 +474,18 @@ function applyBump(seed) {
     players++;
     points += n;
   }
-  let longevity = 0, potUps = 0;
+  let longevity = 0, potUps = 0, potDowns = 0;
   for (const e of entries) {
     if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
     const d = diffPlayer(e.p, snapOf(e.p));
     if (d.regDelta > 0) longevity++;
     if (d.potDelta > 0) potUps++;
+    if (d.potDelta < 0) potDowns++;
   }
   const all = (state.awards[li] ||= new Map());
   for (const p of vetPlayers()) all.delete(p.id);
   for (const [k, v] of awards) all.set(k, v);
-  state.auto[li] = { seed, players, points, mine, longevity, potUps, total: entries.length, spent: state.params.spendCpuPoints };
+  state.auto[li] = { seed, players, points, mine, longevity, potUps, potDowns, total: entries.length, spent: state.params.spendCpuPoints };
   state.dirty = true;
 }
 
@@ -571,6 +578,7 @@ screens.offseason = () => {
               <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
               <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}</dd>
               <dt>Potential upgrades</dt><dd class="up">${auto.potUps ?? 0}</dd>
+              <dt>Lost potential (injury)</dt><dd class="down">${auto.potDowns ?? 0}</dd>
               <dt>CPU points</dt><dd>${auto.spent ? 'Spent into ratings' : 'Held for the game'}</dd>
               <dt>Seed</dt><dd>${auto.seed}</dd>
             </dl>
@@ -580,7 +588,7 @@ screens.offseason = () => {
               <button class="btn" data-act="undoAuto">↺ Undo</button>
             </div>`
           : `
-            <p class="note">Players aged ${bands[bands.length - 1][0]} and under (new age) earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), and young players get a rare potential upgrade (${P.potUpChance}%). Every team gets the same rules, so CPU teams stay even.</p>
+            <p class="note">Players aged ${bands[bands.length - 1][0]} and under (new age) earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to a serious injury risk losing potential. Every team gets the same rules, so CPU teams stay even.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
@@ -755,7 +763,7 @@ function playerRow(p, d) {
 
 function longevityBadges(p, d) {
   return (d.regDelta ? `<span class="badge lvl">Regress ${p.regressionAge - d.regDelta + 1}→${p.regressionAge + 1}</span>` : '') +
-    (d.potDelta ? `<span class="badge new">POT ${d.potDelta > 0 ? '▲' : '▼'}</span>` : '');
+    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">POT ▼ injury</span>' : '');
 }
 
 actions.openPlayer = d => go('player', { id: +d.id });
@@ -827,7 +835,7 @@ screens.player = (args) => {
             <button class="btn square" data-act="regAge" data-dir="1" aria-label="Later regression">+</button>
           </div>
           <div class="pts-row">
-            <span class="grow">Potential<br><span class="stars">${stars(p.pot)}</span></span>
+            <span class="grow">Potential<br><span class="stars">${stars(p.pot)}</span>${injuryText(p)}</span>
             <button class="btn square" data-act="potAdj" data-dir="-1" aria-label="Lower potential">−</button>
             <span class="pts-val ${d.potDelta ? 'gold' : ''}">${p.pot}${d.potDelta ? `<span class="small up"> ${d.potDelta > 0 ? '+' : ''}${d.potDelta}</span>` : ''}</span>
             <button class="btn square" data-act="potAdj" data-dir="1" aria-label="Higher potential">+</button>
@@ -916,6 +924,14 @@ actions.attr = d => {
   state.dirty = true;
   render();
 };
+
+function injuryText(p) {
+  const yr = lastSeasonYear();
+  const inj = seriousInjury(p, yr);
+  if (!inj) return '';
+  const c = injuryPotChance(p, yr, state.params);
+  return `<br><span class="small down">${yr} injury: ${inj.gamesOut} games out (${esc(injuryArea(inj) || 'serious')})${c ? ` · ${Math.round(c)}% risk` : ''}</span>`;
+}
 
 function regressionText(p) {
   const y = regressionYear(p);
@@ -1031,6 +1047,9 @@ const STEP_FIELDS = {
     ['regLaterChance', 'Delay Regression: Later Years %', 5, 0, 100],
     ['potUpChance', 'Potential Upgrade %', 1, 0, 100],
     ['potUpMaxAge', 'Potential Upgrade Max Age', 1, 18, 40],
+    ['injuryMinGames', 'Injury: Min Games Missed', 5, 0, 82],
+    ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
+    ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
   ],
   skills: [
     ['newSkillChance', 'New Skill Chance %', 5, 0, 100],
@@ -1147,7 +1166,7 @@ actions.setOpt = d => {
 };
 actions.step = d => {
   const f = [...STEP_FIELDS.general, ...STEP_FIELDS.skills].find(x => x[0] === d.k);
-  state.params[d.k] = Math.max(f[3], Math.min(f[4], state.params[d.k] + f[2] * +d.dir));
+  state.params[d.k] = Math.round(Math.max(f[3], Math.min(f[4], state.params[d.k] + f[2] * +d.dir)) * 10) / 10;
   saveParams();
   render();
 };
