@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, MINOR_INJURY, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
 export const AWARD_CATEGORIES = [0, 1, 2, 3];
@@ -51,6 +51,7 @@ export const DEFAULT_PARAMS = {
   //  nagging    - soft tissue + back; tends to recur and holds players back
   //  standard   - everything else
   naggingParts: ['Groin', 'Abs', 'Back', 'Calf', 'Hamstring', 'Thigh'],
+  naggingSprainParts: ['Ankle', 'Knee'], // sprains here linger too
   naggingRiskMult: 1.25,       // x potential-loss risk
   naggingPointsMult: 0.75,     // x offseason bump points
   structuralParts: ['Achilles', 'ACL', 'MCL', 'Knee', 'Ankle', 'Foot', 'Hip', 'Back'],
@@ -252,6 +253,7 @@ export function injuryClass(inj, params) {
   const part = injuryPart(inj);
   if (inj.majorSeverity > 0 && params.structuralParts.includes(part)) return 'structural';
   if (params.naggingParts.includes(part)) return 'nagging';
+  if (MINOR_INJURY[inj.minorSeverity] === 'Sprained' && params.naggingSprainParts.includes(part)) return 'nagging';
   return 'standard';
 }
 

@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.8';
+const APP_VERSION = '0.6.9';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
