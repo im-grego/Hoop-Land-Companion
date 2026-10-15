@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.7';
+const APP_VERSION = '0.27.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ function toast(msg, detail = '', ms = detail ? 4000 : 2400) {
   const t = document.createElement('div');
   t.className = 'toast';
   t.setAttribute('role', 'status');
-  t.innerHTML = `<img src="icons/icon-192.png" alt=""><span><b>${esc(msg)}</b>${detail ? `<span>${esc(detail)}</span>` : ''}</span>`;
+  t.innerHTML = `<img src="icons/alert.png" alt=""><span><b>${esc(msg)}</b>${detail ? `<span>${esc(detail)}</span>` : ''}</span>`;
   t.addEventListener('click', () => t.classList.add('out'));
   document.body.appendChild(t);
   requestAnimationFrame(() => t.classList.add('in'));
@@ -2127,8 +2127,7 @@ screens.draft = (args) => {
   const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
-  const hero = tab === 'live' ? '<img class="hero" src="icons/hero-draft.jpg" alt="">' : tab === 'consensus' ? '<img class="hero" src="icons/hero-warroom.jpg" alt="">' : '';
-  layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: hero + (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
+  layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
 };
 
 actions.draftTab = d => replace('draft', { tab: d.t });

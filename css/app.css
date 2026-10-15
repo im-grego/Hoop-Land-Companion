@@ -284,7 +284,7 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 }
 .toast.in { transform: translate(-50%, 0); }
 .toast.out { transform: translate(-50%, calc(-100% - 30px)); opacity: 0; transition: transform .35s ease-in, opacity .35s; }
-.toast img { width: 34px; height: 34px; border-radius: 8px; flex: none; }
+.toast img { width: 44px; height: 44px; border-radius: 10px; flex: none; image-rendering: pixelated; }
 .toast > span { display: flex; flex-direction: column; min-width: 0; }
 .toast b { font-size: 14px; }
 .toast > span > span { font-size: 13px; font-weight: 500; opacity: .85; }
