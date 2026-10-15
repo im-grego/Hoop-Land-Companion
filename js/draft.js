@@ -565,14 +565,14 @@ export function cpuPick(team, available, valueOf = p => prospectValue(p), rng = 
 // ---------------------------------------------------------------------------
 // College stats and team fit
 
-// Last college season, per game: { yr, team, gp, mpg, pts, reb, ast, stl, blk, fg, tp, ft, tpa }.
+// Last college season, per game: { yr, team, gp, mpg, pts, reb, ast, stl, blk, tov, fg, tp, ft, tpa }.
 export function collegeLine(p, leagues) {
   let best = null;
   (p.stats || []).forEach(s => {
     const L = leagues[s.league];
     if (!L || L.leagueType === 0 || s.league === 0) return;
     const r = (s.season || []).reduce((a, x) => {
-      for (const k of ['GP', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'FGM', 'FGA', 'TPM', 'TPA', 'FTM', 'FTA']) a[k] = (a[k] || 0) + x[k];
+      for (const k of ['GP', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'FGM', 'FGA', 'TPM', 'TPA', 'FTM', 'FTA']) a[k] = (a[k] || 0) + (x[k] || 0);
       a.MIN = (a.MIN || 0) + x.MIN[0];
       a.tid = x.tid;
       return a;
@@ -583,7 +583,7 @@ export function collegeLine(p, leagues) {
       const pct = (m, a) => (r[a] ? r[m] / r[a] * 100 : null);
       best = {
         yr: s.yr, team: team ? `${team.city} ${team.name}` : L.shortName, gp: r.GP, mpg: r.MIN / 60 / r.GP,
-        pts: pg('PTS'), reb: pg('REB'), ast: pg('AST'), stl: pg('STL'), blk: pg('BLK'),
+        pts: pg('PTS'), reb: pg('REB'), ast: pg('AST'), stl: pg('STL'), blk: pg('BLK'), tov: pg('TO'),
         fg: pct('FGM', 'FGA'), tp: pct('TPM', 'TPA'), ft: pct('FTM', 'FTA'), tpa: pg('TPA'),
       };
     }

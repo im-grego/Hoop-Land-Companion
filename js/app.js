@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.22.1';
+const APP_VERSION = '0.23.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -446,15 +446,15 @@ const faDone = day => {
 
 // Each step: when, what, whether it's finished, and what it opens.
 const CALENDAR = [
-  { key: 'office', date: 'Jun 1', title: 'Front Office', blurb: 'Pick the teams you run.',
+  { key: 'office', date: 'Jun 1', title: 'Front Office', blurb: 'Select the teams you run.',
     done: () => calFlags().office },
-  { key: 'lottery', date: 'Jun 2', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the order.',
+  { key: 'lottery', date: 'Jun 2', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
     done: () => phaseRank(league().season) >= 2 },
-  { key: 'warroom', date: 'Jun 3–24', title: 'War Room', blurb: 'Scout the class, build your board, run the mock draft and work the phones in the front office.',
+  { key: 'warroom', date: 'Jun 18', title: 'War Room', blurb: 'Scout the class, build your board, run the mock draft and work the phones in the front office.',
     done: () => calFlags().warroom || phaseRank(league().season) >= 3 },
   { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
-  { key: 'camp', date: 'Jul 1–5', title: 'Summer League', blurb: 'Rookies win back ratings by age and get their first development bump.',
+  { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies win back ratings by age and get their first development bump.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'The market opens: the big deals happen today. Draft picks sign their rookie contracts.',
     done: () => faDone(1) },
@@ -462,7 +462,7 @@ const CALENDAR = [
     done: () => faDone(2) },
   { key: 'fa3', date: 'Jul 8', title: 'Free Agency · Day 3', blurb: 'Finalize free agency: veteran minimums, asking prices drop.',
     done: () => faDone(3) },
-  { key: 'dev', date: 'Aug–Sep', title: 'Player Development', blurb: 'Development coach, trainer, mentorship and jersey numbers.',
+  { key: 'dev', date: 'Sep 15', title: 'Player Development', blurb: 'Development coach, trainer, mentorship and jersey numbers.',
     done: () => calFlags().dev },
   { key: 'media', date: 'Sep 29', title: 'Media Day', blurb: 'The top 10 storylines heading into the season.',
     done: () => calFlags().media },
@@ -502,9 +502,10 @@ function stepActions(key) {
   const L = league();
   const s = L.season;
   switch (key) {
-    case 'office': return `<div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Pick Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
+    case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
+      <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
     case 'lottery': return `<button class="btn big focus" data-act="nav" data-to="lottery">🎱 Draft Lottery</button>`;
-    case 'warroom': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Open the War Room</button><button class="btn" data-act="calDone" data-k="warroom">✅ Lock the Board</button></div>`;
+    case 'warroom': return `<div class="grid2"><button class="btn" data-act="nav" data-to="draft">🔎 Scouting</button><button class="btn focus" data-act="calDone" data-k="warroom">⏭ Advance to Draft</button></div>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
     case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🏀 Summer League</button><button class="btn" data-act="calCamp">✅ Wrap Up</button></div>`;
     case 'fa1': case 'fa2': case 'fa3': {
@@ -569,7 +570,6 @@ function screenAllowed(name) {
 actions.advLottery = async () => {
   const L = league();
   const P = state.params;
-  if (!(await confirmBox('Draw the lottery? The draft order is written to the season file.', 'Draw'))) return;
   checkpoint('Lottery');
   const setup = lotterySetup(L, P.lotteryFormat, P.lotteryDraws);
   const order = preLotteryOrder(L);
@@ -635,7 +635,6 @@ screens.main = () => {
             <p class="note">Load a save from the start of the offseason (Pre-Lottery) and run the whole offseason here: the lottery, the draft, summer league, free agency and player development. Export once at the end and load it in the game. Saves from later in the offseason pick up from where they are.</p>
             <label class="btn big focus"><span class="ico">📂</span> Load Season File
               <input type="file" id="fileInput"></label>
-            <p class="note muted small">Your file is read on this device only. Keep a backup of the original.</p>
           </div>
         </fieldset>
         <p class="center muted small">Version ${APP_VERSION}</p>`,
@@ -1326,6 +1325,11 @@ screens.player = (args) => {
   });
 };
 
+// Rating bar colors by group: finishing (light blue), shooting (green),
+// playmaking/handles (orange), defense (red).
+const RATING_GROUP = { LAY: 'fin', DNK: 'fin', INS: 'fin', MID: 'sho', TPT: 'sho', FTS: 'sho', DRB: 'pla', PAS: 'pla', ORE: 'pla', DRE: 'def', STL: 'def', BLK: 'def' };
+const barClass = k => `bar${RATING_GROUP[k] ? ` c-${RATING_GROUP[k]}` : ''}`;
+
 function attrRow(p, snap, k, ceilMode) {
   const [cur, ceil] = p.attributes[k];
   const orig = snap.attributes[k][0];
@@ -1338,7 +1342,8 @@ function attrRow(p, snap, k, ceilMode) {
         <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
         <span>${cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${ceil}</span></span>
       </div>
-      <div class="bar">
+      <div class="${barClass(k)}">
+        <div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>
         <div class="fill" style="width:${base / ATTR_MAX * 100}%"></div>
         ${delta > 0 ? `<div class="gain" style="left:${orig / ATTR_MAX * 100}%;width:${delta / ATTR_MAX * 100}%"></div>` : ''}
         <div class="ceil" style="left:calc(${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}% - 2px)"></div>
@@ -1816,13 +1821,15 @@ function teamOutlook(team) {
 }
 
 // A CPU team's pick: its own value of each prospect plus draft-day noise.
-function teamDraftPick(team, available, rng) {
+// `noise` is how far a team's own read can stray from the board (the mock
+// draft uses more so re-runs differ).
+function teamDraftPick(team, available, rng, noise = 0.35) {
   const v = draftVecs();
   const ctx = teamOutlook(team);
   const gauss = () => { const u = Math.max(1e-9, rng()), w = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w); };
   let best = null, bestScore = -Infinity;
   for (const p of available) {
-    const sc = draftScore(p, v.scales, v.fns, ctx) + eliteBonus(p) + gauss() * 0.3;
+    const sc = draftScore(p, v.scales, v.fns, ctx) + eliteBonus(p) + gauss() * noise;
     if (sc > bestScore) { best = p; bestScore = sc; }
   }
   return best;
@@ -1928,6 +1935,16 @@ actions.toggleBoard = d => {
   render();
 };
 
+// Put a prospect at #1 on your board (adding them if they aren't on it).
+actions.topBoard = d => {
+  const b = boardStore();
+  const id = +d.id;
+  b.board = [id, ...myBoard().map(p => p.id).filter(x => x !== id)];
+  saveBoardStore(b);
+  toast('Moved to #1 on your board');
+  render();
+};
+
 actions.moveBoard = d => {
   const b = boardStore();
   const ids = myBoard().map(p => p.id);
@@ -2000,8 +2017,9 @@ function outlookCard() {
     }
     const future = [...byYear].map(([y, list]) => `<span class="ol-yr"><b>${y}</b> ${list.join(' · ')}</span>`);
     const need = n => { const [g, k] = n.label.split(' · '); return `<span class="ol-need"><b>${esc(g)}</b>${k ? `<span>${esc(k)}</span>` : ''}</span>`; };
-    return `<div class="outlook">
-      <div class="outlook-top">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(o.status)}</div>
+    const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
+    return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
+      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(o.status)}</div>
       <dl class="ol-grid">
         <dt>Needs</dt><dd class="ol-needs">${o.needs.map(need).join('') || '<span class="muted">—</span>'}</dd>
         <dt>This draft</dt><dd class="ol-picks">${now.map(x => `<span class="ol-pick">${x}</span>`).join('') || '<span class="muted">No picks</span>'}</dd>
@@ -2027,9 +2045,9 @@ const prospectRow = (p, extra = '') => {
 function draftConsensus() {
   const rows = boardOrder();
   return {
-    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. Tap + to add a prospect to your War Room board.</p>
+    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. + Board adds a prospect to your War Room board; ⇡ Top makes them your #1.</p>
       <div class="list">${rows.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
-        <div class="mv"><button class="btn square ${onBoard(p.id) ? 'on focus' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button></div></div>`).join('')}</div>`,
+        <div class="mv2"><button class="mvbtn ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓<span>On Board</span>' : '+<span>Board</span>'}</button><button class="mvbtn" data-act="topBoard" data-id="${p.id}" aria-label="Make #1 on your board">⇡<span>Top</span></button></div></div>`).join('')}</div>`,
   };
 }
 
@@ -2042,7 +2060,7 @@ function draftWarRoom() {
     html: `<fieldset class="frame"><legend>Your Board</legend>
         ${board.length ? `<div class="brows">${board.map((p, i) => `<div class="brow">
           <span class="rk gold">${i + 1}</span>
-          <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y</span> ${valueChip(p)}</span></button>
+          <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${classYear(p)}</span> ${valueChip(p)}</span>${compsFor(p).ceiling[0] ? `<span class="bceil small"><span class="muted">Ceiling</span> <span class="up">${esc(compsFor(p).ceiling[0].name)}</span></span>` : ''}</button>
           <span class="mv"><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvb x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></span>
         </div>`).join('')}</div>`
         : '<p class="note">Your board is empty. Add prospects from Consensus with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
@@ -2053,12 +2071,15 @@ function draftWarRoom() {
           const p = byId.get(m.pid);
           const t = league().teams.find(x => x.id === m.tid);
           return `<div class="lot-row ${isUserTeam(t) ? 'mine' : ''}"><span class="pk">${m.overall}</span>${logoImg(t)}
-            <span class="grow"><b class="small">${esc(t.shortName)}</b> <span class="small">${p ? `${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))} · ${esc(posName(p))}` : '—'}</span></span>${p ? valueChip(p) : ''}</div>`;
+            <span class="grow"><b class="small">${esc(t.shortName)}</b> <span class="small">${p ? `${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${classYear(p)}</span>` : '—'}</span></span>${p ? valueChip(p) : ''}</div>`;
         }).join('')}</div>
         <button class="btn" data-act="mockRerun" style="margin-top:10px">🔄 Re-run Mock</button>
       </fieldset>`,
   };
 }
+
+// College class from years already played (Hoop Land's `yrs`).
+const classYear = p => ['Fr', 'So', 'Jr', 'Sr'][Math.max(0, Math.min(3, p.yrs ?? (p.age - 18)))];
 
 // First-round mock from the real order, using every team's own picks logic.
 function mock30() {
@@ -2069,7 +2090,7 @@ function mock30() {
     const rng = mulberry32(ds.mockSeed ||= Math.floor(Math.random() * 1e9));
     const taken = new Set();
     const picks = order.map(o => {
-      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng);
+      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng, 0.75);
       if (p) taken.add(p.id);
       return { overall: o.overall, tid: o.owner.id, pid: p?.id };
     });
@@ -2213,7 +2234,7 @@ function collegeBox(p) {
     <p class="note small college-head">${COLLEGE_LOGO}<span><b>${esc(c.team)}</b><br><span class="muted">${c.gp} games · ${f(c.mpg)} MPG</span></span></p>
     <div class="statline">
       ${[['PTS', f(c.pts)], ['REB', f(c.reb)], ['AST', f(c.ast)], ['STL', f(c.stl)], ['BLK', f(c.blk)],
-         ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)]]
+         ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)], ['TOV', f(c.tov)]]
         .map(([k, v]) => `<div><span class="muted small">${k}</span><b>${v}</b></div>`).join('')}
     </div></fieldset>`;
 }
@@ -2242,8 +2263,11 @@ screens.prospect = (args) => {
   const p = league().draftClass.find(x => x.id === args.id);
   if (!p) { back(); return; }
   const c = compsFor(p);
-  const rec = recoveryFor(p.age, state.params.recoveryBands);
-  const fv = rookieLine(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p, scoutPot(p));
+  const fv = rookieLine(p, state.params.recoveryBands), cv = projectedCeiling(p, scoutPot(p));
+  // How much of a dip to expect after the draft: younger prospects win
+  // more back in summer league.
+  const loss = fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0) / SKILL_ATTRS.length;
+  const dip = loss < 1.2 ? ['Small', 'up'] : loss < 2.2 ? ['Moderate', 'gold'] : ['Big', 'down'];
   const compList = (list, cls) => list.map(x => `<div class="comp">
     <span class="grow"><b class="${cls}">${esc(x.name)}</b><br>${tierTag(x.tier)}<br><span class="muted small">${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span></div>`).join('') || '<p class="note muted">—</p>';
   layout({
@@ -2251,28 +2275,30 @@ screens.prospect = (args) => {
     body: `
       <div>
         <h2 class="team-title">${esc(playerName(p))}</h2>
-        <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note muted small">${esc(p.home || '')}</p>
+        <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lb</p>
+        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span> Draft-day dip: <b class="${dip[1]}">${dip[0]}</b> <span class="muted">(the older the prospect, the less they win back in summer league)</span></p>
       </div>
       <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
-      ${collegeBox(p)}
-      ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
+      ${collegeBox(p)}
       <div class="grid2">
         <fieldset class="frame"><legend>Floor</legend>${compList(c.floor, '')}</fieldset>
         <fieldset class="frame"><legend>Ceiling</legend>${compList(c.ceiling, 'up')}</fieldset>
       </div>
+      ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Ratings</legend>
-        <div class="rk-head"><span></span><span>Now</span><span>Rookie</span><span>Ceiling</span></div>
-        ${SKILL_ATTRS.map((k, i) => `<div class="rk">
+        <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
+        ${SKILL_ATTRS.map(k => {
+          const now = p.attributes[k][0], ceil = Math.max(now, cv[SKILL_ATTRS.indexOf(k)]);
+          return `<div class="rk rk2">
           <span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span>
-          <span>${p.attributes[k][0]}</span>
-          <span class="${fv[i] < p.attributes[k][0] ? 'down' : ''}">${fv[i]}${fv[i] < p.attributes[k][0] ? `<span class="small"> −${p.attributes[k][0] - fv[i]}</span>` : ''}</span>
-          <span class="up">${cv[i]}${cv[i] !== raw[i] ? `<span class="small ${cv[i] > raw[i] ? '' : 'down'}"> ${cv[i] > raw[i] ? '+' : ''}${cv[i] - raw[i]}</span>` : ''}</span>
-          <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
-        </div>`).join('')}
-        ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
-        <p class="note muted small" style="margin-top:8px">Ceiling is projected from our scouting: the game caps every prospect's ceiling at an All-Star level, so the projection adds to their strengths for high-upside prospects (and trims it for low-upside ones). Scouting isn't perfect. Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comp adds +2 a rating of natural development to this line.</p>
+          <span>${now}</span>
+          <span class="gold">${ceil}</span>
+          <div class="${barClass(k)}"><div class="room" style="width:${ceil / ATTR_MAX * 100}%"></div><div class="fill" style="width:${now / ATTR_MAX * 100}%"></div><div class="ceil" style="left:calc(${ceil / ATTR_MAX * 100}% - 2px)"></div></div>
+        </div>`;
+        }).join('')}
+        ${PHYSICAL.map(k => `<div class="rk rk2"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span class="gold">${p.attributes[k][1]}</span></div>`).join('')}
+        <p class="note muted small" style="margin-top:8px">The filled bar is today's rating; the outlined part runs to the projected ceiling (the notch). Scouting isn't perfect.</p>
       </fieldset>`,
   });
 };
@@ -2364,11 +2390,13 @@ screens.lottery = () => {
         ${odds.map(r => {
           const rr = rec.get(r.team.id);
           const top = Math.min(100, r.pct.slice(0, topN).reduce((a, b) => a + b, 0));
-          return `<div class="odds-row lot ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
+          const zone = setup.floor && r.seed === 0 ? '<div class="releg-label">Relegation zone · one ball taken away</div>' : '';
+          const line = setup.floor && r.seed === setup.floor.floorTeams ? '<div class="releg-line"></div>' : '';
+          return `${zone}${line}<div class="odds-row lot ${setup.floor && r.seed < setup.floor.floorTeams ? 'releg' : ''} ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
             <span class="odds-bar" aria-hidden="true"><i class="top" style="width:${top}%"></i><i class="one" style="width:${r.pct[0]}%"></i></span></div>`;
         }).join('')}
         ${out.length ? `<p class="note muted small" style="margin-top:8px">Out of the lottery (pick by record): ${out.map(r => esc(r.team.shortName)).join(', ')}.</p>` : ''}
-        <p class="note muted small" style="margin-top:8px"><span class="gold">■</span> chance at #1 · <span class="cyan">■</span> chance at a top-${topN} pick. Odds from 20,000 simulations.</p>
+        <p class="note muted small" style="margin-top:8px"><span class="gold">■</span> #1 pick · <span class="cyan">■</span> top ${topN}</p>
       </fieldset>`,
     action: { act: 'advLottery', label: 'Run Lottery' },
   });
@@ -2395,7 +2423,7 @@ function lotteryResultView() {
         const move = pre.indexOf(o.orig) - i;
         const rr = rec.get(o.orig.id);
         return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
-          <span class="grow">${esc(o.orig.shortName)} <span class="muted small">${rr ? `${rr.W}-${rr.L}` : ''}</span>${o.owner.id !== o.orig.id ? ` <span class="small gold">→ ${esc(o.owner.shortName)}</span>` : ''}</span>
+          <span class="grow">${esc(o.orig.shortName)} <span class="muted small">${rr ? `${rr.W}-${rr.L}` : ''}</span> ${statusTag(teamStatus(L, o.orig))}${o.owner.id !== o.orig.id ? ` <span class="small gold">→ ${esc(o.owner.shortName)}</span>` : ''}</span>
           ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
       }).join('')}</div>
       <button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button>`,

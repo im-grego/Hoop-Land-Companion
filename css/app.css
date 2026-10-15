@@ -302,7 +302,7 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .lot-row.mine { border-color: var(--cyan); }
 .lot-row.clock { border-color: var(--gold); }
 .lot-row .grow { flex: 1; min-width: 0; }
-.lot-row .pk { font-family: var(--pixel); min-width: 30px; text-align: right; color: var(--gold); }
+.lot-row .pk { font-weight: 800; font-size: 20px; min-width: 32px; text-align: right; color: var(--gold); font-variant-numeric: tabular-nums; }
 .odds-head, .odds-row { display: grid; grid-template-columns: 34px 1fr 58px 52px 60px; gap: 4px; font-size: 13px; padding: 4px 0; text-align: right; }
 .odds-head > :nth-child(2), .odds-row > :nth-child(2) { text-align: left; }
 .odds-head { color: var(--dim); border-bottom: 2px solid var(--btn-edge); }
@@ -616,11 +616,12 @@ body::before {
 .board-row .mv .btn.square { width: 44px; min-height: 40px; font-size: 18px; }
 /* War Room board: one compact line per prospect. */
 .brows { display: flex; flex-direction: column; gap: 4px; }
-.brow { display: flex; align-items: center; gap: 6px; background: var(--btn); border: 2px solid var(--btn-edge); padding: 4px 6px; min-height: 40px; }
+.brow { display: flex; align-items: center; gap: 8px; background: var(--btn); border: 3px solid var(--btn-edge); padding: 8px 8px; min-height: 64px; }
 .brow .rk { width: 18px; text-align: right; font-weight: 800; flex: none; }
 .brow .bname { flex: 1; min-width: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; padding: 2px; cursor: pointer; line-height: 1.15; overflow-wrap: anywhere; }
-.brow .bname b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.brow .bname .bmeta { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.brow .bname b { display: block; font-size: 16px; line-height: 1.2; }
+.brow .bname .bmeta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 2px; }
+.brow .bname .bmeta > .muted { white-space: nowrap; }
 .brow .bmeta .value-chip { font-size: 11px; padding: 0 5px; min-width: 0; }
 .brow .mv { display: flex; gap: 3px; flex: none; }
 .brow .mvb { width: 28px; height: 28px; padding: 0; font-size: 13px; color: #fff; background: var(--btn-edge); border: 0; box-shadow: 0 2px 0 var(--btn-shadow); cursor: pointer; }
@@ -686,3 +687,38 @@ body::before {
 /* Trade block: picks two per row */
 .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .pick-grid .pick { min-width: 0; }
+
+/* 3-2-1 relegation zone on the odds table */
+.releg-label { margin-top: 6px; padding: 3px 8px; font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #ff8a8a; background: rgba(255, 90, 90, .12); border-left: 4px solid #ff5a5a; }
+.odds-row.lot.releg { background: rgba(255, 90, 90, .08); }
+.releg-line { height: 0; border-top: 3px dashed #ff5a5a; margin: 2px 0; }
+.lot-row .status { font-size: 10px; padding: 1px 5px; vertical-align: 1px; }
+
+/* Consensus: two compact board buttons */
+.board-row .mv2 { display: flex; flex-direction: column; gap: 6px; }
+.mvbtn { flex: 1; width: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 0; font-size: 18px; font-weight: 800; color: #fff; background: var(--btn); border: 3px solid var(--btn-edge); box-shadow: 0 3px 0 var(--btn-shadow); cursor: pointer; }
+.mvbtn span { font-size: 9px; letter-spacing: .3px; text-transform: uppercase; }
+.mvbtn.on { background: var(--cyan); color: #0b2f6b; border-color: var(--cyan); }
+.mvbtn:active { transform: translateY(2px); box-shadow: none; }
+.brow .bceil { display: block; margin-top: 3px; }
+.brow .mvb { width: 32px; height: 34px; }
+
+/* Outlook card in team colors */
+.outlook[style*="--tc1"] { border-color: var(--tc1); }
+.outlook-top.tc { margin: -12px -12px 4px; padding: 12px; background: linear-gradient(90deg, var(--tc1), color-mix(in srgb, var(--tc1) 55%, #0b2f6b)); border-bottom: 5px solid var(--tc2); text-shadow: 0 2px 0 #0008; }
+.outlook-top.tc .status { background: #0b2f6bcc; text-shadow: none; }
+
+/* Rating bars by group; the outlined "room" runs to the potential/ceiling notch */
+.bar { --bc: var(--dim); }
+.bar.c-fin { --bc: #5cc8ff; }
+.bar.c-sho { --bc: #4fe08a; }
+.bar.c-pla { --bc: #ffb43a; }
+.bar.c-def { --bc: #ff5a5a; }
+.bar .fill { background: var(--bc); }
+.bar .room { position: absolute; left: 0; top: 0; bottom: 0; outline: 1px solid var(--bc); background: color-mix(in srgb, var(--bc) 32%, transparent); }
+.bar .fill { z-index: 1; }
+.bar .ceil { z-index: 2; }
+.bar .gain { background: repeating-linear-gradient(135deg, var(--bc) 0 4px, #fff 4px 6px); }
+.bar .ceil { background: #fff; box-shadow: 0 0 0 1px #000a; }
+.rk-head.rk2, .rk.rk2 { grid-template-columns: 1fr 44px 60px; }
+.age-chip { display: inline-block; margin-right: 6px; padding: 1px 8px; font-weight: 800; color: #0b2f6b; background: var(--cyan); }
