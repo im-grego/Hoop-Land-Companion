@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.21.4';
+const APP_VERSION = '0.21.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2745,8 +2745,8 @@ screens.liveTrade = (args) => {
   const select = (side, cur) => {
     const T = L.teams.find(t => t.id === cur);
     const many = side === 'b' || left.length > 1;
-    const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : '';
-    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team">${logoImg(T)}<b>${esc(T.shortName)}</b>${isUserTeam(T) ? '<span class="gold small">You</span>' : ''}</span>${arrow(1, '▶')}</div>`;
+    const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : `<span class="tsel-arrow off" aria-hidden="true"></span>`;
+    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team">${logoImg(T)}<span class="tsel-name"><b>${esc(T.shortName)}</b><span class="${isUserTeam(T) ? 'gold' : 'muted'} small">${isUserTeam(T) ? 'You' : esc(T.name)}</span></span></span>${arrow(1, '▶')}</div>`;
   };
   layout({
     title: 'Draft-Day Trade',
@@ -2787,7 +2787,7 @@ function tradeBar(A, B, vA, vB) {
     <div class="tbar-ends small"><span>◀ ${esc(A.shortName)}</span><span>${esc(B.shortName)} ▶</span></div>
     <div class="tbar">${cpu ? `<span class="tbar-ok" style="${zone}"></span>` : ''}<span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${pos}%"></span></div>
     <p class="note center small">${empty ? '<span class="muted">Tap players or picks on either side</span>'
-      : `<b>${esc(word)}</b>${cpu ? ` · ${ok ? `<span class="up">${esc(judge.shortName)} would accept</span>` : `<span class="down">${esc(judge.shortName)} would decline</span>`}` : ''}`}</p>
+      : `<b>${esc(word)}</b>${cpu ? `${ok ? `<span class="up">${esc(judge.shortName)} would accept</span>` : `<span class="down">${esc(judge.shortName)} would decline</span>`}` : ''}`}</p>
   </div>`;
 }
 

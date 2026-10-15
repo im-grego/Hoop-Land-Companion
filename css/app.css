@@ -628,19 +628,28 @@ body::before {
 .brow .mvb.x { background: #7a2430; }
 .nowrap { white-space: nowrap; }
 
-/* ◀ team ▶ picker on the trade screen */
-.tsel { display: flex; align-items: stretch; gap: 4px; }
-.tsel-arrow { flex: none; width: 36px; min-height: 44px; padding: 0; color: #fff; font-size: 16px; background: var(--btn); border: 3px solid var(--btn-edge); box-shadow: 0 3px 0 var(--btn-shadow); cursor: pointer; }
-.tsel-arrow:active { transform: translateY(2px); box-shadow: none; }
+/* ◀ team ▶ picker on the trade screen (both sides the same size) */
+.tsel { display: flex; align-items: stretch; gap: 4px; height: 64px; }
+.tsel-arrow { flex: none; width: 34px; padding: 0; color: #fff; font-size: 16px; background: var(--btn); border: 3px solid var(--btn-edge); box-shadow: 0 3px 0 var(--btn-shadow); cursor: pointer; }
+.tsel-arrow.off { background: none; border-color: transparent; box-shadow: none; cursor: default; }
+.tsel-arrow:not(.off):active { transform: translateY(2px); box-shadow: none; }
 .tsel-team { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 6px; background: var(--btn-shadow); border: 3px solid var(--btn-edge); }
-.tsel-team b { font-size: 16px; font-weight: 800; }
-.tsel-team img { width: 28px; height: 28px; object-fit: contain; }
+.tsel-team img { width: 30px; height: 30px; object-fit: contain; flex: none; }
+.tsel-name { display: flex; flex-direction: column; align-items: center; min-width: 0; line-height: 1.1; }
+.tsel-name b { font-size: 20px; font-weight: 800; }
+.tsel-name .small { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-/* Trade balance bar */
-.tbar-wrap { margin: 10px 0 12px; }
-.tbar-ends { display: flex; justify-content: space-between; color: var(--cyan); font-weight: 700; margin-bottom: 4px; }
-.tbar { position: relative; height: 18px; background: linear-gradient(90deg, var(--btn-shadow), var(--btn) 50%, var(--btn-shadow)); border: 3px solid var(--btn-edge); }
-.tbar-ok { position: absolute; top: 0; bottom: 0; background: rgba(80, 220, 120, .35); }
-.tbar-mid { position: absolute; left: 50%; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: #fff; opacity: .6; }
-.tbar-mark { position: absolute; top: -8px; width: 12px; height: 28px; margin-left: -6px; background: var(--gold); border: 2px solid #fff; box-shadow: 0 2px 0 var(--btn-shadow); transition: left .25s ease; }
-.tbar-mark.idle { opacity: .4; }
+/* Trade balance bar: cyan = favors you (left), orange = favors them (right). */
+.tbar-wrap { margin: 14px 0 18px; padding: 10px 10px 12px; background: var(--btn-shadow); border: 3px solid var(--btn-edge); }
+.tbar-ends { display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; margin-bottom: 8px; }
+.tbar-ends span:first-child { color: var(--cyan); }
+.tbar-ends span:last-child { color: #ff8a3d; }
+.tbar { position: relative; height: 22px; border: 3px solid #fff;
+  background: linear-gradient(90deg, #3ee6f2 0%, #1b66c9 30%, #0b2f6b 50%, #b5541c 70%, #ff8a3d 100%); }
+.tbar-ok { position: absolute; top: 0; bottom: 0; border-left: 3px solid #5bff8a; border-right: 3px solid #5bff8a;
+  background: repeating-linear-gradient(135deg, rgba(91, 255, 138, .45) 0 6px, rgba(91, 255, 138, .15) 6px 12px); }
+.tbar-mid { position: absolute; left: 50%; top: -9px; bottom: -9px; width: 3px; margin-left: -1.5px; background: #fff; }
+.tbar-mark { position: absolute; top: -11px; width: 16px; height: 38px; margin-left: -8px; background: var(--gold); border: 3px solid #fff; box-shadow: 0 3px 0 #000a; }
+.tbar-mark.idle { opacity: .35; }
+.tbar-wrap > .note { margin-top: 16px; line-height: 1.5; }
+.tbar-wrap > .note b { display: block; font-size: 16px; }
