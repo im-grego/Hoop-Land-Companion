@@ -550,3 +550,30 @@ body::before {
 }
 @keyframes bg-scroll { to { transform: translate(540px, 360px); } }
 @media (prefers-reduced-motion: reduce) { body::before { animation: none; } }
+
+/* Larger, more readable title board: Silkscreen draws on an 8-unit pixel
+   grid, so at 48px each font pixel is 6px; the LED gaps sit on that grid. */
+.marquee { height: 84px; }
+.marquee-track span { font-size: 48px; letter-spacing: 6px; }
+.marquee::after {
+  background-image:
+    repeating-linear-gradient(90deg, rgba(20, 16, 30, .85) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(0deg, rgba(20, 16, 30, .85) 0 1px, transparent 1px 6px);
+}
+.header .back { width: 72px; }
+@media (min-width: 700px) {
+  .marquee { height: 96px; }
+  .marquee-track span { font-size: 56px; letter-spacing: 8px; }
+}
+.marquee-track span { font-weight: 400; }
+
+/* LED dots ride on the letters: a 1px gap at the edge of every 6px font
+   pixel, so each pixel reads as a lamp and the dots move with the text. */
+.marquee::after { display: none; }
+.marquee-track span {
+  line-height: 48px;
+  -webkit-mask-image: linear-gradient(90deg, #000 0 5px, transparent 5px 6px), linear-gradient(#000 0 5px, transparent 5px 6px);
+  -webkit-mask-size: 6px 6px; -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, #000 0 5px, transparent 5px 6px), linear-gradient(#000 0 5px, transparent 5px 6px);
+  mask-size: 6px 6px; mask-composite: intersect;
+}
