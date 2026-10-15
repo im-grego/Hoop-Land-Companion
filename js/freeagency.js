@@ -115,10 +115,13 @@ export function roleFit(league, team, p) {
 }
 
 // Score of an offer { tid, sal, yrs, opt } for player p.
-export function offerScore(league, p, offer, ask, motive, oldTid = null) {
+export function offerScore(league, p, offer, ask, motive, oldTid = null, discounted = false) {
   const team = league.teams.find(t => t.id === offer.tid);
   const w = { greed: 1, security: 0.15, control: 0.12, contender: 0.25, role: 0.25 };
   w[motive] = motive === 'greed' ? 2 : w[motive] * 3;
+  // A veteran taking a discount cares about what they're chasing, not a
+  // couple of million more.
+  if (discounted) w.greed = 0.3;
   const money = offer.sal / Math.max(1, ask);
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
@@ -126,8 +129,9 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null) {
     w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 : 0);
 }
 
-export function why(motive, offer, best) {
+export function why(motive, offer, strength = 1) {
   const m = MOTIVES[motive];
+  if (motive === 'contender' && strength < 0.5) return `${m.icon} took the best offer left`;
   if (motive === 'greed') return `${m.icon} took the money ($${offer.sal * offer.yrs}M)`;
   if (motive === 'security') return `${m.icon} got ${offer.yrs} years of security`;
   if (motive === 'control') return `${m.icon} ${offer.opt === OPT_PLAYER ? 'got the player option' : 'wanted control'}`;
@@ -203,7 +207,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       (day >= 2 && !used.mle?.has(team.id) && cost(m) <= o.mle * 1.1) ||
       (day >= 3 && m.p.age >= o.vetMinAge && cost(m) <= o.vetMin * 1.5);
     // Teams cool on players who already have a crowd of suitors.
-    const crowd = m => 1 + 0.35 * (bids.get(m.p.id)?.length || 0);
+    const crowd = m => 1 + 0.15 * (bids.get(m.p.id)?.length || 0);
     const pool = market
       .map(m => ({ ...m, want: teamWant(league, team, m.p, ly) / crowd(m) }))
       .filter(m => m.want > 6 + rng() * 6 && canPay(m));
@@ -246,7 +250,7 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
   for (const m of market) {
     const list = bids.get(m.p.id);
     if (!list || list.length < 2) continue;
-    const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id);
+    const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
     const best = Math.max(...list.map(score));
     for (const b of list) {
       if (!b.cpu || score(b) >= best) continue;
@@ -279,14 +283,14 @@ export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS) {
       return !checkOffer(league, team, m.p, b, day, used, o);
     });
     if (!list.length) continue;
-    const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id);
+    const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
     const best = [...list].sort((a, b) => score(b) - score(a))[0];
     if (best.sal < (m.min ?? m.ask * accept)) continue;
     const team = league.teams.find(t => t.id === best.tid);
     const kind = offerKind(league, team, m.p, best, day, used, o);
     if (kind === 'mle') (used.mle ||= new Set()).add(team.id);
     const rec = signPlayer(league, m.p, team, best, day);
-    signings.push({ p: m.p, from: m.from, team, offer: best, motive: m.motive, bidders: list.length, kind, why: why(m.motive, best), rec });
+    signings.push({ p: m.p, from: m.from, team, offer: best, motive: m.motive, bidders: list.length, kind, why: why(m.motive, best, teamStrength(league, team)), rec });
   }
   return signings;
 }

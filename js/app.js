@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.0';
+const APP_VERSION = '0.19.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2598,7 +2598,7 @@ const offerText = o => `$${o.sal}M × ${o.yrs}${o.opt === FA.OPT_PLAYER ? ' · p
 const faBest = (s, m) => {
   const list = s.bids.get(m.p.id) || [];
   if (!list.length) return null;
-  const score = b => FA.offerScore(league(), m.p, b, m.ask, m.motive, m.from?.id);
+  const score = b => FA.offerScore(league(), m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
   return [...list].sort((a, b) => score(b) - score(a))[0];
 };
 
@@ -2733,7 +2733,7 @@ actions.faOffer = d => {
     const err = FA.checkOffer(L, team, m.p, draft, s.day, s.used);
     const kind = err ? null : FA.offerKind(L, team, m.p, draft, s.day, s.used);
     const others = list().filter(b => b.tid !== draft.tid);
-    const score = b => FA.offerScore(L, m.p, b, m.ask, m.motive, m.from?.id);
+    const score = b => FA.offerScore(L, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
     const rival = [...others].sort((a, b) => score(b) - score(a))[0];
     const standing = draft.sal < m.min ? `<span class="down">Below what they'll take ($${m.min}M)</span>`
       : !rival ? (s.stage === 'open' ? 'No other bids yet' : '<span class="up">Only offer</span>')
