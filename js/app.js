@@ -17,7 +17,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.16.0';
+const APP_VERSION = '0.17.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -221,8 +221,15 @@ const screens = {};
 const actions = {};
 
 function go(name, args = {}) {
+  if (!screenAllowed(name)) { toast('Finish the current step on the calendar first'); return; }
   state.stack.push({ name, args });
   history.pushState({ depth: state.stack.length }, '');
+  render();
+}
+function goHome() {
+  const n = state.stack.length - 1;
+  state.stack = [{ name: 'main', args: {} }];
+  if (n > 0) history.go(-n); else render();
   render();
 }
 function back() {
@@ -272,6 +279,7 @@ async function loadFile(file) {
     if (!Array.isArray(data.seasonLeagues) || !data.seasonLeagues.length) throw new Error('No seasonLeagues found');
     state.fileName = file.name;
     state.undo = null;
+    state.cal = {};
     installData(data);
     state.dirty = false;
     o.remove();
@@ -402,56 +410,147 @@ actions.share = async () => {
 // ---------------------------------------------------------------------------
 // Offseason timeline: advance the save phase by phase inside the app
 
-const STEPS = [
-  { key: 'lottery', label: 'Lottery', phase: 2 },
-  { key: 'draft', label: 'Draft', phase: 4 },
-  { key: 'summer', label: 'Summer League', phase: 5 },
-  { key: 'fa1', label: 'Free Agency Day 1', phase: 6, day: 1 },
-  { key: 'fa2', label: 'Day 2', phase: 6, day: 2 },
-  { key: 'fa3', label: 'Day 3 · Development', phase: 6, day: 3 },
-];
-function stepIndex(s) {
-  if (s.phase === 6) return 2 + Math.max(1, Math.min(3, s.currentDay || 1));
-  return { 2: 0, 4: 1, 5: 2 }[s.phase] ?? -1;
-}
-
 // Keep the file as it was before an advance, so it can be undone once.
 function checkpoint(label) {
   state.undo = { label, text: serializeSave(state.data), dirty: state.dirty };
 }
 
-function timelineCard() {
+// ---------------------------------------------------------------------------
+// Offseason calendar: one step at a time, June to October
+
+// Where the save is in the offseason (0 = season over, before Pre-Lottery).
+function phaseRank(s) {
+  if (s.phase === 6) return 3 + Math.max(1, Math.min(3, s.currentDay || 1));
+  return { 2: 1, 4: 2, 5: 3 }[s.phase] ?? 0;
+}
+const calFlags = () => (state.cal ||= {});
+const faDone = day => {
+  const s = league().season;
+  if (phaseRank(s) > 3 + day) return true;
+  const fa = state.fa[state.leagueIdx];
+  return s.phase === 6 && s.currentDay === day && ((fa?.day === day && fa.stage === 'done') || !!calFlags().faLog?.[day]);
+};
+
+// Each step: when, what, whether it's finished, and what it opens.
+const CALENDAR = [
+  { key: 'office', date: 'Jun 1', title: 'Front Office', blurb: 'Pick the teams you run.',
+    done: () => calFlags().office },
+  { key: 'lottery', date: 'Jun 2', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the order.',
+    done: () => phaseRank(league().season) >= 2 },
+  { key: 'warroom', date: 'Jun 3–24', title: 'War Room', blurb: 'Scout the class, set your big board and watch list, run mock drafts.',
+    done: () => calFlags().warroom || phaseRank(league().season) >= 3 },
+  { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
+    done: () => phaseRank(league().season) >= 3 },
+  { key: 'camp', date: 'Jul 1–5', title: 'Summer League', blurb: 'Rookies win back ratings by age and get their first development bump.',
+    done: () => calFlags().camp || phaseRank(league().season) >= 4 },
+  { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'The market opens: the big deals happen today. Draft picks sign their rookie contracts.',
+    done: () => faDone(1) },
+  { key: 'fa2', date: 'Jul 7', title: 'Free Agency · Day 2', blurb: 'Teams over the cap get the mid-level exception.',
+    done: () => faDone(2) },
+  { key: 'fa3', date: 'Jul 8', title: 'Free Agency · Day 3', blurb: 'Finalize free agency: veteran minimums, asking prices drop.',
+    done: () => faDone(3) },
+  { key: 'dev', date: 'Aug–Sep', title: 'Player Development', blurb: 'Development coach, trainer, mentorship and jersey numbers.',
+    done: () => calFlags().dev },
+  { key: 'media', date: 'Sep 29', title: 'Media Day', blurb: 'The top 10 storylines heading into the season.',
+    done: () => calFlags().media },
+  { key: 'export', date: 'Oct 21', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
+    done: () => false },
+];
+const currentStep = () => CALENDAR.find(st => !st.done());
+const isStep = key => currentStep()?.key === key;
+
+// What finished steps show.
+function stepSummary(key) {
+  const L = league();
+  const yr = L.season.currentYear;
+  if (key === 'office') return `Running ${L.teams.filter(isUserTeam).map(t => t.shortName).join(', ') || 'no teams'}.`;
+  if (key === 'lottery') {
+    const n = L.season.news.filter(x => x.phase === 2 && x.category === 0 && x.type === 1).pop();
+    const t = n && L.teams.find(x => x.id === n.tid);
+    return t ? `${t.city} ${t.name}`.trim() + ' won the #1 pick.' : 'Draft order set.';
+  }
+  if (key === 'warroom') return `${boardStore().watch.length} on the watch list.`;
+  if (key === 'draft') {
+    const first = leagueRookies(L).find(r => r.pick === 1);
+    return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
+  }
+  if (key === 'camp') { const s = state.summer[state.leagueIdx]; return s ? `${s.players} rookies won back +${s.points} in summer league.` : 'Done.'; }
+  if (key.startsWith('fa')) {
+    const log = calFlags().faLog?.[+key[2]];
+    return log ? `${log.n} signings${log.wars ? `, ${log.wars} bidding war${log.wars > 1 ? 's' : ''}` : ''}${log.top ? `. Biggest: ${log.top}` : ''}.` : 'Done in the game.';
+  }
+  if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in rating upgrades across ${a.players} players.` : 'Done.'; }
+  if (key === 'media') return 'Storylines set.';
+  return '';
+}
+
+// The buttons for the step in progress.
+function stepActions(key) {
   const L = league();
   const s = L.season;
-  const idx = stepIndex(s);
-  const steps = `<ol class="timeline">${STEPS.map((st, i) => `<li class="${i < idx ? 'done' : i === idx ? 'now' : ''}">${esc(st.label)}</li>`).join('')}</ol>`;
-  let body;
-  if (idx < 0) {
-    body = `<p class="note small">This save is at ${esc(phaseName(s))}. To run the whole offseason here, load the save from the start of the offseason (Pre-Lottery): advance once in the game after the season ends.</p>`;
-  } else if (s.phase === 2) {
-    body = `<p class="note small">Preview the class on the Board and the odds on the Lottery tab, then draw the real lottery.</p>
-      <div class="grid2"><button class="btn" data-act="nav" data-to="draft">🎓 Draft Room</button><button class="btn focus" data-act="advLottery">🎱 Run the Lottery</button></div>`;
-  } else if (s.phase === 4) {
-    body = `<p class="note small">Run the draft on the Live tab. Finishing the draft moves the save to Post-Draft.</p>
-      <button class="btn focus" data-act="nav" data-to="draft">🎓 Go to the Live Draft</button>`;
-  } else if (s.phase === 5) {
-    const summer = state.summer[state.leagueIdx] || summerDone();
-    body = `<p class="note small">Summer league ${summer ? '<span class="up">done</span>' : '<span class="gold">not run yet</span>'} · rookie bump ${state.rookieAuto[state.leagueIdx] ? '<span class="up">done</span>' : '<span class="muted">optional</span>'}. Both are on the Development screen. Opening free agency signs the draft picks (first round on the rookie scale, second round for ${state.params.rookieR2Years} years).</p>
-      <div class="grid2"><button class="btn" data-act="nav" data-to="offseason">🏀 Summer League</button><button class="btn focus" data-act="advFreeAgency">✍️ Open Free Agency</button></div>`;
-  } else {
-    const fa = state.fa[state.leagueIdx];
-    const ran = fa && fa.day === s.currentDay && fa.stage === 'done';
-    const last = s.currentDay >= (s.signingDays || 3);
-    body = last
-      ? `<p class="note small">Last day: run free agency, then the offseason bump, mentorship and jersey numbers on the Development screen, and export.</p>
-        <div class="grid2"><button class="btn ${ran ? '' : 'focus'}" data-act="nav" data-to="fa">✍️ Free Agency</button><button class="btn ${ran ? 'focus' : ''}" data-act="nav" data-to="offseason">🏆 Development</button></div>
-        <button class="btn" data-act="nav" data-to="export">💾 Export Season File</button>`
-      : `<p class="note small">Free agency ${ran ? '<span class="up">done for today</span>' : '<span class="gold">not run today</span>'}. ${s.currentDay === 1 ? 'Day 2 adds the mid-level exception.' : 'Day 3 adds veteran minimums.'}</p>
-        <div class="grid2"><button class="btn ${ran ? '' : 'focus'}" data-act="nav" data-to="fa">✍️ Free Agency</button><button class="btn ${ran ? 'focus' : ''}" data-act="advDay">▶ Advance to Day ${s.currentDay + 1}</button></div>`;
+  switch (key) {
+    case 'office': return `<div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Pick Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
+    case 'lottery': return `<div class="grid2"><button class="btn" data-act="nav" data-to="draft">📊 Lottery Odds</button><button class="btn focus" data-act="advLottery">🎱 Run the Lottery</button></div>`;
+    case 'warroom': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Open the War Room</button><button class="btn" data-act="calDone" data-k="warroom">✅ Lock the Board</button></div>`;
+    case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
+    case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🏀 Summer League</button><button class="btn" data-act="calCamp">✅ Wrap Up</button></div>`;
+    case 'fa1': case 'fa2': case 'fa3': {
+      const day = +key[2];
+      if (s.phase === 5) return `<button class="btn big focus" data-act="advFreeAgency">✍️ Open Free Agency</button>`;
+      if (s.currentDay < day) return `<button class="btn big focus" data-act="advDay">▶ Start Day ${day}</button>`;
+      return `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
+    }
+    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
+    case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">📰 Storylines</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
+    case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
+    default: return '';
   }
-  return `<fieldset class="frame"><legend>Offseason</legend><div class="stack">${steps}${body}
+}
+
+function calendarCard() {
+  const s = league().season;
+  if (phaseRank(s) === 0) {
+    return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
+  }
+  const cur = currentStep();
+  return `<fieldset class="frame"><legend>${s.currentYear} Offseason</legend>
+    <ol class="calendar">${CALENDAR.map(st => {
+      const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
+      return `<li class="cal ${state_}">
+        <span class="cal-date">${esc(st.date)}</span>
+        <div class="cal-body">
+          <b>${state_ === 'done' ? '✓ ' : state_ === 'locked' ? '🔒 ' : ''}${esc(st.title)}</b>
+          <p class="note small">${esc(state_ === 'done' ? stepSummary(st.key) : st.blurb)}</p>
+          ${state_ === 'now' ? stepActions(st.key) : ''}
+        </div>
+      </li>`;
+    }).join('')}</ol>
     ${state.undo ? `<button class="btn small" data-act="undoAdvance">↺ Undo ${esc(state.undo.label)}</button>` : ''}
-  </div></fieldset>`;
+  </fieldset>`;
+}
+
+actions.calDone = d => { calFlags()[d.k] = true; state.undo = null; render(); };
+actions.calCamp = async () => {
+  if (summerEligible().length && !state.summer[state.leagueIdx] && !summerDone() &&
+    !(await confirmBox('Summer league hasn\'t run. Wrap up anyway? Rookies keep the full draft drop.', 'Wrap Up'))) return;
+  calFlags().camp = true;
+  state.undo = null;
+  render();
+};
+actions.calDev = () => { calFlags().dev = true; render(); };
+
+// Only the current step's screens open; anything else goes back to the calendar.
+const STEP_SCREENS = {
+  office: ['teams'], lottery: ['draft'], warroom: ['draft', 'prospect'], draft: ['draft', 'prospect', 'liveTrade'],
+  camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
+  dev: ['offseason', 'report', 'mentor', 'rookies'], media: ['storylines'], export: ['export'],
+};
+const ALWAYS = ['main', 'settings', 'roster', 'player'];
+function screenAllowed(name) {
+  if (!state.data || ALWAYS.includes(name)) return true;
+  if (phaseRank(league().season) === 0) return true;
+  const cur = currentStep();
+  return !!cur && (STEP_SCREENS[cur.key] || []).includes(name);
 }
 
 actions.advLottery = async () => {
@@ -480,7 +579,7 @@ actions.advFreeAgency = async () => {
   checkpoint('Open Free Agency');
   const signed = startFreeAgency(L, { r2Years: state.params.rookieR2Years });
   state.dirty = true;
-  render();
+  go('fa');
   toast(`Free agency is open: ${signed.length} rookies signed`);
 };
 
@@ -488,11 +587,11 @@ actions.advDay = async () => {
   const L = league();
   const fa = state.fa[state.leagueIdx];
   const ran = fa && fa.day === L.season.currentDay && fa.stage === 'done';
-  if (!(await confirmBox(`${ran ? '' : 'Free agency hasn\'t run today. '}Advance to Day ${L.season.currentDay + 1}?`, 'Advance'))) return;
+  if (!ran && !(await confirmBox(`Free agency hasn't run today. Start Day ${L.season.currentDay + 1} anyway?`, 'Start'))) return;
   checkpoint(`Day ${L.season.currentDay + 1}`);
   nextFreeAgencyDay(L);
   state.dirty = true;
-  render();
+  go('fa');
 };
 
 actions.undoAdvance = async () => {
@@ -504,8 +603,7 @@ actions.undoAdvance = async () => {
   state.undo = null;
   state.dirty = u.dirty;
   o.remove();
-  state.stack = [{ name: 'main', args: {} }];
-  render();
+  goHome();
   toast(`${u.label} undone`);
 };
 
@@ -537,35 +635,18 @@ screens.main = () => {
   layout({
     title: 'Main Menu',
     body: `
+      ${calendarCard()}
       <fieldset class="frame"><legend>Season File</legend>
         <dl class="info">
           <dt>Save</dt><dd>${esc(L.meta?.saveName || state.fileName)}</dd>
-          <dt>League</dt><dd>${esc(L.shortName)}</dd>
-          <dt>Year</dt><dd>${s.currentYear}</dd>
-          <dt>Mode</dt><dd>${esc(MODE_NAMES[s.mode] ?? s.mode)}</dd>
-          <dt>Phase</dt><dd>${esc(phaseName(s))}</dd>
-          <dt>Players</dt><dd>${players}</dd>
+          <dt>Phase in file</dt><dd>${esc(phaseName(s))}</dd>
           <dt>Your teams</dt><dd>${esc(yourTeams)}</dd>
-          <dt>Offseason bump</dt><dd>${auto ? `<span class="up">Applied</span>` : '<span class="muted">Not run</span>'}</dd>
-          <dt>In-game CPU progression</dt><dd>${s.cpuProgression ? '<span class="gold">On</span>' : 'Off'}</dd>
         </dl>
-        ${phaseWarning(s)}
       </fieldset>
-      ${timelineCard()}
-      <fieldset class="frame"><legend>Modes</legend>
-        <div class="stack">
-          <div class="grid2">
-            <button class="btn left" data-act="nav" data-to="draft"><span class="ico">🎓</span> Draft Room</button>
-            <button class="btn left" data-act="nav" data-to="fa"><span class="ico">✍️</span> Free Agency</button>
-            <button class="btn left" data-act="nav" data-to="offseason"><span class="ico">🏆</span> Development</button>
-            <button class="btn left" data-act="nav" data-to="storylines"><span class="ico">📰</span> Storylines</button>
-            <button class="btn left" data-act="nav" data-to="teams"><span class="ico">👥</span> Your Teams</button>
-            <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
-            <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
-            <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
-          </div>
-        </div>
-      </fieldset>
+      <div class="grid2">
+        <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
+        <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
+      </div>
       <p class="center muted small">Version ${APP_VERSION}</p>`,
   });
 };
@@ -799,10 +880,9 @@ screens.offseason = () => {
   const P = state.params;
   const bands = P.ageBands;
   layout({
-    title: 'Offseason Development',
+    title: 'Training Camp',
     body: `
-      ${phaseWarning(L.season)}
-      <fieldset class="frame"><legend>1 · Offseason Bump</legend>
+      <fieldset class="frame"><legend>Development Coach &amp; Trainer</legend>
         <div class="stack">
           ${auto ? `
             <dl class="info">
@@ -827,26 +907,26 @@ screens.offseason = () => {
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
       </fieldset>
-      ${rookieCard()}
-      ${contractCard()}
-      ${jerseyCard()}
       ${mentorCard()}
-      <fieldset class="frame"><legend>2 · Your Teams</legend>
-        <div class="stack">
-          ${mine.length ? mine.map(t => `
-            <button class="btn left" data-act="nav" data-to="roster" data-arg="${t.id}">${logoImg(t)} ${esc(t.city)} ${esc(t.name)}</button>`).join('')
-          : '<p class="note">No teams picked yet. Commissioner saves control every team, so tell the app which ones are yours.</p>'}
-          <button class="btn small" data-act="nav" data-to="teams">👥 ${mine.length ? 'Change' : 'Pick'} Your Teams</button>
-        </div>
-      </fieldset>
-      <fieldset class="frame"><legend>3 · Finish</legend>
-        <div class="stack">
-          <p class="note">Export the season file and replace the original in your Hoop Land saves folder, then continue the offseason and spend the points in-game.</p>
-          <button class="btn" data-act="nav" data-to="export">💾 Export Season File</button>
-        </div>
-      </fieldset>`,
+      ${jerseyCard()}
+      ${contractCard()}
+      <button class="btn big ${state.auto[state.leagueIdx] ? 'focus' : ''}" data-act="calDevBack" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up Training Camp</button>`,
   });
 };
+
+// Summer League step: rookies win back draft-drop ratings by age, then the
+// rookie bump.
+screens.camp = () => {
+  layout({
+    title: 'Summer League',
+    body: `<p class="note small">Rookies took the −${DRAFT_DROP} draft drop. Summer league gives some of it back by age (older rookies more), then the rookie bump adds upgrade points by age and draft round.</p>
+      ${rookieCard() || '<p class="note">No rookies this year.</p>'}
+      <button class="btn big" data-act="calCampBack">✅ Wrap Up Summer League</button>`,
+  });
+};
+actions.calCampBack = async () => { await actions.calCamp(); if (calFlags().camp) goHome(); };
+actions.calDevBack = () => { calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.'); };
+
 
 function summerEligible() {
   const orig = loadOriginals();
@@ -1749,11 +1829,20 @@ actions.resetBoard = async () => {
 actions.boardView = d => replace('draft', { tab: 'board', view: d.v });
 
 const DRAFT_TABS = [['live', 'Live'], ['board', 'Board'], ['lottery', 'Lottery'], ['mock', 'Mock'], ['trades', 'Trades']];
+// Draft-room tabs open in each calendar step.
+function draftTabsNow(L = league()) {
+  const step = phaseRank(L.season) === 0 ? null : currentStep()?.key;
+  if (step === 'lottery') return ['lottery'];
+  if (step === 'warroom') return ['board', 'mock', 'lottery', 'trades'];
+  if (step === 'draft') return ['live', 'board', 'trades'];
+  return DRAFT_TABS.map(([k]) => k).filter(k => k !== 'live' || liveReady(L));
+}
 const liveReady = (L = league()) => L.season.phase === PHASE_PRE_DRAFT && lotteryDone(L) && L.draftClass?.length > 0;
 
 screens.draft = (args) => {
   const L = league();
-  const tab = args.tab || (liveReady(L) ? 'live' : 'board');
+  const okTabs = draftTabsNow(L);
+  const tab = okTabs.includes(args.tab) ? args.tab : okTabs[0];
   if (!L.draftClass?.length && tab !== 'trades') {
     const rookies = leagueRookies(L);
     layout({
@@ -1775,7 +1864,8 @@ screens.draft = (args) => {
     });
     return;
   }
-  const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => k !== 'live' || liveReady(L)).map(([k, l]) =>
+  const allowed = draftTabsNow(L);
+  const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, board: draftBoard, lottery: draftLottery, mock: draftMock, trades: draftTrades }[tab](args);
   layout({ title: 'Draft Room', body: tabs + body.html, action: body.action });
@@ -2235,8 +2325,8 @@ actions.liveFinish = async () => {
   draftState().live = null;
   draftState().mock = null;
   state.dirty = true;
-  replace('draft', {});
-  toast(`Draft complete: ${res.drafted} drafted, ${res.undrafted} to free agency. Export to continue.`);
+  goHome();
+  toast(`Draft complete: ${res.drafted} drafted, ${res.undrafted} to free agency. Next up: Summer League.`);
 };
 
 // ---- Live trade builder
@@ -2479,7 +2569,7 @@ screens.fa = (args = {}) => {
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
     : s.stage === 'bidding'
       ? '<button class="btn big focus" data-act="faDecide">✅ Players Decide</button>'
-      : '<button class="btn" data-act="faUndo">↺ Undo Today</button>';
+      : `<button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button><button class="btn small" data-act="faUndo">↺ Undo Today</button>`;
   layout({
     title: `Free Agency · Day ${s.day}`,
     body: `
@@ -2522,6 +2612,7 @@ function faResults(s) {
     </div>${s.cleared ? `<p class="note muted small">The game's own CPU offers (${s.cleared.length}) were cleared so it doesn't sign players over the app's results.</p>` : ''}</fieldset>`;
 }
 
+actions.faHome = () => goHome();
 actions.faView = d => replace('fa', { view: d.v });
 actions.faAll = () => replace('fa', { ...state.stack[state.stack.length - 1].args, all: true });
 
@@ -2540,6 +2631,10 @@ actions.faDecide = async () => {
   if (!(await confirmBox('Let players decide? Signings are written to the file.', 'Decide'))) return;
   for (let i = 0; i < 2; i++) FA.raiseRound(L, s.market, s.bids, s.day, s.rng, s.used);
   s.signings = FA.decide(L, s.market, s.bids, s.day, s.used);
+  const top = [...s.signings].sort((x, y) => y.offer.sal * y.offer.yrs - x.offer.sal * x.offer.yrs)[0];
+  (calFlags().faLog ||= {})[s.day] = { n: s.signings.length, wars: s.signings.filter(x => x.bidders >= 3).length,
+    top: top && `${playerName(top.p)} to ${top.team.shortName} ($${top.offer.sal * top.offer.yrs}M)` };
+  state.undo = null;
   saveMle(s.used.mle);
   if (state.params.faClearCpuOffers) {
     s.cleared = L.contractOffers.map((o, i) => [o, i]).filter(([o]) => !state.userTeams.has(o.tid));
@@ -2563,6 +2658,7 @@ actions.faUndo = async () => {
   s.signings = [];
   s.cleared = null;
   s.stage = 'bidding';
+  if (calFlags().faLog) delete calFlags().faLog[s.day];
   render();
 };
 
@@ -2660,9 +2756,12 @@ screens.storylines = () => {
         </li>`).join('')}</ol>` : '<p class="note">Nothing to report yet.</p>'}
       <div class="stack">
         <button class="btn" data-act="copyStories">📋 Copy as Text</button>
+        ${isStep('media') ? '<button class="btn big focus" data-act="mediaDone">✅ Wrap Up Media Day</button>' : ''}
       </div>`,
   });
 };
+
+actions.mediaDone = () => { calFlags().media = true; goHome(); toast('Next up: Opening Night'); };
 
 actions.copyStories = async () => {
   const text = storylinesText(currentStorylines().stories);
