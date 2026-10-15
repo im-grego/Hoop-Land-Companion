@@ -44,6 +44,21 @@ export const DEFAULT_PARAMS = {
   gameNaturalGamesPct: 100,
   gameNaturalMinutesPct: 62.5,
   gameMinutes: 48,
+  // Trainer: production vs players of the same role and age (z-score of
+  // per-36 game score) moves potential and regression age.
+  trainerMinGames: 15,
+  trainerMinMpg: 10,
+  prodPotUpZ: 1.5,          // z at which standout production starts to raise potential
+  prodPotUpPerZ: 12,        // % per z above that
+  prodPotDownZ: -1.5,       // z at which poor production can cost potential
+  prodPotDownChance: 6,     // %
+  prodLongevityPerZ: 0.4,   // regression-delay chance x(1 + 0.4 z), clamped
+  regDownStructural: 25,    // % chance regressionAge drops a year after a structural injury
+  regDownNagging: 15,
+  regDownStandard: 8,
+  regDownProdZ: -1.0,       // veterans near regression with production this poor...
+  regDownProdChance: 15,    // ...can have regressionAge drop a year
+  regDownWindow: 3,         // "near regression": within this many years of regressionAge
   // Rare potential upgrade (+1 = half a star), scaled by minutes.
   potUpChance: 4,         // %
   potUpMaxAge: 25,
@@ -282,6 +297,56 @@ export function earnsNaturalLongevity(p, mpgInfo, ctx, params) {
   return !gameDid && gamesPct >= params.naturalGamesPct && minPct >= params.naturalMinutesPct;
 }
 
+// ---------------------------------------------------------------------------
+// Trainer: production relative to peers
+
+const ROLE = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
+
+// Per-36 game score for a season in a league, or null if they barely played.
+export function seasonGameScore(p, leagueIdx, year, params) {
+  const s = (p.stats || []).find(x => x.league === leagueIdx && x.yr === year);
+  if (!s) return null;
+  const t = (s.season || []).reduce((a, r) => {
+    for (const k of ['GP', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'FGM', 'FGA', 'FTM', 'FTA']) a[k] = (a[k] || 0) + r[k];
+    a.MIN = (a.MIN || 0) + r.MIN[0] / 60;
+    return a;
+  }, {});
+  if (!t.GP || t.GP < params.trainerMinGames || t.MIN / t.GP < params.trainerMinMpg) return null;
+  const gs = t.PTS + 0.7 * t.REB + 0.7 * t.AST + t.STL + 0.7 * t.BLK - 0.7 * t.TO
+    - 0.4 * (t.FGA - t.FGM) - 0.4 * (t.FTA - t.FTM);
+  return gs / t.MIN * 36;
+}
+
+// z-score of each player's game score against players of the same role
+// within 2 years of their age (widened to the whole role if too few peers).
+// Returns Map id -> z.
+export function productionScores(players, leagueIdx, year, params) {
+  const rows = players.map(p => ({ p, gs: seasonGameScore(p, leagueIdx, year, params) })).filter(r => r.gs != null);
+  const out = new Map();
+  for (const r of rows) {
+    let peers = rows.filter(x => ROLE(x.p.pos) === ROLE(r.p.pos) && Math.abs(x.p.age - r.p.age) <= 2);
+    if (peers.length < 8) peers = rows.filter(x => ROLE(x.p.pos) === ROLE(r.p.pos));
+    const m = peers.reduce((a, x) => a + x.gs, 0) / peers.length;
+    const sd = Math.sqrt(peers.reduce((a, x) => a + (x.gs - m) ** 2, 0) / peers.length) || 1;
+    out.set(r.p.id, (r.gs - m) / sd);
+  }
+  return out;
+}
+
+// Regression age can also drop a year: after an injury (by class) for anyone
+// near or in regression, or after a poor season from a veteran near it.
+export function maybeRegressionDown(p, injuryClass, z, params, rng) {
+  if (p.age < p.regressionAge - params.regDownWindow) return false;
+  let chance = 0;
+  if (injuryClass === 'structural') chance = params.regDownStructural;
+  else if (injuryClass === 'nagging') chance = params.regDownNagging;
+  else if (injuryClass) chance = params.regDownStandard;
+  if (z != null && z <= params.regDownProdZ) chance = Math.max(chance, params.regDownProdChance);
+  if (!chance || rng() * 100 >= chance) return false;
+  p.regressionAge--;
+  return true;
+}
+
 // Push regressionAge back a year: likeliest in the first year of decline.
 // `injury` is the injury class ('standard' | 'nagging' | 'structural') when
 // the player had a qualifying injury last season.
@@ -296,11 +361,17 @@ export function maybeLongevity(p, mult, params, rng, injury = null) {
   return true;
 }
 
-export function maybePotential(p, mult, params, rng) {
-  if (p.age > params.potUpMaxAge || p.pot >= POT_MAX) return false;
-  if (rng() * 100 >= params.potUpChance * mult) return false;
-  p.pot++;
-  return true;
+// Young players: standout production can raise potential, poor production
+// can lower it; plus a small random chance either way of a breakout.
+export function maybePotential(p, mult, params, rng, z = null) {
+  if (p.age > params.potUpMaxAge) return false;
+  let up = params.potUpChance * mult;
+  if (z != null && z >= params.prodPotUpZ) up += (z - params.prodPotUpZ + 1) * params.prodPotUpPerZ;
+  const down = z != null && z <= params.prodPotDownZ ? params.prodPotDownChance : 0;
+  const r = rng() * 100;
+  if (p.pot < POT_MAX && r < up) { p.pot++; return true; }
+  if (p.pot > POT_MIN && r >= 100 - down) { p.pot--; return true; }
+  return false;
 }
 
 // A serious injury last season can cost half a star of potential.
@@ -363,7 +434,8 @@ export function maybeSkills(p, points, params, profiles, rng) {
   }
 }
 
-// Run the offseason bump. `entries` are { p, team, leagueIdx, spend, injuryYear, totalGames, rolled }.
+// Run the offseason bump. `entries` are { p, team, leagueIdx, spend, injuryYear, totalGames, rolled,
+// production (Map id -> z) }.
 // `spend` spends the player's held points into ratings afterwards.
 // Returns Map pid -> points awarded.
 export function runProgression(entries, params, profiles) {
@@ -381,10 +453,16 @@ export function runProgression(entries, params, profiles) {
     // Seriously injured players are less likely to delay regression, risk
     // losing potential and can't gain it.
     const injured = !!risk?.chance;
+    const z = e.production?.get(e.p.id) ?? null;
+    // Trainer: regression age up (earned, or a production-scaled roll) or
+    // down (injury / poor production), never both.
     if (earnsNaturalLongevity(e.p, mpg, e, params)) e.p.regressionAge++;
-    else maybeLongevity(e.p, mult, params, rng, injured ? risk.cls : null);
+    else if (!maybeRegressionDown(e.p, injured ? risk.cls : null, z, params, rng)) {
+      const prod = z == null ? 1 : Math.max(0.2, Math.min(2, 1 + params.prodLongevityPerZ * z));
+      maybeLongevity(e.p, mult * prod, params, rng, injured ? risk.cls : null);
+    }
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
-    else maybePotential(e.p, mult, params, rng);
+    else maybePotential(e.p, mult, params, rng, z);
     maybeSkills(e.p, pts, params, profiles, rng);
     if (e.spend) spendHeldPoints(e.p, params, rng);
   }

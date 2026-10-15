@@ -2,7 +2,7 @@ import {
   parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
@@ -11,7 +11,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.11.4';
+const APP_VERSION = '0.12.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -51,13 +51,14 @@ function loadParams() {
       if (saved.version < 7) for (const k of ['softTissueParts', 'softTissueMult', 'softTissuePointsMult', 'structuralParts', 'structuralMult']) delete saved[k]; // v7 injury classes
       if (saved.version < 8) delete saved.structuralParts; // v8 added Ankle, Back
       if (saved.version < 9) for (const k of ['mentorMinAge', 'menteeMaxAge', 'mentorPosRange']) delete saved[k]; // v9 mentorship rules
+      if (saved.version < 10) for (const k of ['regDownProdZ', 'regDownProdChance']) delete saved[k]; // v10 trainer tuning
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 9 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 10 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -466,7 +467,9 @@ function lastSeasonYear() {
 function bumpContext() {
   const L = league();
   const injuryYear = lastSeasonYear();
-  return { leagueIdx: state.leagueIdx, injuryYear, totalGames: L.season.totalGames, rolled: L.season.currentYear > injuryYear };
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has('production')) cache.set('production', productionScores(leaguePlayers(L, true).map(e => e.p), state.leagueIdx, injuryYear, state.params));
+  return { leagueIdx: state.leagueIdx, injuryYear, totalGames: L.season.totalGames, rolled: L.season.currentYear > injuryYear, production: cache.get('production') };
 }
 
 const rookieIds = () => new Set(leagueRookies(league()).map(r => r.p.id));
@@ -494,19 +497,20 @@ function applyBump(seed) {
     players++;
     points += n;
   }
-  let longevity = 0, potUps = 0, potDowns = 0, earned = 0;
+  let longevity = 0, potUps = 0, potDowns = 0, earned = 0, regDowns = 0;
   for (const e of entries) {
     if (earnsNaturalLongevity(e.p, lastSeasonMpg(e.p, li), e, state.params)) earned++;
     if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
     const d = diffPlayer(e.p, snapOf(e.p));
     if (d.regDelta > 0) longevity++;
+    if (d.regDelta < 0) regDowns++;
     if (d.potDelta > 0) potUps++;
     if (d.potDelta < 0) potDowns++;
   }
   const all = (state.awards[li] ||= new Map());
   for (const p of vetPlayers()) all.delete(p.id);
   for (const [k, v] of awards) all.set(k, v);
-  state.auto[li] = { seed, players, points, mine, longevity, earned, potUps, potDowns, total: entries.length, spent: state.params.spendCpuPoints };
+  state.auto[li] = { seed, players, points, mine, longevity, earned, regDowns, potUps, potDowns, total: entries.length, spent: state.params.spendCpuPoints };
   state.dirty = true;
 }
 
@@ -599,8 +603,9 @@ screens.offseason = () => {
               <dt>${state.params.bumpMode === 'train' ? 'Rating upgrades' : 'Points awarded'}</dt><dd class="up">+${auto.points}</dd>
               <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
               <dt>Regression delayed</dt><dd class="up">${auto.longevity ?? 0}${auto.earned ? ` <span class="small">(${auto.earned} earned)</span>` : ''}</dd>
-              <dt>Potential upgrades</dt><dd class="up">${auto.potUps ?? 0}</dd>
-              <dt>Lost potential (injury)</dt><dd class="down">${auto.potDowns ?? 0}</dd>
+              <dt>Regression sooner</dt><dd class="down">${auto.regDowns ?? 0}</dd>
+              <dt>Potential up</dt><dd class="up">${auto.potUps ?? 0}</dd>
+              <dt>Potential down</dt><dd class="down">${auto.potDowns ?? 0}</dd>
               <dt>CPU points</dt><dd>${auto.spent ? 'Spent into ratings' : 'Held for the game'}</dd>
               <dt>Seed</dt><dd>${auto.seed}</dd>
             </dl>
@@ -610,7 +615,7 @@ screens.offseason = () => {
               <button class="btn" data-act="undoAuto">↺ Undo</button>
             </div>`
           : `
-            <p class="note">${P.bumpMode === 'train' ? `Development coach: players aged ${bands[bands.length - 1][0]} and under get real rating upgrades (e.g. MID 13/18 → 15/18), more for younger players and heavier minutes. Ceilings rise with the rating; free throws stop at 16.` : `Players aged ${bands[bands.length - 1][0]} and under earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game.`} Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to injury (or keep re-injuring the same thing) risk losing potential. Every team gets the same rules, so CPU teams stay even.</p>
+            <p class="note">${P.bumpMode === 'train' ? `Development coach: players aged ${bands[bands.length - 1][0]} and under get real rating upgrades (e.g. MID 13/18 → 15/18), more for younger players and heavier minutes. Ceilings rise with the rating; free throws stop at 16.` : `Players aged ${bands[bands.length - 1][0]} and under earn upgrade points, more for younger players and heavier minutes. Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game.`} Veterans entering regression may have it delayed a year (${P.regFirstYearChance}% chance in year one), young players get a rare potential upgrade (${P.potUpChance}%), and players who missed ${P.injuryMinGames}+ games to injury (or keep re-injuring the same thing) risk losing potential. The trainer also weighs last season's production against players of the same role and age: standouts can gain potential or delay regression, poor seasons and injuries can cost potential or bring regression a year sooner. Every team gets the same rules, so CPU teams stay even.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
             <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
@@ -901,8 +906,8 @@ function injuryBadge(p) {
 }
 
 function longevityBadges(p, d) {
-  return (d.regDelta ? `<span class="badge lvl">Regress ${p.regressionAge - d.regDelta + 1}→${p.regressionAge + 1}</span>` : '') +
-    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">POT ▼ injury</span>' : '') +
+  return (d.regDelta ? `<span class="badge ${d.regDelta > 0 ? 'lvl' : 'down-b'}">Regress ${p.regressionAge - d.regDelta + 1}→${p.regressionAge + 1}</span>` : '') +
+    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">POT ▼</span>' : '') +
     injuryBadge(p);
 }
 
@@ -966,8 +971,9 @@ screens.player = (args) => {
         </div>
         <p class="note muted small" style="margin-top:8px">Spent in-game. Green = added this offseason${awardOf(p) ? ` (bump gave +${awardOf(p)})` : ''}.</p>
       </fieldset>` : ''}
-      <fieldset class="frame"><legend>Longevity &amp; Potential</legend>
+      <fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
+          ${productionText(p)}
           <div class="pts-row">
             <span class="grow">Regression age<br><span class="muted small">${regressionText(p)}</span></span>
             <button class="btn square" data-act="regAge" data-dir="-1" aria-label="Earlier regression">−</button>
@@ -1078,6 +1084,14 @@ function injuryText(p) {
   const w = r.worst;
   const linger = [r.sameType ? `${r.sameType}× same injury` : '', r.sameArea ? `${r.sameArea}× same area` : ''].filter(Boolean).join(', ');
   return `<br><span class="small down">${yr}: ${esc(injuryName(w))}, ${r.games} games out · ${CLASS_LABEL[r.cls]}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
+}
+
+function productionText(p) {
+  const z = bumpContext().production.get(p.id);
+  if (z == null) return '<p class="note muted small">Production: not enough minutes last season to judge.</p>';
+  const word = z >= 1.5 ? 'standout' : z >= 0.5 ? 'above average' : z > -0.5 ? 'average' : z > -1.5 ? 'below average' : 'poor';
+  const group = p.pos <= 2 ? 'guards' : p.pos <= 5 ? 'wings' : 'bigs';
+  return `<p class="note small">Last season's production vs ${group} aged ${p.age - 2}–${p.age + 2}: <b class="${z >= 0.5 ? 'up' : z <= -0.5 ? 'down' : ''}">${word}</b> (${z >= 0 ? '+' : ''}${z.toFixed(1)} σ)</p>`;
 }
 
 function regressionText(p) {
@@ -1202,6 +1216,12 @@ const STEP_FIELDS = {
     ['benchMpg', 'Bench MPG (penalty below)', 1, 0, 48],
     ['regFirstYearChance', 'Delay Regression: 1st Year %', 5, 0, 100],
     ['regLaterChance', 'Delay Regression: Later Years %', 5, 0, 100],
+    ['prodPotUpPerZ', 'Trainer: Potential Up % Per σ', 2, 0, 50],
+    ['prodPotDownChance', 'Trainer: Potential Down %', 1, 0, 50],
+    ['regDownStructural', 'Trainer: Regress Sooner, Structural %', 5, 0, 100],
+    ['regDownNagging', 'Trainer: Regress Sooner, Nagging %', 5, 0, 100],
+    ['regDownStandard', 'Trainer: Regress Sooner, Standard %', 1, 0, 100],
+    ['regDownProdChance', 'Trainer: Regress Sooner, Poor Season %', 1, 0, 100],
     ['naturalGamesPct', 'Earned Longevity: % Of Games', 5, 0, 100],
     ['naturalMinutesPct', 'Earned Longevity: % Of Minutes', 2.5, 0, 100],
     ['naturalMinAge', 'Earned Longevity: Min Age', 1, 18, 45],

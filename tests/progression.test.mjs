@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS, lastSeasonMpg } from '../js/savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, AWARD_CATEGORIES, injuryPotChance, earnsNaturalLongevity } from '../js/progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, AWARD_CATEGORIES, injuryPotChance, earnsNaturalLongevity, productionScores } from '../js/progression.js';
 import { teamRecord } from '../js/draft.js';
 
 const text = readFileSync(process.argv[2], 'utf8');
@@ -13,7 +13,8 @@ function run(spend, params = P) {
   const data = parseSave(text);
   const L = data.seasonLeagues[0];
   const injuryYear = Math.max(...L.teams.map(t => teamRecord(t).yr || 0));
-  const ctx = { leagueIdx: 0, injuryYear, totalGames: L.season.totalGames, rolled: L.season.currentYear > injuryYear };
+  const production = productionScores(leaguePlayers(L).map(e => e.p), 0, injuryYear, params);
+  const ctx = { leagueIdx: 0, injuryYear, totalGames: L.season.totalGames, rolled: L.season.currentYear > injuryYear, production };
   const entries = leaguePlayers(L).map(e => ({ ...e, ...ctx, spend }));
   const snaps = new Map(entries.map(e => [e.p.id, snapshot(e.p)]));
   const awards = runProgression(entries, params, buildSkillProfiles(entries.map(e => e.p)));
@@ -23,7 +24,7 @@ function run(spend, params = P) {
 // 1. Points mode: points are added to season.ap, ratings untouched.
 {
   const { entries, snaps, awards, injuryYear } = run(false, { ...P, bumpMode: 'points' });
-  let bumped = 0, total = 0, delayed = 0, potUps = 0, potDowns = 0, atRisk = 0, earnedN = 0;
+  let bumped = 0, total = 0, delayed = 0, potUps = 0, potDowns = 0, atRisk = 0, earnedN = 0, sooner = 0;
   for (const { p } of entries) {
     const d = diffPlayer(p, snaps.get(p.id));
     const award = awards.get(p.id);
@@ -41,18 +42,28 @@ function run(spend, params = P) {
     if (award) bumped++;
     total += award;
     const snap = snaps.get(p.id);
-    assert.ok(d.regDelta === 0 || d.regDelta === 1, 'regression delayed at most a year');
+    assert.ok([-1, 0, 1].includes(d.regDelta), 'regression age moves a year at most');
     const earned = earnsNaturalLongevity(p, lastSeasonMpg(p, 0), entries[0], P);
+    const z = entries[0].production.get(p.id) ?? null;
     if (earned) { assert.equal(d.regDelta, 1, 'earned longevity is guaranteed'); earnedN++; }
-    if (d.regDelta && !earned) assert.ok(p.age > snap.regressionAge, 'random delay only once past regression age');
-    if (d.regDelta) delayed++;
+    if (d.regDelta > 0 && !earned) assert.ok(p.age > snap.regressionAge, 'random delay only once past regression age');
+    if (d.regDelta < 0) {
+      assert.ok(p.age >= snap.regressionAge - P.regDownWindow, 'only near or in regression');
+      assert.ok(injuryPotChance(p, injuryYear, P) > 0 || (z != null && z <= P.regDownProdZ), 'sooner only after injury or a poor season');
+      sooner++;
+    }
+    if (d.regDelta > 0) delayed++;
     const risk = injuryPotChance(p, injuryYear, P);
     assert.ok([-1, 0, 1].includes(d.potDelta), 'potential moves by 1 at most');
     if (d.potDelta > 0) { assert.ok(!risk && p.age <= P.potUpMaxAge && p.pot <= 10, 'young, uninjured, max 10'); potUps++; }
-    if (d.potDelta < 0) { assert.ok(risk > 0 && p.pot >= 4, 'only seriously injured players lose potential'); potDowns++; }
+    if (d.potDelta < 0) {
+      assert.ok(p.pot >= 4, 'never below 4');
+      assert.ok(risk > 0 || (p.age <= P.potUpMaxAge && z != null && z <= P.prodPotDownZ), 'injury or a poor young season');
+      potDowns++;
+    }
     if (risk) atRisk++;
   }
-  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points, ${delayed} regressions delayed (${earnedN} earned), ${potUps} potential upgrades, ${potDowns}/${atRisk} injured players lost potential`);
+  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points, ${delayed} regressions delayed (${earnedN} earned), ${sooner} sooner, ${potUps} potential upgrades, ${potDowns} potential down (${atRisk} injured at risk)`);
 }
 
 // 1b. Train mode (default): ratings go up directly, ap untouched.
