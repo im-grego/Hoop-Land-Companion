@@ -64,10 +64,11 @@ export function ceilingVector(p) {
 const MAX_PROJECTED_GAIN = 6;
 export const tierCeilingTotal = pot => 140 + 14 * (Math.min(pot, 10) - 8);
 
-export function projectedCeiling(p) {
+// `pot` lets callers project from a scouted (fogged) potential.
+export function projectedCeiling(p, pot = p.pot) {
   const v = ceilingVector(p);
   const total = v.reduce((a, b) => a + b, 0);
-  const target = tierCeilingTotal(p.pot);
+  const target = tierCeilingTotal(pot);
   if (total > target) {
     const f = target / total;
     return v.map(x => Math.max(DRAFT_FLOOR, Math.round(x * f)));
@@ -95,6 +96,17 @@ export const TIERS = [
   [10, 'Legend'], [9, 'Hall of Fame'], [8, 'All-Star'], [7, 'Starter'], [6, 'Role Player'], [0, 'Bench Depth'],
 ];
 export const tierFor = pot => TIERS.find(([min]) => pot >= min)[1];
+
+// Fog of war: scouting reports are usually right, but `chance`% of the time
+// they read a prospect one potential step high or low. Stable per prospect
+// and `salt` (e.g. the save), so reloading doesn't reveal the truth.
+export function scoutedPot(p, salt = 0, chance = 25) {
+  const rng = mulberry32((salt ^ Math.imul(p.id, 2654435761)) >>> 0);
+  if (rng() * 100 >= chance) return p.pot;
+  let d = rng() < 0.5 ? -1 : 1;
+  if (p.pot + d > 10 || p.pot + d < 4) d = -d;
+  return p.pot + d;
+}
 
 // Comparison pool: active players + free agents (current ratings), retirees
 // and Hall of Famers (best of their two stored values). This year's rookies
@@ -148,10 +160,10 @@ export function findComps(v, body, pool, n = 3, excludeId = null, establishedOnl
     .map(e => ({ name: playerName(e.p), group: e.group, ht: e.ht, wt: e.wt, pos: e.p.pos, tier: tierFor(e.p.pot), sim: Math.max(0, Math.round(100 - e.dist * 3)), id: e.p.id }));
 }
 
-export function prospectComps(p, pool, bands = DEFAULT_RECOVERY) {
+export function prospectComps(p, pool, bands = DEFAULT_RECOVERY, pot = p.pot) {
   return {
     floor: findComps(floorVector(p, bands), bodyOf(p), pool, 3, p.id),
-    ceiling: findComps(projectedCeiling(p), bodyOf(p), pool, 3, p.id, true),
+    ceiling: findComps(projectedCeiling(p, pot), bodyOf(p), pool, 3, p.id, true),
   };
 }
 
@@ -217,10 +229,10 @@ function positionStats(league, pos) {
 }
 
 // `rookieLine` = the projected rookie ratings (skill attrs) if known.
-export function scoutingReport(p, league) {
+export function scoutingReport(p, league, pot = p.pot) {
   const st = positionStats(league, p.pos);
   const pos = POSITIONS[p.pos] ?? '';
-  const proj = projectedCeiling(p);
+  const proj = projectedCeiling(p, pot);
   const role = roleOf(p.pos);
   const UP = { ...IMPACT[role], ...UP_IMPACT[role] };
   const DOWN = { ...IMPACT[role], ...DOWN_IMPACT[role] };
@@ -255,10 +267,10 @@ export function scoutingReport(p, league) {
 const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
 const topN = (a, n) => [...a].sort((x, y) => y - x).slice(0, n);
 
-export function prospectValue(p, bands = DEFAULT_RECOVERY) {
+export function prospectValue(p, bands = DEFAULT_RECOVERY, pot = p.pot) {
   const ceil = mean(topN(ceilingVector(p), 8));
   const floor = mean(topN(floorVector(p, bands), 8));
-  return ceil * 0.65 + floor * 0.35 + p.pot * 0.4 + (21 - p.age) * 0.25;
+  return ceil * 0.65 + floor * 0.35 + pot * 0.4 + (21 - p.age) * 0.25;
 }
 
 // ---------------------------------------------------------------------------
@@ -399,21 +411,22 @@ export function rookieFloorVector(p, original = null, bands = DEFAULT_RECOVERY) 
   });
 }
 
-export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY) {
+export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY, pot = p.pot) {
   return {
     floor: findComps(rookieFloorVector(p, original, bands), bodyOf(p), pool, 3, p.id),
-    ceiling: findComps(projectedCeiling(p), bodyOf(p), pool, 3, p.id, true),
+    ceiling: findComps(projectedCeiling(p, pot), bodyOf(p), pool, 3, p.id, true),
   };
 }
 
 // Best available for a team: value plus a small bonus for positions the
 // roster is thin at.
-export function cpuPick(team, available) {
+// `valueOf` lets the mock draft use scouted values.
+export function cpuPick(team, available, valueOf = p => prospectValue(p)) {
   const counts = {};
   for (const p of team.roster) counts[p.pos] = (counts[p.pos] || 0) + 1;
   let best = null, bestScore = -Infinity;
   for (const p of available) {
-    const score = prospectValue(p) + (counts[p.pos] ? 0 : 0.6);
+    const score = valueOf(p) + (counts[p.pos] ? 0 : 0.6);
     if (score > bestScore) { best = p; bestScore = score; }
   }
   return best;

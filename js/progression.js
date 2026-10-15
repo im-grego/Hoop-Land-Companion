@@ -93,7 +93,8 @@ export const DEFAULT_PARAMS = {
   rookieIncludeUndrafted: true,
   // Summer league right after the draft: [maxAge, drop points won back]
   recoveryBands: [[19, 0], [21, 1], [99, 2]],
-  // Draft room
+  // Draft room: % of scouting reports that read potential one step off
+  scoutVariance: 25,
   lotteryFormat: 'auto',  // auto | 321 | classic
   lotteryDraws: 4,        // classic format only
   draftRounds: 2,

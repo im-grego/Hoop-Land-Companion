@@ -83,7 +83,10 @@ Available once the file has a draft class (offseason, before the lottery).
   age. Each rating shows its projected loss. Ceiling = their top ratings. Comps weigh the 12
   skill ratings, position, height and weight against active players, free agents, retirees and Hall of Famers.
   Every comp is tagged by its potential: 10 Legend, 9 Hall of Fame, 8 All-Star, 7 Starter, 6 Role Player,
-  5 and under Bench Depth; each prospect also gets a "Projects as" tier from their own potential.
+  5 and under Bench Depth. A prospect's own potential is never shown (no stars or tier in the draft room).
+- **Fog of war:** projections use a scouted potential that's usually right but, 25% of the time by default, reads one
+  step high or low (stable per prospect and save; Settings → Rookies → Scouting Report Accuracy). The board order,
+  projected ceilings, ceiling comps and CPU mock picks all use it.
 - **Projected ceilings:** the game caps every generated prospect's ceiling at ~140 total (an All-Star line) regardless
   of potential, while prime players top out at about 140 + 14 per potential step (pot 9 ≈ 154, pot 10 ≈ 168,
   pot 7 ≈ 126). Ceilings are projected to the prospect's tier — extra points spread over their strengths (≤ +6 each),

@@ -6,11 +6,11 @@ import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlo
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
-  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling,
+  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.9.1';
+const APP_VERSION = '0.9.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1303,7 +1303,9 @@ screens.settings = (args) => {
       options('1st Round', 'rookieR1Mult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]) +
       options('2nd Round', 'rookieR2Mult', [[0.75, '×0.75'], [1, '×1.0'], [1.25, '×1.25']]) +
       options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
-      options('Undrafted Multiplier', 'rookieUndraftedMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']]);
+      options('Undrafted Multiplier', 'rookieUndraftedMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']]) +
+      options('Scouting Report Accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]) +
+      `<p class="note muted small">How often a prospect's scouting report reads their potential one step high or low (0% / 15% / 25% / 40%).</p>`;
   } else {
     body = `<p class="note">Optional: let the bump also unlock or level up skills. Off (0%) by default.</p>` +
       STEP_FIELDS.skills.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('') +
@@ -1325,6 +1327,7 @@ screens.settings = (args) => {
 actions.setTab = d => replace('settings', { tab: d.t });
 actions.setOpt = d => {
   state.params[d.k] = JSON.parse(d.v);
+  if (d.k === 'scoutVariance') state.compCache = {};
   if (d.k === 'lotteryFormat' && state.data) { draftState().lottery = null; draftState().mock = null; }
   saveParams();
   render();
@@ -1393,7 +1396,7 @@ function compPool() {
 
 function compsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
-  if (!cache.has(p.id)) cache.set(p.id, prospectComps(p, compPool(), state.params.recoveryBands));
+  if (!cache.has(p.id)) cache.set(p.id, prospectComps(p, compPool(), state.params.recoveryBands, scoutPot(p)));
   return cache.get(p.id);
 }
 
@@ -1404,19 +1407,29 @@ const compLine = c => c.floor[0] || c.ceiling[0]
   : '';
 
 function scoutList(p) {
-  const r = scoutingReport(p, league());
+  const r = scoutingReport(p, league(), scoutPot(p));
   return `<ul class="scout">
     ${r.strengths.map(s => `<li class="plus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
     ${r.weakness ? `<li class="minus"><b>${esc(r.weakness.text)}</b><span class="muted small"> · ${esc(r.weakness.detail)}</span></li>` : ''}
   </ul>`;
 }
 
+// Fogged potential for draft-room views (stable per save + prospect).
+function saveSalt() {
+  const s = `${league().meta?.saveName || ''}:${league().season.currentYear}`;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+const scoutPot = p => scoutedPot(p, saveSalt(), state.params.scoutVariance);
+const scoutValue = p => prospectValue(p, state.params.recoveryBands, scoutPot(p));
+
 function rookieCompsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
   const key = `r${p.id}`;
   const pending = !state.summer[state.leagueIdx] && !summerDone();
   const orig = pending ? loadOriginals()[p.id] : null;
-  if (!cache.has(key)) cache.set(key, rookieComps(p, compPool(), orig, state.params.recoveryBands));
+  if (!cache.has(key)) cache.set(key, rookieComps(p, compPool(), orig, state.params.recoveryBands, scoutPot(p)));
   return cache.get(key);
 }
 
@@ -1425,7 +1438,7 @@ const posName = p => POSITIONS[p.pos] ?? p.pos;
 
 function boardOrder() {
   const bands = state.params.recoveryBands;
-  return [...league().draftClass].sort((a, b) => prospectValue(b, bands) - prospectValue(a, bands));
+  return [...league().draftClass].sort((a, b) => scoutValue(b) - scoutValue(a));
 }
 
 function draftedMap() {
@@ -1450,7 +1463,7 @@ screens.draft = (args) => {
           const c = rookieCompsFor(r.p);
           return `<button class="prow ${isUserTeam(r.team) ? 'sel' : ''}" data-act="openPlayer" data-id="${r.p.id}">
             <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
-            <span class="right"><span class="stars">${stars(r.p.pot)}</span><br><span class="small">${r.team ? esc(r.team.shortName) : 'FA'}</span></span>
+            <span class="right"><span class="small">${r.team ? esc(r.team.shortName) : 'FA'}</span></span>
             <span class="meta">${esc(posName(r.p))} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
             <span class="chg">${compLine(c)}</span>
           </button>`;
@@ -1480,9 +1493,9 @@ function draftBoard() {
         const pk = drafted.get(p.id);
         return `<button class="prow" data-act="openProspect" data-id="${p.id}">
           <span class="name">${i + 1}. ${esc(playerName(p))}</span>
-          <span class="right"><span class="stars">${stars(p.pot)}</span><br>
+          <span class="right">
             ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
-          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${tierTag(tierFor(p.pot))}</span>
+          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
           <span class="chg">${compLine(c)}</span>
         </button>`;
       }).join('')}</div>`,
@@ -1496,7 +1509,7 @@ screens.prospect = (args) => {
   if (!p) { back(); return; }
   const c = compsFor(p);
   const rec = recoveryFor(p.age, state.params.recoveryBands);
-  const fv = floorVector(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p);
+  const fv = floorVector(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p, scoutPot(p));
   const compList = (list, cls) => list.map(x => `<div class="comp">
     <span class="grow"><b class="${cls}">${esc(x.name)}</b> ${tierTag(x.tier)}<br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span>
     <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
@@ -1505,9 +1518,8 @@ screens.prospect = (args) => {
     body: `
       <div>
         <h2 class="team-title">${esc(playerName(p))}</h2>
-        <p class="note">${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb · <span class="stars">${stars(p.pot)}</span></p>
+        <p class="note">${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note muted small">${esc(p.home || '')}${p.history?.coll ? ' · College' : ''}</p>
-        <p class="note">Projects as: ${tierTag(tierFor(p.pot))}</p>
       </div>
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       <div class="grid2">
@@ -1524,7 +1536,7 @@ screens.prospect = (args) => {
           <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
         </div>`).join('')}
         ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
-        <p class="note muted small" style="margin-top:8px">Ceiling is projected to a ${esc(tierFor(p.pot))} line: the game caps every prospect's ceiling at an All-Star level, so higher-potential players get the extra in their strengths (lower tiers scale down). Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
+        <p class="note muted small" style="margin-top:8px">Ceiling is projected from our scouting: the game caps every prospect's ceiling at an All-Star level, so the projection adds to their strengths for high-upside prospects (and trims it for low-upside ones). Scouting isn't perfect. Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
       </fieldset>`,
   });
 };
@@ -1623,7 +1635,7 @@ function simMock(untilUser) {
   for (const pk of mock.picks) {
     if (pk.pid != null) continue;
     if (untilUser && isUserTeam(pk.owner)) break;
-    const p = cpuPick(pk.owner, mockAvailable(mock));
+    const p = cpuPick(pk.owner, mockAvailable(mock), scoutValue);
     if (!p) break;
     pk.pid = p.id;
   }
@@ -1650,7 +1662,7 @@ function draftMock() {
           return `<div class="lot-row ${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}">
             <span class="pk">${pk.overall}</span>${logoImg(pk.owner)}
             <span class="grow">${esc(pk.owner.shortName)}${traded ? ` <span class="muted small">via ${esc(pk.orig.shortName)}</span>` : ''}${pk.rd > 1 ? ` <span class="muted small">R${pk.rd}</span>` : ''}<br>
-              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></span><br><span class="small muted">${compLine(compsFor(p))}</span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
+              ${p ? `<span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)}</span><br><span class="small muted">${compLine(compsFor(p))}</span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
           </div>`;
         }).join('')}
       </div>`,
@@ -1663,11 +1675,11 @@ actions.mockReset = () => { draftState().mock = null; render(); };
 actions.mockChoose = () => {
   const mock = ensureMock();
   const pk = mock.picks.find(p => p.pid == null);
-  const avail = mockAvailable(mock).sort((a, b) => prospectValue(b) - prospectValue(a));
+  const avail = mockAvailable(mock).sort((a, b) => scoutValue(b) - scoutValue(a));
   const o = overlay(`
     <p class="note">${esc(pk.owner.shortName)} · Pick #${pk.overall}</p>
     <div class="stack" style="max-height:60vh;overflow:auto">
-      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span><span class="stars">${stars(p.pot)}</span></button>`).join('')}
+      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span></button>`).join('')}
     </div>
     <button class="btn off" data-close>Cancel</button>`);
   o.addEventListener('click', e => {
