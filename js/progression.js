@@ -38,6 +38,9 @@ export const DEFAULT_PARAMS = {
   injuryPotPerGame: 0.3,  // % chance per game missed
   injuryOldAge: 30,       // at this age and up the chance is x1.25
   injuryPotMax: 50,       // % cap
+  injurySevStep: 0.1,     // severity 1-4 -> x0.8 .. x1.1
+  injuryLowerBodyMult: 1.2,
+  injuryLongevityCut: 50, // % cut to the regression-delay chance after a serious injury
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -205,10 +208,11 @@ export function runRookieBump(entries, params) {
 }
 
 // Push regressionAge back a year: likeliest in the first year of decline.
-export function maybeLongevity(p, mult, params, rng) {
+export function maybeLongevity(p, mult, params, rng, injured = false) {
   const year = p.age - p.regressionAge;
   if (year < 1) return false;
-  const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult;
+  const cut = injured ? 1 - params.injuryLongevityCut / 100 : 1;
+  const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut;
   if (rng() * 100 >= chance) return false;
   p.regressionAge++;
   return true;
@@ -225,7 +229,9 @@ export function maybePotential(p, mult, params, rng) {
 export function injuryPotChance(p, year, params) {
   const inj = seriousInjury(p, year);
   if (!inj || inj.gamesOut < params.injuryMinGames) return 0;
-  const c = inj.gamesOut * params.injuryPotPerGame * (p.age >= params.injuryOldAge ? 1.25 : 1);
+  const sev = 0.7 + params.injurySevStep * Math.min(4, inj.majorSeverity);
+  const area = inj.lowerBody ? params.injuryLowerBodyMult : 1;
+  const c = inj.gamesOut * params.injuryPotPerGame * sev * area * (p.age >= params.injuryOldAge ? 1.25 : 1);
   return Math.min(params.injuryPotMax, c);
 }
 
@@ -271,9 +277,10 @@ export function runProgression(entries, params, profiles) {
     const pts = pointsFor(e.p, mpg, params, rng);
     awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
-    maybeLongevity(e.p, mult, params, rng);
-    // Seriously injured players risk losing potential and can't gain it.
+    // Seriously injured players are less likely to delay regression, risk
+    // losing potential and can't gain it.
     const injured = e.injuryYear != null && injuryPotChance(e.p, e.injuryYear, params) > 0;
+    maybeLongevity(e.p, mult, params, rng, injured);
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
     else maybePotential(e.p, mult, params, rng);
     maybeSkills(e.p, pts, params, profiles, rng);

@@ -29,7 +29,8 @@ Every team gets the same rules, so CPU teams stay even with yours.
   of decline have a 30% chance (10% later on, scaled by minutes) to have `regressionAge` pushed back a year.
 - **Potential:** players 25 and under have a rare 4% chance (scaled by minutes) of +1 potential (half a star, max 10).
 - **Injuries:** players who missed 20+ games to a serious injury last season (`history.injuries`, major severity)
-  risk −1 potential: 0.3% per game missed (×1.25 at 30+), capped at 50%. They can't also get the potential upgrade.
+  risk −1 potential: 0.3% per game missed, ×0.8–1.1 by severity (1–4), ×1.2 for lower-body injuries, ×1.25 at 30+,
+  capped at 50%. They can't also get the potential upgrade, and their regression-delay chance is cut in half.
 - Regression age and potential can also be adjusted by hand on any player.
 - Optional skill unlocks/level-ups (off by default).
 - Runs are **seeded**, so the same seed reproduces the same offseason. Re-roll for a different one.

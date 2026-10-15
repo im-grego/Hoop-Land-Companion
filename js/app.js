@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.1';
+const APP_VERSION = '0.6.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1050,6 +1050,8 @@ const STEP_FIELDS = {
     ['injuryMinGames', 'Injury: Min Games Missed', 5, 0, 82],
     ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
+    ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],
+    ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 10, 0, 100],
   ],
   skills: [
     ['newSkillChance', 'New Skill Chance %', 5, 0, 100],
