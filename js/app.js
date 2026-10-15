@@ -17,7 +17,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.18.1';
+const APP_VERSION = '0.18.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -227,7 +227,7 @@ function go(name, args = {}) {
 // The league's logo: the NBA mark for NBA leagues, else Hoop Land's.
 function leagueBadge(L) {
   const nba = L.leagueType === 0 && /NBA|National Basketball/i.test(`${L.shortName} ${L.leagueName}`);
-  return `<img class="league-logo" src="icons/${nba ? 'nba.png' : 'hoopland-logo.png'}" alt="">`;
+  return `<img class="league-logo" src="icons/${nba ? 'nba.png' : L.leagueType !== 0 ? 'league-ball.png' : 'hoopland-logo.png'}" alt="">`;
 }
 
 function goHome() {
@@ -1893,7 +1893,7 @@ function draftBoard(args = {}) {
           <span class="name">${i + 1}. ${watch.has(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
           <span class="right">
             ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
-          <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
+          <span class="meta">${COLLEGE_LOGO_SM}${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
           <span class="chg">${compLine(compsFor(p))}</span>
         </button>`;
         return view === 'mine'
@@ -1904,12 +1904,16 @@ function draftBoard(args = {}) {
   };
 }
 
+// College prospects carry the college league's logo.
+const COLLEGE_LOGO = '<img class="college-logo" src="icons/league-ball.png" alt="">';
+const COLLEGE_LOGO_SM = '<img class="college-logo sm" src="icons/league-ball.png" alt="">';
+
 function collegeBox(p) {
   const c = collegeLine(p, state.data.seasonLeagues);
   if (!c) return '';
   const f = (v, d = 1) => (v == null ? '—' : v.toFixed(d));
   return `<fieldset class="frame"><legend>College · ${c.yr}</legend>
-    <p class="note small muted" style="margin-bottom:8px">${esc(c.team)} · ${c.gp} games · ${f(c.mpg)} MPG</p>
+    <p class="note small college-head">${COLLEGE_LOGO}<span><b>${esc(c.team)}</b><br><span class="muted">${c.gp} games · ${f(c.mpg)} MPG</span></span></p>
     <div class="statline">
       ${[['PTS', f(c.pts)], ['REB', f(c.reb)], ['AST', f(c.ast)], ['STL', f(c.stl)], ['BLK', f(c.blk)],
          ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)]]
@@ -1949,8 +1953,8 @@ screens.prospect = (args) => {
     title: 'Prospect',
     body: `
       <div>
-        <h2 class="team-title">${esc(playerName(p))}</h2>
-        <p class="note">${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
+        <h2 class="team-title">${COLLEGE_LOGO}${esc(playerName(p))}</h2>
+        <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note muted small">${esc(p.home || '')}</p>
       </div>
       <button class="btn small ${boardStore().watch.includes(p.id) ? 'on focus' : 'off'}" data-act="toggleWatch" data-id="${p.id}">${boardStore().watch.includes(p.id) ? '★ On Watch List' : '☆ Add to Watch List'}</button>

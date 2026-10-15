@@ -517,3 +517,7 @@ fieldset.frame > legend {
 }
 @keyframes dribble { from { transform: translateY(-6px); } to { transform: translateY(6px); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.college-logo { width: 34px; height: 34px; object-fit: contain; flex: none; }
+.college-logo.sm { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; }
+.college-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.opts .btn { white-space: nowrap; min-width: 0; padding: 8px 10px; font-size: 15px; }

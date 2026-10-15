@@ -1,6 +1,6 @@
 // Offline support: cache-first for the app shell, stale-while-revalidate for
 // fonts and team logos.
-const VERSION = 'hlc-v0.18.1';
+const VERSION = 'hlc-v0.18.2';
 const SHELL = [
   './',
   'index.html',
@@ -21,6 +21,7 @@ const SHELL = [
   'icons/hoopland-logo.png',
   'icons/nba.png',
   'icons/banner.jpg',
+  'icons/league-ball.png',
   'icons/icon-192.png',
   'icons/icon-512.png',
 ];
