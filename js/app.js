@@ -17,7 +17,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.17.0';
+const APP_VERSION = '0.18.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ function logoUrl(url) {
 function logoImg(team, cls = 'logo-sm') {
   const u = logoUrl(team.logoURL);
   if (!u) return '';
-  return `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`;
+  return `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
 }
 
 function toast(msg) {
@@ -200,6 +200,7 @@ function layout({ title, left = '', right = '', body, action = null }) {
   const t = esc(title);
   $app.innerHTML = `
     <div class="header">
+      ${state.stack.length > 1 ? `<button class="btn back" data-act="back" aria-label="Back">${BACK_ARROW}</button>` : ''}
       ${left}
       <div class="marquee" role="heading" aria-level="1" aria-label="${t}">
         <div class="marquee-track" aria-hidden="true"><span>${t}</span><span>${t}</span></div>
@@ -207,10 +208,7 @@ function layout({ title, left = '', right = '', body, action = null }) {
       ${right}
     </div>
     <main class="panel">${body}</main>
-    <div class="bottom">
-      ${state.stack.length > 1 ? `<button class="btn back" data-act="back" aria-label="Back">${BACK_ARROW}</button>` : '<span></span>'}
-      ${action ? `<button class="btn action" data-act="${action.act}">${esc(action.label)}</button>` : ''}
-    </div>`;
+    ${action ? `<div class="bottom"><button class="btn action" data-act="${action.act}">${esc(action.label)}</button></div>` : ''}`;
   window.scrollTo(0, 0);
 }
 
@@ -474,7 +472,7 @@ function stepSummary(key) {
     const first = leagueRookies(L).find(r => r.pick === 1);
     return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
   }
-  if (key === 'camp') { const s = state.summer[state.leagueIdx]; return s ? `${s.players} rookies won back +${s.points} in summer league.` : 'Done.'; }
+  if (key === 'camp') { const s = state.summer[state.leagueIdx]; return s ? `${s.players} rookies won back +${s.points} in summer league.` : 'Done in the game.'; }
   if (key.startsWith('fa')) {
     const log = calFlags().faLog?.[+key[2]];
     return log ? `${log.n} signings${log.wars ? `, ${log.wars} bidding war${log.wars > 1 ? 's' : ''}` : ''}${log.top ? `. Biggest: ${log.top}` : ''}.` : 'Done in the game.';

@@ -14,7 +14,7 @@
   --up: #6dff9c;
   --down: #ff7a8a;
   --radius: 6px;
-  --font: "Lato", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font: "Exo 2", "Trebuchet MS", system-ui, -apple-system, sans-serif;
   --pixel: "Silkscreen", "Courier New", monospace;
   color-scheme: dark;
 }
@@ -25,7 +25,7 @@ html, body { margin: 0; height: 100%; }
 
 body {
   font-family: var(--font);
-  font-weight: 700;
+  font-weight: 600;
   color: var(--text);
   background-color: var(--bg);
   background-image:
@@ -403,3 +403,97 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .cal.locked { opacity: 0.45; }
 .cal.now { background: var(--btn); border: 3px solid var(--gold); padding: 10px; margin: 6px 0; }
 .cal.now .cal-date { color: var(--gold); }
+
+/* =====================================================================
+   Game skin: Hoop Land's menus — Exo-style semibold text, dotted LED
+   title boards, thick light-blue frames with a dark drop edge.
+   ===================================================================== */
+
+/* Header: back box | LED title | optional nav box */
+.header { gap: 10px; }
+.header .back {
+  width: 64px; min-height: 0; padding: 0; flex: none;
+  border-color: var(--cyan); font-size: 30px;
+}
+.header .back svg { width: 34px; height: 24px; }
+.marquee { height: 64px; border-width: 4px; }
+.marquee-track span {
+  font-family: var(--pixel);
+  font-weight: 700;
+  font-size: 32px;
+  letter-spacing: 6px;
+  line-height: 1;
+}
+/* Dot-matrix gaps: thin dark lines every 4px so letters read as LED dots. */
+.marquee::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    repeating-linear-gradient(90deg, var(--marquee) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(0deg, var(--marquee) 0 1px, transparent 1px 4px);
+}
+
+/* Panels and frames: roomier, consistent padding */
+#app { gap: 14px; padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); }
+.panel { padding: 18px 14px; gap: 18px; }
+fieldset.frame { padding: 16px 14px 14px; border-width: 4px; }
+fieldset.frame > legend {
+  font-size: 15px; font-weight: 800; letter-spacing: 1px; padding: 0 10px;
+}
+.stack { gap: 12px; }
+.grid2 { gap: 12px; }
+
+/* Buttons: game weights, unselected text in the dim cyan */
+.btn { font-weight: 700; letter-spacing: .2px; }
+.btn.off { color: var(--dim); }
+.tabs { gap: 10px; padding-bottom: 8px; }
+.tabs .btn { font-size: 16px; min-height: 48px; }
+
+/* Text */
+.note { font-size: 15px; font-weight: 500; line-height: 1.45; color: #cfe5ff; }
+.note.small, .small { font-size: 13.5px; }
+.note b { color: var(--text); font-weight: 700; }
+.info { gap: 8px 16px; font-size: 15px; }
+.info dt { font-weight: 600; }
+.info dd { font-weight: 700; }
+
+/* Rows: like the game's roster bars */
+.list { gap: 8px; }
+.prow, .lot-row, .pick, .story, .skill { border-width: 3px; box-shadow: 0 3px 0 var(--btn-shadow); }
+.prow { padding: 10px 12px; gap: 4px 12px; }
+.prow .name { font-size: 17px; font-weight: 700; }
+.prow .meta { font-size: 13.5px; font-weight: 600; }
+.prow .chg { font-size: 13px; font-weight: 500; }
+.lot-row { padding: 8px 10px; gap: 10px; }
+.pick { padding: 8px; }
+
+/* Calendar */
+.cal { grid-template-columns: 84px 1fr; gap: 12px; padding: 14px 4px; }
+.cal-date { font-size: 13px; letter-spacing: 1px; }
+.cal-body { gap: 8px; }
+.cal-body b { font-size: 18px; font-weight: 800; }
+.cal.now { padding: 14px 12px; margin: 8px 0; box-shadow: 0 4px 0 var(--btn-shadow); }
+
+/* Bottom bar holds only the action now */
+.bottom { justify-content: flex-end; }
+.bottom:empty { display: none; }
+.bottom .action { font-weight: 800; }
+
+/* Overlays */
+.overlay .box { padding: 22px 18px; gap: 16px; box-shadow: 0 6px 0 var(--btn-shadow); }
+.toast { font-weight: 700; bottom: calc(24px + env(safe-area-inset-bottom)); }
+
+@media (min-width: 700px) {
+  .marquee { height: 80px; }
+  .marquee-track span { font-size: 44px; letter-spacing: 8px; }
+  .header .back { width: 96px; }
+}
+
+/* The step in progress gets the full width: date above the title. */
+.cal.now { grid-template-columns: 1fr; gap: 6px; }
+.cal.now .cal-date { padding-top: 0; }
+.cal.now .grid2 { grid-template-columns: 1fr 1fr; }
+.cal.now .btn { min-height: 54px; font-size: 16px; padding: 10px 8px; }
+.cal-body > .btn, .cal-body .grid2 { width: 100%; }
+
+/* Tabs stay on one line. */
+.tabs .btn { white-space: nowrap; min-width: 0; padding: 10px 12px; font-size: 15px; }
