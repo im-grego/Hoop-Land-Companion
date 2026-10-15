@@ -1,7 +1,7 @@
 // Usage: node tests/progression.test.mjs <path-to-season-file>
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS } from '../js/savefile.js';
+import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS, UNLEVELED_SKILLS } from '../js/savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles } from '../js/progression.js';
 
 const text = readFileSync(process.argv[2], 'utf8');
@@ -23,6 +23,7 @@ for (const { p } of entries) {
     if (c !== snaps.get(p.id).attributes[k][0]) assert.ok(c <= ceil && c <= 20, 'within ceiling');
     assert.ok(c - snaps.get(p.id).attributes[k][0] <= DEFAULT_PARAMS.maxPerAttr);
   }
+  for (const s of p.skills) if (UNLEVELED_SKILLS.includes(s.id)) assert.equal(s.level, 1, 'unleveled skills stay at 1');
   if (p.age >= 30) assert.equal(d.points, 0, '30+ gets no growth by default');
 }
 // Determinism: same seed => same output

@@ -1,10 +1,10 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
 
-const APP_VERSION = '0.1.2';
+const APP_VERSION = '0.1.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -617,9 +617,10 @@ screens.player = (args) => {
               <div><span class="code">${esc(s.id)}</span> <span class="hint">${esc(skillHint(s.id))}</span></div>
               <div class="ctrls">
                 <button class="btn ${s.equipped ? 'on' : 'off'}" data-act="equip" data-i="${i}" aria-label="Toggle equipped">${s.equipped ? 'ON' : 'OFF'}</button>
+                ${isLeveled(s.id) ? `
                 <button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down">−</button>
                 <span class="lv">Lv ${s.level}</span>
-                <button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>
+                <button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>` : '<span class="lv muted small">No levels</span>'}
                 <button class="btn" data-act="skillDel" data-i="${i}" aria-label="Remove skill">✕</button>
               </div>
             </div>`).join('')}

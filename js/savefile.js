@@ -81,6 +81,9 @@ export const PHYSICAL = ['STR', 'SPD', 'STM'];
 export const ATTR_MAX = 20;
 export const attrMin = k => (PHYSICAL.includes(k) ? 8 : 0);
 export const SKILL_MAX_LEVEL = 3;
+// Skills with no levels: they are only equipped or not (stored as level 1).
+export const UNLEVELED_SKILLS = ['CLA', 'DIM', 'HIG', 'SPA'];
+export const isLeveled = id => !UNLEVELED_SKILLS.includes(id);
 
 // Verified against the in-game roster screen (PG = 0, F = 5, C = 8).
 export const POSITIONS = ['PG', 'G', 'SG', 'GF', 'SF', 'F', 'PF', 'FC', 'C'];

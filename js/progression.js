@@ -4,7 +4,7 @@
 // toward `ceiling`; the game's own regression handles decline, so this only
 // ever adds.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, lastSeasonMpg, activeSkills } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
 
 export const DEFAULT_PARAMS = {
   seed: 2027,
@@ -144,7 +144,7 @@ export function maybeSkills(p, spent, params, profiles, rng) {
     if (pick) unlockSkill(p, pick.id);
   }
   if (p.age <= params.levelUpMaxAge && rng() * 100 < params.levelUpChance) {
-    const up = activeSkills(p).filter(s => s.level < SKILL_MAX_LEVEL);
+    const up = activeSkills(p).filter(s => isLeveled(s.id) && s.level < SKILL_MAX_LEVEL);
     const s = up.length ? up[Math.floor(rng() * up.length)] : null;
     if (s) s.level++;
   }
