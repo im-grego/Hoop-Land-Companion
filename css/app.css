@@ -275,10 +275,19 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .toast {
-  position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);
-  background: var(--marquee); border: 3px solid var(--cyan); padding: 10px 16px; z-index: 60;
-  max-width: calc(100% - 32px); text-align: center;
+  position: fixed; left: 50%; top: calc(10px + env(safe-area-inset-top)); z-index: 60;
+  width: min(420px, calc(100% - 24px)); display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: 18px; text-align: left; line-height: 1.25;
+  color: #fff; background: rgba(14, 20, 40, .82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, .14); box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+  transform: translate(-50%, calc(-100% - 30px)); transition: transform .45s cubic-bezier(.2, 1.2, .4, 1), opacity .3s;
 }
+.toast.in { transform: translate(-50%, 0); }
+.toast.out { transform: translate(-50%, calc(-100% - 30px)); opacity: 0; transition: transform .35s ease-in, opacity .35s; }
+.toast img { width: 34px; height: 34px; border-radius: 8px; flex: none; }
+.toast > span { display: flex; flex-direction: column; min-width: 0; }
+.toast b { font-size: 14px; }
+.toast > span > span { font-size: 13px; font-weight: 500; opacity: .85; }
 
 @media (min-width: 700px) {
   .marquee-track span { font-size: 34px; }
@@ -476,7 +485,7 @@ fieldset.frame > legend {
 
 /* Overlays */
 .overlay .box { padding: 22px 18px; gap: 16px; box-shadow: 0 6px 0 var(--btn-shadow); }
-.toast { font-weight: 700; bottom: calc(24px + env(safe-area-inset-bottom)); }
+
 
 @media (min-width: 700px) {
   .marquee { height: 80px; }

@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.0';
+const APP_VERSION = '0.27.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -140,13 +140,19 @@ function logoImg(team, cls = 'logo-sm') {
   return `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
 }
 
-function toast(msg) {
+// A notification that slides down from the top, like a text message.
+// `detail` adds a second line (trade alerts show the deal).
+function toast(msg, detail = '', ms = detail ? 4000 : 2400) {
   document.querySelector('.toast')?.remove();
   const t = document.createElement('div');
   t.className = 'toast';
-  t.textContent = msg;
+  t.setAttribute('role', 'status');
+  t.innerHTML = `<img src="icons/icon-192.png" alt=""><span><b>${esc(msg)}</b>${detail ? `<span>${esc(detail)}</span>` : ''}</span>`;
+  t.addEventListener('click', () => t.classList.add('out'));
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2200);
+  requestAnimationFrame(() => t.classList.add('in'));
+  setTimeout(() => t.classList.add('out'), ms);
+  setTimeout(() => t.remove(), ms + 400);
 }
 
 function overlay(html) {
@@ -2339,7 +2345,7 @@ screens.prospect = (args) => {
   if (!p) { back(); return; }
   const c = compsFor(p);
   const fv = rookieLine(p, state.params.recoveryBands), cv = projectedCeiling(p, scoutPot(p));
-  // How much of a dip to expect after the draft: younger prospects win
+  // How much of a dip to expect after the draft: older prospects win
   // more back in summer league.
   const loss = fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0) / SKILL_ATTRS.length;
   const dip = loss < 1.2 ? ['Small', 'up'] : loss < 2.2 ? ['Moderate', 'gold'] : ['Big', 'down'];
@@ -2351,7 +2357,7 @@ screens.prospect = (args) => {
       <div>
         <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span> Draft-day dip: <b class="${dip[1]}">${dip[0]}</b> <span class="muted">(the older the prospect, the less they win back in summer league)</span></p>
+        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span> Draft-day dip: <b class="${dip[1]}">${dip[0]}</b> <span class="muted">(older prospects get more of it back in the age adjustment)</span></p>
       </div>
       <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
@@ -2667,7 +2673,6 @@ function draftLive() {
   return {
     html: `
       ${state.userTeams.size ? '' : '<p class="note muted small">Select your teams to draft for them.</p>'}
-      ${tradeAlert(live)}
       ${done ? draftRecap(live, order) : `
       ${user ? '<div class="you-clock">🚨 You are on the clock</div>' : ''}
       <div class="clock-card ${user ? 'mine' : ''}">
@@ -2709,14 +2714,6 @@ function tradesBox(live) {
   </div></fieldset>`;
 }
 
-// "There has been a trade" banner for the latest trade, shown until two
-// more picks are in.
-function tradeAlert(live) {
-  const t = live.trades[live.trades.length - 1];
-  if (!t || Object.keys(live.sel).length - (t.at ?? 0) > 1) return '';
-  return `<div class="trade-alert"><b>🚨 Trade Alert</b><span>${esc(t.text)}</span></div>`;
-}
-
 // After the last pick: every pick with the rookie's projected level after
 // the draft dip and summer league, in team colors; sort by pick or level.
 function draftRecap(live, order) {
@@ -2736,7 +2733,7 @@ function draftRecap(live, order) {
     ${live.trades.length ? tradesBox(live) : ''}
     <fieldset class="frame"><legend>Draft Recap</legend>
       <div class="opts recap-sort"><button class="btn small ${sortBy === 'pick' ? 'on focus' : 'off'}" data-act="recapSort" data-s="pick">By Pick</button><button class="btn small ${sortBy === 'level' ? 'on focus' : 'off'}" data-act="recapSort" data-s="level">Pro Readiness</button></div>
-      <p class="note muted small" style="margin:6px 0 8px">Level after the draft drop and age adjustment: who's most ready to play now.</p>
+      <p class="note muted small" style="margin:6px 0 8px">Level after the draft drop and the age adjustment (older rookies get more of it back): who's most ready to play now.</p>
       <div class="stack recap">${rows.map(r => `<div class="recap-row" ${color(r.team)}>
         <span class="pk">${r.q.overall}</span>${logoImg(r.team)}
         <span class="grow"><b>${esc(playerName(r.p))}</b><br><span class="small">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y · ${classYear(r.p)}</span></span>
@@ -2810,7 +2807,7 @@ function liveExecute(A, B, cpu = false) {
   draftState().offers = null;
   draftState().mock30 = null;
   state.dirty = true;
-  toast('🚨 Trade Alert!');
+  toast('🚨 Trade Alert', text);
 }
 
 function liveUndo(t) {
