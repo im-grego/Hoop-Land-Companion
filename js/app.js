@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.3';
+const APP_VERSION = '0.27.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -662,6 +662,7 @@ screens.main = () => {
           <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(phaseName(s))} · Your teams: ${esc(yourTeams)}</span></div>
       </div>
       ${calendarCard()}
+      ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> Your Roster</button>' : ''}
       <div class="grid2">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
@@ -1329,6 +1330,50 @@ screens.roster = (args) => {
 // ---------------------------------------------------------------------------
 // Player editor
 
+// League ranks for last season's per-game numbers. Qualified = played at
+// least half as many games as the league leader in games.
+const RANK_STATS = [['PTS', 'Points'], ['REB', 'Rebounds'], ['AST', 'Assists'], ['STL', 'Steals'], ['BLK', 'Blocks']];
+function seasonRanks(yr) {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  const key = `ranks:${yr}`;
+  if (!cache.has(key)) {
+    const rows = [];
+    for (const { p } of leaguePlayers(league(), true)) {
+      const st = (p.stats || []).find(x => x.league === state.leagueIdx && x.yr === yr);
+      const t = { GP: 0 };
+      for (const r of st?.season || []) { t.GP += r.GP; for (const [k] of RANK_STATS) t[k] = (t[k] || 0) + r[k]; }
+      if (t.GP) rows.push({ id: p.id, gp: t.GP, pg: Object.fromEntries(RANK_STATS.map(([k]) => [k, t[k] / t.GP])) });
+    }
+    const minGp = Math.max(...rows.map(r => r.gp), 0) / 2;
+    const q = rows.filter(r => r.gp >= minGp);
+    const ranks = new Map(rows.map(r => [r.id, { pg: r.pg, gp: r.gp, qualified: r.gp >= minGp, rank: {} }]));
+    for (const [k] of RANK_STATS) [...q].sort((a, b) => b.pg[k] - a.pg[k]).forEach((r, i) => { ranks.get(r.id).rank[k] = i + 1; });
+    cache.set(key, { ranks, of: q.length });
+  }
+  return cache.get(key);
+}
+// One compact line: "PTS 21.3 (12th) · REB 6.8 (54th) ...".
+function rankLine(p) {
+  const r = seasonRanks(lastSeasonYear()).ranks.get(p.id);
+  if (!r) return '';
+  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+  return `<p class="note small">${RANK_STATS.map(([k]) => `${k} ${r.pg[k].toFixed(1)}${r.rank[k] ? ` <span class="${r.rank[k] <= 10 ? 'gold' : 'muted'}">(${ord(r.rank[k])})</span>` : ''}`).join(' · ')}</p>`;
+}
+function rankBox(p) {
+  const yr = lastSeasonYear();
+  const { ranks, of } = seasonRanks(yr);
+  const r = ranks.get(p.id);
+  if (!r) return '';
+  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+  return `<fieldset class="frame"><legend>${yr} Season</legend>
+    <div class="statline rank-line">${RANK_STATS.map(([k, name]) => {
+      const n = r.rank[k];
+      return `<div><span class="muted small">${k}</span><b>${r.pg[k].toFixed(1)}</b><span class="small ${n && n <= 10 ? 'gold' : n && n <= 30 ? 'up' : 'muted'}">${n ? ord(n) : '—'}</span></div>`;
+    }).join('')}</div>
+    <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} players with enough games.` : `${r.gp} games: not enough to be ranked.`}</p>
+  </fieldset>`;
+}
+
 screens.player = (args) => {
   const e = findPlayer(args.id);
   if (!e) { back(); return; }
@@ -1347,6 +1392,7 @@ screens.player = (args) => {
         <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="gold">Lv ${levelOf(p)}</span> · <span class="stars">${stars(p.pot)}</span></p>
         <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
       </div>
+      ${rankBox(p)}
       ${p.season?.ap ? `<fieldset class="frame"><legend>Upgrade Points</legend>
         <div class="stack">
           ${CATEGORIES.map((c, i) => `<div class="pts-row">
@@ -3317,6 +3363,7 @@ actions.faOffer = d => {
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
     box.querySelector('.box').innerHTML = `
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'down' : 'gold'}">Lv ${levelOf(m.p)}</span> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)}${FA.isRestricted(L, m.p) ? ' · <span class="badge new">RFA</span>' : ''}</p>
+      ${rankLine(m.p)}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${quick(team)}

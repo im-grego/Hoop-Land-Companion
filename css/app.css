@@ -786,3 +786,6 @@ details.dbx { padding: 10px 12px; }
 details.dbx summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 details.dbx[open] summary { margin-bottom: 8px; }
 
+
+.rank-line > div { gap: 1px; }
+.rank-line b { font-size: 17px; }
