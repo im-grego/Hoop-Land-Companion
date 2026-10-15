@@ -15,6 +15,7 @@ import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers } from './livedraft.js';
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue } from './trades.js';
 import * as FA from './freeagency.js';
+import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
@@ -34,7 +35,8 @@ const state = {
   userTeams: new Set(),    // team ids the user controls (current league)
   auto: {},                // leagueIdx -> bump summary
   rookieAuto: {},          // leagueIdx -> rookie bump summary
-  summer: {},              // leagueIdx -> { players, points } once summer league ran this session
+  summer: {},              // leagueIdx -> { players, points } once the age adjustment ran this session
+  summerTour: {},          // leagueIdx -> { result, reward } once the summer league tournament ran
   mentor: {},              // leagueIdx -> { seed, list: [{ teamId, mentorId, menteeId, skill, cpu }] }
   contracts: {},           // leagueIdx -> rookie contract changes (for undo)
   fa: {},                  // leagueIdx -> free agency day state
@@ -454,7 +456,7 @@ const CALENDAR = [
     done: () => calFlags().warroom || phaseRank(league().season) >= 3 },
   { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
-  { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies are age adjusted and get a chance to earn development.',
+  { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'No more collusion: the market opens and the big deals happen today. Draft picks sign their rookie contracts.',
     done: () => faDone(1) },
@@ -927,11 +929,10 @@ screens.offseason = () => {
 // rookie bump.
 screens.camp = () => {
   const ageDone = !!state.summer[state.leagueIdx] || summerDone();
-  const devDone = !!state.rookieAuto[state.leagueIdx];
   layout({
     title: 'Summer League',
-    body: leagueRookies(league()).length ? `${ageSection()}${devSection(ageDone)}` : '<p class="note">No rookies this year.</p>',
-    action: ageDone && devDone ? { act: 'calCampBack', label: 'Advance to Free Agency' } : null,
+    body: `${leagueRookies(league()).length ? ageSection() : '<p class="note">No rookies this year.</p>'}${tourSection(ageDone || !leagueRookies(league()).length)}`,
+    action: ageDone || state.summerTour[state.leagueIdx] ? { act: 'calCampBack', label: 'Wrap Up Summer League' } : null,
   });
 };
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
@@ -985,7 +986,7 @@ function ageSection() {
   if (done) {
     const mine = leagueRookies(L).filter(r => isUserTeam(r.team));
     body = `<dl class="info">
-        <dt>Points restored</dt><dd class="up">+${done.points}</dd>
+        <dt>Points back, league-wide</dt><dd class="up">+${done.points}</dd>
         <dt>Rookies adjusted</dt><dd>${done.players}</dd>
       </dl>
       ${mine.length ? `<div class="stack">${mine.map(r => {
@@ -1001,9 +1002,8 @@ function ageSection() {
     const eligible = summerEligible();
     const total = leagueRookies(L).filter(r => r.round > 0 || state.params.rookieIncludeUndrafted).length;
     body = eligible.length
-      ? `<p class="note">Hoop Land takes ${DRAFT_DROP} points off every rating when a prospect is drafted, which buries the high-ceiling rookies. The age adjustment gives part of it back, the same on every skill, by age only:</p>
+      ? `<p class="note">Hoop Land knocks ${DRAFT_DROP} points off every rating at the draft. Older rookies have less time to grow, so they get part of it back right away, the same on every skill:</p>
         <ul class="age-bands">${bandText}</ul>
-        <p class="note muted small">A rating never goes above where it was before the draft.</p>
         <button class="btn big focus" data-act="runSummer">▶ Run Age Adjustment</button>`
       : `<p class="note">The age adjustment needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
     if (eligible.length < total) body += `<label class="btn small">📂 Load Pre-Draft Save<input type="file" id="origInput"></label>`;
@@ -1011,28 +1011,49 @@ function ageSection() {
   return `<fieldset class="frame"><legend>1 · Age Adjustment</legend><div class="stack">${body}</div></fieldset>`;
 }
 
-// Step 2: summer league. Rookies can earn development (upgrade points, by
-// age: younger players earn more), spent in the game.
-function devSection(ageDone) {
-  const rookies = leagueRookies(league());
-  const r = state.rookieAuto[state.leagueIdx];
+// Step 2: the summer league tournament (young cores; your team gets a small
+// boost for reaching the final).
+function tourSection(ready) {
+  const L = league();
+  const t = state.summerTour[state.leagueIdx];
   let body;
-  if (r) {
-    body = `<dl class="info">
-        <dt>Upgrade points earned</dt><dd class="up">+${r.points}</dd>
-        <dt>Your rookies</dt><dd class="up">+${r.mine}</dd>
-      </dl>
-      <p class="note muted small">Upgrade points are spent on ratings in the game.</p>
-      <button class="btn focus" data-act="nav" data-to="rookies">📋 View Rookies</button>
-      ${state.params.commissioner ? '<button class="btn small" data-act="undoRookies">↺ Undo</button>' : ''}`;
-  } else if (!ageDone) {
-    body = '<p class="note muted">Run the age adjustment first.</p>';
+  if (!t) {
+    body = ready
+      ? `<p class="note">Every team's rookies and second-year players head to Las Vegas. Reach the final and a couple of your young players pick up a rating point; win it and three of them get two.</p>
+        <button class="btn big focus" data-act="runTour">🏀 Play Summer League</button>`
+      : '<p class="note muted">Run the age adjustment first.</p>';
   } else {
-    body = `<p class="note">${rookies.length} rookies play summer league and can earn development: upgrade points to spend in the game. Younger rookies earn more.</p>
-      <button class="btn big focus" data-act="runRookies">🏀 Run Summer League</button>`;
+    const r = t.result;
+    const [a, b] = r.final.teams.map(id => L.teams.find(x => x.id === id));
+    const sum = q => q.reduce((x, y) => x + y, 0);
+    const heads = r.final.quarters[0].map((_, i) => i < 4 ? `Q${i + 1}` : i === 4 ? 'OT' : `${i - 3}OT`);
+    const mvpTeam = L.teams.find(x => x.id === r.mvp?.tid);
+    body = `<p class="note small muted">Championship game</p>
+      <div class="box-score" style="--cols:${heads.length}">
+        <span></span>${heads.map(h => `<span class="muted">${h}</span>`).join('')}<span class="muted">F</span>
+        ${[a, b].map((tm, k) => `<span class="bs-team ${tm.id === r.final.winner ? 'win' : ''}">${logoImg(tm)}${esc(tm.shortName)}</span>${r.final.quarters[k].map(v => `<span>${v}</span>`).join('')}<b class="${tm.id === r.final.winner ? 'gold' : ''}">${sum(r.final.quarters[k])}</b>`).join('')}
+      </div>
+      <p class="note">🏆 <b>${esc(L.teams.find(x => x.id === r.final.winner).city)} ${esc(L.teams.find(x => x.id === r.final.winner).name)}</b> win the Summer League title.</p>
+      ${r.mvp ? `<div class="mvp-card">${logoImg(mvpTeam)}<span class="grow"><span class="small muted">Summer League MVP</span><br><b>${esc(mvpName(L, r.mvp))}</b> <span class="muted small">${esc(mvpTeam.shortName)}</span><br><span class="small">${r.mvp.ppg} PPG · ${r.mvp.rpg} RPG · ${r.mvp.apg} APG</span></span></div>` : ''}
+      ${t.reward.length ? `<p class="note small up">${t.reward.map(x => `${esc(playerName(x.p))} ${Object.keys(x.gains).map(k => `${k} +1`).join(', ')}`).join(' · ')}</p>` : ''}`;
   }
   return `<fieldset class="frame"><legend>2 · Summer League</legend><div class="stack">${body}</div></fieldset>`;
 }
+
+actions.runTour = () => {
+  const L = league();
+  const li = state.leagueIdx;
+  if (state.summerTour[li]) return;
+  const result = runSummerLeague(L, state.data.seasonLeagues, (state.params.seed ^ (L.season.currentYear * 7919)) >>> 0);
+  const mine = result.final.teams.map(id => L.teams.find(t => t.id === id)).find(isUserTeam);
+  const reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
+  state.summerTour[li] = { result, reward };
+  state.compCache = {};
+  state.dirty = true;
+  render();
+  const champ = L.teams.find(t => t.id === result.final.winner);
+  toast(`${champ.shortName} win Summer League${mine ? (mine === champ ? ': your rookies earned a boost!' : ': you reached the final') : ''}`);
+};
 
 // ---- Mentorship
 

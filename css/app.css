@@ -753,3 +753,11 @@ body::before {
 .sign-row.mine b { color: var(--cyan); }
 .fa-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .fa-tabs .btn { padding: 8px 2px; font-size: 13px; }
+
+/* Summer league final */
+.box-score { display: grid; grid-template-columns: minmax(70px, 1fr) repeat(var(--cols), 30px) 38px; gap: 4px 2px; align-items: center; text-align: center; font-variant-numeric: tabular-nums; padding: 8px; background: var(--bg-dark); border: 2px solid var(--btn-edge); }
+.box-score .bs-team { display: flex; align-items: center; gap: 6px; text-align: left; font-weight: 700; }
+.box-score .bs-team.win { color: var(--gold); }
+.box-score b { font-size: 18px; }
+.mvp-card { display: flex; align-items: center; gap: 10px; padding: 10px; background: linear-gradient(90deg, #6b4a00, #0b2f6b); border: 3px solid var(--gold); }
+.mvp-card .grow { flex: 1; }

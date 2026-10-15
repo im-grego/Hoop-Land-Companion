@@ -258,10 +258,13 @@ storylines.
 
 ## Summer league (right after the draft)
 
-Two steps, in order, both by age only (draft slot doesn't matter) and final (undo needs Commissioner Mode):
+Two steps, in order:
 
-1. **Age Adjustment**: the same on every skill, no dice.
-2. **Summer League**: rookies earn upgrade points to spend in the game, more for younger players.
+1. **Age Adjustment** (by age only, the same on every skill, no dice; see below).
+2. **Summer League**: a simulated tournament of every team's young core (rookies and second-year players, rated
+   by level, draft pedigree and college production). Shows the final's box score by quarter (overtime if tied) and
+   a Summer League MVP with his averages. If your team reaches the final, two young players get +1 on a skill; win
+   it and three get +1 on two skills. Development itself comes at training camp, not here.
 
 The age adjustment: older rookies win back part of the draft drop: 18–19 +0 (keep the full −4), 20–21 +1 (net −3), 22+ +2 (net −2), never past their
 pre-draft rating (12 skill ratings only; physicals never drop). The app remembers prospects' pre-draft ratings
