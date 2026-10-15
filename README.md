@@ -4,29 +4,32 @@ An installable web app (PWA) for running an **offseason development phase** on H
 
 1. **Load** a season file (the extension-less JSON save from your Hoop Land saves folder).
 2. **Pick your teams.** Commissioner saves control every team, so you choose which ones are yours.
-3. **Run auto progression** on every CPU team (and optionally free agents) using adjustable rules.
-4. **Hand-pick upgrades** for your own players: raise ratings, add or level up skills, or auto-develop selected players.
+3. **Run the offseason bump:** players 25 and under earn upgrade points based on age and minutes.
+4. **Adjust your players:** tweak their points, ratings or skills.
 5. **Export** the file and drop it back into the game to continue the offseason.
 
 Everything runs on-device; the file never leaves your phone.
 
-## How progression works
+## How the offseason bump works
 
-Each rating in the save is stored as `[current, ceiling]`. Auto progression raises `current` toward `ceiling`
-(the game's own regression handles decline, so this only adds). Raising a rating past its ceiling lifts the ceiling with it (13/14 +2 → 15/15).
+The bump sits on top of the game's normal in-season progression. Young players earn extra **upgrade points**,
+which are added to each player's `season.ap` pools (Finishing, Shooting, Creating, Defense) and spent in-game.
+Every team gets the same rules, so CPU teams stay even with yours.
 
-- **Points by age** (default): ≤22: 3–6, 23–25: 1–4, 26–29: 0–2, 30+: none.
+- **Points by age** (default): 18–20: 4–6, 21–23: 2–4, 24–25: 1–2, 26+: none.
 - **Minutes multiplier** from last season: starters (≥28 MPG) ×1.25, bench (<15 MPG) ×0.75.
-- **Held points** (earned but unspent, per category) are spent first; age-based growth is added on top.
-- Points are spread across ratings, favouring room under the ceiling and the player's strengths, max +3 per rating.
-- **Skills:** young players with a big jump may learn a new skill picked to fit their ratings; existing skills can level up (max Lv 3).
+- Points are split across the four categories by where the player has room to grow and where they're strong.
+- **Your players:** adjust any player's points per category by hand.
+- **CPU points:** held for the game to spend (default), or *Spend Now* to apply them to ratings in the app
+  for commissioner saves where the CPU doesn't spend. Spending raises the ceiling with the rating (13/14 +2 → 15/15).
+- Optional skill unlocks/level-ups (off by default).
 - Runs are **seeded**, so the same seed reproduces the same offseason. Re-roll for a different one.
 
 All of these are adjustable under **Settings**.
 
 ## Save-file safety
 
-Only player `attributes`, `skills` and held points (`season.ap`) are modified. Everything else, including Unity's float formatting,
+Only player upgrade points (`season.ap`), and ratings/skills when you edit them, are modified. Everything else, including Unity's float formatting,
 is written back byte-for-byte (see `js/savefile.js`). Keep a backup of your original file anyway.
 
 ## Running it

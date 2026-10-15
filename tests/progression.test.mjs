@@ -1,40 +1,64 @@
 // Usage: node tests/progression.test.mjs <path-to-season-file>
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS, UNLEVELED_SKILLS, CATEGORIES } from '../js/savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles } from '../js/progression.js';
+import { parseSave, serializeSave, leaguePlayers, snapshot, diffPlayer, ATTRS } from '../js/savefile.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, AWARD_CATEGORIES } from '../js/progression.js';
 
 const text = readFileSync(process.argv[2], 'utf8');
-const data = parseSave(text);
-const league = data.seasonLeagues[0];
-const entries = leaguePlayers(league).map(e => ({ ...e, leagueIdx: 0 }));
-const snaps = new Map(entries.map(e => [e.p.id, snapshot(e.p)]));
-const profiles = buildSkillProfiles(entries.map(e => e.p));
-runProgression(entries, DEFAULT_PARAMS, profiles);
+const P = DEFAULT_PARAMS;
+const maxAge = P.ageBands[P.ageBands.length - 1][0];
 
-let changed = 0, pts = 0, newSkills = 0, held = 0;
-for (const { p } of entries) {
-  const d = diffPlayer(p, snaps.get(p.id));
-  if (d.changed) changed++;
-  pts += d.points; newSkills += d.added.length; held += d.apSpent;
-  CATEGORIES.forEach((c, i) => {
-    const ap = p.season.ap[i];
-    assert.ok(ap >= 0 && ap <= snaps.get(p.id).ap[i], 'held points only go down');
-    if (ap > 0) assert.ok(c.attrs.every(k => p.attributes[k][0] >= 20), 'points left only when category is all 20');
-  });
-  for (const k of ATTRS) {
-    const [c, ceil] = p.attributes[k];
-    assert.ok(c >= snaps.get(p.id).attributes[k][0], 'never decreases');
-    if (c !== snaps.get(p.id).attributes[k][0]) assert.ok(c <= ceil && c <= 20, 'within ceiling');
-    const held = snaps.get(p.id).ap[CATEGORIES.findIndex(cat => cat.attrs.includes(k))] || 0;
-    assert.ok(c - snaps.get(p.id).attributes[k][0] <= DEFAULT_PARAMS.maxPerAttr + held, 'age growth capped per rating');
-  }
-  for (const s of p.skills) if (UNLEVELED_SKILLS.includes(s.id)) assert.equal(s.level, 1, 'unleveled skills stay at 1');
-  if (p.age >= 30) assert.equal(d.points, d.apSpent, '30+ only spends held points by default');
+function run(spend, params = P) {
+  const data = parseSave(text);
+  const entries = leaguePlayers(data.seasonLeagues[0]).map(e => ({ ...e, leagueIdx: 0, spend }));
+  const snaps = new Map(entries.map(e => [e.p.id, snapshot(e.p)]));
+  const awards = runProgression(entries, params, buildSkillProfiles(entries.map(e => e.p)));
+  return { data, entries, snaps, awards };
 }
-// Determinism: same seed => same output
-const again = parseSave(text);
-const e2 = leaguePlayers(again.seasonLeagues[0]).map(e => ({ ...e, leagueIdx: 0 }));
-runProgression(e2, DEFAULT_PARAMS, buildSkillProfiles(leaguePlayers(parseSave(text).seasonLeagues[0]).map(e => e.p)));
-assert.equal(serializeSave(again), serializeSave(data), 'deterministic');
-console.log(`progression OK: ${changed}/${entries.length} players changed, +${pts} pts (${held} from held points), ${newSkills} new skills`);
+
+// 1. Default: points are added to season.ap, ratings untouched.
+{
+  const { entries, snaps, awards } = run(false);
+  let bumped = 0, total = 0;
+  for (const { p } of entries) {
+    const d = diffPlayer(p, snaps.get(p.id));
+    const award = awards.get(p.id);
+    assert.equal(d.points, 0, 'ratings unchanged');
+    assert.deepEqual(d.attrs, {}, 'ratings unchanged');
+    assert.equal(d.added.length + d.leveled.length, 0, 'no skill changes by default');
+    assert.equal(d.apDelta.reduce((a, b) => a + b, 0), award, 'ap gain equals award');
+    d.apDelta.forEach((v, i) => {
+      assert.ok(v >= 0, 'ap only goes up');
+      if (!AWARD_CATEGORIES.includes(i)) assert.equal(v, 0, 'physical untouched');
+    });
+    if (p.age > maxAge) assert.equal(award, 0, `no bump over ${maxAge}`);
+    const band = P.ageBands.find(b => p.age <= b[0]);
+    if (band) assert.ok(award <= Math.round(band[2] * P.starterMult), 'within band max');
+    if (award) bumped++;
+    total += award;
+  }
+  console.log(`bump OK: ${bumped}/${entries.length} players, +${total} points`);
+}
+
+// 2. Determinism.
+assert.equal(serializeSave(run(false).data), serializeSave(run(false).data), 'deterministic');
+
+// 3. Spend mode: points become ratings, ceilings rise with them.
+{
+  const { entries, snaps } = run(true);
+  let spent = 0;
+  for (const { p } of entries) {
+    const snap = snaps.get(p.id);
+    for (const k of ATTRS) {
+      const [c, ceil] = p.attributes[k];
+      assert.ok(c >= snap.attributes[k][0], 'never decreases');
+      if (c !== snap.attributes[k][0]) assert.ok(c <= ceil && c <= 20, 'ceiling raised with rating');
+    }
+    p.season.ap.forEach((v, i) => {
+      if (v > 0) assert.ok(['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE', 'DRE', 'STL', 'BLK', 'STR', 'SPD', 'STM']
+        .slice(i * 3, i * 3 + 3).every(k => p.attributes[k][0] >= 20), 'leftover points only when category is all 20');
+    });
+    spent += diffPlayer(p, snap).points;
+  }
+  console.log(`spend OK: +${spent} rating points`);
+}

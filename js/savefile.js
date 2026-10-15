@@ -84,7 +84,7 @@ export const PHYSICAL = ['STR', 'SPD', 'STM'];
 export const CATEGORIES = [
   { key: 'FIN', name: 'Finishing', attrs: ['LAY', 'DNK', 'INS'] },
   { key: 'SHO', name: 'Shooting', attrs: ['MID', 'TPT', 'FTS'] },
-  { key: 'PLY', name: 'Playmaking', attrs: ['DRB', 'PAS', 'ORE'] },
+  { key: 'CRE', name: 'Creating', attrs: ['DRB', 'PAS', 'ORE'] },
   { key: 'DEF', name: 'Defense', attrs: ['DRE', 'STL', 'BLK'] },
   { key: 'PHY', name: 'Physical', attrs: PHYSICAL },
 ];
@@ -150,15 +150,6 @@ export function restore(p, snap) {
   if (p.season?.ap) p.season.ap = [...snap.ap];
 }
 
-// After manual edits: gains in a category use up its held points first.
-export function syncHeldPoints(p, snap) {
-  if (!p.season?.ap) return;
-  CATEGORIES.forEach((c, i) => {
-    const gain = c.attrs.reduce((a, k) => a + p.attributes[k][0] - snap.attributes[k][0], 0);
-    p.season.ap[i] = Math.max(0, Math.min(snap.ap[i], snap.ap[i] - gain));
-  });
-}
-
 export const heldPoints = p => (p.season?.ap || []).reduce((a, b) => a + b, 0);
 
 // Skills at level 0 are locked: they sit in the list collecting XP until
@@ -181,7 +172,7 @@ export function diffPlayer(p, snap) {
     else if (lv >= 1 && lv !== was) leveled.push(id);
   }
   for (const [id, was] of before) if (was >= 1 && (now.get(id) || 0) < 1) removed.push(id);
-  const apSpent = (snap.ap || []).reduce((a, b) => a + b, 0) - heldPoints(p);
-  const changed = apSpent !== 0 || points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
-  return { attrs, points, added, leveled, removed, apSpent, changed };
+  const apDelta = (p.season?.ap || []).map((v, i) => v - (snap.ap[i] || 0));
+  const changed = apDelta.some(Boolean) || points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
+  return { attrs, points, added, leveled, removed, apDelta, changed };
 }

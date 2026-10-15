@@ -1,10 +1,10 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, syncHeldPoints, heldPoints, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
 
-const APP_VERSION = '0.1.5';
+const APP_VERSION = '0.2.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,8 @@ const state = {
   profiles: [],            // per league skill profiles (from original data)
   leagueAvg: [],           // per league average attribute vector
   userTeams: new Set(),    // team ids the user controls (current league)
-  auto: {},                // leagueIdx -> { seed, players, points, skills }
+  auto: {},                // leagueIdx -> bump summary
+  awards: {},              // leagueIdx -> Map pid -> points awarded
   params: loadParams(),
   dirty: false,
   stack: [],
@@ -28,15 +29,15 @@ function loadParams() {
   try {
     const saved = JSON.parse(localStorage.getItem('hlc:params'));
     if (saved) {
-      // v2: ratings raise their ceiling by default.
-      if (!saved.version) delete saved.exceedCeiling;
-      return { ...structuredClone(DEFAULT_PARAMS), ...saved, version: 2 };
+      // v3 changed the bump to award points; older settings don't apply.
+      if ((saved.version || 0) < 3) return structuredClone(DEFAULT_PARAMS);
+      return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 2 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 3 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -60,9 +61,6 @@ const snapOf = p => state.snaps.get(snapKey(p.id));
 const isUserTeam = t => t && state.userTeams.has(t.id);
 
 function allEntries() { return leaguePlayers(league(), true); }
-function cpuEntries() {
-  return leaguePlayers(league(), state.params.includeFreeAgents).filter(e => !isUserTeam(e.team));
-}
 function findPlayer(pid) { return allEntries().find(e => e.p.id === pid); }
 
 // ---------------------------------------------------------------------------
@@ -219,6 +217,7 @@ async function loadFile(file) {
     state.profiles = [];
     state.leagueAvg = [];
     state.auto = {};
+    state.awards = {};
     data.seasonLeagues.forEach((L, li) => {
       const players = leaguePlayers(L, true).map(e => e.p);
       for (const p of players) state.snaps.set(snapKey(p.id, li), snapshot(p));
@@ -285,7 +284,7 @@ screens.main = () => {
       body: `
         <fieldset class="frame"><legend>Hoop Land Companion</legend>
           <div class="stack">
-            <p class="note">Load a season file to run an offseason development phase: CPU teams progress automatically, you hand-pick upgrades for your own players, then export the file back into the game.</p>
+            <p class="note">Load an end-of-season file to run an offseason bump: players 25 and under earn extra upgrade points based on age and minutes, for every team. Adjust your own players, then export the file back into the game.</p>
             <label class="btn big focus"><span class="ico">📂</span> Load Season File
               <input type="file" id="fileInput"></label>
             <p class="note muted small">Your file is read on this device only. Keep a backup of the original.</p>
@@ -312,7 +311,7 @@ screens.main = () => {
           <dt>Phase</dt><dd>${esc(PHASE_NAMES[s.phase] ?? `Phase ${s.phase}`)}</dd>
           <dt>Players</dt><dd>${players}</dd>
           <dt>Your teams</dt><dd>${esc(yourTeams)}</dd>
-          <dt>CPU progression</dt><dd>${auto ? `<span class="up">Applied</span>` : '<span class="muted">Not run</span>'}</dd>
+          <dt>Offseason bump</dt><dd>${auto ? `<span class="up">Applied</span>` : '<span class="muted">Not run</span>'}</dd>
           <dt>In-game CPU progression</dt><dd>${s.cpuProgression ? '<span class="gold">On</span>' : 'Off'}</dd>
         </dl>
         ${phaseWarning(s)}
@@ -369,56 +368,71 @@ actions.toggleTeam = async d => {
   const id = +d.id;
   if (state.userTeams.has(id)) state.userTeams.delete(id); else state.userTeams.add(id);
   saveUserTeams();
-  if (state.auto[state.leagueIdx]) {
-    // Keep CPU progression consistent with the new team split.
-    applyAuto(state.auto[state.leagueIdx].seed);
+  if (state.auto[state.leagueIdx]?.spent) {
+    // CPU points were spent into ratings; redo so the new split is respected.
+    applyBump(state.auto[state.leagueIdx].seed);
+    toast('Offseason bump re-applied');
   }
   render();
 };
 
 // ---------------------------------------------------------------------------
-// Auto progression
+// Offseason bump
 
-function applyAuto(seed) {
+function bumpEntries() {
+  return leaguePlayers(league(), state.params.includeFreeAgents);
+}
+
+function applyBump(seed) {
   const li = state.leagueIdx;
-  const entries = cpuEntries();
-  for (const e of entries) restore(e.p, snapOf(e.p));
-  // Free agents excluded from this run go back to their originals too.
-  if (!state.params.includeFreeAgents) for (const p of league().freeAgents || []) restore(p, snapOf(p));
-  runProgression(entries.map(e => ({ ...e, leagueIdx: li })), { ...state.params, seed }, state.profiles[li]);
-  let players = 0, points = 0, skills = 0, held = 0;
-  for (const e of entries) {
-    const d = diffPlayer(e.p, snapOf(e.p));
-    if (d.changed) players++;
-    points += d.points;
-    skills += d.added.length;
-    held += d.apSpent;
+  // Start from the original file each time so re-rolls don't stack.
+  for (const { p } of leaguePlayers(league(), true)) restore(p, snapOf(p));
+  const entries = bumpEntries().map(e => ({
+    ...e, leagueIdx: li, spend: state.params.spendCpuPoints && !isUserTeam(e.team),
+  }));
+  const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
+  let players = 0, points = 0, mine = 0;
+  for (const [pid, n] of awards) {
+    if (!n) continue;
+    players++;
+    points += n;
   }
-  state.auto[li] = { seed, players, points, skills, held, total: entries.length };
+  for (const e of entries) if (isUserTeam(e.team)) mine += awards.get(e.p.id) || 0;
+  state.awards[li] = awards;
+  state.auto[li] = { seed, players, points, mine, total: entries.length, spent: state.params.spendCpuPoints };
   state.dirty = true;
 }
 
 actions.runAuto = async () => {
-  const o = overlay('<div class="spinner"></div><p class="note">Developing CPU players…</p>');
+  if (state.auto[state.leagueIdx] && !(await confirmBox('Run the bump again? Manual changes made since the last run are reset.', 'Run'))) return;
+  const o = overlay('<div class="spinner"></div><p class="note">Awarding offseason points…</p>');
   await nextFrame();
-  applyAuto(state.params.seed);
+  applyBump(state.params.seed);
   o.remove();
   render();
 };
 
 actions.reroll = async () => {
+  if (!(await confirmBox('Re-roll with a new seed? Manual changes are reset.', 'Re-roll'))) return;
   state.params.seed = Math.floor(Math.random() * 1e6);
   saveParams();
-  await actions.runAuto();
+  const o = overlay('<div class="spinner"></div><p class="note">Awarding offseason points…</p>');
+  await nextFrame();
+  applyBump(state.params.seed);
+  o.remove();
+  render();
   toast(`New seed ${state.params.seed}`);
 };
 
 actions.undoAuto = async () => {
-  if (!(await confirmBox('Undo CPU progression? CPU players return to their original ratings.', 'Undo'))) return;
-  for (const e of leaguePlayers(league(), true)) if (!isUserTeam(e.team)) restore(e.p, snapOf(e.p));
+  if (!(await confirmBox('Undo the offseason bump? Every player returns to the original file.', 'Undo'))) return;
+  for (const { p } of leaguePlayers(league(), true)) restore(p, snapOf(p));
   delete state.auto[state.leagueIdx];
+  delete state.awards[state.leagueIdx];
   render();
 };
+
+const awardOf = p => state.awards[state.leagueIdx]?.get(p.id) || 0;
 
 // ---------------------------------------------------------------------------
 // Offseason hub
@@ -427,32 +441,31 @@ screens.offseason = () => {
   const L = league();
   const auto = state.auto[state.leagueIdx];
   const mine = L.teams.filter(isUserTeam);
-  const cpuCount = cpuEntries().length;
-  const myEdits = mine.flatMap(t => t.roster).map(p => diffPlayer(p, snapOf(p))).filter(d => d.changed);
-  const myPts = myEdits.reduce((a, d) => a + d.points, 0);
+  const P = state.params;
+  const bands = P.ageBands;
   layout({
     title: 'Offseason Development',
     body: `
       ${phaseWarning(L.season)}
-      <fieldset class="frame"><legend>1 · CPU Teams</legend>
+      <fieldset class="frame"><legend>1 · Offseason Bump</legend>
         <div class="stack">
           ${auto ? `
             <dl class="info">
-              <dt>Players improved</dt><dd class="up">${auto.players} / ${auto.total}</dd>
-              <dt>Rating points</dt><dd class="up">+${auto.points}</dd>
-              <dt>Held points spent</dt><dd class="up">${auto.held}</dd>
-              <dt>New skills</dt><dd class="up">${auto.skills}</dd>
+              <dt>Players bumped</dt><dd class="up">${auto.players} / ${auto.total}</dd>
+              <dt>Points awarded</dt><dd class="up">+${auto.points}</dd>
+              <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
+              <dt>CPU points</dt><dd>${auto.spent ? 'Spent into ratings' : 'Held for the game'}</dd>
               <dt>Seed</dt><dd>${auto.seed}</dd>
             </dl>
-            <button class="btn focus" data-act="nav" data-to="report">📋 View Progression Report</button>
+            <button class="btn focus" data-act="nav" data-to="report">📋 View Bump Report</button>
             <div class="grid2">
               <button class="btn" data-act="reroll">🎲 Re-roll</button>
               <button class="btn" data-act="undoAuto">↺ Undo</button>
             </div>`
           : `
-            <p class="note">Auto-develop ${cpuCount} CPU players${state.params.includeFreeAgents ? ' (incl. free agents)' : ''} using your progression settings. Your own teams are skipped.</p>
-            <button class="btn big focus" data-act="runAuto">▶ Run Auto Progression</button>
-            <button class="btn small" data-act="nav" data-to="settings">☰ Progression Settings</button>`}
+            <p class="note">Players aged ${bands[bands.length - 1][0]} and under earn upgrade points (more for younger players and heavier minutes). Points go into each player's Finishing / Shooting / Creating / Defense pools to spend in-game. Every team gets the same rules, so CPU teams stay even.</p>
+            <button class="btn big focus" data-act="runAuto">▶ Run Offseason Bump</button>
+            <button class="btn small" data-act="nav" data-to="settings">☰ Bump Settings</button>`}
         </div>
       </fieldset>
       <fieldset class="frame"><legend>2 · Your Teams</legend>
@@ -461,12 +474,11 @@ screens.offseason = () => {
             <button class="btn left" data-act="nav" data-to="roster" data-arg="${t.id}">${logoImg(t)} ${esc(t.city)} ${esc(t.name)}</button>`).join('')
           : '<p class="note">No teams picked yet. Commissioner saves control every team, so tell the app which ones are yours.</p>'}
           <button class="btn small" data-act="nav" data-to="teams">👥 ${mine.length ? 'Change' : 'Pick'} Your Teams</button>
-          ${myEdits.length ? `<p class="note">${myEdits.length} of your players upgraded · <span class="up">+${myPts}</span> points used</p>` : ''}
         </div>
       </fieldset>
       <fieldset class="frame"><legend>3 · Finish</legend>
         <div class="stack">
-          <p class="note">Export the season file and replace the original in your Hoop Land saves folder, then continue the offseason in-game.</p>
+          <p class="note">Export the season file and replace the original in your Hoop Land saves folder, then continue the offseason and spend the points in-game.</p>
           <button class="btn" data-act="nav" data-to="export">💾 Export Season File</button>
         </div>
       </fieldset>`,
@@ -474,47 +486,54 @@ screens.offseason = () => {
 };
 
 // ---------------------------------------------------------------------------
-// Progression report (CPU teams)
+// Bump report (all teams)
 
 screens.report = (args) => {
   const L = league();
   const groups = [
-    ...L.teams.filter(t => !isUserTeam(t)).map(t => ({ team: t, title: `${t.city} ${t.name}`, players: t.roster })),
-  ];
+    ...L.teams.filter(isUserTeam),
+    ...L.teams.filter(t => !isUserTeam(t)),
+  ].map(t => ({ team: t, title: `${t.city} ${t.name}`, players: t.roster }));
   if (state.params.includeFreeAgents && L.freeAgents?.length) groups.push({ team: null, title: 'Free Agents', players: L.freeAgents });
-  if (!groups.length) { layout({ title: 'Progression Report', body: '<p class="note">No CPU teams.</p>' }); return; }
   const gi = ((args.g ?? 0) % groups.length + groups.length) % groups.length;
   const g = groups[gi];
   const rows = g.players
     .map(p => ({ p, d: diffPlayer(p, snapOf(p)) }))
-    .sort((a, b) => b.d.points - a.d.points || b.d.added.length - a.d.added.length);
+    .sort((a, b) => awardOf(b.p) - awardOf(a.p) || a.p.age - b.p.age);
   const prevT = groups[(gi - 1 + groups.length) % groups.length];
   const nextT = groups[(gi + 1) % groups.length];
+  const total = rows.reduce((a, r) => a + awardOf(r.p), 0);
   layout({
-    title: 'Progression Report',
+    title: 'Bump Report',
     left: `<button class="nav-btn" data-act="reportNav" data-g="${gi - 1}" aria-label="Previous team">${prevT.team ? logoImg(prevT.team) : ''}◀</button>`,
     right: `<button class="nav-btn" data-act="reportNav" data-g="${gi + 1}" aria-label="Next team">▶${nextT.team ? logoImg(nextT.team) : ''}</button>`,
     body: `
-      <h2 class="team-title">${g.team ? logoImg(g.team) : ''}${esc(g.title)}</h2>
-      <p class="note muted small">${rows.filter(r => r.d.changed).length} of ${rows.length} players changed · tap a player to adjust</p>
+      <h2 class="team-title">${g.team ? logoImg(g.team) : ''}${esc(g.title)}${isUserTeam(g.team) ? ' <span class="badge you">YOU</span>' : ''}</h2>
+      <p class="note muted small">${rows.filter(r => awardOf(r.p)).length} players bumped · <span class="up">+${total}</span> points · tap a player to adjust</p>
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
 };
 
 actions.reportNav = d => replace('report', { g: +d.g });
 
-function playerRow(p, d, opts = {}) {
+function apSummary(d) {
+  return CATEGORIES.map((c, i) => d.apDelta[i] ? `${c.key} ${d.apDelta[i] > 0 ? '+' : ''}${d.apDelta[i]}` : '')
+    .filter(Boolean).join(' · ');
+}
+
+function playerRow(p, d) {
   const pos = POSITIONS[p.pos] ?? p.pos;
-  const avgNow = avgRating(p);
-  const avgWas = avgNow - d.points / ATTRS.length;
-  return `<button class="prow ${opts.sel ? 'sel' : ''}" data-act="${opts.act || 'openPlayer'}" data-id="${p.id}">
-    <span class="name">${opts.selecting ? '<span class="check"></span>' : ''}${esc(playerName(p))}</span>
+  const mpg = lastSeasonMpg(p, state.leagueIdx);
+  const award = awardOf(p);
+  const detail = [apSummary(d), d.points ? changeSummary(d) : ''].filter(Boolean).join(' · ');
+  return `<button class="prow" data-act="openPlayer" data-id="${p.id}">
+    <span class="name">${esc(playerName(p))}</span>
     <span class="right">
       <span class="stars">${stars(p.pot)}</span><br>
-      ${d.points ? `<span class="up">+${d.points}</span>` : '<span class="muted">—</span>'}
+      ${award ? `<span class="up">+${award} pts</span>` : '<span class="muted">—</span>'}
     </span>
-    <span class="meta">${esc(pos)} · ${p.age}y · ${heightStr(p.ht)} · AVG ${d.points ? `${avgWas.toFixed(1)}→<span class="up">${avgNow.toFixed(1)}</span>` : avgNow.toFixed(1)}</span>
-    ${d.changed ? `<span class="chg">${esc(changeSummary(d))} ${skillBadges(d)}${d.apSpent ? `<span class="badge lvl">${d.apSpent} held pt${d.apSpent > 1 ? 's' : ''}</span>` : ''}</span>` : ''}
+    <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · AVG ${avgRating(p).toFixed(1)}</span>
+    ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}</span>` : ''}
   </button>`;
 }
 
@@ -530,10 +549,8 @@ screens.roster = (args) => {
   let idx = mine.findIndex(t => t.id === +args.arg);
   if (idx < 0) idx = 0;
   const t = mine[idx];
-  const selecting = !!args.selecting;
-  const sel = new Set(args.sel || []);
   const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) }));
-  const used = rows.reduce((a, r) => a + r.d.points, 0);
+  const pts = rows.reduce((a, r) => a + r.d.apDelta.reduce((x, y) => x + y, 0), 0);
   const many = mine.length > 1;
   const prevT = mine[(idx - 1 + mine.length) % mine.length];
   const nextT = mine[(idx + 1) % mine.length];
@@ -543,46 +560,9 @@ screens.roster = (args) => {
     right: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶${logoImg(nextT)}</button>` : '',
     body: `
       <h2 class="team-title">${logoImg(t)}${esc(t.city)} ${esc(t.name)}</h2>
-      <div class="row">
-        <p class="note grow">${selecting ? `Pick players to auto-develop (${sel.size} selected)` : `Points used: <span class="up">+${used}</span>`}</p>
-        ${selecting
-          ? `<button class="btn small" data-act="selectAll">All</button>`
-          : `<button class="btn small" data-act="startSelect">⚡ Auto-Develop…</button>`}
-      </div>
-      <div class="list">
-        ${rows.map(({ p, d }) => playerRow(p, d, selecting ? { act: 'toggleSel', sel: sel.has(p.id), selecting: true } : {})).join('')}
-      </div>`,
-    action: selecting ? { act: 'autoSelected', label: `Develop ${sel.size}` } : null,
+      <p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>
+      <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
-};
-
-function rosterArgs() { return state.stack[state.stack.length - 1].args; }
-
-actions.startSelect = () => replace('roster', { ...rosterArgs(), selecting: true, sel: [] });
-actions.toggleSel = d => {
-  const a = rosterArgs();
-  const sel = new Set(a.sel);
-  const id = +d.id;
-  if (sel.has(id)) sel.delete(id); else sel.add(id);
-  replace('roster', { ...a, sel: [...sel] });
-};
-actions.selectAll = () => {
-  const a = rosterArgs();
-  const mine = league().teams.filter(isUserTeam);
-  const t = mine.find(x => x.id === +a.arg) || mine[0];
-  replace('roster', { ...a, sel: t.roster.map(p => p.id) });
-};
-actions.autoSelected = async () => {
-  const a = rosterArgs();
-  if (!a.sel?.length) { replace('roster', { arg: a.arg }); return; }
-  if (!(await confirmBox(`Auto-develop ${a.sel.length} player(s)? This replaces any manual edits on them.`, 'Develop'))) return;
-  const entries = a.sel.map(id => findPlayer(id)).filter(Boolean);
-  for (const e of entries) restore(e.p, snapOf(e.p));
-  runProgression(entries.map(e => ({ ...e, leagueIdx: state.leagueIdx })),
-    { ...state.params, seed: state.params.seed + 7919 }, state.profiles[state.leagueIdx]);
-  state.dirty = true;
-  replace('roster', { arg: a.arg });
-  toast('Players developed');
 };
 
 // ---------------------------------------------------------------------------
@@ -606,14 +586,21 @@ screens.player = (args) => {
         <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="stars">${stars(p.pot)}</span></p>
         <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
       </div>
+      ${p.season?.ap ? `<fieldset class="frame"><legend>Upgrade Points</legend>
+        <div class="stack">
+          ${CATEGORIES.map((c, i) => `<div class="pts-row">
+            <span class="grow">${esc(c.name)} <span class="muted small">${c.attrs.join(' · ')}</span></span>
+            <button class="btn square" data-act="ap" data-i="${i}" data-dir="-1" aria-label="Fewer ${esc(c.name)} points">−</button>
+            <span class="pts-val ${p.season.ap[i] ? 'gold' : 'muted'}">${p.season.ap[i]}${d.apDelta[i] ? `<span class="small ${d.apDelta[i] > 0 ? 'up' : 'down'}"> ${d.apDelta[i] > 0 ? '+' : ''}${d.apDelta[i]}</span>` : ''}</span>
+            <button class="btn square" data-act="ap" data-i="${i}" data-dir="1" aria-label="More ${esc(c.name)} points">+</button>
+          </div>`).join('')}
+        </div>
+        <p class="note muted small" style="margin-top:8px">Spent in-game. Green = added this offseason${awardOf(p) ? ` (bump gave +${awardOf(p)})` : ''}.</p>
+      </fieldset>` : ''}
       <div class="row">
-        <p class="note grow">Upgrade points: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
+        <p class="note grow">Rating changes: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
         <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
       </div>
-      ${p.season?.ap ? `<fieldset class="frame"><legend>Held Points</legend>
-        <div class="held">${CATEGORIES.map((c, i) => `<div class="${p.season.ap[i] ? 'gold' : 'muted'}"><span>${c.key}</span><b>${p.season.ap[i]}</b>${snap.ap[i] !== p.season.ap[i] ? `<span class="small up">−${snap.ap[i] - p.season.ap[i]}</span>` : ''}</div>`).join('')}</div>
-        <p class="note muted small" style="margin-top:8px">Earned but unspent. Raising a rating uses its category's held points first.</p>
-      </fieldset>` : ''}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
@@ -639,14 +626,12 @@ screens.player = (args) => {
         </div>
       </fieldset>
       <div class="grid2">
-        <button class="btn" data-act="autoOne">⚡ Auto</button>
+        <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
         <button class="btn" data-act="revertOne">↺ Revert</button>
       </div>`,
     action: { act: 'back', label: 'Done' },
   });
 };
-
-const categoryIdx = k => CATEGORIES.findIndex(c => c.attrs.includes(k));
 
 function attrRow(p, snap, k, ceilMode) {
   const [cur, ceil] = p.attributes[k];
@@ -657,7 +642,7 @@ function attrRow(p, snap, k, ceilMode) {
     <button class="btn square" data-act="attr" data-k="${k}" data-dir="-1" aria-label="Lower ${ATTR_NAMES[k]}">−</button>
     <div class="body">
       <div class="top">
-        <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span>${p.season?.ap?.[categoryIdx(k)] ? ' <span class="gold small">●</span>' : ''}</span>
+        <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
         <span>${cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${ceil}</span></span>
       </div>
       <div class="bar">
@@ -690,8 +675,15 @@ actions.attr = d => {
   } else {
     v[0] = Math.max(attrMin(d.k), Math.min(ATTR_MAX, v[0] + dir));
     if (v[0] > v[1]) v[1] = v[0];
-    syncHeldPoints(p, snapOf(p));
   }
+  state.dirty = true;
+  render();
+};
+
+actions.ap = d => {
+  const p = currentPlayer();
+  const i = +d.i;
+  p.season.ap[i] = Math.max(0, p.season.ap[i] + +d.dir);
   state.dirty = true;
   render();
 };
@@ -752,10 +744,12 @@ actions.addSkill = () => {
 };
 
 actions.autoOne = () => {
+  const li = state.leagueIdx;
   const e = findPlayer(state.stack[state.stack.length - 1].args.id);
   restore(e.p, snapOf(e.p));
-  runProgression([{ ...e, leagueIdx: state.leagueIdx }],
-    { ...state.params, seed: state.params.seed + e.p.id }, state.profiles[state.leagueIdx]);
+  const awards = runProgression([{ ...e, leagueIdx: li, spend: state.params.spendCpuPoints && !isUserTeam(e.team) }],
+    { ...state.params, seed: Math.floor(Math.random() * 1e6) }, state.profiles[li]);
+  (state.awards[li] ||= new Map()).set(e.p.id, awards.get(e.p.id));
   state.dirty = true;
   render();
 };
@@ -763,6 +757,7 @@ actions.autoOne = () => {
 actions.revertOne = () => {
   const p = currentPlayer();
   restore(p, snapOf(p));
+  state.awards[state.leagueIdx]?.set(p.id, 0);
   render();
   toast('Reverted to original');
 };
@@ -773,7 +768,6 @@ actions.revertOne = () => {
 const STEP_FIELDS = {
   general: [
     ['seed', 'Random Seed', 1, 0, 999999],
-    ['maxPerAttr', 'Max + Per Rating', 1, 1, 10],
     ['starterMpg', 'Starter MPG (bonus)', 1, 0, 48],
     ['benchMpg', 'Bench MPG (penalty below)', 1, 0, 48],
   ],
@@ -813,17 +807,17 @@ screens.settings = (args) => {
         ${state.data.seasonLeagues.map((L, i) => `<button class="btn ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}
       </div></fieldset>` : ''}
       ${options('Include Free Agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']])}
-      ${options('Upgrade Focus', 'strengthBias', [[0, 'Spread'], [0.5, 'Balanced'], [1, 'Strengths']])}
-      ${options('Spend Held Points', 'spendHeldPoints', [[false, 'Off'], [true, 'On']])}
-      ${options('Raise Ceilings', 'exceedCeiling', [[false, 'Off'], [true, 'On']])}
+      ${options('CPU Points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']])}
+      <p class="note muted small">Commissioner saves: the CPU holds points unless in-game auto progression is on. "Spend Now" applies CPU points to ratings in this app instead.</p>
+      ${options('Point Focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']])}
       ${STEP_FIELDS.general.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('')}
       ${options('Starter Multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']])}
       ${options('Bench Multiplier', 'benchMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']])}`;
   } else if (tab === 'ages') {
     let lo = 0;
-    body = `<p class="note">Total rating points a CPU player gains, by age. Players over the last band get nothing (in-game regression handles decline).</p>` +
+    body = `<p class="note">Upgrade points each player earns this offseason, by age (before the minutes multiplier). Players older than the last band get nothing.</p>` +
       P.ageBands.map((b, i) => {
-        const label = i === P.ageBands.length - 1 ? `Age ${lo}+` : `Age ${lo === 0 ? 'up to' : `${lo}–`}${b[0]}`;
+        const label = `Age ${lo === 0 ? 'up to ' : `${lo}–`}${b[0]}`;
         lo = b[0] + 1;
         return `<fieldset class="frame"><legend>${label}</legend>
           <div class="grid2">
@@ -836,25 +830,26 @@ screens.settings = (args) => {
               <div class="val">${b[2]}</div>
               <button class="btn square" data-act="band" data-i="${i}" data-j="2" data-dir="1" aria-label="Increase">+</button></div></div>
           </div>
-          ${i < P.ageBands.length - 1 ? `<div class="stepper" style="margin-top:8px">
+          <div class="stepper" style="margin-top:8px">
             <button class="btn square" data-act="band" data-i="${i}" data-j="0" data-dir="-1" aria-label="Decrease">−</button>
             <div class="val small">Up to age ${b[0]}</div>
-            <button class="btn square" data-act="band" data-i="${i}" data-j="0" data-dir="1" aria-label="Increase">+</button></div>` : ''}
+            <button class="btn square" data-act="band" data-i="${i}" data-j="0" data-dir="1" aria-label="Increase">+</button></div>
         </fieldset>`;
       }).join('');
   } else {
-    body = STEP_FIELDS.skills.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('') +
+    body = `<p class="note">Optional: let the bump also unlock or level up skills. Off (0%) by default.</p>` +
+      STEP_FIELDS.skills.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('') +
       `<p class="note muted small">New skills are chosen to fit each player's strongest ratings.</p>`;
   }
   layout({
-    title: 'Progression Settings',
+    title: 'Bump Settings',
     body: `
       <div class="tabs">
         ${[['general', 'General'], ['ages', 'Ages'], ['skills', 'Skills']].map(([k, l]) =>
           `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="setTab" data-t="${k}">${l}</button>`).join('')}
       </div>
       ${body}
-      ${state.auto[state.leagueIdx] ? '<p class="note gold small">CPU progression already ran. Changes apply next time you run or re-roll it.</p>' : ''}`,
+      ${state.auto[state.leagueIdx] ? '<p class="note gold small">The bump already ran. Changes apply the next time you run or re-roll it.</p>' : ''}`,
     action: { act: 'resetParams', label: 'Defaults' },
   });
 };
@@ -883,7 +878,7 @@ actions.band = d => {
   render();
 };
 actions.resetParams = async () => {
-  if (!(await confirmBox('Reset all progression settings to defaults?', 'Reset'))) return;
+  if (!(await confirmBox('Reset all bump settings to defaults?', 'Reset'))) return;
   state.params = structuredClone(DEFAULT_PARAMS);
   saveParams();
   render();
@@ -898,11 +893,15 @@ actions.setLeague = d => {
 // Export
 
 screens.export = () => {
-  let players = 0, points = 0, skills = 0;
+  let players = 0, points = 0, ap = 0, skills = 0;
   state.data.seasonLeagues.forEach((L, li) => {
     for (const { p } of leaguePlayers(L, true)) {
       const d = diffPlayer(p, state.snaps.get(snapKey(p.id, li)));
-      if (d.changed) { players++; points += d.points; skills += d.added.length; }
+      if (!d.changed) continue;
+      players++;
+      points += d.points;
+      ap += d.apDelta.reduce((a, b) => a + b, 0);
+      skills += d.added.length;
     }
   });
   const canShare = typeof navigator.canShare === 'function' &&
@@ -914,11 +913,12 @@ screens.export = () => {
         <dl class="info">
           <dt>File</dt><dd>${esc(state.fileName)}</dd>
           <dt>Players changed</dt><dd class="up">${players}</dd>
-          <dt>Rating points</dt><dd class="up">+${points}</dd>
+          <dt>Upgrade points (net)</dt><dd class="up">${ap >= 0 ? '+' : ''}${ap}</dd>
+          <dt>Rating changes</dt><dd class="up">${points >= 0 ? '+' : ''}${points}</dd>
           <dt>Skills added</dt><dd class="up">${skills}</dd>
         </dl>
       </fieldset>
-      <p class="note">Only ratings and skills are changed. Everything else in the file is written back exactly as it was, so the game picks up right where you left off.</p>
+      <p class="note">Only upgrade points, ratings and skills are changed. Everything else in the file is written back exactly as it was, so the game picks up right where you left off.</p>
       <div class="stack">
         <button class="btn big focus" data-act="download">💾 Download File</button>
         ${canShare ? '<button class="btn" data-act="share">📤 Share / Save to Files</button>' : ''}

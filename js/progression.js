@@ -1,19 +1,20 @@
-// Offseason progression for CPU players.
-//
-// Each attribute is stored as [current, ceiling]. Growth raises `current`
-// toward `ceiling`; the game's own regression handles decline, so this only
-// ever adds.
+// Offseason bump: on top of the game's normal in-season progression, young
+// players earn extra upgrade points based on age and last season's minutes.
+// Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
+// spent in-game, so user and CPU teams stay even.
 
 import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
 
+// Categories the bump awards points in (Physical is left alone).
+export const AWARD_CATEGORIES = [0, 1, 2, 3];
+
 export const DEFAULT_PARAMS = {
   seed: 2027,
-  // Total upgrade points by age band: [maxAge, minPts, maxPts]
+  // Upgrade points by age band: [maxAge, minPts, maxPts]. Older players get none.
   ageBands: [
-    [22, 3, 6],
-    [25, 1, 4],
-    [29, 0, 2],
-    [99, 0, 0],
+    [20, 4, 6],
+    [23, 2, 4],
+    [25, 1, 2],
   ],
   // Minutes-per-game multipliers
   starterMpg: 28,
@@ -21,18 +22,18 @@ export const DEFAULT_PARAMS = {
   starterMult: 1.25,
   rotationMult: 1.0,
   benchMult: 0.75,
-  maxPerAttr: 3,          // cap per attribute per offseason
-  exceedCeiling: true,    // growth raises the ceiling with it (13/14 +2 -> 15/15)
-  strengthBias: 0.5,      // 0 = spread evenly, 1 = pour into strengths
-  // Skills
+  strengthBias: 0.5,      // 0 = favour room to grow, 1 = favour strengths
+  includeFreeAgents: true,
+  // Commissioner saves: CPU teams hold points without spending them. On =
+  // spend CPU points into ratings now (raising ceilings as needed).
+  spendCpuPoints: false,
+  // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
-  newSkillChance: 25,     // %
-  levelUpChance: 15,      // %
-  levelUpMaxAge: 29,
+  newSkillChance: 0,      // %
+  levelUpChance: 0,       // %
+  levelUpMaxAge: 25,
   maxSkills: 8,
-  includeFreeAgents: true,
-  spendHeldPoints: true,  // spend unspent category points (season.ap)
 };
 
 // Deterministic RNG so a seed reproduces the same offseason.
@@ -98,64 +99,61 @@ export function rankSkillsFor(p, profiles) {
     .sort((a, b) => b.fit - a.fit);
 }
 
-export function pointsFor(p, mpgInfo, params, rng) {
-  const band = params.ageBands.find(b => p.age <= b[0]) || [0, 0, 0];
-  let pts = randInt(rng, band[1], band[2]);
+export function minutesMult(mpgInfo, params) {
   const mpg = mpgInfo ? mpgInfo.mpg : 0;
-  const mult = mpg >= params.starterMpg ? params.starterMult
+  return mpg >= params.starterMpg ? params.starterMult
     : mpg >= params.benchMpg ? params.rotationMult
     : params.benchMult;
-  return Math.round(pts * mult);
 }
 
+export function pointsFor(p, mpgInfo, params, rng) {
+  const band = params.ageBands.find(b => p.age <= b[0]);
+  if (!band) return 0;
+  return Math.round(randInt(rng, band[1], band[2]) * minutesMult(mpgInfo, params));
+}
+
+// How much a player "wants" points in a rating: room under the ceiling,
+// blended with how strong they already are.
 function attrWeight(p, k, params) {
-  const cur = p.attributes[k][0];
-  const room = params.exceedCeiling ? Math.max(1, p.attributes[k][1] - cur) : p.attributes[k][1] - cur;
+  const [cur, ceil] = p.attributes[k];
+  if (cur >= ATTR_MAX) return 0;
+  const room = Math.max(1, ceil - cur);
   return room * ((1 - params.strengthBias) + params.strengthBias * (cur / ATTR_MAX) * 2);
 }
 
-function canGrow(p, k, params) {
-  const cap = params.exceedCeiling ? ATTR_MAX : Math.min(ATTR_MAX, p.attributes[k][1]);
-  return p.attributes[k][0] < cap;
+// Add `points` to season.ap, split across the award categories.
+export function awardPoints(p, points, params, rng) {
+  const ap = p.season?.ap;
+  if (!ap || points <= 0) return 0;
+  const weights = AWARD_CATEGORIES.map(i =>
+    CATEGORIES[i].attrs.reduce((a, k) => a + attrWeight(p, k, params), 0));
+  let given = 0;
+  for (let n = 0; n < points; n++) {
+    const i = weightedPick(rng, AWARD_CATEGORIES, i => weights[AWARD_CATEGORIES.indexOf(i)]);
+    if (i == null) break;
+    ap[i]++;
+    given++;
+  }
+  return given;
 }
 
-function raise(p, k) {
-  p.attributes[k][0]++;
-  if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0];
-}
-
-// Spend held category points: each point is +1 to a rating in its category.
-// Points with nowhere to go (category all at 20) stay held. Returns points spent.
+// Spend held points into ratings: each point is +1 to a rating in its
+// category, and the ceiling rises with it (13/14 +2 -> 15/15). Points with
+// nowhere to go (category all at 20) stay held. Returns points spent.
 export function spendHeldPoints(p, params, rng) {
   const ap = p.season?.ap;
   if (!ap) return 0;
   let spent = 0;
   CATEGORIES.forEach((c, i) => {
     while (ap[i] > 0) {
-      // Held points are already earned, so only the 20 cap stops them.
-      const free = { ...params, exceedCeiling: true };
-      const k = weightedPick(rng, c.attrs.filter(k => canGrow(p, k, free)), k => attrWeight(p, k, free));
+      const k = weightedPick(rng, c.attrs, k => attrWeight(p, k, params));
       if (!k) break;
-      raise(p, k);
+      p.attributes[k][0]++;
+      if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0];
       ap[i]--;
       spent++;
     }
   });
-  return spent;
-}
-
-// Spend `points` on attributes. Mutates p. Returns points actually spent.
-export function distributePoints(p, points, params, rng) {
-  const gained = {};
-  let spent = 0;
-  for (let i = 0; i < points; i++) {
-    const open = ATTRS.filter(k => canGrow(p, k, params) && (gained[k] || 0) < params.maxPerAttr);
-    const k = weightedPick(rng, open, k => attrWeight(p, k, params));
-    if (!k) break;
-    raise(p, k);
-    gained[k] = (gained[k] || 0) + 1;
-    spent++;
-  }
   return spent;
 }
 
@@ -166,8 +164,8 @@ export function unlockSkill(p, id) {
   else p.skills.push({ id, xp: 0, level: 1, equipped: true });
 }
 
-export function maybeSkills(p, spent, params, profiles, rng) {
-  if (p.age <= params.skillMaxAge && spent >= params.skillMinPoints &&
+export function maybeSkills(p, points, params, profiles, rng) {
+  if (p.age <= params.skillMaxAge && points >= params.skillMinPoints &&
       activeSkills(p).length < params.maxSkills && rng() * 100 < params.newSkillChance) {
     const ranked = rankSkillsFor(p, profiles).slice(0, 5).filter(s => s.fit > 0);
     const pick = weightedPick(rng, ranked, s => s.fit);
@@ -180,15 +178,19 @@ export function maybeSkills(p, spent, params, profiles, rng) {
   }
 }
 
-// Run progression over a list of players. `entries` are { p, team, league }.
+// Run the offseason bump. `entries` are { p, team, leagueIdx, spend }.
+// `spend` spends the player's held points into ratings afterwards.
+// Returns Map pid -> points awarded.
 export function runProgression(entries, params, profiles) {
   const rng = mulberry32(params.seed);
+  const awards = new Map();
   // Sort by id so results don't depend on roster order.
   const sorted = [...entries].sort((a, b) => a.p.id - b.p.id);
   for (const e of sorted) {
-    if (params.spendHeldPoints) spendHeldPoints(e.p, params, rng);
     const pts = pointsFor(e.p, lastSeasonMpg(e.p, e.leagueIdx), params, rng);
-    const spent = pts > 0 ? distributePoints(e.p, pts, params, rng) : 0;
-    maybeSkills(e.p, spent, params, profiles, rng);
+    awards.set(e.p.id, awardPoints(e.p, pts, params, rng));
+    maybeSkills(e.p, pts, params, profiles, rng);
+    if (e.spend) spendHeldPoints(e.p, params, rng);
   }
+  return awards;
 }

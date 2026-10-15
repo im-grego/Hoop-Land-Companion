@@ -293,3 +293,7 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .held { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; text-align: center; }
 .held > div { background: var(--bg-dark); border: 2px solid var(--btn-edge); padding: 6px 2px; display: flex; flex-direction: column; font-size: 13px; }
 .held b { font-size: 20px; }
+.pts-row { display: flex; align-items: center; gap: 8px; }
+.pts-row .grow { flex: 1; min-width: 0; font-size: 15px; }
+.pts-row .btn.square { width: 44px; min-height: 44px; font-size: 22px; }
+.pts-val { min-width: 54px; text-align: center; font-size: 20px; }
