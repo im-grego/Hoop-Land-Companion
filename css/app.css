@@ -617,9 +617,11 @@ body::before {
 .ol-need b { font-weight: 800; min-width: 52px; }
 .ol-need span { color: #fff; }
 .ol-pick { padding: 2px 8px; background: var(--btn-shadow); border: 2px solid var(--btn-edge); font-weight: 800; font-size: 14px; }
-.ol-future { display: grid !important; grid-template-columns: 1fr 1fr; gap: 4px 12px !important; font-size: 13px; }
-.ol-yr { white-space: nowrap; }
-.ol-yr b { color: var(--cyan); margin-right: 4px; }
+.ol-future { flex-direction: column; gap: 4px !important; font-size: 13px; }
+.ol-yr { display: flex; align-items: baseline; gap: 8px; }
+.ol-yr b { flex: none; width: 38px; color: var(--cyan); }
+.ol-yr > span { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.ol-fp { white-space: nowrap; }
 .board-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
 .board-row .mv { display: flex; flex-direction: column; gap: 6px; justify-content: center; }
 .board-row .mv .btn.square { width: 44px; min-height: 40px; font-size: 18px; }
@@ -783,3 +785,14 @@ body::before {
 details.dbx { padding: 10px 12px; }
 details.dbx summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
 details.dbx[open] summary { margin-bottom: 8px; }
+
+/* Outlook card filled with the team's colors */
+.outlook.tcard { --ink: #fff; color: var(--ink); background: var(--tc1); border-color: var(--tc2); }
+.outlook.tcard.light { --ink: #111; }
+.outlook.tcard .outlook-top.tc { background: color-mix(in srgb, var(--tc1) 78%, #000); border-bottom-color: var(--tc2); }
+.outlook.tcard.light .outlook-top.tc { background: color-mix(in srgb, var(--tc1) 88%, #000); text-shadow: none; }
+.outlook.tcard .ol-grid dt, .outlook.tcard .ol-yr b { color: var(--ink); opacity: .75; }
+.outlook.tcard .muted { color: var(--ink); opacity: .7; }
+.outlook.tcard .ol-need { background: #0b2f6bd9; }
+.outlook.tcard .ol-pick { background: #0b2f6bd9; color: #fff; }
+.outlook.tcard .ol-pick .muted { color: #fff; }

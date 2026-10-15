@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.1';
+const APP_VERSION = '0.27.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2080,6 +2080,14 @@ screens.draft = (args) => {
 
 actions.draftTab = d => replace('draft', { tab: d.t });
 
+// Light team colors (yellow, cream, white) get dark text.
+function isLight(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const L = 0.2126 * ch(n >> 16 & 255) + 0.7152 * ch(n >> 8 & 255) + 0.0722 * ch(n & 255);
+  return L > 0.45;
+}
+
 // Your teams at a glance: stage, needs and draft capital.
 function outlookCard() {
   const L = league();
@@ -2096,10 +2104,10 @@ function outlookCard() {
       if (!byYear.has(pk.yr)) byYear.set(pk.yr, []);
       byYear.get(pk.yr).push(`R${pk.rd}${pk.otid !== t.id ? ` <span class="muted">(${esc(tname(pk.otid))})</span>` : ''}`);
     }
-    const future = [...byYear].map(([y, list]) => `<span class="ol-yr"><b>${y}</b> ${list.join(' · ')}</span>`);
+    const future = [...byYear].map(([y, list]) => `<div class="ol-yr"><b>${y}</b><span>${list.map(x => `<span class="ol-fp">${x}</span>`).join('')}</span></div>`);
     const need = n => { const [g, k] = n.label.split(' · '); return `<span class="ol-need"><b>${esc(g)}</b>${k ? `<span>${esc(k)}</span>` : ''}</span>`; };
     const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
-    return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
+    return `<div class="outlook ${c1 ? `tcard ${isLight(c1) ? 'light' : ''}` : ''}" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
       <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(o.status)}</div>
       <dl class="ol-grid">
         <dt>Needs</dt><dd class="ol-needs">${o.needs.map(need).join('') || '<span class="muted">—</span>'}</dd>
@@ -3526,5 +3534,13 @@ history.replaceState({ depth: 1 }, '');
 render();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then(reg => reg.update()).catch(() => {});
+  // A new version took over: reload into it, unless there's unsaved work.
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    if (state.data && state.dirty) { toast('Update ready', 'Export or finish up, then reopen the app to get it.'); return; }
+    reloaded = true;
+    location.reload();
+  });
 }
