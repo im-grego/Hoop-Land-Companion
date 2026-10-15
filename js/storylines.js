@@ -111,6 +111,27 @@ export function buildStorylines(league, opts = {}) {
   const badTeam = t => worst.indexOf(t.id) < 10;
   const stories = [];
   const add = (kind, score, icon, title, text, pid = null) => stories.push({ kind, score, icon, title, text, pid });
+  // Rotate through phrasings so the same line never shows up twice. A
+  // phrase is a placeholder until the top 10 are picked; then each key hands
+  // out its versions in order, skipping ones already used.
+  const slots = [];
+  const vary = (key, arr, seed) => { slots.push({ key, arr, seed }); return `\u0001${slots.length - 1}\u0001`; };
+  const usedPhrases = {};
+  const resolve = str => str.replace(/\u0001(\d+)\u0001/g, (_, i) => {
+    const { key, arr, seed } = slots[+i];
+    const used = (usedPhrases[key] ||= new Set());
+    const start = Math.abs(seed) % arr.length;
+    for (let j = 0; j < arr.length; j++) {
+      const k = (start + j) % arr.length;
+      if (!used.has(k)) { used.add(k); return resolve(arr[k]); }
+    }
+    return resolve(arr[start]);
+  });
+  const ringLine = (p, seed) => {
+    const n = timesWon(p, AWARD.CHAMP);
+    if (n) return vary('rings', [` ${Word(n)} ring${n > 1 ? 's' : ''} already.`, ` ${Word(n)} title${n > 1 ? 's' : ''} on the résumé.`, ` Already a ${n > 1 ? `${n}-time ` : ''}champion.`], seed);
+    return vary('noring', [' Still searching for that first ring.', ' The one thing missing: a ring.', ' No ring yet, and the clock is ticking.', ' A title is the only thing left to chase.'], seed);
+  };
 
   // Champion: can they repeat?
   const champs = roster.filter(({ p }) => won(p, AWARD.CHAMP, yr));
@@ -163,12 +184,20 @@ export function buildStorylines(league, opts = {}) {
     const [s1, s2] = best(t, 2);
     const games = ko ? ko.games : 4 + run.wins;
     const close = run.wins === 3 ? ` in ${games}, one win short` : ` in ${games}`;
-    const lead = s1 ? ` ${playerName(s1)}${s2 ? ` and ${playerName(s2)}` : ''} ${s2 ? 'are' : 'is'} still chasing a ring.` : '';
+    const who = s1 ? `${playerName(s1)}${s2 ? ` and ${playerName(s2)}` : ''}` : '';
+    const are = s2 ? 'are' : 'is';
+    const lead = s1 ? ' ' + vary('hump-lead', [
+      `${who} ${are} still chasing a ring.`,
+      `${who} ${are} running out of patience.`,
+      `For ${who}, it's title or bust.`,
+      `${who} ${are} still waiting for the breakthrough.`,
+      `${who} will carry that one into the season.`,
+    ], t.id + yr) : '';
     let title;
-    if (run.round === 4) title = pick([`${Place(t)} came up one series short`, `So close for ${place(t)}`, `The ${t.name} got a taste of the Finals`], t.id);
-    else if (deep >= 3) title = `${Place(t)} keeps knocking on the door`;
-    else if (deep === 2) title = `${Place(t)}: can they get over the hump?`;
-    else title = run.round === 3 ? `${Place(t)} is one round away` : `${Place(t)} wants more`;
+    if (run.round === 4) title = vary('hump-finals', [`${Place(t)} came up one series short`, `So close for ${place(t)}`, `The ${t.name} got a taste of the Finals`], t.id);
+    else if (deep >= 3) title = vary('hump-deep', [`${Place(t)} keeps knocking on the door`, `Is this finally ${place(t)}'s year?`], t.id);
+    else if (deep === 2) title = vary('hump-two', [`${Place(t)}: can they get over the hump?`, `${Place(t)} is tired of close calls`], t.id);
+    else title = run.round === 3 ? vary('hump-cf', [`${Place(t)} is one round away`, `${Place(t)} wants the last step`], t.id) : vary('hump-r2', [`${Place(t)} wants more`, `${Place(t)} isn't satisfied`, `Next up for ${place(t)}: a deeper run`], t.id);
     const text = run.round === 4
       ? `Lost the ${yr} Finals${by ? ` to ${full(by)}` : ''}${close}.${lead}`
       : `Bounced in the ${ROUND[run.round]}${by ? ` by ${full(by)}` : ''}${close}` +
@@ -225,13 +254,13 @@ export function buildStorylines(league, opts = {}) {
     const anchor = best(team, 4).find(x => !list.some(a => a.p === x));
     const how = a => (a.c ? `signed for ${money(a.c)}` : 'via trade');
     if (list.length >= 2 && star(list[1].p) >= 12) {
-      add('move', 34 + star(top.p) * 2 + star(list[1].p), '🔥', pick([`${Place(team)} goes all-in`, `New-look ${team.name}`, `${Place(team)} reloads`], tid),
+      add('move', 34 + star(top.p) * 2 + star(list[1].p), '🔥', vary('move-group', [`${Place(team)} goes all-in`, `New-look ${team.name}`, `${Place(team)} reloads`, `Big summer in ${place(team)}`, `${Place(team)} wasn't waiting around`], tid),
         `${andList(list.slice(0, 3).map(a => `${playerName(a.p)} (${slash(a.l)}, ${how(a)})`))}` +
-        `${anchor ? ` join ${playerName(anchor)}` : ' arrive'}. Can it all fit?`, top.p.id);
+        `${anchor ? ` join ${playerName(anchor)}` : ' arrive'}. ` + vary('move-group-end', ['Can it all fit?', 'Now they have to make it work.', 'The pressure is on.', 'One ball, a lot of mouths to feed.'], tid), top.p.id);
       continue;
     }
     const { p, l, from, c } = top;
-    const verb = c ? pick(['heads to', 'lands in', 'is off to'], p.id) : 'traded to';
+    const verb = c ? vary('move-verb', ['heads to', 'lands in', 'is off to', 'picks'], p.id) : 'traded to';
     const title = c ? `${playerName(p)} ${verb} ${place(team)}` : `Blockbuster: ${playerName(p)} ${verb} ${place(team)}`;
     add('move', 30 + star(p) * 2.5 + (c ? 0 : 3), c ? '✍️' : '🔁', title,
       `${c ? `A ${money(c)} deal. ` : ''}${p.fn} leaves ${full(from)} after ${statLine(l)} a game` +
@@ -263,7 +292,9 @@ export function buildStorylines(league, opts = {}) {
     const young = best(t, 4, r.p).find(x => x.age <= 24 && star(x) >= 12);
     const bad = badTeam(t);
     add('rookie', (bad ? 52 : 40) + (6 - r.pick) * 4, '🌱',
-      r.pick === 1 ? `${playerName(r.p)}: the new face of ${place(t)}` : bad ? `Hope arrives in ${place(t)}` : `${playerName(r.p)} lands on a contender`,
+      r.pick === 1 ? vary('no1', [`${playerName(r.p)}: the new face of ${place(t)}`, `The ${playerName(r.p)} era starts in ${place(t)}`, `All eyes on the #1 pick: ${playerName(r.p)}`, `No pressure, ${r.p.fn}: ${place(t)} needs a savior`], r.p.id)
+        : bad ? vary('rookie-bad', [`Hope arrives in ${place(t)}`, `${place(t)} has its next building block`, `${playerName(r.p)} gives ${place(t)} something to root for`], r.p.id)
+        : vary('rookie-good', [`${playerName(r.p)} lands on a contender`, `A rich team gets richer: ${playerName(r.p)}`], r.p.id),
       `The #${r.pick} pick${cl ? ` (${f1(cl.pts)} points, ${f1(cl.reb)} rebounds, ${f1(cl.ast)} assists at ${cl.team})` : ''} joins a team that went ${run.W}-${run.L}.` +
       (young ? ` Pairing ${r.p.fn} with ${playerName(young)} gives ${place(t)} a young core to build around.` : bad ? ' The rebuild runs through the rookie now.' : ''), r.p.id);
   }
@@ -277,10 +308,12 @@ export function buildStorylines(league, opts = {}) {
     const inj = lower(injuryName(h.worst));
     const recurring = (p.history?.injuries || []).filter(i => i.yr < yr && i.yr >= yr - 3 && i.gamesOut > 0 && injuryName(i) === injuryName(h.worst)).length;
     add('injury', 25 + star(p) * 1.5 + h.games / 4 + (cls === 'structural' ? 10 : 0), '🩹',
-      cls === 'structural' ? `Can ${playerName(p)} come all the way back?` : recurring ? `${playerName(p)} and that ${inj.split(' ').pop()} again` : `A healthy ${playerName(p)} changes everything`,
-      `Missed ${h.games} games with ${/^[aeiou]/i.test(inj) ? 'an' : 'a'} ${inj}. ` +
-      (cls === 'structural' ? `Injuries like that can take a step from a player; the ${team.name} need the old ${p.fn}.`
-        : recurring ? `Not the first time, either. The ${team.name} will be careful.`
+      cls === 'structural' ? vary('inj-struct', [`Can ${playerName(p)} come all the way back?`, `${playerName(p)}'s road back`, `The ${team.name} hold their breath on ${playerName(p)}`, `Is the old ${playerName(p)} still in there?`], p.id)
+        : recurring ? vary('inj-recur', [`${playerName(p)} and that ${inj.split(' ').pop()} again`, `${playerName(p)} needs a clean bill of health`], p.id)
+        : vary('inj-std', [`A healthy ${playerName(p)} changes everything`, `${playerName(p)} is back, and ${place(team)} is better for it`, `Welcome back, ${playerName(p)}`], p.id),
+      vary('inj-missed', [`Missed ${h.games} games with ${/^[aeiou]/i.test(inj) ? 'an' : 'a'} ${inj}. `, `${h.games} games lost to ${/^[aeiou]/i.test(inj) ? 'an' : 'a'} ${inj} last season. `, `Sidelined ${h.games} games by ${/^[aeiou]/i.test(inj) ? 'an' : 'a'} ${inj}. `], p.id) +
+      (cls === 'structural' ? vary('inj-struct-text', [`Injuries like that can take a step from a player; the ${team.name} need the old ${p.fn}.`, `The question isn't if ${p.fn} plays, it's whether the burst is still there.`, `Everything in ${place(team)} hinges on how that ${inj.split(' ').pop()} holds up.`], p.id)
+        : recurring ? vary('inj-recur-text', [`Not the first time, either. The ${team.name} will be careful.`, `It keeps coming back, and so do the questions.`], p.id)
         : `Put up ${slash(lines.get(p.id))} when available.`), p.id);
   }
 
@@ -288,29 +321,32 @@ export function buildStorylines(league, opts = {}) {
   for (const { p, team } of roster) {
     if (p.age < 32 || star(p) < 15) continue;
     const slipping = p.age > p.regressionAge;
-    const titles = timesWon(p, AWARD.CHAMP);
     add('aging', 22 + star(p) * 1.4 + (slipping ? 8 : 0) + Math.min(8, legacy(p) * 0.2), '⏳',
-      pick([`Will ${p.ln} beat Father Time?`, `How much is left in the tank for ${playerName(p)}?`, `${playerName(p)} isn't done yet`], p.id + yr),
-      `${p.age} years old and still putting up ${statLine(lines.get(p.id))}.` +
-      (titles ? ` ${Word(titles)} ring${titles > 1 ? 's' : ''} already.` : ' Still no ring.') +
-      ` Every season counts now for the ${team.name}.`, p.id);
+      vary('aging-title', [`Will ${p.ln} beat Father Time?`, `How much is left in the tank for ${playerName(p)}?`, `${playerName(p)} isn't done yet`, `${playerName(p)} vs. the calendar`, `One more run for ${playerName(p)}?`], p.id + yr),
+      vary('aging-text', [`${p.age} years old and still putting up ${statLine(lines.get(p.id))}.`, `At ${p.age}, still good for ${statLine(lines.get(p.id))}.`, `${statLine(lines.get(p.id))} a night, at ${p.age}.`], p.id) +
+      ringLine(p, p.id) +
+      vary('aging-end', [` Every season counts now for the ${team.name}.`, ` The ${team.name} will take every good year they can get.`, ` How long can ${p.fn} keep this up?`], p.id), p.id);
   }
 
   // Development this offseason (what the app applied), told as summer buzz.
   if (opts.dev) {
-    const devs = everyone.map(({ p, team }) => ({ p, team, d: opts.dev(p) })).filter(x => x.d?.changed && x.team);
+    // Rookies have nothing to compare to yet: buzz is for second-year players and up.
+    const devs = everyone.map(({ p, team }) => ({ p, team, d: opts.dev(p) }))
+      .filter(x => x.d?.changed && x.team && !rookieIds.has(x.p.id) && (x.p.yrs || 0) >= 1 && lines.get(x.p.id));
     const jumps = devs.filter(x => x.d.points >= 4).sort((a, b) => b.d.points - a.d.points || b.p.pot - a.p.pot);
     for (const { p, team, d } of jumps.slice(0, 2)) {
       const top = Object.entries(d.attrs).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([k]) => SKILL_TALK[k]);
-      add('dev', 28 + d.points * 3 + p.pot, '💪', pick([`Summer buzz: ${playerName(p)}`, `${playerName(p)} put in the work`, `Gym rat alert: ${playerName(p)}`], p.id),
-        `Word out of ${place(team)} is that the ${p.age}-year-old's ${top.join(' and ')} ${top.length > 1 ? 'look' : 'looks'} like a different player's.` +
-        (lines.get(p.id) ? ` Coming off ${slash(lines.get(p.id))}.` : ''), p.id);
+      add('dev', 28 + d.points * 3 + p.pot, '💪', vary('dev-title', [`Summer buzz: ${playerName(p)}`, `${playerName(p)} put in the work`, `Gym rat alert: ${playerName(p)}`, `${playerName(p)} came back different`], p.id),
+        vary('dev-text', [`Word out of ${place(team)} is that the ${p.age}-year-old's ${top.join(' and ')} ${top.length > 1 ? 'look' : 'looks'} like a different player's.`,
+          `Teammates noticed: ${p.fn}'s ${top.join(' and ')} took a real jump this summer.`,
+          `The ${team.name} love what they've seen from ${p.fn}'s ${top.join(' and ')}.`], p.id) +
+        ` Coming off ${slash(lines.get(p.id))}.`, p.id);
     }
     // A potential bump reads as a breakout candidate.
     for (const { p, team } of devs.filter(x => x.d.potDelta > 0 && x.p.age <= 25).sort((a, b) => star(b.p) - star(a.p)).slice(0, 2)) {
       const l = lines.get(p.id);
-      add('breakout', 34 + p.pot * 2 + star(p), '📈', pick([`Is ${playerName(p)} about to break out?`, `Leap watch: ${playerName(p)}`], p.id),
-        `${l ? `${slash(l)} at ${p.age - (cur > yr ? 1 : 0)}` : `Only ${p.age}`}, and the ${team.name} think there's another level coming.`, p.id);
+      add('breakout', 34 + p.pot * 2 + star(p), '📈', vary('leap-title', [`Is ${playerName(p)} about to break out?`, `Leap watch: ${playerName(p)}`, `${playerName(p)}'s next step`], p.id),
+        `${slash(l)} at ${p.age - (cur > yr ? 1 : 0)}, ` + vary('leap-text', [`and the ${team.name} think there's another level coming.`, `and the ceiling just got higher.`, `and ${place(team)} is betting on a jump.`], p.id), p.id);
     }
   }
   for (const m of (opts.mentorships || []).filter(m => legacy(m.mentor) >= 10).slice(0, 1)) {
@@ -324,5 +360,5 @@ export function buildStorylines(league, opts = {}) {
   return stories.sort((a, b) => b.score - a.score).filter(s => {
     count[s.kind] = (count[s.kind] || 0) + 1;
     return count[s.kind] <= (cap[s.kind] || 2);
-  }).slice(0, 10);
+  }).slice(0, 10).map(s => ({ ...s, title: resolve(s.title), text: resolve(s.text) }));
 }
