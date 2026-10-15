@@ -48,6 +48,7 @@ export const DEFAULT_PARAMS = {
   // per-36 game score) moves potential and regression age.
   trainerMinGames: 15,
   trainerMinMpg: 10,
+  prodAgeRange: 1,          // production peers: same role, within this many years of age
   prodPotUpZ: 1.5,          // z at which standout production starts to raise potential
   prodPotUpPerZ: 12,        // % per z above that
   prodPotDownZ: -1.5,       // z at which poor production can cost potential
@@ -318,14 +319,22 @@ export function seasonGameScore(p, leagueIdx, year, params) {
 }
 
 // z-score of each player's game score against players of the same role
-// within 2 years of their age (widened to the whole role if too few peers).
-// Returns Map id -> z.
+// within `prodAgeRange` years of their age (widened a year at a time, then
+// to the whole role, if there are too few peers).
+// Returns Map id -> z, with `.ranges` Map id -> age range used (null = whole role).
 export function productionScores(players, leagueIdx, year, params) {
   const rows = players.map(p => ({ p, gs: seasonGameScore(p, leagueIdx, year, params) })).filter(r => r.gs != null);
   const out = new Map();
+  out.ranges = new Map();
   for (const r of rows) {
-    let peers = rows.filter(x => ROLE(x.p.pos) === ROLE(r.p.pos) && Math.abs(x.p.age - r.p.age) <= 2);
-    if (peers.length < 8) peers = rows.filter(x => ROLE(x.p.pos) === ROLE(r.p.pos));
+    const role = rows.filter(x => ROLE(x.p.pos) === ROLE(r.p.pos));
+    let range = params.prodAgeRange ?? 1, peers;
+    for (; range <= 3; range++) {
+      peers = role.filter(x => Math.abs(x.p.age - r.p.age) <= range);
+      if (peers.length >= 8) break;
+    }
+    if (range > 3) { peers = role; range = null; }
+    out.ranges.set(r.p.id, range);
     const m = peers.reduce((a, x) => a + x.gs, 0) / peers.length;
     const sd = Math.sqrt(peers.reduce((a, x) => a + (x.gs - m) ** 2, 0) / peers.length) || 1;
     out.set(r.p.id, (r.gs - m) / sd);

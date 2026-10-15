@@ -48,7 +48,7 @@ severity 1–11 Bruised, Concussed, Jammed, Pulled, Sore, Sprained, Stiff, Strai
 severity 1–4 Broken, Dislocated, Fractured, Torn. Capped at 50%. Injured players can't also get the potential upgrade, and their
   regression-delay chance is cut in half.
 - **Trainer (production):** each player's last season (15+ games, 10+ MPG) is scored as per-36 game score and
-  compared, as a z-score, with players in the same role (guards / wings / bigs) within 2 years of their age.
+  compared, as a z-score, with players in the same role (guards / wings / bigs) within 1 year of their age (widened a year at a time if fewer than 8 peers).
   Standout seasons (z ≥ 1.5) add +12% per σ to the potential roll; poor young seasons (z ≤ −1.5) have a 6% chance
   of −1 potential. Production also scales the regression-delay roll (×(1 + 0.4·z), 0.2–2).
 - **Regression sooner:** players within 3 years of their regression age can lose a year of `regressionAge`:

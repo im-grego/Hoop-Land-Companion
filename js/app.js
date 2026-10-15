@@ -1087,11 +1087,13 @@ function injuryText(p) {
 }
 
 function productionText(p) {
-  const z = bumpContext().production.get(p.id);
+  const prod = bumpContext().production;
+  const z = prod.get(p.id);
   if (z == null) return '<p class="note muted small">Production: not enough minutes last season to judge.</p>';
   const word = z >= 1.5 ? 'standout' : z >= 0.5 ? 'above average' : z > -0.5 ? 'average' : z > -1.5 ? 'below average' : 'poor';
+  const ages = r => r == null ? 'of all ages' : `aged ${p.age - r}–${p.age + r}`;
   const group = p.pos <= 2 ? 'guards' : p.pos <= 5 ? 'wings' : 'bigs';
-  return `<p class="note small">Last season's production vs ${group} aged ${p.age - 2}–${p.age + 2}: <b class="${z >= 0.5 ? 'up' : z <= -0.5 ? 'down' : ''}">${word}</b> (${z >= 0 ? '+' : ''}${z.toFixed(1)} σ)</p>`;
+  return `<p class="note small">Last season's production vs ${group} ${ages(prod.ranges?.get(p.id))}: <b class="${z >= 0.5 ? 'up' : z <= -0.5 ? 'down' : ''}">${word}</b> (${z >= 0 ? '+' : ''}${z.toFixed(1)} σ)</p>`;
 }
 
 function regressionText(p) {
