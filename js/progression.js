@@ -35,7 +35,8 @@ export const DEFAULT_PARAMS = {
   levelUpMaxAge: 25,
   maxSkills: 8,
   // Draft room
-  lotteryDraws: 4,
+  lotteryFormat: 'auto',  // auto | 321 | classic
+  lotteryDraws: 4,        // classic format only
   draftRounds: 2,
 };
 

@@ -95,36 +95,69 @@ export function standings(league) {
     .sort((a, b) => a.pct - b.pct || a.team.id - b.team.id);
 }
 
-// Draw the first `drawn` picks from the lottery teams using the league's odds
-// (index 0 = worst record); the rest of the lottery follows by record.
-export function drawLottery(lotteryTeams, odds, drawn, rng) {
+// Lottery formats:
+//  classic: top `draws` picks drawn, the rest by record.
+//  321 (NBA 2027+): all lottery picks drawn; the 3 worst teams pick no lower
+//  than #12.
+export const LOTTERY_321 = { floorTeams: 3, floorPick: 12 };
+
+// Detect the 3-2-1 format from the odds: 16 teams and the worst seeds having
+// lower odds than seed 4.
+export function detectLotteryFormat(league) {
+  const s = league.season;
+  const o = s.lotteryOdds || [];
+  return s.lotteryTeams === 16 && o.length >= 4 && o[0] < o[3] ? '321' : 'classic';
+}
+
+// Draw picks from the lottery teams using the league's odds (index 0 = worst
+// record). `drawn` picks are drawn; the rest follow by record. `floor`
+// guarantees the worst `floorTeams` seeds a pick no lower than `floorPick`.
+export function drawLottery(lotteryTeams, odds, drawn, rng, floor = null) {
   const pool = lotteryTeams.map((t, i) => ({ t, w: odds[i] ?? 0, seed: i }));
   const order = [];
-  for (let n = 0; n < Math.min(drawn, pool.length); n++) {
-    const total = pool.reduce((a, x) => a + x.w, 0);
+  for (let n = 0; n < Math.min(drawn, lotteryTeams.length); n++) {
+    let candidates = pool;
+    if (floor) {
+      const protectedLeft = pool.filter(x => x.seed < floor.floorTeams);
+      if (protectedLeft.length && floor.floorPick - n <= protectedLeft.length) candidates = protectedLeft;
+    }
+    const total = candidates.reduce((a, x) => a + x.w, 0);
     let r = rng() * total;
-    let idx = pool.findIndex(x => (r -= x.w) <= 0);
-    if (idx < 0) idx = pool.length - 1;
-    order.push(pool.splice(idx, 1)[0]);
+    let pick = candidates.find(x => (r -= x.w) <= 0) || candidates[candidates.length - 1];
+    order.push(pool.splice(pool.indexOf(pick), 1)[0]);
   }
   pool.sort((a, b) => a.seed - b.seed);
   return [...order, ...pool].map(x => ({ team: x.t, seed: x.seed }));
 }
 
-export function lotterySetup(league) {
+// `format` is 'auto', 'classic' or '321'; `classicDraws` is used for classic.
+export function lotterySetup(league, format = 'auto', classicDraws = 4) {
   const s = league.season;
   const table = standings(league);
   const n = Math.min(s.lotteryTeams || 14, table.length);
-  return { table, lotteryTeams: table.slice(0, n).map(r => r.team), odds: s.lotteryOdds || [] };
+  const fmt = format === 'auto' ? detectLotteryFormat(league) : format;
+  return {
+    table,
+    lotteryTeams: table.slice(0, n).map(r => r.team),
+    odds: s.lotteryOdds || [],
+    format: fmt,
+    draws: fmt === '321' ? n : Math.min(classicDraws, n),
+    floor: fmt === '321' ? LOTTERY_321 : null,
+  };
+}
+
+export function runLottery(league, format, classicDraws, rng) {
+  const { lotteryTeams, odds, draws, floor } = lotterySetup(league, format, classicDraws);
+  return drawLottery(lotteryTeams, odds, draws, rng, floor);
 }
 
 // Monte Carlo odds: chance of each pick for each lottery team.
-export function lotteryOdds(league, drawn, sims = 10000, seed = 1) {
-  const { lotteryTeams, odds } = lotterySetup(league);
+export function lotteryOdds(league, format = 'auto', classicDraws = 4, sims = 10000, seed = 1) {
+  const { lotteryTeams, odds, draws, floor } = lotterySetup(league, format, classicDraws);
   const rng = mulberry32(seed);
   const counts = lotteryTeams.map(() => new Array(lotteryTeams.length).fill(0));
   for (let s = 0; s < sims; s++) {
-    drawLottery(lotteryTeams, odds, drawn, rng).forEach((r, pick) => { counts[r.seed][pick]++; });
+    drawLottery(lotteryTeams, odds, draws, rng, floor).forEach((r, pick) => { counts[r.seed][pick]++; });
   }
   return lotteryTeams.map((t, i) => ({ team: t, seed: i, weight: odds[i] ?? 0, pct: counts[i].map(c => c / sims * 100) }));
 }

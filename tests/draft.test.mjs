@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { parseSave, serializeSave, playerName, POSITIONS, heightStr } from '../js/savefile.js';
-import { draftDrop, buildCompPool, prospectComps, prospectValue, lotteryOdds, drawLottery, lotterySetup,
+import { draftDrop, buildCompPool, prospectComps, prospectValue, lotteryOdds, runLottery, detectLotteryFormat,
   draftOrder, cpuPick, tradePicks } from '../js/draft.js';
 import { mulberry32 } from '../js/progression.js';
 
@@ -26,7 +26,10 @@ for (const p of board.slice(0, 5)) {
 }
 
 // Lottery odds sum to 100% per pick
-const odds = lotteryOdds(L, 4, 4000);
+assert.equal(detectLotteryFormat(L), '321', 'file uses the 3-2-1 lottery');
+const odds = lotteryOdds(L, 'auto', 4, 4000);
+// 3-2-1: worst three never pick below #12
+for (const r of odds.slice(0, 3)) assert.equal(r.pct.slice(12).reduce((a, b) => a + b, 0), 0, 'bottom-3 floor at #12');
 for (let pick = 0; pick < odds.length; pick++) {
   const s = odds.reduce((a, r) => a + r.pct[pick], 0);
   assert.ok(Math.abs(s - 100) < 1e-6, 'each pick goes to exactly one team');
@@ -34,8 +37,11 @@ for (let pick = 0; pick < odds.length; pick++) {
 console.log('lottery #1 odds:', odds.map(r => `${r.team.shortName} ${r.pct[0].toFixed(1)}%`).join(', '));
 
 // Mock draft
-const { lotteryTeams, odds: w } = lotterySetup(L);
-const lot = drawLottery(lotteryTeams, w, 4, mulberry32(7)).map(r => r.team);
+const lot = runLottery(L, 'auto', 4, mulberry32(7)).map(r => r.team);
+// Classic: only the top 4 are drawn, so a team never picks after its seed + 4.
+for (const r of lotteryOdds(L, 'classic', 4, 2000)) {
+  r.pct.forEach((v, pick) => { if (v) assert.ok(pick <= r.seed + 4, 'classic: fall at most 4 spots'); });
+}
 const order = draftOrder(L, lot);
 assert.equal(new Set(order.map(o => `${o.rd}:${o.orig.id}`)).size, order.length, 'no duplicate picks');
 const avail = [...L.draftClass];

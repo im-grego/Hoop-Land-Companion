@@ -35,6 +35,8 @@ Available once the file has a draft class (offseason, before the lottery).
   rookie drop (−4, never below 2; ratings already at 2 or lower stay). Ceiling = their top ratings. Comps match the 12
   skill ratings plus height against active players, free agents, retirees and Hall of Famers.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
+  Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
+  the classic top-4 draw.
 - **Mock draft:** uses the simulated lottery (or record order), honours traded picks; CPU teams take the best fit,
   you pick for your teams.
 - **Trades:** swap draft picks between any two teams, written to the season file (undo per trade).

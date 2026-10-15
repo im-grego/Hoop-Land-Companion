@@ -5,10 +5,10 @@ import {
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32 } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
-  lotterySetup, lotteryOdds, drawLottery, draftOrder, cpuPick, tradePicks, pickValue,
+  lotterySetup, lotteryOdds, runLottery, draftOrder, cpuPick, tradePicks, pickValue,
 } from './draft.js';
 
-const APP_VERSION = '0.3.0';
+const APP_VERSION = '0.3.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -866,7 +866,12 @@ screens.settings = (args) => {
 };
 
 actions.setTab = d => replace('settings', { tab: d.t });
-actions.setOpt = d => { state.params[d.k] = JSON.parse(d.v); saveParams(); render(); };
+actions.setOpt = d => {
+  state.params[d.k] = JSON.parse(d.v);
+  if (d.k === 'lotteryFormat' && state.data) { draftState().lottery = null; draftState().mock = null; }
+  saveParams();
+  render();
+};
 actions.step = d => {
   const f = [...STEP_FIELDS.general, ...STEP_FIELDS.skills].find(x => x[0] === d.k);
   state.params[d.k] = Math.max(f[3], Math.min(f[4], state.params[d.k] + f[2] * +d.dir));
@@ -1016,19 +1021,24 @@ screens.prospect = (args) => {
 function draftLottery() {
   const L = league();
   const ds = draftState();
-  const draws = state.params.lotteryDraws;
-  const odds = lotteryOdds(L, draws, 5000, 1);
-  const { table } = lotterySetup(L);
+  const P = state.params;
+  const setup = lotterySetup(L, P.lotteryFormat, P.lotteryDraws);
+  const draws = setup.draws;
+  const odds = lotteryOdds(L, P.lotteryFormat, P.lotteryDraws, 5000, 1);
+  const { table } = setup;
   const rec = new Map(table.map(r => [r.team.id, r]));
   const totalW = odds.reduce((a, r) => a + r.weight, 0) || 1;
   const result = ds.lottery;
   return {
     html: `
-      <div class="stepper">
+      ${options('Lottery Format', 'lotteryFormat', [['auto', 'Auto'], ['321', '3-2-1'], ['classic', 'Classic']])}
+      ${setup.format === '321'
+        ? `<p class="note muted small">${P.lotteryFormat === 'auto' ? 'Detected from your league settings. ' : ''}3-2-1 lottery (NBA 2027+): all ${draws} lottery picks are drawn; the 3 worst teams pick no lower than #12.</p>`
+        : `<div class="stepper">
         <button class="btn square" data-act="lotteryDraws" data-dir="-1" aria-label="Fewer picks drawn">−</button>
         <div class="val small">Top ${draws} pick${draws > 1 ? 's' : ''} drawn</div>
         <button class="btn square" data-act="lotteryDraws" data-dir="1" aria-label="More picks drawn">+</button>
-      </div>
+      </div>`}
       <button class="btn big focus" data-act="simLottery">🎲 Simulate Lottery</button>
       ${result ? `<fieldset class="frame"><legend>Lottery Result</legend><div class="list">
         ${result.map((r, i) => {
@@ -1039,10 +1049,10 @@ function draftLottery() {
       </div>
       <button class="btn" data-act="draftTab" data-t="mock" style="margin-top:10px">▶ Mock Draft With This Order</button></fieldset>` : ''}
       <fieldset class="frame"><legend>Odds</legend>
-        <div class="odds-head"><span>Seed</span><span>Team</span><span>Weight</span><span>#1</span><span>Top ${draws}</span></div>
+        <div class="odds-head"><span>Seed</span><span>Team</span><span>Weight</span><span>#1</span><span>Top ${setup.format === '321' ? 4 : draws}</span></div>
         ${odds.map(r => {
           const rr = rec.get(r.team.id);
-          const top = r.pct.slice(0, draws).reduce((a, b) => a + b, 0);
+          const top = r.pct.slice(0, setup.format === '321' ? 4 : draws).reduce((a, b) => a + b, 0);
           return `<div class="odds-row ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${(r.weight / totalW * 100).toFixed(1)}%</span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span></div>`;
         }).join('')}
         <p class="note muted small" style="margin-top:8px">Weights come from your league's lottery settings (worst record = seed 1). Odds from 5,000 simulations.</p>
@@ -1058,9 +1068,8 @@ actions.lotteryDraws = d => {
 };
 
 actions.simLottery = () => {
-  const { lotteryTeams, odds } = lotterySetup(league());
   const ds = draftState();
-  ds.lottery = drawLottery(lotteryTeams, odds, state.params.lotteryDraws, mulberry32(Math.floor(Math.random() * 1e9)));
+  ds.lottery = runLottery(league(), state.params.lotteryFormat, state.params.lotteryDraws, mulberry32(Math.floor(Math.random() * 1e9)));
   ds.mock = null;
   render();
 };
