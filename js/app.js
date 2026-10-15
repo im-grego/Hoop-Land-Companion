@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.21.2';
+const APP_VERSION = '0.21.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1639,6 +1639,8 @@ screens.settings = (args) => {
       options('Scouting Report Accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]) +
       `<p class="note muted small">How often a prospect's scouting report reads their potential one step high or low (0% / 15% / 25% / 40%).</p>` +
       options('Live Draft: CPU Trade-Ups', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
+      options('Commissioner Mode (Trades)', 'commissioner', [[false, 'Off'], [true, 'On']]) +
+      `<p class="note muted small">On: trade for any team and force trades through. Off: you trade for the teams you control and CPU teams have to accept.</p>` +
       options('Draft-and-Trade Window', 'draftTradeWindow', [[3, '3 picks'], [5, '5 picks'], [8, '8 picks']]) +
       options('2nd-Round Rookie Deals', 'rookieR2Years', [[2, '2 years'], [3, '3 years'], [4, 'Game default (4)']]) +
       options('Free Agency: Game\'s CPU Offers', 'faClearCpuOffers', [[true, 'Clear after each day'], [false, 'Keep']]) +
@@ -2680,12 +2682,12 @@ actions.liveFinish = async () => {
 
 // ---- Live trade builder
 
-// "$24M × 3 · PO" and a value tag (Expiring / Overpaid / Bargain).
+// "$24M · 3 yrs · PO" and a value tag (Expiring / Overpaid / Bargain).
 const OPT_SHORT = { 1: 'TO', 2: 'PO' };
 function contractText(p) {
   const c = p.contract || {};
-  if (!c.sal) return '';
-  return `$${c.sal}M × ${c.yrs || 1}${OPT_SHORT[c.opt] ? ` · ${OPT_SHORT[c.opt]}` : ''}`;
+  if (!c.sal || !c.yrs) return p.status === 4 ? 'Pending FA' : '';
+  return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}${OPT_SHORT[c.opt] ? ` · ${OPT_SHORT[c.opt]}` : ''}`;
 }
 function contractBadge(p) {
   const { tag } = contractValue(p);
@@ -2725,8 +2727,14 @@ screens.liveTrade = (args) => {
   const order = liveOrder();
   const live = liveState();
   const idx = clockIndex(live, order);
-  const aId = +(args.a ?? (teams.find(isUserTeam) || order[Math.max(0, idx)]?.owner || teams[0]).id);
-  const bId = +(args.b ?? (order[Math.max(0, idx)]?.owner.id !== aId ? order[Math.max(0, idx)]?.owner.id : teams.find(t => t.id !== aId).id));
+  // Your side: your own teams (any team with Commissioner Mode on).
+  const commish = !!state.params.commissioner;
+  const mine = teams.filter(isUserTeam);
+  const left = commish || !mine.length ? teams : mine;
+  const aId = left.some(t => t.id === +args.a) ? +args.a : (left.find(isUserTeam) || order[Math.max(0, idx)]?.owner || left[0]).id;
+  const onClock = order[Math.max(0, idx)]?.owner.id;
+  const bId = args.b != null && +args.b !== aId ? +args.b : onClock != null && onClock !== aId ? onClock : teams.find(t => t.id !== aId).id;
+  args.a = aId; args.b = bId;
   const A = L.teams.find(t => t.id === aId), B = L.teams.find(t => t.id === bId);
   const selA = new Set(args.selA || []), selB = new Set(args.selB || []);
   const aa = liveAssets(A), bb = liveAssets(B);
@@ -2735,30 +2743,45 @@ screens.liveTrade = (args) => {
   const verdict = (team, give, get) => isUserTeam(team) || !(give || get) ? '' : cpuAccepts(give, get) ? '<span class="up">would accept</span>' : '<span class="down">would decline</span>';
   const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''}" data-act="liveToggle" data-side="${side}" data-k="${x.key}">
       <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span><span class="muted small">${Math.round(x.value)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
-  const select = (side, cur, other) => `<select class="sel-team" data-change="liveTeam" data-side="${side}">
-    ${teams.filter(t => t.id !== other).map(t => `<option value="${t.id}" ${t.id === cur ? 'selected' : ''}>${esc(t.shortName)} · ${esc(t.name)}${isUserTeam(t) ? ' (You)' : ''}</option>`).join('')}</select>`;
+  const select = (side, cur) => {
+    const T = L.teams.find(t => t.id === cur);
+    const many = side === 'b' || left.length > 1;
+    const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : '';
+    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team">${logoImg(T)}<b>${esc(T.shortName)}</b>${isUserTeam(T) ? '<span class="gold small">You</span>' : ''}</span>${arrow(1, '▶')}</div>`;
+  };
   layout({
     title: 'Draft-Day Trade',
     body: `
       <p class="note muted small">Picks in this draft, future picks, players and just-drafted rookies (for ${state.params.draftTradeWindow} picks after they're taken). Values are a rough guide; CPU teams want a little more back than they give.</p>
       <div class="grid2 trade">
-        <div class="stack">${select('a', aId, bId)}<p class="note center small">Sends <b>${Math.round(vA)}</b> ${verdict(A, vA, vB)}</p><div class="list">${list(aa, selA, 'a')}</div></div>
-        <div class="stack">${select('b', bId, aId)}<p class="note center small">Sends <b>${Math.round(vB)}</b> ${verdict(B, vB, vA)}</p><div class="list">${list(bb, selB, 'b')}</div></div>
+        <div class="stack">${select('a', aId)}<p class="note center small">Sends <b>${Math.round(vA)}</b> ${verdict(A, vA, vB)}</p><div class="list">${list(aa, selA, 'a')}</div></div>
+        <div class="stack">${select('b', bId)}<p class="note center small">Sends <b>${Math.round(vB)}</b> ${verdict(B, vB, vA)}</p><div class="list">${list(bb, selB, 'b')}</div></div>
       </div>
-      <div class="grid2">
+      ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
-        <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force (Commissioner)</button>
-      </div>`,
+        <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
+      </div>` : '<button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>'}`,
   });
 };
 
 actions.liveTrade = () => go('liveTrade', {});
 
-$app.addEventListener('change', e => {
-  if (e.target.dataset.change !== 'liveTeam') return;
+// ◀ ▶ team pickers: your side cycles your teams (all teams for a
+// Commissioner Mode), the other side cycles everyone else.
+actions.liveCycle = d => {
+  const L = league();
   const a = tradeArgs();
-  replace('liveTrade', { ...a, [e.target.dataset.side]: +e.target.value, selA: [], selB: [] });
-});
+  const teams = [...L.teams].sort((x, y) => x.shortName.localeCompare(y.shortName));
+  const mine = teams.filter(isUserTeam);
+  const pool = d.side === 'a'
+    ? (state.params.commissioner || !mine.length ? teams : mine)
+    : teams.filter(t => t.id !== a.a);
+  const cur = pool.findIndex(t => t.id === a[d.side]);
+  const next = pool[(cur + +d.dir + pool.length) % pool.length];
+  const upd = { ...a, [d.side]: next.id, [d.side === 'a' ? 'selA' : 'selB']: [] };
+  if (d.side === 'a' && next.id === a.b) { upd.b = teams.find(t => t.id !== next.id).id; upd.selB = []; }
+  replace('liveTrade', upd);
+};
 
 actions.liveToggle = d => {
   const a = tradeArgs();
@@ -2771,8 +2794,7 @@ actions.liveToggle = d => {
 actions.liveTradeGo = async d => {
   const a = tradeArgs();
   const L = league();
-  const sel = document.querySelectorAll('select.sel-team');
-  const A = L.teams.find(t => t.id === +sel[0].value), B = L.teams.find(t => t.id === +sel[1].value);
+  const A = L.teams.find(t => t.id === +a.a), B = L.teams.find(t => t.id === +a.b);
   const pickSide = (team, keys) => {
     const items = liveAssets(team).filter(x => keys.includes(x.key));
     return { team, items, picks: items.filter(x => x.pick).map(x => x.pick), players: items.filter(x => x.player).map(x => x.player), prospects: items.filter(x => x.prospect).map(x => x.prospect) };
@@ -2780,7 +2802,7 @@ actions.liveTradeGo = async d => {
   const sa = pickSide(A, a.selA || []), sb = pickSide(B, a.selB || []);
   if (!sa.items.length && !sb.items.length) { toast('Tap something on either side first'); return; }
   const vA = sa.items.reduce((s, x) => s + x.value, 0), vB = sb.items.reduce((s, x) => s + x.value, 0);
-  if (d.force !== '1') {
+  if (d.force !== '1' || !state.params.commissioner) {
     const no = [[A, vA, vB], [B, vB, vA]].find(([t, give, get]) => !isUserTeam(t) && !cpuAccepts(give, get));
     if (no) { toast(`${no[0].shortName} decline: they want more back`); return; }
   }

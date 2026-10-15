@@ -627,3 +627,11 @@ body::before {
 .brow .mvb:disabled { opacity: .3; cursor: default; }
 .brow .mvb.x { background: #7a2430; }
 .nowrap { white-space: nowrap; }
+
+/* ◀ team ▶ picker on the trade screen */
+.tsel { display: flex; align-items: stretch; gap: 4px; }
+.tsel-arrow { flex: none; width: 36px; min-height: 44px; padding: 0; color: #fff; font-size: 16px; background: var(--btn); border: 3px solid var(--btn-edge); box-shadow: 0 3px 0 var(--btn-shadow); cursor: pointer; }
+.tsel-arrow:active { transform: translateY(2px); box-shadow: none; }
+.tsel-team { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 6px; background: var(--btn-shadow); border: 3px solid var(--btn-edge); }
+.tsel-team b { font-size: 16px; font-weight: 800; }
+.tsel-team img { width: 28px; height: 28px; object-fit: contain; }

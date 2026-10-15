@@ -122,6 +122,7 @@ export const DEFAULT_PARAMS = {
   draftRounds: 2,
   liveCpuTradeChance: 10,  // % chance a CPU team trades up before a round-1 CPU pick in the live draft
   draftTradeWindow: 8,
+  commissioner: false,     // trades: work any team's side and force trades through
   rookieR2Years: 2,
   faClearCpuOffers: true,  // clear the game's pending CPU offers after the app's free agency day        // second-round rookie deals (team option); the game gives 4     // picks after being drafted that a rookie can still be traded (draft-and-trade)
 };

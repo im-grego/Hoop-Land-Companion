@@ -179,7 +179,8 @@ starred). Nothing is written until you finish, and **Reset** starts over (undoin
 
 - **Trades at any point:** picks in this draft, future picks, players, and **draft-and-trade** of a rookie for up to
   8 picks after being taken (Settings → Rookies). CPU teams accept when they get a bit more value back than they give;
-  **Force** pushes any trade through (commissioner). Every trade can be undone.
+  With **Commissioner Mode** on (Settings) you can trade for any team and **Force** pushes a trade through; off (the
+  default), your side is limited to the teams you control. Pick teams with the ◀ ▶ arrows. Every trade can be undone.
 - **Trade-back offers:** when you're on the clock, teams picking 3–8 slots later may offer their pick plus future
   picks to move up. CPU teams also trade up among themselves now and then in round 1 (Settings: off / rare / normal /
   busy).
