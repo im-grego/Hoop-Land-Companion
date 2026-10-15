@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.5';
+const APP_VERSION = '0.27.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2127,7 +2127,8 @@ screens.draft = (args) => {
   const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
-  layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
+  const hero = tab === 'live' ? '<img class="hero tall" src="icons/hero-draft.jpg" alt="">' : tab === 'consensus' ? '<img class="hero" src="icons/hero-warroom.jpg" alt="">' : '';
+  layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: hero + (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
 };
 
 actions.draftTab = d => replace('draft', { tab: d.t });
@@ -3249,6 +3250,7 @@ screens.fa = (args = {}) => {
   layout({
     title: `Free Agency · Day ${s.day}`,
     body: `
+      <img class="hero tall" src="icons/hero-fa.jpg" alt="">
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const space = FA.capSpace(L, t);

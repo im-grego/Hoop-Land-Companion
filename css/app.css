@@ -789,3 +789,6 @@ details.dbx[open] summary { margin-bottom: 8px; }
 
 .rank-line > div { gap: 1px; }
 .rank-line b { font-size: 17px; }
+
+/* Portrait header pictures: smaller and centered */
+.hero.tall { width: min(240px, 60%); margin: 0 auto; }
