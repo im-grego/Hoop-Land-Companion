@@ -184,7 +184,8 @@ starred). Nothing is written until you finish, and **Reset** starts over (undoin
   With **Commissioner Mode** on (Settings) you can trade for any team and **Force** pushes a trade through; off (the
   default), your side is limited to the teams you control. Pick teams with the ◀ ▶ arrows. Players whose contracts are up (pending free
   agents) can't be traded: they're listed last, greyed out with a 🔒 Pending FA tag. A balance bar
-  under the teams shows who the deal favors (middle = even); the green zone is where the CPU side accepts. Every trade can be undone.
+  under the teams slides as you add and remove assets. The middle is a fair deal by the CPU's standard (they want a
+  little more back than they give, so the middle already includes that); anything in the green zone, they accept. Every trade can be undone.
 - **Trade-back offers:** when you're on the clock, teams picking 3–8 slots later may offer their pick plus future
   picks to move up. CPU teams also trade up among themselves now and then in round 1 (Settings: off / rare / normal /
   busy).

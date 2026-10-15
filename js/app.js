@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.22.0';
+const APP_VERSION = '0.22.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2011,12 +2011,17 @@ function outlookCard() {
   }).join('');
 }
 
-const prospectRow = (p, extra = '') => `<button class="prow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
+const prospectRow = (p, extra = '') => {
+  const c = compsFor(p);
+  const t = league().teams.find(isUserTeam);
+  const fills = t ? fillsFor(t, p) : [];
+  const comp = (label, x, cls = '') => x ? `<span class="pr-comp"><span class="muted">${label}</span><span class="${cls}">${esc(x.name)}</span>${tierTag(x.tier)}</span>` : '';
+  return `<button class="prow cprow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
   <span class="name">${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
-  <span class="right">${valueChip(p)}</span>
-  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
-  <span class="chg">${compLine(compsFor(p))}${(() => { const t = league().teams.find(isUserTeam); const f = t ? fillsFor(t, p) : []; return f.length ? ` · <span class="up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''; })()}${extra}</span>
+  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} ${valueChip(p)}</span>
+  <span class="chg">${comp('Floor', c.floor[0])}${comp('Ceiling', c.ceiling[0], 'up')}${fills.length ? `<span class="up">Fills ${esc(fills.map(n => n.label).join(', '))}</span>` : ''}${extra}</span>
 </button>`;
+};
 
 // Consensus: the whole class, ranked by the scouts.
 function draftConsensus() {
@@ -2100,8 +2105,12 @@ function draftOffice() {
       </fieldset>
       <fieldset class="frame"><legend>Trade Block</legend>
         <p class="note muted small" style="margin-bottom:8px">Tap to put a player or pick on the block. Teams pick up the phone for what's on it; teams behind your picks may call about moving up anyway.</p>
-        <div class="list">${assets.map(x => `<button class="pick ${block.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="officeBlock" data-k="${x.key}"`}>
-          <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('')}</div>
+        ${(() => {
+          const row = x => `<button class="pick ${block.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="officeBlock" data-k="${x.key}"`}>
+          <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`;
+          const picks = assets.filter(x => x.pick), players = assets.filter(x => !x.pick);
+          return `${picks.length ? `<div class="pick-grid">${picks.map(row).join('')}</div>` : ''}<div class="list" style="margin-top:8px">${players.map(row).join('')}</div>`;
+        })()}
       </fieldset>
       ${live.trades.length ? `<fieldset class="frame"><legend>Trades Made</legend><div class="stack">
         ${live.trades.map((t, i) => `<div class="row"><p class="note grow small">${esc(t.text)}</p>${t.cpu ? '' : `<button class="btn small" data-act="liveUndoTrade" data-i="${i}">Undo</button>`}</div>`).join('')}
@@ -2782,29 +2791,44 @@ screens.liveTrade = (args) => {
         <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
       </div>` : '<button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>'}`,
   });
+  slideTradeBar();
 };
 
-actions.liveTrade = () => go('liveTrade', {});
+actions.liveTrade = () => { tradeBarPos = 50; go('liveTrade', {}); };
 
-// Trade balance bar: the marker sits in the middle for an even deal, slides
-// left the more the deal favors the left team and right the more it favors
-// the right team. The green zone is where the other side says yes.
+// Trade balance bar. The middle is where the CPU team says yes (they want
+// a little more back than they give, so "even" already includes that);
+// the marker slides left the more the deal favors the left team and right
+// the more it favors the right team. It animates from where it last was.
+let tradeBarPos = 50;
 function tradeBar(A, B, vA, vB) {
   const empty = !vA && !vB;
-  const lean = empty ? 0 : (vA - vB) / Math.max(vA, vB);          // + = the right team comes out ahead
-  const pos = 50 + Math.max(-1, Math.min(1, lean)) * 46;
-  const okAt = 50 + (1 - 1 / 1.08) * 46;                           // cpuAccepts' margin
   const judge = isUserTeam(B) && !isUserTeam(A) ? A : B;
   const cpu = !isUserTeam(judge);
+  const m = cpu ? 1.08 : 1;                                        // cpuAccepts' margin
+  // What the left side sends vs what the right side sends, with the CPU's
+  // ask folded in: 0 = exactly what they need, + = the right team ahead.
+  const a = judge === B ? vA : vA * m, b = judge === B ? vB * m : vB;
+  const lean = empty ? 0 : (a - b) / Math.max(a, b, 1);
+  const pos = 50 + Math.max(-1, Math.min(1, lean)) * 46;
   const ok = judge === B ? cpuAccepts(vB, vA) : cpuAccepts(vA, vB);
-  const zone = judge === B ? `left:${okAt}%;right:0` : `left:0;right:${okAt}%`;
-  const word = Math.abs(lean) < 0.08 ? 'Even' : lean > 0 ? `Favors ${B.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}` : `Favors ${A.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}`;
+  const zone = judge === B ? 'left:50%;right:0' : 'left:0;right:50%';
+  const word = Math.abs(lean) < 0.06 ? 'Even' : lean > 0 ? `Favors ${B.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}` : `Favors ${A.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}`;
+  const from = tradeBarPos;
+  tradeBarPos = pos;
   return `<div class="tbar-wrap">
     <div class="tbar-ends small"><span>◀ ${esc(A.shortName)}</span><span>${esc(B.shortName)} ▶</span></div>
-    <div class="tbar">${cpu ? `<span class="tbar-ok" style="${zone}"></span>` : ''}<span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${pos}%"></span></div>
+    <div class="tbar">${cpu ? `<span class="tbar-ok" style="${zone}"></span>` : ''}<span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${from}%" data-to="${pos}"></span></div>
     <p class="note center small">${empty ? '<span class="muted">Tap players or picks on either side</span>'
       : `<b>${esc(word)}</b>${cpu ? `${ok ? `<span class="up">${esc(judge.shortName)} would accept</span>` : `<span class="down">${esc(judge.shortName)} would decline</span>`}` : ''}`}</p>
   </div>`;
+}
+// Slide the marker from its old spot to the new one after a re-render.
+function slideTradeBar() {
+  const mark = $app.querySelector('.tbar-mark[data-to]');
+  if (!mark) return;
+  mark.getBoundingClientRect();
+  requestAnimationFrame(() => { mark.style.left = `${mark.dataset.to}%`; });
 }
 
 // ◀ ▶ team pickers: your side cycles your teams (all teams for a
