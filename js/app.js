@@ -1,10 +1,10 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, BUMP_PHASES,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
 
-const APP_VERSION = '0.2.0';
+const APP_VERSION = '0.2.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -332,8 +332,8 @@ screens.main = () => {
 };
 
 function phaseWarning(s) {
-  if (s.phase === PHASE_SEASON_COMPLETE) return '';
-  return `<p class="note gold small" style="margin-top:10px">Development is meant to run at the end of the season, after the champion is crowned and before the offseason starts. This file is at phase ${s.phase}.</p>`;
+  if (BUMP_PHASES.includes(s.phase)) return '';
+  return `<p class="note gold small" style="margin-top:10px">The bump is meant to run after the champion is crowned (Season Complete) or at the start of the offseason before the lottery. This file is at phase ${s.phase}.</p>`;
 }
 
 actions.nav = d => go(d.to, d.arg ? { arg: d.arg } : {});
