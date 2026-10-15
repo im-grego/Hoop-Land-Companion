@@ -49,8 +49,43 @@ export function applySummerLeague(p, original, bands = DEFAULT_RECOVERY) {
   });
   return gains;
 }
+// Free throws are capped at 16 in this league; everything else at 20.
+export const capFor = k => (k === 'FTS' ? 16 : 20);
+
 export function ceilingVector(p) {
-  return SKILL_ATTRS.map(k => Math.max(p.attributes[k][0], p.attributes[k][1]));
+  return SKILL_ATTRS.map(k => Math.min(capFor(k), Math.max(p.attributes[k][0], p.attributes[k][1])));
+}
+
+// Generated prospects' ceilings all total ~140 (an All-Star/4-star line) no
+// matter their potential. Prime players in the league top out at about
+// 140 + 14 per potential step (pot 9 ~154, pot 10 ~168, pot 7 ~126), so
+// project the ceiling to the player's tier: extra points go to their
+// strengths (keeping the archetype), and lower tiers scale down evenly.
+const MAX_PROJECTED_GAIN = 6;
+export const tierCeilingTotal = pot => 140 + 14 * (Math.min(pot, 10) - 8);
+
+export function projectedCeiling(p) {
+  const v = ceilingVector(p);
+  const total = v.reduce((a, b) => a + b, 0);
+  const target = tierCeilingTotal(p.pot);
+  if (total > target) {
+    const f = target / total;
+    return v.map(x => Math.max(DRAFT_FLOOR, Math.round(x * f)));
+  }
+  // Spread the extra over their better ratings (weighted toward strengths,
+  // at most +6 each) so the archetype grows rather than one rating maxing.
+  const out = [...v];
+  for (let n = total; n < target; n++) {
+    let best = -1, bestW = -1;
+    out.forEach((x, i) => {
+      const ok = x < capFor(SKILL_ATTRS[i]) && x - v[i] < MAX_PROJECTED_GAIN;
+      const w = ok ? v[i] ** 1.5 / (1 + x - v[i]) : -1;
+      if (w > bestW) { bestW = w; best = i; }
+    });
+    if (best < 0) break;
+    out[best]++;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +99,8 @@ export const tierFor = pot => TIERS.find(([min]) => pot >= min)[1];
 // Comparison pool: active players + free agents (current ratings), retirees
 // and Hall of Famers (best of their two stored values). This year's rookies
 // are left out so prospects aren't compared with each other.
+const ESTABLISHED_AGE = 26;
+
 export function buildCompPool(league) {
   const pool = [];
   const yr = league.season.currentYear;
@@ -72,7 +109,9 @@ export function buildCompPool(league) {
     if (!p?.attributes || !p.ht || isRookie(p)) return;
     const v = vec(p);
     if (v.reduce((a, b) => a + b, 0) < 40) return; // empty/placeholder records
-    pool.push({ p, group, v, ht: p.ht, wt: p.wt || 0, pos: p.pos });
+    // Established = has had the chance to reach their potential.
+    const established = (group !== 'Active' && group !== 'Free Agent') || p.age >= ESTABLISHED_AGE;
+    pool.push({ p, group, v, ht: p.ht, wt: p.wt || 0, pos: p.pos, established });
   };
   for (const t of league.teams) for (const p of t.roster) add(p, 'Active', x => SKILL_ATTRS.map(k => x.attributes[k][0]));
   for (const p of league.freeAgents || []) add(p, 'Free Agent', x => SKILL_ATTRS.map(k => x.attributes[k][0]));
@@ -100,9 +139,9 @@ export function compDistance(v, body, entry) {
 const bodyOf = p => ({ ht: p.ht, wt: p.wt, pos: p.pos });
 
 // Closest pool players to a vector. Similarity is 0-100.
-export function findComps(v, body, pool, n = 3, excludeId = null) {
+export function findComps(v, body, pool, n = 3, excludeId = null, establishedOnly = false) {
   return pool
-    .filter(e => e.p.id !== excludeId)
+    .filter(e => e.p.id !== excludeId && (!establishedOnly || e.established))
     .map(e => ({ ...e, dist: compDistance(v, body, e) }))
     .sort((a, b) => a.dist - b.dist)
     .slice(0, n)
@@ -112,7 +151,7 @@ export function findComps(v, body, pool, n = 3, excludeId = null) {
 export function prospectComps(p, pool, bands = DEFAULT_RECOVERY) {
   return {
     floor: findComps(floorVector(p, bands), bodyOf(p), pool, 3, p.id),
-    ceiling: findComps(ceilingVector(p), bodyOf(p), pool, 3, p.id),
+    ceiling: findComps(projectedCeiling(p), bodyOf(p), pool, 3, p.id, true),
   };
 }
 
@@ -138,6 +177,28 @@ const SCOUT = {
   STM: ['High motor, can handle heavy minutes', 'Limited stamina'],
 };
 
+// How much each area moves the needle, by role; free throws and stamina
+// rarely define a prospect.
+const IMPACT = {
+  guard: { LAY: 1.0, DNK: 0.8, INS: 0.5, MID: 1.0, TPT: 1.4, FTS: 0.4, DRB: 1.3, PAS: 1.3,
+    ORE: 0.5, DRE: 0.6, STL: 1.1, BLK: 0.5, STR: 0.7, SPD: 1.2, STM: 0.4, HT: 1.0 },
+  wing: { LAY: 1.1, DNK: 1.0, INS: 0.8, MID: 1.0, TPT: 1.3, FTS: 0.4, DRB: 1.1, PAS: 1.0,
+    ORE: 0.7, DRE: 0.9, STL: 1.1, BLK: 0.9, STR: 0.9, SPD: 1.1, STM: 0.4, HT: 1.0 },
+  big: { LAY: 1.0, DNK: 1.1, INS: 1.2, MID: 0.8, TPT: 0.6, FTS: 0.4, DRB: 0.6, PAS: 0.9,
+    ORE: 1.0, DRE: 1.2, STL: 0.8, BLK: 1.3, STR: 1.1, SPD: 0.9, STM: 0.4, HT: 1.2 },
+};
+// Weaknesses that matter less for a role than the role's average impact
+// suggests (a center who can't shoot threes, a guard with no post game).
+const DOWN_IMPACT = {
+  guard: { INS: 0.3, BLK: 0.3, ORE: 0.3, DRE: 0.5, STR: 0.6 },
+  wing: { INS: 0.6, ORE: 0.5 },
+  big: { TPT: 0.35, DRB: 0.4, MID: 0.6, SPD: 0.7 },
+};
+// Strengths worth more than usual for a role (the stretch big).
+const UP_IMPACT = { big: { TPT: 1.1 } };
+const roleOf = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
+const AWFUL_FT = 6; // free throws only count as a weakness at or below this
+
 const statsCache = new WeakMap();
 function positionStats(league, pos) {
   let byPos = statsCache.get(league);
@@ -159,18 +220,25 @@ function positionStats(league, pos) {
 export function scoutingReport(p, league) {
   const st = positionStats(league, p.pos);
   const pos = POSITIONS[p.pos] ?? '';
+  const proj = projectedCeiling(p);
+  const role = roleOf(p.pos);
+  const UP = { ...IMPACT[role], ...UP_IMPACT[role] };
+  const DOWN = { ...IMPACT[role], ...DOWN_IMPACT[role] };
   const items = ATTRS.map(k => {
-    const [cur, ceil] = p.attributes[k];
-    const top = Math.max(cur, ceil);
+    const cur = Math.min(capFor(k), p.attributes[k][0]);
+    const i = SKILL_ATTRS.indexOf(k);
+    const top = i >= 0 ? Math.max(cur, proj[i]) : Math.max(cur, p.attributes[k][1]);
     // Strength judged on what they can become; weakness on today + ceiling.
+    let down = ((cur + top) / 2 - st[k].m) / st[k].sd * DOWN[k];
+    if (k === 'FTS' && cur > AWFUL_FT) down = Infinity;
     return {
       k,
-      up: (top - st[k].m) / st[k].sd,
-      down: ((cur + top) / 2 - st[k].m) / st[k].sd,
+      up: (top - st[k].m) / st[k].sd * UP[k],
+      down,
       detail: top > cur ? `${k} ${cur} → ${top} ceiling` : `${k} ${cur}`,
     };
   });
-  const htZ = (p.ht - st.ht.m) / st.ht.sd;
+  const htZ = (p.ht - st.ht.m) / st.ht.sd * UP.HT;
   const size = { k: 'HT', up: htZ, down: htZ, detail: `${heightStr(p.ht)} vs ${heightStr(Math.round(st.ht.m))} avg ${pos}` };
   const strengths = [...items, size].sort((a, b) => b.up - a.up).slice(0, 2)
     .map(x => ({ text: x.k === 'HT' ? `Great size for a ${pos}` : SCOUT[x.k][0], detail: x.detail }));
@@ -334,7 +402,7 @@ export function rookieFloorVector(p, original = null, bands = DEFAULT_RECOVERY) 
 export function rookieComps(p, pool, original = null, bands = DEFAULT_RECOVERY) {
   return {
     floor: findComps(rookieFloorVector(p, original, bands), bodyOf(p), pool, 3, p.id),
-    ceiling: findComps(ceilingVector(p), bodyOf(p), pool, 3, p.id),
+    ceiling: findComps(projectedCeiling(p), bodyOf(p), pool, 3, p.id, true),
   };
 }
 

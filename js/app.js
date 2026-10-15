@@ -6,11 +6,11 @@ import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlo
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
-  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport,
+  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.9.0';
+const APP_VERSION = '0.9.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1496,7 +1496,7 @@ screens.prospect = (args) => {
   if (!p) { back(); return; }
   const c = compsFor(p);
   const rec = recoveryFor(p.age, state.params.recoveryBands);
-  const fv = floorVector(p, state.params.recoveryBands), cv = ceilingVector(p);
+  const fv = floorVector(p, state.params.recoveryBands), raw = ceilingVector(p), cv = projectedCeiling(p);
   const compList = (list, cls) => list.map(x => `<div class="comp">
     <span class="grow"><b class="${cls}">${esc(x.name)}</b> ${tierTag(x.tier)}<br><span class="muted small">${esc(x.group)} · ${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span>
     <span class="sim">${x.sim}<span class="small muted">%</span></span></div>`).join('');
@@ -1520,11 +1520,11 @@ screens.prospect = (args) => {
           <span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span>
           <span>${p.attributes[k][0]}</span>
           <span class="${fv[i] < p.attributes[k][0] ? 'down' : ''}">${fv[i]}${fv[i] < p.attributes[k][0] ? `<span class="small"> −${p.attributes[k][0] - fv[i]}</span>` : ''}</span>
-          <span class="up">${cv[i]}</span>
+          <span class="up">${cv[i]}${cv[i] !== raw[i] ? `<span class="small ${cv[i] > raw[i] ? '' : 'down'}"> ${cv[i] > raw[i] ? '+' : ''}${cv[i] - raw[i]}</span>` : ''}</span>
           <div class="bar"><div class="fill" style="width:${fv[i] / ATTR_MAX * 100}%"></div><div class="gain" style="left:${fv[i] / ATTR_MAX * 100}%;width:${(cv[i] - fv[i]) / ATTR_MAX * 100}%"></div></div>
         </div>`).join('')}
         ${PHYSICAL.map(k => `<div class="rk"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${p.attributes[k][0]}</span><span>${p.attributes[k][0]}</span><span class="up">${p.attributes[k][1]}</span></div>`).join('')}
-        <p class="note muted small" style="margin-top:8px">Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
+        <p class="note muted small" style="margin-top:8px">Ceiling is projected to a ${esc(tierFor(p.pot))} line: the game caps every prospect's ceiling at an All-Star level, so higher-potential players get the extra in their strengths (lower tiers scale down). Comps weigh skill ratings, position, height and weight. Rookie = projected line after the −${DRAFT_DROP} draft drop (min ${DRAFT_FLOOR}) and summer league (+${rec} back at age ${p.age}, never past today's rating): projected loss ${fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0)} points. The floor comps match this line and height against active players, free agents, retirees and Hall of Famers.</p>
       </fieldset>`,
   });
 };

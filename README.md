@@ -84,8 +84,13 @@ Available once the file has a draft class (offseason, before the lottery).
   skill ratings, position, height and weight against active players, free agents, retirees and Hall of Famers.
   Every comp is tagged by its potential: 10 Legend, 9 Hall of Fame, 8 All-Star, 7 Starter, 6 Role Player,
   5 and under Bench Depth; each prospect also gets a "Projects as" tier from their own potential.
-- **Scouting report:** two strengths and a weakness per prospect, judged against active players at similar
-  positions (ceiling for strengths, today + ceiling for weaknesses), including size for the position.
+- **Projected ceilings:** the game caps every generated prospect's ceiling at ~140 total (an All-Star line) regardless
+  of potential, while prime players top out at about 140 + 14 per potential step (pot 9 ≈ 154, pot 10 ≈ 168,
+  pot 7 ≈ 126). Ceilings are projected to the prospect's tier — extra points spread over their strengths (≤ +6 each),
+  lower tiers scale down — and ceiling comps come only from established players (26+, retirees, Hall of Famers).
+  Free throws are capped at 16.
+- **Scouting report:** two strengths and a weakness per prospect, judged against active players at similar positions
+  and weighted by what matters for the role (guard / wing / big); free throws only count as a weakness when awful.
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
