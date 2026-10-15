@@ -307,3 +307,62 @@ export function diffPlayer(p, snap) {
   const changed = potDelta !== 0 || regDelta !== 0 || apDelta.some(Boolean) || points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
   return { attrs, points, added, leveled, removed, apDelta, potDelta, regDelta, changed };
 }
+
+// Jersey number for a player joining a team: their current number if free,
+// else its single-digit version (#27 → 7, #55 → 5), else the lowest number
+// that's neither worn nor retired. `p` is excluded from the "worn" check.
+export function jerseyNumber(team, p, want = p.num) {
+  const taken = new Set([
+    ...team.roster.filter(x => x !== p).map(x => x.num),
+    ...(team.retiredNumbers || []).map(r => r.num),
+  ]);
+  if (want >= 0 && !taken.has(want)) return want;
+  if (want >= 10 && !taken.has(want % 10)) return want % 10;
+  for (let n = 0; n < 100; n++) if (!taken.has(n)) return n;
+  return want;
+}
+
+// Seasons a player has spent with a team (stats stints), for who keeps a
+// contested number.
+const tenure = (p, tid) => (p.stats || []).reduce((n, s) => n + (s.season || []).filter(r => r.tid === tid).length, 0);
+
+// Clear duplicate and retired numbers on every roster with jerseyNumber():
+// the longest-tenured player keeps a contested number. Updates the
+// new-season stats row too. Returns [{ p, team, from, to }].
+export function jerseyClashes(league) {
+  const out = [];
+  for (const t of league.teams) {
+    const retired = new Set((t.retiredNumbers || []).map(r => r.num));
+    const order = [...t.roster].sort((a, b) => tenure(b, t.id) - tenure(a, t.id) || (b.yrs || 0) - (a.yrs || 0));
+    const kept = new Set();
+    for (const p of order) {
+      if (!retired.has(p.num) && !kept.has(p.num)) { kept.add(p.num); continue; }
+      out.push({ p, team: t });
+    }
+  }
+  return out;
+}
+
+export function fixJerseyNumbers(league) {
+  const year = league.season.currentYear;
+  const changes = [];
+  for (const { p, team } of jerseyClashes(league)) {
+    const from = p.num;
+    // Only count teammates already settled: others in the clash list move too.
+    p.num = -1;
+    p.num = jerseyNumber(team, p, from);
+    const row = (p.stats || []).filter(s => s.yr === year).pop();
+    const stint = row?.season?.[row.season.length - 1];
+    const stintNum = stint?.num;
+    if (stint && !stint.GP && stint.tid === team.id) stint.num = p.num;
+    changes.push({ p, team, from, to: p.num, stint, stintNum });
+  }
+  return changes;
+}
+
+export function undoJerseyNumbers(changes) {
+  for (const c of [...changes].reverse()) {
+    c.p.num = c.from;
+    if (c.stint) c.stint.num = c.stintNum;
+  }
+}

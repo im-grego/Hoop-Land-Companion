@@ -4,7 +4,7 @@
 // 3. Second-round rookie contracts shorten (and undo).
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
-import { parseSave, serializeSave, leagueRookies } from '../js/savefile.js';
+import { parseSave, serializeSave, leagueRookies, jerseyNumber } from '../js/savefile.js';
 import { actualDraftOrder, cpuPick, prospectValue, pickValue, draftDrop, SKILL_ATTRS } from '../js/draft.js';
 import { mulberry32 } from '../js/progression.js';
 import { applyDraft, newLiveDraft, clockIndex, makeSelection, takenIds, livePicks, slotPick, tradeUpOffers, tradeableProspects, applyRookieContracts, undoRookieContracts } from '../js/livedraft.js';
@@ -12,6 +12,16 @@ import { slotValue, executeTrade, undoTrade, playerValue } from '../js/trades.js
 
 const preText = readFileSync(process.argv[2], 'utf8');
 const post = JSON.parse(readFileSync(process.argv[3], 'utf8')).seasonLeagues[0];
+
+// 0. Jersey rule: own number, then its single digit, then the lowest free one.
+{
+  const team = { roster: [{ num: 27 }, { num: 0 }, { num: 1 }, { num: 55 }], retiredNumbers: [{ num: 5 }, { num: 2 }] };
+  assert.equal(jerseyNumber(team, { num: 33 }), 33);
+  assert.equal(jerseyNumber(team, { num: 27 }), 7);
+  assert.equal(jerseyNumber(team, { num: 55 }), 3, '55 → 5 is retired → lowest free');
+  assert.equal(jerseyNumber(team, { num: 1 }), 3);
+  console.log('jersey numbers OK');
+}
 
 // 1. Replay.
 {
@@ -89,6 +99,7 @@ const post = JSON.parse(readFileSync(process.argv[3], 'utf8')).seasonLeagues[0];
     const rookieIds = new Set(rookies.map(r => r.p.id));
     for (const p of t.roster.filter(x => rookieIds.has(x.id))) {
       assert.ok(t.roster.every(x => x === p || x.num !== p.num), `rookie ${p.ln} has a free number on ${t.shortName}`);
+      assert.ok(!(t.retiredNumbers || []).some(r => r.num === p.num), `rookie ${p.ln} doesn't wear a retired number`);
     }
     assert.ok(t.draftPicks.every(pk => pk.yr > L2.season.currentYear), 'used picks removed');
     for (const p of t.roster) assert.equal(p.tid, t.id, 'player tid matches roster');

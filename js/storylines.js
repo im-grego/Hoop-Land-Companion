@@ -16,12 +16,13 @@ const isNews = (n, k) => n.phase === k.phase && n.category === k.category && n.t
 const place = t => t.city || `the ${t.name}`;           // "Atlanta"; teams with no city use their name
 const Place = t => { const x = place(t); return x[0].toUpperCase() + x.slice(1); };
 const full = t => (t ? `${t.city} ${t.name}`.trim() : 'free agency');
-const money = c => `${c.yrs} year${c.yrs === 1 ? '' : 's'}, $${c.sal}M${c.opt ? ' with an option' : ''}`;
+const money = c => `$${c.sal * c.yrs}M`;            // contract total reads bigger: $120M, not 4 × $30M
 const ordinal = n => `${n}${(n % 100 >= 11 && n % 100 <= 13) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' })[n % 10] || 'th'}`;
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
 const word = n => WORDS[n] || String(n);
 const Word = n => { const w = word(n); return w[0].toUpperCase() + w.slice(1); };
 const ROUND = { 1: 'first round', 2: 'second round', 3: 'conference finals', 4: 'Finals' };
+const andList = xs => (xs.length > 1 ? `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}` : xs[0] || '');
 const pick = (arr, seed) => arr[Math.abs(seed) % arr.length];
 // Lowercase words, keeping acronyms (ACL, MCL).
 const lower = str => str.split(' ').map(w => (w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase())).join(' ');
@@ -215,7 +216,7 @@ export function buildStorylines(league, opts = {}) {
     const how = a => (a.c ? `signed for ${money(a.c)}` : 'via trade');
     if (list.length >= 2 && star(list[1].p) >= 12) {
       add('move', 34 + star(top.p) * 2 + star(list[1].p), '🔥', pick([`${Place(team)} goes all-in`, `New-look ${team.name}`, `${Place(team)} reloads`], tid),
-        `${list.slice(0, 3).map(a => `${playerName(a.p)} (${slash(a.l)}, ${how(a)})`).join(' and ')}` +
+        `${andList(list.slice(0, 3).map(a => `${playerName(a.p)} (${slash(a.l)}, ${how(a)})`))}` +
         `${anchor ? ` join ${playerName(anchor)}` : ' arrive'}. Can it all fit?`, top.p.id);
       continue;
     }
@@ -223,7 +224,7 @@ export function buildStorylines(league, opts = {}) {
     const verb = c ? pick(['heads to', 'lands in', 'is off to'], p.id) : 'traded to';
     const title = c ? `${playerName(p)} ${verb} ${place(team)}` : `Blockbuster: ${playerName(p)} ${verb} ${place(team)}`;
     add('move', 30 + star(p) * 2.5 + (c ? 0 : 3), c ? '✍️' : '🔁', title,
-      `${c ? `${money(c)}. ` : ''}${p.fn} leaves ${full(from)} after ${statLine(l)} a game` +
+      `${c ? `A ${money(c)} deal. ` : ''}${p.fn} leaves ${full(from)} after ${statLine(l)} a game` +
       `${anchor ? `, and now teams up with ${playerName(anchor)}` : ''}.` +
       (badTeam(team) ? ` A statement move for a team that won ${playoffRun(team, yr).W} games.` : ''), p.id);
   }

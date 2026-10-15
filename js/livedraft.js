@@ -15,7 +15,7 @@
 // - one news item per pick; the phase goes 4 → 5.
 
 import { draftDrop, SKILL_ATTRS } from './draft.js';
-import { PHASE_PRE_DRAFT, PHASE_POST_DRAFT } from './savefile.js';
+import { PHASE_PRE_DRAFT, PHASE_POST_DRAFT, jerseyNumber } from './savefile.js';
 
 const KEEP = new Set(['tid', 'num']);
 
@@ -71,13 +71,6 @@ function resetProspect(p, leagueIdx, year, tid) {
   p.stats.push({ league: leagueIdx, yr: year, sal: 0, season: [{ ...template, tid, num: p.num }], playoffs: [], finals: [] });
 }
 
-function freeNumber(roster, want) {
-  const used = new Set(roster.map(x => x.num));
-  if (!used.has(want)) return want;
-  for (let n = 0; n < 100; n++) if (!used.has(n)) return n;
-  return want;
-}
-
 // One news item, shaped like the game's (cloned from an existing item).
 function draftNews(league, template, { pid, tid, rd, pk, year, rating }) {
   const n = structuredClone(template);
@@ -105,7 +98,7 @@ export function applyDraft(league, picks, leagueIdx = 0) {
     const team = teams.get(pk.to);
     if (!p || !team) continue;
     prospects.delete(pk.pid);
-    p.num = freeNumber(team.roster, p.num);
+    p.num = jerseyNumber(team, p);
     resetProspect(p, leagueIdx, year, team.id);
     p.tid = team.id;
     p.status = 2;

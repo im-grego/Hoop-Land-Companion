@@ -3,6 +3,7 @@
 
 import { pickValue, tradePicks, samePick } from './draft.js';
 import { seasonLine } from './storylines.js';
+import { jerseyNumber } from './savefile.js';
 
 // Value of a pick in this draft by its overall slot (#1 ≈ 133, #10 ≈ 69,
 // #30 ≈ 17, #60 ≈ 4), on the same scale as future picks' pickValue.
@@ -41,8 +42,7 @@ export function movePlayer(p, from, to, year) {
   const i = from.roster.indexOf(p);
   if (i < 0) throw new Error('Player not on that roster');
   from.roster.splice(i, 1);
-  const used = new Set(to.roster.map(x => x.num));
-  if (used.has(p.num)) { for (let n = 0; n < 100; n++) if (!used.has(n)) { p.num = n; break; } }
+  p.num = jerseyNumber(to, p);
   p.tid = to.id;
   p.linePos = to.roster.length;
   to.roster.push(p);

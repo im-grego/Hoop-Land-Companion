@@ -142,6 +142,9 @@ starred). Nothing is written until you finish, and **Reset** starts over (undoin
   and the save moves to the **Post-Draft** phase — so summer league and the rookie bump can follow. Replaying the
   game's own picks through this reproduces the game's post-draft save (the game re-sorts depth charts itself).
 - **Player trades** move the player and update the player's new-season stats row (team and jersey), as the game does.
+- **Jersey numbers:** a player joining a team (draft or trade) keeps their number if it's free; otherwise they try its
+  single digit (#27 → 7, #55 → 5), then the lowest number that's neither worn nor retired. The offseason screen can
+  also fix clashes the game left behind (duplicates and retired numbers; the longest-tenured player keeps the number).
 
 ## Rookie contracts (free agency)
 

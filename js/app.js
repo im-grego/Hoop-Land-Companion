@@ -1,6 +1,6 @@
 import {
   parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
-  playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
+  playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores } from './progression.js';
 import {
@@ -15,7 +15,7 @@ import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieCont
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade } from './trades.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.14.0';
+const APP_VERSION = '0.14.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -272,6 +272,7 @@ async function loadFile(file) {
     state.summer = {};
     state.mentor = {};
     state.contracts = {};
+    state.jerseys = {};
     state.awards = {};
     state.draft = {};
     state.compPools = {};
@@ -611,6 +612,22 @@ function contractCard() {
   </div></fieldset>`;
 }
 
+// Duplicate or retired jersey numbers (the game allows them).
+function jerseyCard() {
+  const li = state.leagueIdx;
+  const done = state.jerseys?.[li];
+  const clashes = done ? [] : jerseyClashes(league());
+  if (!done && !clashes.length) return '';
+  return `<fieldset class="frame"><legend>Jersey Numbers</legend><div class="stack">
+    ${done ? `<p class="note"><span class="up">${done.length}</span> players renumbered: ${esc(done.slice(0, 4).map(c => `${c.p.ln} #${c.from}→#${c.to}`).join(', '))}${done.length > 4 ? '…' : ''}</p>
+      <button class="btn small" data-act="undoJerseys">↺ Undo</button>`
+    : `<p class="note">${clashes.length} players share a number with a teammate or wear a retired number. The longest-tenured player keeps it; the others try the single digit of their number (#27 → 7), then the lowest free one.</p>
+      <button class="btn" data-act="fixJerseys">👕 Fix Jersey Numbers</button>`}
+  </div></fieldset>`;
+}
+actions.fixJerseys = () => { (state.jerseys ||= {})[state.leagueIdx] = fixJerseyNumbers(league()); state.dirty = true; render(); };
+actions.undoJerseys = () => { undoJerseyNumbers(state.jerseys[state.leagueIdx] || []); delete state.jerseys[state.leagueIdx]; render(); };
+
 actions.rookieContracts = () => {
   (state.contracts ||= {})[state.leagueIdx] = applyRookieContracts(league(), state.params.rookieR2Years);
   state.dirty = true;
@@ -659,6 +676,7 @@ screens.offseason = () => {
       </fieldset>
       ${rookieCard()}
       ${contractCard()}
+      ${jerseyCard()}
       ${mentorCard()}
       <fieldset class="frame"><legend>2 · Your Teams</legend>
         <div class="stack">
