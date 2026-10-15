@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a1430">
+  <title>Hoop Land Companion</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1>🏀 Hoop Land Companion</h1>
+    <div class="team-line">
+      <input id="teamName" class="team-name" placeholder="Team name" aria-label="Team name">
+      <select id="seasonSelect" aria-label="Season"></select>
+      <button id="newSeasonBtn" class="ghost" title="Start a new season">+ Season</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="roster">Roster</button>
+    <button data-tab="games">Games</button>
+    <button data-tab="stats">Stats</button>
+    <button data-tab="draft">Draft</button>
+    <button data-tab="data">Data</button>
+  </nav>
+
+  <main>
+    <!-- Dashboard -->
+    <section id="tab-dashboard" class="tab active">
+      <div class="cards" id="dashCards"></div>
+      <div class="panel">
+        <h2>Season leaders</h2>
+        <div id="leaders" class="leaders"></div>
+      </div>
+      <div class="panel">
+        <h2>Recent games</h2>
+        <div id="recentGames"></div>
+      </div>
+    </section>
+
+    <!-- Roster -->
+    <section id="tab-roster" class="tab">
+      <div class="panel">
+        <h2 id="playerFormTitle">Add player</h2>
+        <form id="playerForm" class="grid-form">
+          <input type="hidden" name="id">
+          <label>Name<input name="name" required></label>
+          <label>Pos
+            <select name="pos">
+              <option>PG</option><option>SG</option><option>SF</option><option>PF</option><option>C</option>
+            </select>
+          </label>
+          <label>Age<input name="age" type="number" min="15" max="50"></label>
+          <label>OVR<input name="ovr" type="number" min="0" max="100"></label>
+          <label>POT<input name="pot" type="number" min="0" max="100"></label>
+          <label>Salary ($M)<input name="salary" type="number" step="0.1" min="0"></label>
+          <label>Years left<input name="years" type="number" min="0" max="10"></label>
+          <label class="wide">Notes<input name="notes" placeholder="Traits, role, trade value…"></label>
+          <div class="form-actions wide">
+            <button type="submit">Save player</button>
+            <button type="button" id="cancelEdit" class="ghost hidden">Cancel</button>
+          </div>
+        </form>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Roster <span id="rosterCount" class="muted"></span></h2>
+          <span id="payroll" class="muted"></span>
+        </div>
+        <div class="table-wrap"><table id="rosterTable"></table></div>
+      </div>
+    </section>
+
+    <!-- Games -->
+    <section id="tab-games" class="tab">
+      <div class="panel">
+        <h2>Log a game</h2>
+        <form id="gameForm" class="grid-form">
+          <label>Opponent<input name="opp" required></label>
+          <label>Home/Away
+            <select name="loc"><option value="H">Home</option><option value="A">Away</option></select>
+          </label>
+          <label>Our score<input name="us" type="number" min="0" required></label>
+          <label>Their score<input name="them" type="number" min="0" required></label>
+          <label>Type
+            <select name="type"><option value="R">Regular season</option><option value="P">Playoffs</option></select>
+          </label>
+          <div class="wide">
+            <h3>Box score <span class="muted">(leave blank for DNP)</span></h3>
+            <div class="table-wrap"><table id="boxEntry"></table></div>
+          </div>
+          <div class="form-actions wide"><button type="submit">Save game</button></div>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Game log</h2>
+        <div id="gameLog"></div>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section id="tab-stats" class="tab">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Player averages</h2>
+          <select id="statsFilter" aria-label="Game type">
+            <option value="ALL">All games</option>
+            <option value="R">Regular season</option>
+            <option value="P">Playoffs</option>
+          </select>
+        </div>
+        <div class="table-wrap"><table id="statsTable"></table></div>
+        <p class="muted small">Tap a column header to sort.</p>
+      </div>
+      <div class="panel">
+        <h2>Player progression</h2>
+        <p class="muted small">OVR is snapshotted each time you start a new season.</p>
+        <div class="table-wrap"><table id="progTable"></table></div>
+      </div>
+    </section>
+
+    <!-- Draft -->
+    <section id="tab-draft" class="tab">
+      <div class="panel">
+        <h2>Add prospect</h2>
+        <form id="draftForm" class="grid-form">
+          <label>Name<input name="name" required></label>
+          <label>Pos
+            <select name="pos">
+              <option>PG</option><option>SG</option><option>SF</option><option>PF</option><option>C</option>
+            </select>
+          </label>
+          <label>Age<input name="age" type="number" min="15" max="30"></label>
+          <label>OVR<input name="ovr" type="number" min="0" max="100"></label>
+          <label>POT<input name="pot" type="number" min="0" max="100"></label>
+          <label class="wide">Notes<input name="notes"></label>
+          <div class="form-actions wide"><button type="submit">Add to board</button></div>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Big board</h2>
+        <p class="muted small">Ranked by your order. Use ▲▼ to reorder, ✓ to draft onto your roster.</p>
+        <ol id="draftBoard" class="board"></ol>
+      </div>
+    </section>
+
+    <!-- Data -->
+    <section id="tab-data" class="tab">
+      <div class="panel">
+        <h2>Backup &amp; restore</h2>
+        <p class="muted">Everything is stored in this browser only. Export a backup to move it to another device.</p>
+        <div class="form-actions">
+          <button id="exportBtn">Export JSON</button>
+          <label class="button ghost">Import JSON<input id="importFile" type="file" accept="application/json" hidden></label>
+          <button id="resetBtn" class="danger">Reset all data</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

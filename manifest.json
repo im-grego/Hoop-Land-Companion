@@ -1,0 +1,8 @@
+{
+  "name": "Hoop Land Companion",
+  "short_name": "Hoop Land",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#1a1430",
+  "theme_color": "#1a1430"
+}
