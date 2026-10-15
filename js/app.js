@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.19.9';
+const APP_VERSION = '0.20.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1847,6 +1847,12 @@ function gradeOf(p) {
   return GRADES[6];
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
+// One prospect in the "make your pick" list.
+const pickRow = (p, { star = false, fills = [] } = {}) => `<button class="pick-row" data-id="${p.id}">
+  <span class="pr-top"><b>${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b>${valueChip(p)}</span>
+  <span class="pr-meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · Ceiling ${esc(compsFor(p).ceiling[0]?.name || '—')}</span>
+  ${fills.length ? `<span class="pr-fill">Fills ${esc(fills.map(n => n.label).join(', '))}</span>` : ''}
+</button>`;
 const statusTag = st => `<span class="status s-${st}">${STATUS_NAMES[st]}</span>`;
 const needChips = needs => needs.map(n => `<span class="badge need">${esc(n.label)}</span>`).join('');
 
@@ -2207,9 +2213,7 @@ actions.mockChoose = () => {
   const avail = mockAvailable(mock).sort((a, b) => scoutValue(b) - scoutValue(a));
   const o = overlay(`
     <p class="note">${esc(pk.owner.shortName)} · Pick #${pk.overall}</p>
-    <div class="stack" style="max-height:60vh;overflow:auto">
-      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${esc(playerName(p))} ${valueChip(p)}<br><span class="muted small">${esc(posName(p))} · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span></button>`).join('')}
-    </div>
+    <div class="pick-list">${avail.map(p => pickRow(p)).join('')}</div>
     <button class="btn off" data-close>Cancel</button>`);
   o.addEventListener('click', e => {
     const b = e.target.closest('[data-id],[data-close]');
@@ -2336,9 +2340,7 @@ actions.liveChoose = () => {
   const avail = myBoardOrder().filter(p => !takenIds(live).has(p.id));
   const box = overlay(`
     <p class="note">${esc(o.owner.shortName)} · Pick #${o.overall} · your board order</p>
-    <div class="stack" style="max-height:60vh;overflow:auto">
-      ${avail.map(p => { const f = fillsFor(o.owner, p); return `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${watch.has(p.id) ? '⭐ ' : ''}${esc(playerName(p))} ${valueChip(p)}<br><span class="muted small">${esc(posName(p))} · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span>${f.length ? `<br><span class="small up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''}</span></button>`; }).join('')}
-    </div>
+    <div class="pick-list">${avail.map(p => pickRow(p, { star: watch.has(p.id), fills: fillsFor(o.owner, p) })).join('')}</div>
     <button class="btn off" data-close>Cancel</button>`);
   box.addEventListener('click', e => {
     const b = e.target.closest('[data-id],[data-close]');

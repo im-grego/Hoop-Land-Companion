@@ -578,3 +578,16 @@ body::before {
   mask-size: 6px 6px; mask-composite: intersect;
 }
 .marquee-track span { font-weight: 700; }
+
+/* ---------- Make-your-pick list ---------- */
+.pick-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 2px 2px 6px; text-align: left; }
+.pick-row {
+  flex: none; display: flex; flex-direction: column; gap: 4px; width: 100%; text-align: left;
+  background: var(--btn); border: 3px solid var(--btn-edge); box-shadow: 0 3px 0 var(--btn-shadow);
+  padding: 10px 12px; color: var(--text);
+}
+.pick-row:active, .pick-row:focus-visible { border-color: var(--cyan); outline: none; }
+.pick-row .pr-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.pick-row .pr-top b { font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-row .pr-meta { font-size: 13.5px; font-weight: 600; color: var(--dim); }
+.pick-row .pr-fill { font-size: 13px; font-weight: 700; color: var(--up); }
