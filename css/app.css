@@ -289,3 +289,7 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
   .marquee { height: 76px; }
   .nav-btn { width: 110px; }
 }
+
+.held { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; text-align: center; }
+.held > div { background: var(--bg-dark); border: 2px solid var(--btn-edge); padding: 6px 2px; display: flex; flex-direction: column; font-size: 13px; }
+.held b { font-size: 20px; }

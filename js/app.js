@@ -1,10 +1,10 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, syncHeldPoints, heldPoints, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, PHASE_NAMES, PHASE_SEASON_COMPLETE,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill } from './progression.js';
 
-const APP_VERSION = '0.1.3';
+const APP_VERSION = '0.1.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -382,14 +382,15 @@ function applyAuto(seed) {
   // Free agents excluded from this run go back to their originals too.
   if (!state.params.includeFreeAgents) for (const p of league().freeAgents || []) restore(p, snapOf(p));
   runProgression(entries.map(e => ({ ...e, leagueIdx: li })), { ...state.params, seed }, state.profiles[li]);
-  let players = 0, points = 0, skills = 0;
+  let players = 0, points = 0, skills = 0, held = 0;
   for (const e of entries) {
     const d = diffPlayer(e.p, snapOf(e.p));
     if (d.changed) players++;
     points += d.points;
     skills += d.added.length;
+    held += d.apSpent;
   }
-  state.auto[li] = { seed, players, points, skills, total: entries.length };
+  state.auto[li] = { seed, players, points, skills, held, total: entries.length };
   state.dirty = true;
 }
 
@@ -435,6 +436,7 @@ screens.offseason = () => {
             <dl class="info">
               <dt>Players improved</dt><dd class="up">${auto.players} / ${auto.total}</dd>
               <dt>Rating points</dt><dd class="up">+${auto.points}</dd>
+              <dt>Held points spent</dt><dd class="up">${auto.held}</dd>
               <dt>New skills</dt><dd class="up">${auto.skills}</dd>
               <dt>Seed</dt><dd>${auto.seed}</dd>
             </dl>
@@ -508,7 +510,7 @@ function playerRow(p, d, opts = {}) {
       ${d.points ? `<span class="up">+${d.points}</span>` : '<span class="muted">—</span>'}
     </span>
     <span class="meta">${esc(pos)} · ${p.age}y · ${heightStr(p.ht)} · AVG ${d.points ? `${avgWas.toFixed(1)}→<span class="up">${avgNow.toFixed(1)}</span>` : avgNow.toFixed(1)}</span>
-    ${d.changed ? `<span class="chg">${esc(changeSummary(d))} ${skillBadges(d)}</span>` : ''}
+    ${d.changed ? `<span class="chg">${esc(changeSummary(d))} ${skillBadges(d)}${d.apSpent ? `<span class="badge lvl">${d.apSpent} held pt${d.apSpent > 1 ? 's' : ''}</span>` : ''}</span>` : ''}
   </button>`;
 }
 
@@ -604,6 +606,10 @@ screens.player = (args) => {
         <p class="note grow">Upgrade points: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
         <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
       </div>
+      ${p.season?.ap ? `<fieldset class="frame"><legend>Held Points</legend>
+        <div class="held">${CATEGORIES.map((c, i) => `<div class="${p.season.ap[i] ? 'gold' : 'muted'}"><span>${c.key}</span><b>${p.season.ap[i]}</b>${snap.ap[i] !== p.season.ap[i] ? `<span class="small up">−${snap.ap[i] - p.season.ap[i]}</span>` : ''}</div>`).join('')}</div>
+        <p class="note muted small" style="margin-top:8px">Earned but unspent. Raising a rating uses its category's held points first.</p>
+      </fieldset>` : ''}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
@@ -636,6 +642,8 @@ screens.player = (args) => {
   });
 };
 
+const categoryIdx = k => CATEGORIES.findIndex(c => c.attrs.includes(k));
+
 function attrRow(p, snap, k, ceilMode) {
   const [cur, ceil] = p.attributes[k];
   const orig = snap.attributes[k][0];
@@ -645,7 +653,7 @@ function attrRow(p, snap, k, ceilMode) {
     <button class="btn square" data-act="attr" data-k="${k}" data-dir="-1" aria-label="Lower ${ATTR_NAMES[k]}">−</button>
     <div class="body">
       <div class="top">
-        <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
+        <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span>${p.season?.ap?.[categoryIdx(k)] ? ' <span class="gold small">●</span>' : ''}</span>
         <span>${cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${ceil}</span></span>
       </div>
       <div class="bar">
@@ -678,6 +686,7 @@ actions.attr = d => {
   } else {
     v[0] = Math.max(attrMin(d.k), Math.min(ATTR_MAX, v[0] + dir));
     if (v[0] > v[1]) v[1] = v[0];
+    syncHeldPoints(p, snapOf(p));
   }
   state.dirty = true;
   render();
@@ -801,6 +810,7 @@ screens.settings = (args) => {
       </div></fieldset>` : ''}
       ${options('Include Free Agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']])}
       ${options('Upgrade Focus', 'strengthBias', [[0, 'Spread'], [0.5, 'Balanced'], [1, 'Strengths']])}
+      ${options('Spend Held Points', 'spendHeldPoints', [[false, 'Off'], [true, 'On']])}
       ${options('Grow Past Ceiling', 'exceedCeiling', [[false, 'Off'], [true, 'On']])}
       ${STEP_FIELDS.general.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('')}
       ${options('Starter Multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']])}

@@ -4,7 +4,7 @@
 // toward `ceiling`; the game's own regression handles decline, so this only
 // ever adds.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, lastSeasonMpg, activeSkills, isLeveled } from './savefile.js';
 
 export const DEFAULT_PARAMS = {
   seed: 2027,
@@ -32,6 +32,7 @@ export const DEFAULT_PARAMS = {
   levelUpMaxAge: 29,
   maxSkills: 8,
   includeFreeAgents: true,
+  spendHeldPoints: true,  // spend unspent category points (season.ap)
 };
 
 // Deterministic RNG so a seed reproduces the same offseason.
@@ -107,22 +108,49 @@ export function pointsFor(p, mpgInfo, params, rng) {
   return Math.round(pts * mult);
 }
 
+function attrWeight(p, k, params) {
+  const cur = p.attributes[k][0];
+  const room = params.exceedCeiling ? Math.max(1, p.attributes[k][1] - cur) : p.attributes[k][1] - cur;
+  return room * ((1 - params.strengthBias) + params.strengthBias * (cur / ATTR_MAX) * 2);
+}
+
+function canGrow(p, k, params) {
+  const cap = params.exceedCeiling ? ATTR_MAX : Math.min(ATTR_MAX, p.attributes[k][1]);
+  return p.attributes[k][0] < cap;
+}
+
+function raise(p, k) {
+  p.attributes[k][0]++;
+  if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0];
+}
+
+// Spend held category points: each point is +1 to a rating in its category.
+// Points with nowhere to go (category maxed) stay held. Returns points spent.
+export function spendHeldPoints(p, params, rng) {
+  const ap = p.season?.ap;
+  if (!ap) return 0;
+  let spent = 0;
+  CATEGORIES.forEach((c, i) => {
+    while (ap[i] > 0) {
+      const k = weightedPick(rng, c.attrs.filter(k => canGrow(p, k, params)), k => attrWeight(p, k, params));
+      if (!k) break;
+      raise(p, k);
+      ap[i]--;
+      spent++;
+    }
+  });
+  return spent;
+}
+
 // Spend `points` on attributes. Mutates p. Returns points actually spent.
 export function distributePoints(p, points, params, rng) {
   const gained = {};
   let spent = 0;
-  const cur = k => p.attributes[k][0];
-  const cap = k => Math.min(ATTR_MAX, params.exceedCeiling ? ATTR_MAX : p.attributes[k][1]);
   for (let i = 0; i < points; i++) {
-    const open = ATTRS.filter(k => cur(k) < cap(k) && (gained[k] || 0) < params.maxPerAttr);
-    const k = weightedPick(rng, open, k => {
-      const room = params.exceedCeiling ? Math.max(1, p.attributes[k][1] - cur(k)) : cap(k) - cur(k);
-      const strength = cur(k) / ATTR_MAX;
-      return room * ((1 - params.strengthBias) + params.strengthBias * strength * 2);
-    });
+    const open = ATTRS.filter(k => canGrow(p, k, params) && (gained[k] || 0) < params.maxPerAttr);
+    const k = weightedPick(rng, open, k => attrWeight(p, k, params));
     if (!k) break;
-    p.attributes[k][0]++;
-    if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0];
+    raise(p, k);
     gained[k] = (gained[k] || 0) + 1;
     spent++;
   }
@@ -156,6 +184,7 @@ export function runProgression(entries, params, profiles) {
   // Sort by id so results don't depend on roster order.
   const sorted = [...entries].sort((a, b) => a.p.id - b.p.id);
   for (const e of sorted) {
+    if (params.spendHeldPoints) spendHeldPoints(e.p, params, rng);
     const pts = pointsFor(e.p, lastSeasonMpg(e.p, e.leagueIdx), params, rng);
     const spent = pts > 0 ? distributePoints(e.p, pts, params, rng) : 0;
     maybeSkills(e.p, spent, params, profiles, rng);

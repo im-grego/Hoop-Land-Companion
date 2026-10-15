@@ -78,6 +78,17 @@ export const ATTR_NAMES = {
 
 // The 12 skill ratings range 0-20; the physical ratings range 8-20.
 export const PHYSICAL = ['STR', 'SPD', 'STM'];
+
+// season.xp / season.ap are indexed by these categories. `ap` holds earned
+// attribute points the CPU hasn't spent yet.
+export const CATEGORIES = [
+  { key: 'FIN', name: 'Finishing', attrs: ['LAY', 'DNK', 'INS'] },
+  { key: 'SHO', name: 'Shooting', attrs: ['MID', 'TPT', 'FTS'] },
+  { key: 'PLY', name: 'Playmaking', attrs: ['DRB', 'PAS', 'ORE'] },
+  { key: 'DEF', name: 'Defense', attrs: ['DRE', 'STL', 'BLK'] },
+  { key: 'PHY', name: 'Physical', attrs: PHYSICAL },
+];
+export const categoryOf = k => CATEGORIES.findIndex(c => c.attrs.includes(k));
 export const ATTR_MAX = 20;
 export const attrMin = k => (PHYSICAL.includes(k) ? 8 : 0);
 export const SKILL_MAX_LEVEL = 3;
@@ -129,13 +140,26 @@ export function snapshot(p) {
   return {
     attributes: JSON.parse(JSON.stringify(p.attributes)),
     skills: JSON.parse(JSON.stringify(p.skills)),
+    ap: [...(p.season?.ap || [])],
   };
 }
 
 export function restore(p, snap) {
   p.attributes = JSON.parse(JSON.stringify(snap.attributes));
   p.skills = JSON.parse(JSON.stringify(snap.skills));
+  if (p.season?.ap) p.season.ap = [...snap.ap];
 }
+
+// After manual edits: gains in a category use up its held points first.
+export function syncHeldPoints(p, snap) {
+  if (!p.season?.ap) return;
+  CATEGORIES.forEach((c, i) => {
+    const gain = c.attrs.reduce((a, k) => a + p.attributes[k][0] - snap.attributes[k][0], 0);
+    p.season.ap[i] = Math.max(0, Math.min(snap.ap[i], snap.ap[i] - gain));
+  });
+}
+
+export const heldPoints = p => (p.season?.ap || []).reduce((a, b) => a + b, 0);
 
 // Skills at level 0 are locked: they sit in the list collecting XP until
 // they unlock at level 1.
@@ -157,6 +181,7 @@ export function diffPlayer(p, snap) {
     else if (lv >= 1 && lv !== was) leveled.push(id);
   }
   for (const [id, was] of before) if (was >= 1 && (now.get(id) || 0) < 1) removed.push(id);
-  const changed = points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
-  return { attrs, points, added, leveled, removed, changed };
+  const apSpent = (snap.ap || []).reduce((a, b) => a + b, 0) - heldPoints(p);
+  const changed = apSpent !== 0 || points !== 0 || Object.keys(attrs).length > 0 || added.length || leveled.length || removed.length;
+  return { attrs, points, added, leveled, removed, apSpent, changed };
 }
