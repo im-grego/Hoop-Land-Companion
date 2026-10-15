@@ -611,3 +611,122 @@ export function pickValue(league, pk) {
   const base = pk.rd === 1 ? 100 - rank * 2.2 : 30 - rank * 0.6;
   return Math.max(5, base * Math.pow(0.85, Math.max(0, pk.yr - year)));
 }
+
+// ---------------------------------------------------------------------------
+// Draft board value and team needs
+//
+// Value: expected potential first (the projected ceiling at the scouted
+// tier), then the floor (rookie line + development), with a bonus for
+// prospects strong in both. Rebuilding teams lean young; win-now teams
+// weigh the floor more and mind age less. Each team has two needs (a
+// position group and a skill, e.g. "Guards · Playmaking") from its roster
+// against the league average.
+
+export const POS_GROUPS = ['guards', 'wings', 'forwards', 'bigs'];
+export const GROUP_NAMES = { guards: 'Guards', wings: 'Wings', forwards: 'Forwards', bigs: 'Bigs' };
+// POSITIONS: PG G SG | GF SF | F PF | FC C
+export const groupOf = pos => (pos <= 2 ? 'guards' : pos <= 4 ? 'wings' : pos <= 6 ? 'forwards' : 'bigs');
+
+export const NEED_SKILLS = {
+  playmaking: { label: 'Playmaking', attrs: ['PAS', 'DRB'] },
+  shooting: { label: 'Shooting', attrs: ['TPT', 'MID'] },
+  finishing: { label: 'Finishing', attrs: ['LAY', 'DNK'] },
+  post: { label: 'Post scoring', attrs: ['INS'] },
+  rebounding: { label: 'Rebounding', attrs: ['DRE', 'ORE'] },
+  perimeterD: { label: 'Perimeter D', attrs: ['STL'] },
+  rimProtection: { label: 'Rim protection', attrs: ['BLK'] },
+};
+// The skills that matter for each group.
+export const GROUP_SKILLS = {
+  guards: ['playmaking', 'shooting', 'perimeterD', 'finishing'],
+  wings: ['shooting', 'perimeterD', 'finishing', 'playmaking'],
+  forwards: ['rebounding', 'finishing', 'shooting', 'rimProtection'],
+  bigs: ['rebounding', 'rimProtection', 'finishing', 'post'],
+};
+
+const skillOf = (vecOrPlayer, attrs) => mean(attrs.map(k => (Array.isArray(vecOrPlayer)
+  ? vecOrPlayer[SKILL_ATTRS.indexOf(k)] : vecOrPlayer.attributes[k][0])));
+// A team's top two signed players in a group (the ones who play). A thin
+// group borrows from the neighboring ones (a PF-less team plays its bigs
+// and wings there).
+const NEIGHBORS = { guards: ['wings'], wings: ['guards', 'forwards'], forwards: ['wings', 'bigs'], bigs: ['forwards'] };
+const strength = p => mean(topN(SKILL_ATTRS.map(k => p.attributes[k][0]), 8));
+function groupTop(team, group) {
+  const signed = team.roster.filter(p => p.status !== 4);
+  const own = signed.filter(p => groupOf(p.pos) === group).sort((a, b) => strength(b) - strength(a)).slice(0, 2);
+  if (own.length >= 2) return own;
+  const fill = signed.filter(p => NEIGHBORS[group].includes(groupOf(p.pos)) && !own.includes(p))
+    .sort((a, b) => strength(b) - strength(a)).slice(0, 2 - own.length);
+  return [...own, ...fill];
+}
+
+// League average of each group's top two, per skill: { group: { skill: avg } }.
+export function needBaseline(league) {
+  const out = {};
+  for (const g of POS_GROUPS) {
+    out[g] = {};
+    for (const s of GROUP_SKILLS[g]) {
+      const vals = league.teams.flatMap(t => groupTop(t, g).map(p => skillOf(p, NEED_SKILLS[s].attrs)));
+      out[g][s] = vals.length ? mean(vals) : 10;
+    }
+  }
+  return out;
+}
+
+// A team's two biggest needs: [{ group, skill, label, gap }].
+export function teamNeeds(league, team, baseline = needBaseline(league)) {
+  const gaps = [];
+  for (const g of POS_GROUPS) {
+    const top = groupTop(team, g);
+    for (const s of GROUP_SKILLS[g]) {
+      const have = top.length ? mean(top.map(p => skillOf(p, NEED_SKILLS[s].attrs))) : 0;
+      // Missing bodies at a group count as a gap too.
+      const gap = baseline[g][s] - have;
+      gaps.push({ group: g, skill: s, gap, label: `${GROUP_NAMES[g]} · ${NEED_SKILLS[s].label}` });
+    }
+  }
+  gaps.sort((a, b) => b.gap - a.gap);
+  // Two needs, from different groups when the gap is close.
+  const first = gaps[0];
+  const second = gaps.find(x => x !== first && (x.group !== first.group || x.gap > first.gap - 1)) || gaps[1];
+  return [first, second].filter(Boolean);
+}
+
+// Which of a team's needs a prospect fills (same group, projected at or
+// above the league average there).
+export function needsFilled(p, needs, baseline, vec) {
+  return needs.filter(n => groupOf(p.pos) === n.group && skillOf(vec, NEED_SKILLS[n.skill].attrs) >= baseline[n.group][n.skill]);
+}
+
+// Win-now teams: last season's record.
+export function isWinNow(team) {
+  const r = teamRecord(team);
+  return r.W + r.L > 0 && r.pct >= 0.56;
+}
+
+// Spread of ceilings and floors across the class, so the two weigh evenly.
+export function classScales(players, ceilOf, floorOf) {
+  const sd = a => { const m = mean(a); return { m, s: Math.sqrt(mean(a.map(x => (x - m) ** 2))) || 1 }; };
+  const c = sd(players.map(p => mean(topN(ceilOf(p), 8))));
+  const f = sd(players.map(p => mean(topN(floorOf(p), 8))));
+  return { cm: c.m, cs: c.s, fm: f.m, fs: f.s };
+}
+
+// Draft value in class standard deviations. `team` = { winNow, needs,
+// baseline } for a team's pick, or null for the consensus board.
+export function draftScore(p, scales, { ceilOf, floorOf }, team = null) {
+  const ceil = ceilOf(p), floor = floorOf(p);
+  const zc = (mean(topN(ceil, 8)) - scales.cm) / scales.cs;
+  const zf = (mean(topN(floor, 8)) - scales.fm) / scales.fs;
+  const winNow = !!team?.winNow;
+  // Ceiling leads; win-now teams flip toward the floor.
+  const wc = winNow ? 1.0 : team ? 1.7 : 1.6, wf = winNow ? 1.1 : team ? 0.5 : 0.6;
+  const both = Math.max(0, Math.min(zc, zf)) * 0.8;          // high floor + high ceiling
+  const age = (20 - p.age) * (winNow ? 0.04 : team ? 0.2 : 0.15);
+  let need = 0;
+  if (team?.needs) {
+    const vec = ceil.map((c, i) => (c + floor[i]) / 2);
+    need = needsFilled(p, team.needs, team.baseline, vec).length * 0.35;
+  }
+  return wc * zc + wf * zf + both + age + need;
+}

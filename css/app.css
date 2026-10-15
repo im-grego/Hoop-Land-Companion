@@ -521,3 +521,6 @@ fieldset.frame > legend {
 .college-logo.sm { width: 16px; height: 16px; vertical-align: -3px; margin-right: 6px; }
 .college-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .opts .btn { white-space: nowrap; min-width: 0; padding: 8px 10px; font-size: 15px; }
+.badge.need { border-color: var(--gold); color: var(--gold); }
+.needs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border: 3px solid var(--btn-edge); background: var(--btn); }
+.needs-line { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }

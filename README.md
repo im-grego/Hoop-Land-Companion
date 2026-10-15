@@ -142,6 +142,13 @@ Available once the file has a draft class (offseason, before the lottery).
 - **Lottery:** odds per team from your league's lottery weights (Monte Carlo), and a one-off lottery simulation.
   Supports the NBA 3-2-1 format (all 16 lottery picks drawn, worst 3 teams no lower than #12; auto-detected) and
   the classic top-4 draw.
+- **How teams value prospects:** expected potential first (the projected ceiling at the scouted tier), then the floor
+  (rookie line plus development), with a bonus for prospects strong in both. Rebuilding teams lean young; **win-now**
+  teams (last season .560+) weigh the floor more and mind age less, so older high-floor prospects go to contenders.
+- **Team needs:** every team has two needs, a position group (guards, wings, forwards, bigs) and a skill (playmaking,
+  shooting, finishing, post scoring, rebounding, perimeter D, rim protection), from its top two players at each group
+  against the league average. A prospect who projects at or above the league average there fills the need, and teams
+  lean toward those picks. Your teams' needs show on the board, on the clock, and next to prospects who fill them.
 - **Mock draft:** uses the simulated lottery (or record order), honours traded picks. Teams weigh scouted value,
   roster need (guards/wings/bigs) and age, with some draft-day variance, so each run plays out differently. Sim All
   drafts for your teams too; or stop at your pick and choose.
@@ -195,8 +202,10 @@ Veterans lean contender, stars money or control, young players security or role.
 - **Day 1 — open market:** offers need cap space (cap from the save). A player's old team can go over the cap to
   re-sign them (Bird rights, up to 5 years).
 - **Day 2 — mid-level exception:** one per team over the cap: up to $15M for 1–2 years with an option.
-- **Day 3 — veteran minimum:** $3M for 1 year (ages 30+). Asking prices drop each day (×0.9, ×0.75; veterans a
-  further ×0.85 on day 3).
+- **Day 3 — finalize free agency:** veteran minimums, $3M for 1 year (ages 30+). Asking prices drop each day (×0.9,
+  ×0.75; veterans a further ×0.85 on day 3), and **veterans who aren't chasing money take the minimum** rather than sit
+  out the season (a contender-minded vet asking $13M signs for $3M with the best team that calls). CPU teams spread
+  their bids instead of piling onto the same few names.
 
 Make offers for your teams (salary, years, no / team / player option; the app checks the rules and shows whether
 you're ahead), then **Open Bidding**: CPU teams bid on the best players they can afford plus a value signing, and

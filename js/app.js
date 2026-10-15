@@ -8,6 +8,7 @@ import {
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
+  needBaseline, teamNeeds, needsFilled, isWinNow, classScales, draftScore,
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
@@ -17,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.18.3';
+const APP_VERSION = '0.19.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1758,7 +1759,53 @@ function saveSalt() {
   return h >>> 0;
 }
 const scoutPot = p => scoutedPot(p, saveSalt(), state.params.scoutVariance);
-const scoutValue = p => prospectValue(p, state.params.recoveryBands, scoutPot(p));
+// Draft board value: projected ceiling at the scouted tier first, then the
+// floor, with a bonus for both (see draftScore). Vectors cached per class.
+function draftVecs() {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has('vecs')) {
+    const bands = state.params.recoveryBands;
+    const ceil = new Map(), floor = new Map();
+    const fns = {
+      ceilOf: p => { if (!ceil.has(p.id)) ceil.set(p.id, projectedCeiling(p, scoutPot(p))); return ceil.get(p.id); },
+      floorOf: p => { if (!floor.has(p.id)) floor.set(p.id, floorVector(p, bands)); return floor.get(p.id); },
+    };
+    const cls = league().draftClass || [];
+    cache.set('vecs', { fns, scales: cls.length ? classScales(cls, fns.ceilOf, fns.floorOf) : { cm: 0, cs: 1, fm: 0, fs: 1 } });
+  }
+  return cache.get('vecs');
+}
+const scoutValue = p => { const v = draftVecs(); return draftScore(p, v.scales, v.fns, null); };
+
+// A team's draft outlook: win-now or not, and its two needs.
+function teamOutlook(team) {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has('needBase')) cache.set('needBase', needBaseline(league()));
+  const baseline = cache.get('needBase');
+  return { winNow: isWinNow(team), needs: teamNeeds(league(), team, baseline), baseline };
+}
+
+// A CPU team's pick: its own value of each prospect plus draft-day noise.
+function teamDraftPick(team, available, rng) {
+  const v = draftVecs();
+  const ctx = teamOutlook(team);
+  const gauss = () => { const u = Math.max(1e-9, rng()), w = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w); };
+  let best = null, bestScore = -Infinity;
+  for (const p of available) {
+    const sc = draftScore(p, v.scales, v.fns, ctx) + gauss() * 0.3;
+    if (sc > bestScore) { best = p; bestScore = sc; }
+  }
+  return best;
+}
+
+// Which needs a prospect fills for a team ("Guards · Playmaking").
+function fillsFor(team, p) {
+  const v = draftVecs();
+  const o = teamOutlook(team);
+  const c = v.fns.ceilOf(p), f = v.fns.floorOf(p);
+  return needsFilled(p, o.needs, o.baseline, c.map((x, i) => (x + f[i]) / 2));
+}
+const needChips = needs => needs.map(n => `<span class="badge need">${esc(n.label)}</span>`).join('');
 
 function rookieCompsFor(p) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
@@ -1884,8 +1931,9 @@ function draftBoard(args = {}) {
   const views = [['consensus', 'Consensus'], ['mine', 'My Board'], ['watch', `Watch (${watch.size})`]];
   return {
     html: `
+      ${league().teams.filter(isUserTeam).map(t => { const o = teamOutlook(t); return `<div class="needs-row">${logoImg(t)}<b>${esc(t.shortName)}</b><span class="small muted">${o.winNow ? 'Win now' : 'Building'}</span>${needChips(o.needs)}</div>`; }).join('')}
       <div class="opts">${views.map(([k, l]) => `<button class="btn small ${k === view ? 'on focus' : 'off'}" data-act="boardView" data-v="${k}">${l}</button>`).join('')}</div>
-      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouting.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'} Rookie = projected average skill rating after the draft drop and summer league.</p>
+      <p class="note muted small">${view === 'consensus' ? `${rows.length} prospects ranked by our scouting: projected ceiling first, then floor, with a bonus for both, and younger is better.` : view === 'mine' ? 'Your big board: move prospects with ▲▼.' : 'Prospects you starred.'} Rookie = projected average skill rating after the draft drop and summer league.</p>
       <div class="list">${rows.map((p, i) => {
         const fl = avg(rookieLine(p, state.params.recoveryBands));
         const pk = drafted.get(p.id);
@@ -1894,7 +1942,7 @@ function draftBoard(args = {}) {
           <span class="right">
             ${pk ? `<span class="badge">#${pk.overall} ${esc(pk.ownerShort)}</span>` : `<span class="small muted">Rookie</span> <span class="small">${fl.toFixed(1)}</span>`}</span>
           <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>
-          <span class="chg">${compLine(compsFor(p))}</span>
+          <span class="chg">${compLine(compsFor(p))}${(() => { const t = league().teams.find(isUserTeam); const f = t ? fillsFor(t, p) : []; return f.length ? ` · <span class="up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''; })()}</span>
         </button>`;
         return view === 'mine'
           ? `<div class="board-row">${row}<div class="mv"><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up">▲</button><button class="btn square" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down">▼</button></div></div>`
@@ -2074,7 +2122,7 @@ function simMock(untilUser, auto = false) {
   for (const pk of mock.picks) {
     if (pk.pid != null) continue;
     if (untilUser && !auto && isUserTeam(pk.owner)) break;
-    const p = cpuPick(pk.owner, mockAvailable(mock), scoutValue, mock.rng);
+    const p = teamDraftPick(pk.owner, mockAvailable(mock), mock.rng);
     if (!p) break;
     pk.pid = p.id;
   }
@@ -2158,7 +2206,7 @@ function liveCpuStep(live, order, idx) {
     }
   }
   const team = order[idx].owner;
-  const p = cpuPick(team, liveAvailable(live), scoutValue, live.rng);
+  const p = teamDraftPick(team, liveAvailable(live), live.rng);
   if (p) makeSelection(live, order, idx, p.id);
   return !!p;
 }
@@ -2204,7 +2252,8 @@ function draftLive() {
       ${done ? `<button class="btn big focus" data-act="liveFinish">✅ Finish Draft &amp; Write to File</button>` : `
       <div class="clock-card">
         <span class="pk">#${o.overall}</span>${logoImg(o.owner)}
-        <span class="grow"><b>${esc(o.owner.city)} ${esc(o.owner.name)}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''}</span></span>
+        <span class="grow"><b>${esc(o.owner.city)} ${esc(o.owner.name)}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''} · ${teamOutlook(o.owner).winNow ? 'Win now' : 'Building'}</span>
+          <span class="needs-line">${needChips(teamOutlook(o.owner).needs)}</span></span>
       </div>
       ${user ? `<button class="btn big focus" data-act="liveChoose">🎯 Make Pick #${o.overall}</button>` : ''}
       ${offers.map((x, i) => `<div class="offer"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${x.give.map(pk => pk.yr === L.season.currentYear ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
@@ -2246,7 +2295,7 @@ actions.liveChoose = () => {
   const box = overlay(`
     <p class="note">${esc(o.owner.shortName)} · Pick #${o.overall} · your board order</p>
     <div class="stack" style="max-height:60vh;overflow:auto">
-      ${avail.map(p => `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${watch.has(p.id) ? '⭐ ' : ''}${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span></span></button>`).join('')}
+      ${avail.map(p => { const f = fillsFor(o.owner, p); return `<button class="btn left small" data-id="${p.id}"><span style="flex:1;text-align:left">${watch.has(p.id) ? '⭐ ' : ''}${esc(playerName(p))}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ceil ${esc(compsFor(p).ceiling[0]?.name || '')}</span>${f.length ? `<br><span class="small up">Fills ${esc(f.map(n => n.label).join(', '))}</span>` : ''}</span></button>`; }).join('')}
     </div>
     <button class="btn off" data-close>Cancel</button>`);
   box.addEventListener('click', e => {
@@ -2527,7 +2576,7 @@ actions.undoTrade = d => {
 const FA_DAY_RULES = {
   1: 'Open market: teams bid with cap space; a player\'s old team can go over the cap to re-sign them (Bird rights).',
   2: `Adds the mid-level exception: one per team over the cap, up to $${FA.FA_DEFAULTS.mle}M for 1–${FA.FA_DEFAULTS.mleMaxYears} years with an option.`,
-  3: `Adds veteran minimums ($${FA.FA_DEFAULTS.vetMin}M, 1 year, ages ${FA.FA_DEFAULTS.vetMinAge}+). Asking prices drop, most for veterans.`,
+  3: `Finalize free agency: veteran minimums ($${FA.FA_DEFAULTS.vetMin}M, 1 year, ages ${FA.FA_DEFAULTS.vetMinAge}+). Veterans who aren't chasing money will take the minimum rather than sit out the season.`,
 };
 const mleKey = () => `hlc:mle:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
 function loadMle() { try { return new Set(JSON.parse(localStorage.getItem(mleKey())) || []); } catch { return new Set(); } }
@@ -2598,7 +2647,7 @@ screens.fa = (args = {}) => {
         const signed = s.signings.find(x => x.p === m.p);
         return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
           <span class="name">${esc(playerName(m.p))}</span>
-          <span class="right"><span class="small">Ask $${m.ask}M</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
+          <span class="right"><span class="small">Ask $${m.ask}M</span>${s.day >= 3 && m.min === FA.FA_DEFAULTS.vetMin && m.ask > m.min ? '<br><span class="small up">Takes the min</span>' : ''}<br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
           <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
           ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
           : list.length ? `<span class="chg">${list.length} bid${list.length > 1 ? 's' : ''} · leading ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
@@ -2686,8 +2735,7 @@ actions.faOffer = d => {
     const others = list().filter(b => b.tid !== draft.tid);
     const score = b => FA.offerScore(L, m.p, b, m.ask, m.motive, m.from?.id);
     const rival = [...others].sort((a, b) => score(b) - score(a))[0];
-    const accept = FA.FA_DEFAULTS.acceptPct[s.day - 1];
-    const standing = draft.sal < m.ask * accept ? '<span class="down">Below what they\'ll take</span>'
+    const standing = draft.sal < m.min ? `<span class="down">Below what they'll take ($${m.min}M)</span>`
       : !rival ? (s.stage === 'open' ? 'No other bids yet' : '<span class="up">Only offer</span>')
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;

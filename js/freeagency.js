@@ -198,14 +198,17 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
     let budget = Math.max(0, capSpace(league, team));
     let slots = o.rosterMax - signedRoster(team).length;
     // Best player they can afford first, then the best value for money.
-    const canPay = m => m.from?.id === team.id || m.ask <= budget * 1.05 ||
-      (day >= 2 && !used.mle?.has(team.id) && m.ask <= o.mle * 1.1) ||
-      (day >= 3 && m.p.age >= o.vetMinAge && m.ask <= o.vetMin * 1.5);
+    const cost = m => m.min ?? m.ask;
+    const canPay = m => m.from?.id === team.id || cost(m) <= budget * 1.05 ||
+      (day >= 2 && !used.mle?.has(team.id) && cost(m) <= o.mle * 1.1) ||
+      (day >= 3 && m.p.age >= o.vetMinAge && cost(m) <= o.vetMin * 1.5);
+    // Teams cool on players who already have a crowd of suitors.
+    const crowd = m => 1 + 0.35 * (bids.get(m.p.id)?.length || 0);
     const pool = market
-      .map(m => ({ ...m, want: teamWant(league, team, m.p, ly) }))
-      .filter(m => m.want > 8 + rng() * 6 && canPay(m));
+      .map(m => ({ ...m, want: teamWant(league, team, m.p, ly) / crowd(m) }))
+      .filter(m => m.want > 6 + rng() * 6 && canPay(m));
     const byWant = [...pool].sort((a, b) => b.want - a.want);
-    const byValue = [...pool].sort((a, b) => b.want / Math.max(3, b.ask) - a.want / Math.max(3, a.ask));
+    const byValue = [...pool].sort((a, b) => b.want / Math.max(3, cost(b)) - a.want / Math.max(3, cost(a)));
     const targets = [...new Set([...byWant.slice(0, 2), ...byValue.slice(0, 2)])];
     let made = 0;
     for (const m of targets) {
@@ -216,7 +219,9 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       sal = Math.max(o.minSalary, Math.min(maxSalary(league, m.p), sal));
       let yrs = m.p.age >= 31 ? 1 + Math.floor(rng() * 2) : m.p.age <= 26 ? 3 + Math.floor(rng() * 2) : 2 + Math.floor(rng() * 2);
       let offer = { tid: team.id, sal, yrs, opt: rng() < 0.2 ? OPT_PLAYER : rng() < 0.2 ? OPT_TEAM : OPT_NONE, cpu: true };
-      if (!bird && sal > budget) {
+      // A veteran who'll take the minimum gets the minimum.
+      if (day >= 3 && m.min === o.vetMin && m.p.age >= o.vetMinAge) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
+      else if (!bird && sal > budget) {
         // Fall back to an exception.
         if (day >= 2 && !used.mle?.has(team.id) && m.ask <= o.mle * 1.1) offer = { ...offer, sal: Math.min(o.mle, Math.max(sal, m.ask)), yrs: Math.min(yrs, o.mleMaxYears), opt: rng() < 0.5 ? OPT_PLAYER : OPT_TEAM };
         else if (day >= 3 && m.p.age >= o.vetMinAge && m.ask <= o.vetMin * 1.5) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
@@ -276,7 +281,7 @@ export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS) {
     if (!list.length) continue;
     const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id);
     const best = [...list].sort((a, b) => score(b) - score(a))[0];
-    if (best.sal < m.ask * accept && !(day >= 3 && best.sal === o.vetMin && m.p.age >= o.vetMinAge && m.ask <= o.vetMin * 1.5)) continue;
+    if (best.sal < (m.min ?? m.ask * accept)) continue;
     const team = league.teams.find(t => t.id === best.tid);
     const kind = offerKind(league, team, m.p, best, day, used, o);
     if (kind === 'mle') (used.mle ||= new Set()).add(team.id);
@@ -350,6 +355,17 @@ export function unsignPlayer(league, rec) {
 }
 
 // Build today's market rows: { p, from, ask, motive }.
+// The least a player takes today. On Day 3, veterans who aren't chasing
+// money take the veterans' minimum rather than sit out the season, whatever
+// they were asking for.
+export function minAccept(p, ask, motive, day, o = FA_DEFAULTS) {
+  if (day >= 3 && p.age >= o.vetMinAge && motive !== 'greed') return o.vetMin;
+  return Math.max(o.minSalary, Math.round(ask * o.acceptPct[Math.min(2, day - 1)]));
+}
+
 export function buildMarket(league, day, o = FA_DEFAULTS) {
-  return marketPlayers(league).map(({ p, from }) => ({ p, from, ask: askFor(league, p, day, o), motive: motiveOf(league, p) }));
+  return marketPlayers(league).map(({ p, from }) => {
+    const ask = askFor(league, p, day, o), motive = motiveOf(league, p);
+    return { p, from, ask, motive, min: minAccept(p, ask, motive, day, o) };
+  });
 }
