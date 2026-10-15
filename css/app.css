@@ -382,3 +382,10 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
 .field input:focus { outline: none; border-color: var(--cyan); }
 .toggle-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; font-size: 15px; }
 .toggle-row input { width: 20px; height: 20px; accent-color: var(--cyan); }
+
+/* ---------- Live draft ---------- */
+.clock-card { display: flex; align-items: center; gap: 10px; background: var(--marquee); border: 3px solid var(--gold); padding: 10px 12px; margin: 10px 0; }
+.clock-card .pk { font-family: var(--pixel); font-size: 22px; color: var(--gold); }
+.clock-card .grow { flex: 1; min-width: 0; }
+.offer { display: flex; align-items: center; gap: 10px; border: 3px dashed var(--cyan); padding: 8px 10px; margin: 8px 0; }
+.offer .note { flex: 1; }

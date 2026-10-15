@@ -125,6 +125,30 @@ Available once the file has a draft class (offseason, before the lottery).
 - After the lottery (phase 4) the lottery tab and mock draft use the real draft order from the save. After the
   draft (phase 5) the room shows the rookie class with comps.
 
+## Live draft (Pre-Draft save, after the lottery)
+
+The **Live** tab in the draft room runs the real draft from the save's order. CPU teams pick by scouted value,
+roster need and age with some variance; you pick for your teams from your own big board (watch-listed prospects
+starred). Nothing is written until you finish, and **Reset** starts over (undoing draft-day trades).
+
+- **Trades at any point:** picks in this draft, future picks, players, and **draft-and-trade** of a rookie for up to
+  8 picks after being taken (Settings → Rookies). CPU teams accept when they get a bit more value back than they give;
+  **Force** pushes any trade through (commissioner). Every trade can be undone.
+- **Trade-back offers:** when you're on the clock, teams picking 3–8 slots later may offer their pick plus future
+  picks to move up. CPU teams also trade up among themselves now and then in round 1 (Settings: off / rare / normal /
+  busy).
+- **Finish Draft** writes the draft the way the game does — rookies join their teams with the −4 drop, undrafted
+  prospects become free agents, college stats move to history, used picks are removed, a draft news item per pick,
+  and the save moves to the **Post-Draft** phase — so summer league and the rookie bump can follow. Replaying the
+  game's own picks through this reproduces the game's post-draft save (the game re-sorts depth charts itself).
+- **Player trades** move the player and update the player's new-season stats row (team and jersey), as the game does.
+
+## Rookie contracts (free agency)
+
+The game signs this year's picks on Free Agency Day 1: first-rounders get a 4-year scale deal (#1 ≈ $10M down to
+$2M) with a team option, second-rounders 4 years at the minimum. The offseason screen shortens second-round deals to
+**2 years** with the team option kept (Settings → Rookies: 2, 3 or the game's 4). Undo is available until export.
+
 ## Summer league (right after the draft)
 
 Older rookies win back part of the draft drop: 18–19 +0 (keep the full −4), 20–21 +1 (net −3), 22+ +2 (net −2), never past their
@@ -181,4 +205,5 @@ node tests/draft.test.mjs       path/to/offseason-file # comps, lottery, mock dr
 node tests/rookies.test.mjs     pre-draft post-draft   # real draft order, draft drop, rookie bump
 node tests/mentorship.test.mjs  path/to/season-file   # mentor/mentee rules
 node tests/storylines.test.mjs  path/to/season-file   # top 10 storylines
+node tests/livedraft.test.mjs   pre-draft post-draft fa-day-1   # draft writer matches the game, live draft + trades, rookie deals
 ```

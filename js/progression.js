@@ -120,6 +120,9 @@ export const DEFAULT_PARAMS = {
   lotteryFormat: 'auto',  // auto | 321 | classic
   lotteryDraws: 4,        // classic format only
   draftRounds: 2,
+  liveCpuTradeChance: 10,  // % chance a CPU team trades up before a round-1 CPU pick in the live draft
+  draftTradeWindow: 8,
+  rookieR2Years: 2,        // second-round rookie deals (team option); the game gives 4     // picks after being drafted that a rookie can still be traded (draft-and-trade)
 };
 
 // Deterministic RNG so a seed reproduces the same offseason.
