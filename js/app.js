@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryArea, PHASE_POST_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk } from './progression.js';
@@ -9,7 +9,7 @@ import {
   recoveryFor, projectedRookie, originalRatings, applySummerLeague,
 } from './draft.js';
 
-const APP_VERSION = '0.6.4';
+const APP_VERSION = '0.6.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -763,9 +763,15 @@ function playerRow(p, d) {
   </button>`;
 }
 
+function injuryBadge(p) {
+  const r = injuryRisk(p, lastSeasonYear(), state.params);
+  return r ? `<span class="badge down-b">${esc(injuryName(r.worst))}${r.softTissue ? ' · soft tissue' : ''}</span>` : '';
+}
+
 function longevityBadges(p, d) {
   return (d.regDelta ? `<span class="badge lvl">Regress ${p.regressionAge - d.regDelta + 1}→${p.regressionAge + 1}</span>` : '') +
-    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">POT ▼ injury</span>' : '');
+    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">POT ▼ injury</span>' : '') +
+    injuryBadge(p);
 }
 
 actions.openPlayer = d => go('player', { id: +d.id });
@@ -932,9 +938,8 @@ function injuryText(p) {
   const r = injuryRisk(p, yr, state.params);
   if (!r) return '';
   const w = r.worst;
-  const kind = r.softTissue ? 'likely soft tissue (held back)' : w.majorSeverity > 0 ? `major (sev ${w.majorSeverity})` : 'minor';
   const linger = [r.sameType ? `${r.sameType}× same injury` : '', r.sameArea ? `${r.sameArea}× same area` : ''].filter(Boolean).join(', ');
-  return `<br><span class="small down">${yr}: ${r.games} games out · ${esc(injuryArea(w))} ${kind}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
+  return `<br><span class="small down">${yr}: ${esc(injuryName(w))}, ${r.games} games out${r.softTissue ? ' · soft tissue (held back)' : ''}${linger ? ` · recurring: ${linger}` : ''}${r.chance ? ` · ${Math.round(r.chance)}% risk` : ''}</span>`;
 }
 
 function regressionText(p) {
@@ -1056,8 +1061,6 @@ const STEP_FIELDS = {
     ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
     ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],
     ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 10, 0, 100],
-    ['softTissueMinGames', 'Soft Tissue: Min Games (lower body)', 1, 0, 82],
-    ['softTissueMaxGames', 'Soft Tissue: Max Games (lower body)', 1, 0, 82],
     ['softTissuePointsMult', 'Soft Tissue: Bump Points ×', 0.05, 0, 1],
   ],
   skills: [

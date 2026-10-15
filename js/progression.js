@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, injuryHistory } from './savefile.js';
+import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
 export const AWARD_CATEGORIES = [0, 1, 2, 3];
@@ -45,13 +45,13 @@ export const DEFAULT_PARAMS = {
   injuryWindow: 3,        // seasons looked back for lingering injuries
   injuryRepeatType: 0.5,  // +50% per earlier injury of the same type
   injuryRepeatArea: 0.25, // +25% per earlier injury in the same body area
-  // Likely soft-tissue injuries (hamstring/calf-type strains): the game
-  // doesn't name injuries, so a lower-body injury costing this many games is
-  // treated as one. They tend to linger, so the player is held back.
-  softTissueMinGames: 10,
-  softTissueMaxGames: 35,
+  // Soft-tissue injuries tend to linger and recur, holding players back.
+  softTissueParts: ['Groin', 'Abs', 'Calf', 'Hamstring', 'Thigh'],
   softTissueMult: 1.25,       // x potential-loss risk
   softTissuePointsMult: 0.75, // x offseason bump points
+  // Torn ACL / Achilles: career-altering, extra potential-loss risk.
+  structuralParts: ['ACL', 'Achilles'],
+  structuralMult: 1.25,
   // Optional skill gains (off by default)
   skillMaxAge: 25,
   skillMinPoints: 3,
@@ -240,8 +240,9 @@ export function maybePotential(p, mult, params, rng) {
 // Risk of losing potential from last season's injuries. Lingering or
 // recurring injuries (same type or area within the window) raise the risk
 // and count even below the games threshold.
-export const isSoftTissue = (inj, params) =>
-  !!inj?.lowerBody && inj.gamesOut >= params.softTissueMinGames && inj.gamesOut <= params.softTissueMaxGames;
+export const isSoftTissue = (inj, params) => !!inj && params.softTissueParts.includes(injuryPart(inj));
+export const isStructural = (inj, params) =>
+  !!inj && inj.majorSeverity === 4 && params.structuralParts.includes(injuryPart(inj));
 
 export function injuryRisk(p, year, params) {
   const h = injuryHistory(p, year, params.injuryWindow);
@@ -253,8 +254,9 @@ export function injuryRisk(p, year, params) {
   const area = w.lowerBody ? params.injuryLowerBodyMult : 1;
   const repeat = 1 + h.sameType * params.injuryRepeatType + h.sameArea * params.injuryRepeatArea;
   const soft = isSoftTissue(w, params) ? params.softTissueMult : 1;
+  const structural = isStructural(w, params) ? params.structuralMult : 1;
   const age = p.age >= params.injuryOldAge ? 1.25 : 1;
-  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * soft * age);
+  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * soft * structural * age);
   return { ...h, chance, softTissue: soft > 1 };
 }
 

@@ -131,8 +131,28 @@ export const POT_MIN = 4;
 export const POT_MAX = 10; // 11 exists as a secret level; never set by the app
 export const regressionYear = p => p.age - p.regressionAge; // 1 = first year of decline
 
-// Injury type: body area + code (core 1-5, upperBody 1-6, lowerBody 1-10).
+// Injury type: body area + code (core 1-5, upperBody 1-6, lowerBody 1-10),
+// with the game's names. Severity: minorSeverity 1-11 or majorSeverity 1-4.
 export const INJURY_AREAS = ['core', 'upperBody', 'lowerBody'];
+export const INJURY_PARTS = {
+  core: [null, 'Head', 'Abs', 'Back', 'Groin', 'Hip'],
+  upperBody: [null, 'Thumb', 'Finger', 'Hand', 'Wrist', 'Elbow', 'Shoulder'],
+  lowerBody: [null, 'Toe', 'Foot', 'Ankle', 'Achilles', 'Calf', 'Hamstring', 'Thigh', 'ACL', 'MCL', 'Knee'],
+};
+export const MINOR_INJURY = [null, 'Bruised', 'Concussed', 'Jammed', 'Pulled', 'Sore', 'Sprained', 'Stiff', 'Strained', 'Swollen', 'Tweaked', 'Repaired'];
+export const MAJOR_INJURY = [null, 'Broken', 'Dislocated', 'Fractured', 'Torn'];
+
+export function injuryPart(i) {
+  const a = INJURY_AREAS.find(k => i[k]);
+  return a ? INJURY_PARTS[a][i[a]] || `${a} ${i[a]}` : null;
+}
+
+// e.g. "Torn Hamstring", "Sprained Ankle"
+export function injuryName(i) {
+  const part = injuryPart(i) || 'Injury';
+  const kind = i.majorSeverity > 0 ? MAJOR_INJURY[i.majorSeverity] : MINOR_INJURY[i.minorSeverity];
+  return kind ? `${kind} ${part}` : part;
+}
 export const injuryType = i => {
   const a = INJURY_AREAS.find(k => i[k]);
   return a ? `${a}:${i[a]}` : null;
