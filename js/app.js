@@ -10,7 +10,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 
-const APP_VERSION = '0.8.2';
+const APP_VERSION = '0.8.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------

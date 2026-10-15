@@ -70,7 +70,8 @@ Skills (code → name; first in each category is free, last two are elite and ne
 | BUL Bully (elite) | LIM Limitless (elite) | FOO Foot Surgeon (elite) | BAL Ball Hawk (elite) |
 | DUN Dunk Artist (elite) | UNF Unfazed (elite) | HOT Hot Potato (elite) | SNA Snatcher (elite) |
 
-Elite requirements (16/20): Bully INS, Dunk Artist DNK, Unfazed MID, Limitless TPT, Ball Hawk STL, Snatcher BLK.
+Elite requirements (16/20): Bully INS, Dunk Artist DNK, Unfazed MID, Limitless TPT, Foot Surgeon DRB, Hot Potato PAS,
+Ball Hawk STL, Snatcher BLK.
 With elite teaching on, the young player must already meet the requirement.
 
 ## Draft room
