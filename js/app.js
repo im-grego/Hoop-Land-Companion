@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.21.3';
+const APP_VERSION = '0.21.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2740,9 +2740,8 @@ screens.liveTrade = (args) => {
   const aa = liveAssets(A), bb = liveAssets(B);
   const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + x.value, 0);
   const vA = sum(aa, selA), vB = sum(bb, selB);
-  const verdict = (team, give, get) => isUserTeam(team) || !(give || get) ? '' : cpuAccepts(give, get) ? '<span class="up">would accept</span>' : '<span class="down">would decline</span>';
   const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''}" data-act="liveToggle" data-side="${side}" data-k="${x.key}">
-      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span><span class="muted small">${Math.round(x.value)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
+      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
   const select = (side, cur) => {
     const T = L.teams.find(t => t.id === cur);
     const many = side === 'b' || left.length > 1;
@@ -2752,10 +2751,15 @@ screens.liveTrade = (args) => {
   layout({
     title: 'Draft-Day Trade',
     body: `
-      <p class="note muted small">Picks in this draft, future picks, players and just-drafted rookies (for ${state.params.draftTradeWindow} picks after they're taken). Values are a rough guide; CPU teams want a little more back than they give.</p>
+      <p class="note muted small">Picks in this draft, future picks, players and just-drafted rookies (for ${state.params.draftTradeWindow} picks after they're taken). The bar shows who the deal favors; CPU teams say yes in the green zone, when they come out a little ahead.</p>
       <div class="grid2 trade">
-        <div class="stack">${select('a', aId)}<p class="note center small">Sends <b>${Math.round(vA)}</b> ${verdict(A, vA, vB)}</p><div class="list">${list(aa, selA, 'a')}</div></div>
-        <div class="stack">${select('b', bId)}<p class="note center small">Sends <b>${Math.round(vB)}</b> ${verdict(B, vB, vA)}</p><div class="list">${list(bb, selB, 'b')}</div></div>
+        <div class="stack">${select('a', aId)}</div>
+        <div class="stack">${select('b', bId)}</div>
+      </div>
+      ${tradeBar(A, B, vA, vB)}
+      <div class="grid2 trade">
+        <div class="list">${list(aa, selA, 'a')}</div>
+        <div class="list">${list(bb, selB, 'b')}</div>
       </div>
       ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
@@ -2765,6 +2769,27 @@ screens.liveTrade = (args) => {
 };
 
 actions.liveTrade = () => go('liveTrade', {});
+
+// Trade balance bar: the marker sits in the middle for an even deal, slides
+// left the more the deal favors the left team and right the more it favors
+// the right team. The green zone is where the other side says yes.
+function tradeBar(A, B, vA, vB) {
+  const empty = !vA && !vB;
+  const lean = empty ? 0 : (vA - vB) / Math.max(vA, vB);          // + = the right team comes out ahead
+  const pos = 50 + Math.max(-1, Math.min(1, lean)) * 46;
+  const okAt = 50 + (1 - 1 / 1.08) * 46;                           // cpuAccepts' margin
+  const judge = isUserTeam(B) && !isUserTeam(A) ? A : B;
+  const cpu = !isUserTeam(judge);
+  const ok = judge === B ? cpuAccepts(vB, vA) : cpuAccepts(vA, vB);
+  const zone = judge === B ? `left:${okAt}%;right:0` : `left:0;right:${okAt}%`;
+  const word = Math.abs(lean) < 0.08 ? 'Even' : lean > 0 ? `Favors ${B.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}` : `Favors ${A.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}`;
+  return `<div class="tbar-wrap">
+    <div class="tbar-ends small"><span>◀ ${esc(A.shortName)}</span><span>${esc(B.shortName)} ▶</span></div>
+    <div class="tbar">${cpu ? `<span class="tbar-ok" style="${zone}"></span>` : ''}<span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${pos}%"></span></div>
+    <p class="note center small">${empty ? '<span class="muted">Tap players or picks on either side</span>'
+      : `<b>${esc(word)}</b>${cpu ? ` · ${ok ? `<span class="up">${esc(judge.shortName)} would accept</span>` : `<span class="down">${esc(judge.shortName)} would decline</span>`}` : ''}`}</p>
+  </div>`;
+}
 
 // ◀ ▶ team pickers: your side cycles your teams (all teams for a
 // Commissioner Mode), the other side cycles everyone else.

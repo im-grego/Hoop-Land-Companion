@@ -635,3 +635,12 @@ body::before {
 .tsel-team { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 4px 6px; background: var(--btn-shadow); border: 3px solid var(--btn-edge); }
 .tsel-team b { font-size: 16px; font-weight: 800; }
 .tsel-team img { width: 28px; height: 28px; object-fit: contain; }
+
+/* Trade balance bar */
+.tbar-wrap { margin: 10px 0 12px; }
+.tbar-ends { display: flex; justify-content: space-between; color: var(--cyan); font-weight: 700; margin-bottom: 4px; }
+.tbar { position: relative; height: 18px; background: linear-gradient(90deg, var(--btn-shadow), var(--btn) 50%, var(--btn-shadow)); border: 3px solid var(--btn-edge); }
+.tbar-ok { position: absolute; top: 0; bottom: 0; background: rgba(80, 220, 120, .35); }
+.tbar-mid { position: absolute; left: 50%; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: #fff; opacity: .6; }
+.tbar-mark { position: absolute; top: -8px; width: 12px; height: 28px; margin-left: -6px; background: var(--gold); border: 2px solid #fff; box-shadow: 0 2px 0 var(--btn-shadow); transition: left .25s ease; }
+.tbar-mark.idle { opacity: .4; }
