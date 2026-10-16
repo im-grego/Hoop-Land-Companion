@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.25';
+const APP_VERSION = '0.29.26';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1905,10 +1905,11 @@ const compLine = c => c.floor[0] || c.ceiling[0]
   : '';
 
 function scoutList(p) {
-  const r = scoutingReport(p, league(), scoutPot(p));
+  const r = scoutingReport(p, league(), scoutPot(p), state.data.seasonLeagues);
   return `<ul class="scout">
     ${r.strengths.map(s => `<li class="plus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
-    ${r.weakness ? `<li class="minus"><b>${esc(r.weakness.text)}</b><span class="muted small"> · ${esc(r.weakness.detail)}</span></li>` : ''}
+    ${r.weaknesses.map(s => `<li class="minus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
+    ${r.defense ? `<li class="${r.defense.tone}"><b>${esc(r.defense.text)}</b><span class="muted small"> · ${esc(r.defense.detail)}</span></li>` : ''}
   </ul>`;
 }
 
@@ -2100,7 +2101,7 @@ actions.moveBoard = d => {
   render();
 };
 
-const DRAFT_TABS = [['live', 'Live'], ['consensus', 'Consensus'], ['warroom', 'War Room'], ['office', 'Front Office']];
+const DRAFT_TABS = [['live', 'Live'], ['consensus', 'Prospects'], ['warroom', 'My Board'], ['office', 'Front Office']];
 // Draft-room tabs open in each calendar step.
 function draftTabsNow(L = league()) {
   const step = phaseRank(L.season) === 0 ? null : currentStep()?.key;
@@ -2220,9 +2221,9 @@ const prospectRow = (p, extra = '') => {
 function draftConsensus() {
   const rows = boardOrder();
   return {
-    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. + Board adds a prospect to your War Room board; ⇡ Top makes them your #1. 🧩 fits a need on your team.</p>
+    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. + adds a prospect to My Board. 🧩 fits a need on your team.</p>
       <div class="list">${rows.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
-        <div class="mv2"><button class="mvbtn ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓<span>On Board</span>' : '+<span>Board</span>'}</button><button class="mvbtn" data-act="topBoard" data-id="${p.id}" aria-label="Make #1 on your board">⇡<span>Top</span></button></div></div>`).join('')}</div>`,
+        <div class="mv2"><button class="mvbtn ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button></div></div>`).join('')}</div>`,
   };
 }
 
@@ -2238,7 +2239,7 @@ function draftWarRoom() {
           <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${classYear(p)}</span> ${valueChip(p)}</span>${compsFor(p).ceiling[0] ? `<span class="bceil small"><span class="muted">Ceiling</span> ${esc(compsFor(p).ceiling[0].name)}</span>` : ''}</button>
           <span class="mv"><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvb x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></span>
         </div>`).join('')}</div>`
-        : '<p class="note">Your board is empty. Add prospects from Consensus with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
+        : '<p class="note">Your board is empty. Add prospects from Prospects with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
       </fieldset>
       <fieldset class="frame"><legend>Mock Draft · First Round</legend>
         <p class="note muted small" style="margin-bottom:8px">How the first round could go, from each team's stage, needs and board. Trades in the front office change who picks where.</p>

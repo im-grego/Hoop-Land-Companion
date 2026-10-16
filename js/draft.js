@@ -268,44 +268,52 @@ export function assignClassComps(players, pool, { floorVec, ceilVec, potOf = p =
 // Scouting report: two strengths and a weakness, judged against active
 // players at similar positions (a center isn't dinged for his three-ball).
 
+// Scouting language. Each area has a few ways to say it (picked per player
+// so a class doesn't read like a form letter): [strengths, weaknesses].
 const SCOUT = {
-  LAY: ['Smooth finisher around the rim', 'Struggles to finish at the rim'],
-  DNK: ['Explosive above-the-rim finisher', 'Rarely finishes above the rim'],
-  INS: ['Polished post scorer', 'Little to no post game'],
-  MID: ['Reliable mid-range shooter', 'Inconsistent from mid-range'],
-  TPT: ['Floor-spacing three-point shooter', 'Shaky three-point shot'],
-  FTS: ['Automatic at the free-throw line', 'Poor free-throw shooter'],
-  DRB: ['Tight handle, creates off the dribble', 'Loose handle under pressure'],
-  PAS: ['Gifted passer with great vision', 'Limited playmaker'],
-  ORE: ['Relentless on the offensive glass', "Doesn't crash the offensive glass"],
-  DRE: ['Strong defensive rebounder', 'Soft on the defensive glass'],
-  STL: ['Active hands, jumps passing lanes', 'Rarely forces turnovers'],
-  BLK: ['Rim protector who erases shots', 'Not a shot blocker'],
-  STR: ['Strong, physical frame', 'Slight frame, gets pushed around'],
-  SPD: ['Quick, explosive athlete', 'Lacks foot speed'],
-  STM: ['High motor, can handle heavy minutes', 'Limited stamina'],
+  LAY: [['Smooth finisher who glides to the rim', 'Crafty around the basket, finishes through contact'], ['Struggles to finish at the rim', 'Finishing in traffic is a work in progress']],
+  DNK: [['Explosive above-the-rim finisher', 'Lob threat who plays above the rim'], ['Rarely finishes above the rim', 'Below-the-rim finisher']],
+  INS: [['Polished post scorer with soft touch', 'Comfortable with his back to the basket'], ['Little to no post game', 'No go-to move in the post']],
+  MID: [['Reliable pull-up game from mid-range', 'Smooth mid-range shooter'], ['Inconsistent from mid-range', 'Pull-up jumper is unreliable']],
+  TPT: [['Knockdown shooter who spaces the floor', 'Deep range, a real three-point threat'], ['Shaky three-point shot', 'Defenses can sag off him beyond the arc']],
+  FTS: [['Automatic at the free-throw line'], ['Poor free-throw shooter', 'Free throws are a liability']],
+  DRB: [['Ball on a string, creates off the dribble', 'Tight handle, rarely coughs it up'], ['Loose handle under pressure', 'Turnover prone with the ball in his hands']],
+  PAS: [['Sees the floor, makes the extra pass', 'Gifted passer with great vision'], ['Limited playmaker', 'Tunnel vision with the ball']],
+  ORE: [['Relentless on the offensive glass', 'Second-chance machine on the boards'], ["Doesn't crash the offensive glass"]],
+  DRE: [['Vacuums up defensive rebounds', 'Strong defensive rebounder, ends possessions'], ['Soft on the defensive glass', 'Gets outworked for rebounds']],
+  STL: [['Quick hands, picks pockets', 'Jumps passing lanes and turns defense into offense'], ['Rarely forces turnovers', 'Slow hands on defense']],
+  BLK: [['Rim protector who erases shots', 'Swats shots and changes everything at the rim'], ['Not a shot blocker', 'No deterrent at the rim']],
+  STR: [['Strong, physical frame', 'Built to absorb contact'], ['Slight frame, gets pushed around', 'Needs to add strength']],
+  SPD: [['Quick, explosive athlete', 'Blow-by speed in the open floor'], ['Lacks foot speed', 'Struggles to stay in front on the perimeter']],
+  STM: [['High motor, can handle heavy minutes'], ['Limited stamina', 'Tires late in games']],
+  SCO: [['Natural bucket-getter who carries an offense', 'Instant offense, scores in bunches'], ['Not a go-to scorer']],
+  DEF: [['Disruptive two-way defender', 'Defensive playmaker: steals, blocks and stops'], ['Liability on the defensive end', 'Gets lost on defense'], ['Holds his own on defense', 'Solid, positionally sound defender']],
 };
+// Areas that are one idea: at most one strength from each.
+const GROUP = { LAY: 'fin', DNK: 'fin', MID: 'shot', TPT: 'shot', ORE: 'reb', DRE: 'reb', STL: 'def', BLK: 'def', DEF: 'def' };
+const DEFENSE = new Set(['STL', 'BLK', 'DEF']);
 
-// How much each area moves the needle, by role; free throws and stamina
-// rarely define a prospect.
+// How much each area moves the needle, by role; free throws, stamina and
+// passing rarely define a prospect; defense does.
 const IMPACT = {
-  guard: { LAY: 1.0, DNK: 0.8, INS: 0.5, MID: 1.0, TPT: 1.4, FTS: 0.4, DRB: 1.3, PAS: 1.3,
-    ORE: 0.5, DRE: 0.6, STL: 1.1, BLK: 0.5, STR: 0.7, SPD: 1.2, STM: 0.4, HT: 1.0 },
-  wing: { LAY: 1.1, DNK: 1.0, INS: 0.8, MID: 1.0, TPT: 1.3, FTS: 0.4, DRB: 1.1, PAS: 1.0,
-    ORE: 0.7, DRE: 0.9, STL: 1.1, BLK: 0.9, STR: 0.9, SPD: 1.1, STM: 0.4, HT: 1.0 },
-  big: { LAY: 1.0, DNK: 1.1, INS: 1.2, MID: 0.8, TPT: 0.6, FTS: 0.4, DRB: 0.6, PAS: 0.9,
-    ORE: 1.0, DRE: 1.2, STL: 0.8, BLK: 1.3, STR: 1.1, SPD: 0.9, STM: 0.4, HT: 1.2 },
+  guard: { LAY: 1.1, DNK: 0.8, INS: 0.5, MID: 1.0, TPT: 1.4, FTS: 0.4, DRB: 1.3, PAS: 0.8,
+    ORE: 0.5, DRE: 0.6, STL: 1.3, BLK: 0.5, STR: 0.5, SPD: 1.1, STM: 0.4, HT: 1.0, SCO: 0.9, DEF: 1.2 },
+  wing: { LAY: 1.2, DNK: 1.0, INS: 0.8, MID: 1.0, TPT: 1.3, FTS: 0.4, DRB: 1.1, PAS: 0.6,
+    ORE: 0.7, DRE: 0.9, STL: 1.3, BLK: 1.0, STR: 0.6, SPD: 1.0, STM: 0.4, HT: 1.0, SCO: 0.9, DEF: 1.3 },
+  big: { LAY: 1.0, DNK: 1.1, INS: 1.2, MID: 0.8, TPT: 0.6, FTS: 0.4, DRB: 0.6, PAS: 0.5,
+    ORE: 1.0, DRE: 1.2, STL: 0.8, BLK: 1.4, STR: 0.8, SPD: 0.9, STM: 0.4, HT: 1.2, SCO: 0.8, DEF: 1.3 },
 };
 // Weaknesses that matter less for a role than the role's average impact
 // suggests (a center who can't shoot threes, a guard with no post game).
 const DOWN_IMPACT = {
-  guard: { INS: 0.3, BLK: 0.3, ORE: 0.3, DRE: 0.5, STR: 0.6 },
-  wing: { INS: 0.6, ORE: 0.5 },
-  big: { TPT: 0.35, DRB: 0.4, MID: 0.6, SPD: 0.7 },
+  guard: { INS: 0.3, BLK: 0.3, ORE: 0.3, DRE: 0.5, STR: 0.6, SCO: 0.4 },
+  wing: { INS: 0.6, ORE: 0.5, SCO: 0.4 },
+  big: { TPT: 0.35, DRB: 0.4, MID: 0.6, SPD: 0.7, PAS: 0.3, SCO: 0.3 },
 };
 // Strengths worth more than usual for a role (the stretch big).
 const UP_IMPACT = { big: { TPT: 1.1 } };
 export const roleOf = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
+const ROLE_NAME = { guard: 'guards', wing: 'wings', big: 'bigs' };
 const AWFUL_FT = 6; // free throws only count as a weakness at or below this
 const AWFUL_STM = 15; // stamina is only a weakness at or below this
 
@@ -326,38 +334,152 @@ function positionStats(league, pos) {
   return out;
 }
 
-// `rookieLine` = the projected rookie ratings (skill attrs) if known.
-export function scoutingReport(p, league, pot = p.pot) {
+// College production per game for every qualified player in one college
+// league and season, split by role. Qualified = half the league high in
+// games (the same rule as the season ranks).
+// Ball security is turnovers against touches (points + assists), and
+// defensive activity is steals + blocks.
+const perGame = c => ({ pts: c.pts, reb: c.reb, ast: c.ast, stl: c.stl, blk: c.blk, tov: c.tov, tpa: c.tpa, fg: c.fg, tp: c.tp, ft: c.ft,
+  tor: c.tov / (c.pts + c.ast + 1), stocks: c.stl + c.blk });
+const collegeCache = new WeakMap();
+function collegePeers(league, leagues, li, yr) {
+  let byKey = collegeCache.get(league);
+  if (!byKey) collegeCache.set(league, byKey = new Map());
+  const key = `${li}:${yr}`;
+  if (byKey.has(key)) return byKey.get(key);
+  const pool = new Map();
+  for (const t of leagues[li]?.teams || []) for (const p of t.roster || []) pool.set(p.id, p);
+  for (const p of league.draftClass || []) pool.set(p.id, p);
+  const lines = [];
+  for (const p of pool.values()) {
+    const c = collegeLine(p, leagues);
+    if (c && c.li === li && c.yr === yr) lines.push({ p, c });
+  }
+  const maxGp = Math.max(0, ...lines.map(x => x.c.gp));
+  const out = { guard: [], wing: [], big: [] };
+  for (const { p, c } of lines) if (c.gp >= maxGp / 2) out[roleOf(p.pos)].push({ id: p.id, r: perGame(c), tpa: c.tpa });
+  byKey.set(key, out);
+  return out;
+}
+// z-score and rank (1 = best) of one value among peers.
+function standing(peers, get, v, lowerIsBetter = false) {
+  const vals = peers.map(get).filter(x => x != null);
+  if (vals.length < 8 || v == null) return null;
+  const m = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length) || 1;
+  const z = (v - m) / sd * (lowerIsBetter ? -1 : 1);
+  const rank = 1 + vals.filter(x => (lowerIsBetter ? x < v : x > v)).length;
+  return { z: Math.max(-2.5, Math.min(2.5, z)), rank, of: Math.max(vals.length, rank) };
+}
+const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+
+// Strengths and weaknesses from ratings (today and ceiling, against NBA
+// players at the position) and, when there's a college season to go on,
+// production per game against qualified college players in the same role.
+// `leagues` = every league in the save (for college stats).
+export function scoutingReport(p, league, pot = p.pot, leagues = null) {
   const st = positionStats(league, p.pos);
   const pos = POSITIONS[p.pos] ?? '';
   const proj = projectedCeiling(p, pot);
   const role = roleOf(p.pos);
   const UP = { ...IMPACT[role], ...UP_IMPACT[role] };
   const DOWN = { ...IMPACT[role], ...DOWN_IMPACT[role] };
+  const pick = (k, side) => { const opts = SCOUT[k][side]; return opts[(p.id * 7 + k.charCodeAt(0)) % opts.length]; };
+
+  // College production.
+  const c = leagues ? collegeLine(p, leagues) : null;
+  const peers = c ? collegePeers(league, leagues, c.li, c.yr)[role] : [];
+  const mine = c ? perGame(c) : null;
+  const vs = `college ${ROLE_NAME[role]}`;
+  const S = {};
+  if (mine && peers.length >= 8) {
+    const one = (k, low = false) => standing(peers, x => x.r[k], mine[k], low);
+    S.pts = one('pts'); S.reb = one('reb'); S.ast = one('ast'); S.stl = one('stl'); S.blk = one('blk');
+    S.tov = one('tor', true); S.fg = one('fg'); S.ft = one('ft'); S.stocks = one('stocks');
+    // Three-point shooting counts only with real volume.
+    const shooters = peers.filter(x => x.tpa >= 1);
+    S.tp = c.tpa >= 1 ? standing(shooters, x => x.r.tp, mine.tp) : null;
+    S.tpa = one('tpa');
+  }
+  const f1 = v => v.toFixed(1);
+  const said = (s, what) => s ? `${what}, ${ord(s.rank)} of ${s.of} ${vs}` : null;
+  // Which stat backs which area: [standing, words].
+  const EVIDENCE = mine ? {
+    LAY: [S.fg, `${f1(c.fg)} FG%`], DNK: [S.fg, `${f1(c.fg)} FG%`], INS: role === 'big' ? [S.fg, `${f1(c.fg)} FG%`] : null,
+    TPT: S.tp && [{ ...S.tp, z: S.tp.z * 0.7 + (S.tpa?.z ?? 0) * 0.3 }, `${f1(c.tp)} 3P% on ${f1(mine.tpa)} 3PA`],
+    FTS: [S.ft, `${f1(c.ft)} FT%`], DRB: [S.tov && { ...S.tov, z: S.tov.z * 0.7 }, `${f1(mine.tov)} TOV to ${f1(mine.pts + mine.ast)} points + assists`], PAS: [S.ast, `${f1(mine.ast)} APG`],
+    ORE: [S.reb, `${f1(mine.reb)} RPG`], DRE: [S.reb, `${f1(mine.reb)} RPG`],
+    STL: [S.stl, `${f1(mine.stl)} SPG`], BLK: [S.blk, `${f1(mine.blk)} BPG`],
+    SCO: [S.pts, `${f1(mine.pts)} PPG`],
+  } : {};
+
   const items = ATTRS.map(k => {
     const cur = Math.min(capFor(k), p.attributes[k][0]);
     const i = SKILL_ATTRS.indexOf(k);
     const top = i >= 0 ? Math.max(cur, proj[i]) : Math.max(cur, p.attributes[k][1]);
     // Strength judged on what they can become; weakness on today + ceiling.
-    let down = ((cur + top) / 2 - st[k].m) / st[k].sd * DOWN[k];
+    let up = (top - st[k].m) / st[k].sd;
+    let down = ((cur + top) / 2 - st[k].m) / st[k].sd;
+    const rating = top > cur ? `${k} ${cur} → ${top} ceiling` : `${k} ${cur}`;
+    const ev = EVIDENCE[k];
+    let detail = rating;
+    if (ev?.[0]) {
+      // The box score confirms or tempers what the ratings say.
+      up = up * 0.6 + ev[0].z * 0.6;
+      down = down * 0.6 + ev[0].z * 0.6;
+      detail = `${said(ev[0], ev[1])} · ${rating}`;
+    }
+    up *= UP[k]; down *= DOWN[k];
     if (k === 'FTS' && cur > AWFUL_FT) down = Infinity;
     if (k === 'STM' && cur > AWFUL_STM) down = Infinity;
-    return {
-      k,
-      up: (top - st[k].m) / st[k].sd * UP[k],
-      down,
-      detail: top > cur ? `${k} ${cur} → ${top} ceiling` : `${k} ${cur}`,
-    };
+    if (k === 'STM') up = -Infinity; // a motor is never the headline
+    return { k, up, down, detail };
   });
+
+  // Scoring: production only.
+  if (EVIDENCE.SCO?.[0]) {
+    const z = EVIDENCE.SCO[0].z;
+    items.push({ k: 'SCO', up: z * UP.SCO, down: z * DOWN.SCO, detail: said(EVIDENCE.SCO[0], EVIDENCE.SCO[1]) });
+  }
+  // Overall defense: hands, rim protection, feet and strength, plus steals
+  // and blocks in college.
+  {
+    const r = k => (Math.max(p.attributes[k][0], SKILL_ATTRS.includes(k) ? proj[SKILL_ATTRS.indexOf(k)] : p.attributes[k][1]) - st[k].m) / st[k].sd;
+    const w = role === 'big' ? { STL: 0.2, BLK: 0.45, SPD: 0.1, STR: 0.25 } : role === 'wing' ? { STL: 0.35, BLK: 0.25, SPD: 0.25, STR: 0.15 } : { STL: 0.45, BLK: 0.05, SPD: 0.35, STR: 0.15 };
+    let z = Object.entries(w).reduce((a, [k, x]) => a + r(k) * x, 0);
+    const bits = [];
+    if (S.stocks) { z = z * 0.5 + S.stocks.z * 0.8; bits.push(said(S.stocks, `${f1(mine.stl)} SPG + ${f1(mine.blk)} BPG`)); }
+    else bits.push(`STL ${p.attributes.STL[0]} · BLK ${p.attributes.BLK[0]} · SPD ${p.attributes.SPD[0]}`);
+    items.push({ k: 'DEF', up: z * UP.DEF, down: z * DOWN.DEF, detail: bits.join(' · ') });
+  }
   const htZ = (p.ht - st.ht.m) / st.ht.sd * UP.HT;
-  const size = { k: 'HT', up: htZ, down: htZ, detail: `${heightStr(p.ht)} vs ${heightStr(Math.round(st.ht.m))} avg ${pos}` };
-  const strengths = [...items, size].sort((a, b) => b.up - a.up).slice(0, 2)
-    .map(x => ({ text: x.k === 'HT' ? `Great size for a ${pos}` : SCOUT[x.k][0], detail: x.detail }));
-  const used = new Set(strengths.map(s => s.text));
-  const weak = [...items, size].sort((a, b) => a.down - b.down)
-    .map(x => ({ text: x.k === 'HT' ? `Undersized for a ${pos}` : SCOUT[x.k][1], detail: x.detail }))
-    .find(x => !used.has(x.text));
-  return { strengths, weakness: weak };
+  items.push({ k: 'HT', up: htZ, down: htZ, detail: `${heightStr(p.ht)} vs ${heightStr(Math.round(st.ht.m))} avg ${pos}` });
+  const text = (x, side) => x.k === 'HT' ? (side ? `Undersized for a ${pos}` : `Great size for a ${pos}`) : pick(x.k, side);
+
+  // Up to three strengths (one per idea, real positives only) and up to
+  // two weaknesses; always say something about defense.
+  const def = items.find(x => x.k === 'DEF');
+  const pool = items.filter(x => x !== def);
+  const strengths = [], groups = new Set();
+  for (const x of [...pool].sort((a, b) => b.up - a.up)) {
+    if (strengths.length >= 3 || x.up < (strengths.length < 2 ? -Infinity : 0.6)) break;
+    const g = GROUP[x.k];
+    if (g && groups.has(g)) continue;
+    if (g) groups.add(g);
+    strengths.push(x);
+  }
+  const used = new Set(strengths.map(x => x.k));
+  const weak = [...pool].filter(x => !used.has(x.k) && Number.isFinite(x.down)).sort((a, b) => a.down - b.down)
+    .filter((x, i) => i === 0 || x.down < -0.6).slice(0, 2);
+  // Defense gets its own verdict unless steals or blocks already came up.
+  const talked = [...strengths, ...weak].some(x => DEFENSE.has(x.k));
+  const tone = def.up > 1.0 ? 0 : def.down < -0.6 ? 1 : 2;
+  return {
+    strengths: strengths.map(x => ({ text: text(x, 0), detail: x.detail })),
+    weakness: weak[0] ? { text: text(weak[0], 1), detail: weak[0].detail } : null,
+    weaknesses: weak.map(x => ({ text: text(x, 1), detail: x.detail })),
+    defense: talked ? null : { text: text(def, tone), detail: def.detail, tone: ['plus', 'minus', 'even'][tone] },
+  };
 }
 
 // ---------------------------------------------------------------------------

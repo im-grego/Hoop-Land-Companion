@@ -881,3 +881,7 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .prow.cprow { position: relative; }
 .fit-chip { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 22px; font-size: 14px; line-height: 1; background: var(--btn-shadow); border: 2px solid var(--btn-edge); }
 .prow.cprow .name { padding-right: 30px; }
+
+/* Prospects tab: one + button per row */
+.board-row .mv2 .mvbtn { flex: 1; width: 52px; font-size: 26px; }
+.scout .even::before { content: "•"; color: var(--dim); }
