@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.11';
+const APP_VERSION = '0.27.12';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2521,8 +2521,9 @@ screens.lottery = () => {
     title: 'Draft Lottery',
     body: `
       <div class="opts lot-formats">${Object.entries(LOTTERY_FORMATS).map(([k, f]) => `<button class="btn ${k === setup.format ? 'on focus' : 'off'}" data-act="lotFormat" data-f="${k}">${f.name}<span class="small">${f.era}</span></button>`).join('')}</div>
-      <p class="note small muted center lot-pick">Select odds</p>
-      <fieldset class="frame"><legend>Odds · ${esc(F.name)}</legend>
+      <button class="btn big focus" data-act="advLottery">🎱 Begin Lottery</button>
+      <fieldset class="frame"><legend>${esc(F.name)}</legend>
+        <p class="note muted small odds-key"><span class="gold">■</span> #1 pick · <span class="cyan">■</span> top ${topN}</p>
         <div class="odds-head lot"><span>Seed</span><span>Team</span><span>#1</span><span>Top ${topN}</span></div>
         ${odds.map(r => {
           const rr = rec.get(r.team.id);
@@ -2535,9 +2536,7 @@ screens.lottery = () => {
             <span class="odds-bar" aria-hidden="true"><i class="top" style="width:${top}%"></i><i class="one" style="width:${r.pct[0]}%"></i></span></div>`;
         }).join('')}
         ${out.length ? `<p class="note muted small" style="margin-top:8px">Out of the lottery (pick by record): ${out.map(r => esc(r.team.shortName)).join(', ')}.</p>` : ''}
-        <p class="note muted small" style="margin-top:8px"><span class="gold">■</span> #1 pick · <span class="cyan">■</span> top ${topN}</p>
       </fieldset>`,
-    action: { act: 'advLottery', label: 'Run Lottery' },
   });
 };
 

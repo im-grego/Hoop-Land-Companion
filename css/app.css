@@ -703,7 +703,7 @@ body::before {
 .odds-row.lot.releg-cut { border-bottom: 2px solid #ff5a5a; }
 .releg-label { margin-top: 6px; padding: 3px 8px; font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #ff8a8a; background: rgba(255, 90, 90, .12); border-left: 4px solid #ff5a5a; }
 .odds-row.lot.releg { background: rgba(255, 90, 90, .08); }
-.lot-pick { margin: 4px 0 2px; }
+.odds-key { margin-bottom: 6px; text-align: right; }
 .lot-row .status { font-size: 10px; padding: 1px 5px; vertical-align: 1px; }
 
 /* Consensus: two compact board buttons */
