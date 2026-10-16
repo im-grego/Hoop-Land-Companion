@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.10';
+const APP_VERSION = '0.27.11';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2527,9 +2527,11 @@ screens.lottery = () => {
         ${odds.map(r => {
           const rr = rec.get(r.team.id);
           const top = Math.min(100, r.pct.slice(0, topN).reduce((a, b) => a + b, 0));
-          // The last team in the relegation zone gets a red line under it.
+          // Relegation zone: labelled and highlighted, with a red line under its last team.
+          const zone = setup.floor && r.seed === 0 ? '<div class="releg-label">Relegation zone</div>' : '';
+          const inZone = setup.floor && r.seed < setup.floor.floorTeams;
           const cut = setup.floor && r.seed === setup.floor.floorTeams - 1;
-          return `<div class="odds-row lot ${cut ? 'releg-cut' : ''} ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
+          return `${zone}<div class="odds-row lot ${inZone ? 'releg' : ''} ${cut ? 'releg-cut' : ''} ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
             <span class="odds-bar" aria-hidden="true"><i class="top" style="width:${top}%"></i><i class="one" style="width:${r.pct[0]}%"></i></span></div>`;
         }).join('')}
         ${out.length ? `<p class="note muted small" style="margin-top:8px">Out of the lottery (pick by record): ${out.map(r => esc(r.team.shortName)).join(', ')}.</p>` : ''}
@@ -3212,13 +3214,14 @@ screens.fa = (args = {}) => {
   const teamName = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const signedIds = new Set(s.signings.map(x => x.p.id));
   // Your own players with expiring deals live under Your Books.
-  const yours = s.market.filter(m => isUserTeam(m.from)).sort((a, b) => levelOf(b.p) - levelOf(a.p));
-  let rows = s.market.filter(m => !isUserTeam(m.from)).sort((a, b) => levelOf(b.p) - levelOf(a.p) || faValue(b.p) - faValue(a.p));
+  let rows = [...s.market].sort((a, b) => levelOf(b.p) - levelOf(a.p) || faValue(b.p) - faValue(a.p));
+  if (view === 'mine') rows = rows.filter(m => isUserTeam(m.from) || (s.bids.get(m.p.id) || []).some(b => isUserTeam({ id: b.tid })));
+  else rows = rows.filter(m => !isUserTeam(m.from));
   if (view === 'bids') rows = rows.filter(m => s.bids.get(m.p.id)?.length);
   if (['guards', 'wings', 'bigs'].includes(view)) rows = rows.filter(m => posGroup(m.p) === view);
   const total = rows.length;
   rows = rows.slice(0, args.all ? 400 : 60);
-  const views = [['top', 'Best'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs'], ['bids', 'Bidding']];
+  const views = [['top', 'Best'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs'], ['bids', 'Bidding'], ['mine', 'Yours']];
   const O = FA.FA_DEFAULTS;
   const stageBtn = s.stage === 'open'
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
@@ -3233,8 +3236,8 @@ screens.fa = (args = {}) => {
     const M = FA.MOTIVES[m.motive];
     const signed = s.signings.find(x => x.p === m.p);
     const rfa = FA.isRestricted(L, m.p);
-    return `<button class="prow ${mineBid ? 'sel' : ''} ${declining(m.p) ? 'decl' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
-      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'down' : 'gold'} small">Lv ${levelOf(m.p)}</span>${declining(m.p) ? ' <span class="badge down-b">Declining</span>' : ''}${rfa ? ' <span class="badge new">RFA</span>' : ''}</span>
+    return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
+      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${levelOf(m.p)}${declining(m.p) ? ' ↓' : ''}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span>${s.day >= 3 && m.min === O.vetMin && m.ask > m.min ? '<br><span class="small up">Takes the min</span>' : ''}<br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
@@ -3256,7 +3259,6 @@ screens.fa = (args = {}) => {
         ].filter(Boolean).join('<br>');
         return `<div class="books-row">${logoImg(t)}<span class="grow"><b>${esc(t.shortName)}</b> · ${tools}<br><span class="small">${extra || '<span class="muted">Re-sign your own players over the cap (Bird rights)</span>'}</span></span><span class="small muted">${FA.signedRoster(t).length}/${O.rosterMax}</span></div>`;
       }).join('')}
-      ${yours.length ? `<p class="note small" style="margin-top:6px"><b>Your free agents</b> <span class="muted">(other teams can bid on them too)</span></p><div class="list">${yours.map(row).join('')}</div>` : ''}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${s.stage === 'done' ? faResults(s) : ''}
       <div class="stack">${stageBtn}</div>
@@ -3371,7 +3373,7 @@ actions.faOffer = d => {
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'down' : 'gold'}">Lv ${levelOf(m.p)}</span> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)}${FA.isRestricted(L, m.p) ? ' · <span class="badge new">RFA</span>' : ''}</p>
+      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${levelOf(m.p)}${declining(m.p) ? ' ↓' : ''}</span> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)}${FA.isRestricted(L, m.p) ? ' · <span class="badge new">RFA</span>' : ''}</p>
       ${rankLine(m.p)}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
