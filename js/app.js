@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.23';
+const APP_VERSION = '0.29.24';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1363,7 +1363,7 @@ function seasonRanks(yr, li = state.leagueIdx) {
     const q = rows.filter(r => r.gp >= minGp);
     const ranks = new Map(rows.map(r => [r.id, { pg: r.pg, gp: r.gp, qualified: r.gp >= minGp, rank: {} }]));
     for (const [k] of RANK_STATS) [...q].sort((a, b) => b.pg[k] - a.pg[k]).forEach((r, i) => { ranks.get(r.id).rank[k] = i + 1; });
-    cache.set(key, { ranks, of: q.length });
+    cache.set(key, { ranks, of: q.length, minGp: Math.ceil(minGp), maxGp: Math.max(...rows.map(r => r.gp), 0) });
   }
   return cache.get(key);
 }
@@ -1376,8 +1376,9 @@ function rankLine(p) {
 }
 function rankBox(p) {
   const yr = lastSeasonYear();
-  const { ranks, of } = seasonRanks(yr);
+  const { ranks, of, minGp, maxGp } = seasonRanks(yr);
   const r = ranks.get(p.id);
+  const rule = `Qualified: at least ${minGp} games played, half of the league high (${maxGp}).`;
   if (!r) return '';
   const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
   return `<fieldset class="frame"><legend>${yr} Season</legend>
@@ -1385,7 +1386,7 @@ function rankBox(p) {
       const n = r.rank[k];
       return `<div><span class="muted small">${k}</span><b>${r.pg[k].toFixed(1)}</b><span class="small ${n && n <= 10 ? 'gold' : n && n <= 30 ? 'up' : 'muted'}">${n ? ord(n) : '—'}</span></div>`;
     }).join('')}</div>
-    <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} players with enough games.` : `${r.gp} games: not enough to be ranked.`}</p>
+    <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} qualified players.` : `${r.gp} games: not enough to be ranked.`} ${rule}</p>
   </fieldset>`;
 }
 
@@ -2417,7 +2418,7 @@ function collegeBox(p) {
       ${[['PTS', f(c.pts)], ['REB', f(c.reb)], ['AST', f(c.ast)], ['STL', f(c.stl)], ['BLK', f(c.blk)],
          ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)], ['TOV', f(c.tov)]]
         .map(([k, v], i) => `<div><span class="muted small">${k}</span><b>${v}</b>${i < 5 ? collegeRank(p, c, RANK_STATS[i][0]) : ''}</div>`).join('')}
-    </div>${c.li != null && seasonRanks(c.yr, c.li).ranks.get(p.id)?.qualified ? `<p class="note muted small" style="margin-top:6px">Ranks among ${seasonRanks(c.yr, c.li).of} college players with enough games.</p>` : ''}</fieldset>`;
+    </div>${c.li != null && seasonRanks(c.yr, c.li).ranks.get(p.id)?.qualified ? (sr => `<p class="note muted small" style="margin-top:6px">Ranks among ${sr.of} qualified college players. Qualified: at least ${sr.minGp} games played, half of the league high (${sr.maxGp}).</p>`)(seasonRanks(c.yr, c.li)) : ''}</fieldset>`;
 }
 
 // Where the prospect would slot on each of your teams, as a rookie and at
