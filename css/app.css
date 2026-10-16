@@ -1000,3 +1000,10 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
     linear-gradient(#0b2f6b, #0b2f6b) calc(70% - 0.5px) 0 / 1px 100% no-repeat,
     linear-gradient(#0b2f6b, #0b2f6b) calc(90% - 0.5px) 0 / 1px 100% no-repeat;
   opacity: .55; }
+
+/* Your board: tier breaks */
+.tier-break { display: flex; align-items: center; gap: 8px; margin: 6px 0 2px; color: var(--gold); font-weight: 800; font-size: 13px; letter-spacing: .5px; text-transform: uppercase; }
+.tier-break::before, .tier-break::after { content: ''; flex: 1; height: 2px; background: color-mix(in srgb, var(--gold) 55%, transparent); }
+.tier-add { display: block; width: 100%; margin: -2px 0; padding: 2px 0; background: none; border: 0; color: #9fb6dc; font: inherit; font-size: 11px; font-weight: 700; opacity: .55; cursor: pointer; }
+.tier-add.on { color: var(--down); opacity: .8; }
+.tier-add:active { opacity: 1; }

@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.32.6';
+const APP_VERSION = '0.33.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2223,11 +2223,19 @@ function boardStore() {
   let b;
   try { b = JSON.parse(localStorage.getItem(`hlc:board:${seasonKey()}`)) || {}; } catch { b = {}; }
   if (!Array.isArray(b.board)) b.board = [...(b.watch || [])];
+  // Your tier breaks: positions on the board where a new tier starts
+  // (a break at 3 = a line between #3 and #4). They stay put when you move
+  // players, so moving a player across the line moves him into that tier.
+  if (!Array.isArray(b.tiers)) b.tiers = [];
   return b;
 }
 function saveBoardStore(b) {
-  try { localStorage.setItem(`hlc:board:${seasonKey()}`, JSON.stringify({ board: b.board })); } catch { /* ignore */ }
+  const n = b.board.length;
+  b.tiers = [...new Set((b.tiers || []).filter(i => i > 0 && i < n))].sort((x, y) => x - y);
+  try { localStorage.setItem(`hlc:board:${seasonKey()}`, JSON.stringify({ board: b.board, tiers: b.tiers })); } catch { /* ignore */ }
 }
+// Tier number (1-based) of each board position.
+const tierAt = (tiers, i) => 1 + tiers.filter(t => t <= i).length;
 const onBoard = id => boardStore().board.includes(id);
 // Prospects on your board, in your order (drafted ones drop off).
 function myBoard() {
@@ -2243,7 +2251,18 @@ function myBoardOrder() {
 actions.toggleBoard = d => {
   const b = boardStore();
   const id = +d.id;
-  b.board = b.board.includes(id) ? b.board.filter(x => x !== id) : [...b.board, id];
+  const k = b.board.indexOf(id);
+  if (k >= 0) b.tiers = b.tiers.map(t => (t > k ? t - 1 : t));
+  b.board = k >= 0 ? b.board.filter(x => x !== id) : [...b.board, id];
+  saveBoardStore(b);
+  render();
+};
+// Add or remove a tier break right below a player on your board.
+actions.tierBreak = d => {
+  const b = boardStore();
+  b.board = myBoard().map(p => p.id);
+  const at = +d.i + 1;
+  b.tiers = b.tiers.includes(at) ? b.tiers.filter(t => t !== at) : [...b.tiers, at];
   saveBoardStore(b);
   render();
 };
@@ -2252,7 +2271,10 @@ actions.toggleBoard = d => {
 actions.topBoard = d => {
   const b = boardStore();
   const id = +d.id;
-  b.board = [id, ...myBoard().map(p => p.id).filter(x => x !== id)];
+  const ids = myBoard().map(p => p.id);
+  const m = ids.indexOf(id);
+  b.tiers = b.tiers.map(t => (m < 0 || t <= m ? t + 1 : t));
+  b.board = [id, ...ids.filter(x => x !== id)];
   saveBoardStore(b);
   toast('Moved to #1 on your board');
   render();
@@ -2402,8 +2424,14 @@ function draftWarRoom() {
   const board = myBoard();
   return {
     html: `<fieldset class="frame"><legend>Your Board</legend>
-        ${board.length ? `<div class="list">${board.map((p, i) => `<div class="board-row">${prospectRow(p, '', { mine: true }).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
-          <div class="mv2 mv3"><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvbtn x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove from your board">✕</button></div></div>`).join('')}</div>`
+        ${board.length ? `<div class="list">${(() => {
+          const tiers = boardStore().tiers;
+          const head = n => `<div class="tier-break"><span>Tier ${n}</span></div>`;
+          return board.map((p, i) => `${tiers.length && (i === 0 || tiers.includes(i)) ? head(tierAt(tiers, i)) : ''}<div class="board-row">${prospectRow(p, '', { mine: true }).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
+          <div class="mv2 mv3"><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvbtn x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove from your board">✕</button></div></div>
+          ${i < board.length - 1 ? `<button class="tier-add ${tiers.includes(i + 1) ? 'on' : ''}" data-act="tierBreak" data-i="${i}" aria-label="${tiers.includes(i + 1) ? 'Remove the tier break here' : 'Add a tier break here'}">${tiers.includes(i + 1) ? '✕ Remove tier break' : '＋ Tier break'}</button>` : ''}`).join('');
+        })()}</div>
+        <p class="note muted small" style="margin-top:6px">Tap "＋ Tier break" between two players to start a new tier there.</p>`
         : '<p class="note">Your board is empty. Add prospects from Prospects with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
       </fieldset>`,
   };
@@ -3140,7 +3168,7 @@ function lotteryResultView() {
   const drawsOnly = !setup.floor && setup.draws < nTeams ? setup.draws : 0;
   const tray = state.lotteryReveal ? `<div class="lot-tray" data-draws="${drawsOnly}"><span class="lot-tray-label">Odds at #1</span><div class="lot-chips" style="--cols:${cols}">${setup.lotteryTeams
     .map((t, seed) => ({ t, seed, w: setup.odds[seed] ?? 0 })).sort((a, b) => b.w - a.w || a.seed - b.seed)
-    .map(({ t, seed, w }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}" data-w="${w}" data-seed="${seed}"><b>${esc(t.shortName)}</b><span class="pct">${(w / totalW * 100).toFixed(1)}%</span></span>`).join('')}</div></div>` : '';
+    .map(({ t, seed, w }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}" data-w="${w}" data-seed="${seed}" data-pct="${(() => { const r = rec.get(t.id); return r && r.W + r.L ? r.W / (r.W + r.L) : 0; })()}"><b>${esc(t.shortName)}</b><span class="pct">${(w / totalW * 100).toFixed(1)}%</span></span>`).join('')}</div></div>` : '';
   layout({
     title: 'Draft Lottery',
     body: `${tray}<div class="list lot-result">${order.map((o, i) => {
@@ -3167,17 +3195,18 @@ function updateTray(tid, pick) {
   let odds;
   if (draws) {
     // Picks after the drawn ones go by record (worst first), so revealing
-    // them bottom-up places teams best record first. Any team with a worse
-    // record than the last one placed by record must have been drawn: it's
-    // locked into the top picks.
-    if (pick > draws) tray.dataset.lastSeed = chip?.dataset.seed ?? tray.dataset.lastSeed;
+    // them bottom-up places teams best record first. Any team still waiting
+    // with a strictly better record than the last one placed by record must
+    // have been drawn: it's locked into the top picks. A team tied with it
+    // could still go by record (the game breaks ties), so it isn't locked.
+    if (pick > draws) tray.dataset.lastPct = chip?.dataset.pct ?? tray.dataset.lastPct;
     // Drawn picks already revealed (bottom-up, so #3 before #2): they were
     // drawn in those slots, after whoever is still waiting.
     else if (chip) tray.dataset.tail = `${chip.dataset.tid},${tray.dataset.tail || ''}`;
-    const lastSeed = pick > draws ? +tray.dataset.lastSeed : Infinity;
+    const lastPct = pick > draws && tray.dataset.lastPct != null ? +tray.dataset.lastPct : Infinity;
     for (const c of left) {
       // Once every by-record pick is placed, everyone left was drawn.
-      const lock = pick <= draws + 1 || +c.dataset.seed > lastSeed;
+      const lock = pick <= draws + 1 || +c.dataset.pct > lastPct + 1e-9;
       if (lock && !c.classList.contains('locked')) {
         c.classList.add('locked');
         c.insertAdjacentHTML('beforeend', `<span class="lock">🔒 Top ${draws}</span>`);
