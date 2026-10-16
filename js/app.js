@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.36.0';
+const APP_VERSION = '0.36.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1460,8 +1460,8 @@ function shownLevel(p) {
   if (!declining(p)) return levelOf(p);
   return levelOf({ pot: p.pot, attributes: Object.fromEntries(ATTRS.map(k => [k, [regressed(p, k), p.attributes[k][1]]])) });
 }
-// "Lv 84" for lists: red with ↓ while declining.
-const lvTag = (p, cls = 'gold small') => declining(p) ? `<span class="${cls.replace('gold', 'down')}">Lv ${shownLevel(p)}↓</span>` : `<span class="${cls}">Lv ${levelOf(p)}</span>`;
+// "Lv 84" for lists: red while declining.
+const lvTag = (p, cls = 'gold small') => declining(p) ? `<span class="${cls.replace('gold', 'down')}">Lv ${shownLevel(p)}</span>` : `<span class="${cls}">Lv ${levelOf(p)}</span>`;
 
 screens.report = (args) => {
   const L = league();
@@ -1659,7 +1659,7 @@ screens.leaders = (args) => {
       <div class="stack">${shown.map((x, i) => `<button class="ld-row ${x.e.team && isUserTeam(x.e.team) ? 'mine' : ''}" data-act="openPlayer" data-id="${x.e.p.id}">
         <span class="ld-n">${i + 1}</span>
         <span class="grow"><b>${esc(playerName(x.e.p))}</b> ${lvTag(x.e.p)}<br><span class="small muted">${esc(tname(x.e))} · ${esc(posName(x.e.p))} · ${x.e.p.age}y</span></span>
-        <b class="ld-v ${x.core != null && x.v < x.core ? 'down' : ''}">${fmt(x.v)}${x.core != null && x.v < x.core ? '↓' : ''}</b></button>`).join('')}</div>
+        <b class="ld-v ${x.core != null && x.v < x.core ? 'down' : ''}">${fmt(x.v)}</b></button>`).join('')}</div>
       ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
   });
 };
@@ -1724,7 +1724,7 @@ screens.player = (args) => {
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
-        <p class="note muted small" style="margin-top:10px">Bar = current rating, lighter shade = gained this offseason, white notch = ceiling. Declining players show what the game shows: their peak minus this year's regression (red number with ↓), with the red running up to the peak the save keeps. Raising a rating past its ceiling lifts the ceiling with it.</p>
+        <p class="note muted small" style="margin-top:10px">Bar = current rating, lighter shade = gained this offseason, white notch = ceiling. Declining players show what the game shows: their peak minus this year's regression (the red number), with the red running up to the peak the save keeps. Raising a rating past its ceiling lifts the ceiling with it.</p>
       </fieldset>
       <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
         <div class="stack">
@@ -1770,7 +1770,7 @@ function attrRow(p, snap, k, ceilMode) {
     <div class="body">
       <div class="top">
         <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
-        <span>${down ? `<span class="down">${reg}↓</span>` : cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${down ? cur : ceil}</span></span>
+        <span>${down ? `<span class="down">${reg}</span>` : cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="${down ? '' : 'gold'}">/ ${down ? cur : ceil}</span></span>
       </div>
       <div class="${barClass(k)}">
         ${down ? `<div class="lost" style="left:${reg / ATTR_MAX * 100}%;width:${(Math.min(cur, ATTR_MAX) - reg) / ATTR_MAX * 100}%"></div>` : `<div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>`}
@@ -4148,7 +4148,7 @@ screens.fa = (args = {}) => {
     const signed = s.signings.find(x => x.p === m.p);
     const rfa = FA.isRestricted(L, m.p);
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
-      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${levelOf(m.p)}${declining(m.p) ? ' ↓' : ''}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}</span>
+      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span>${s.day >= 3 && m.min === O.vetMin && m.ask > m.min ? '<br><span class="small up">Takes the min</span>' : ''}<br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
@@ -4284,7 +4284,7 @@ actions.faOffer = d => {
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${levelOf(m.p)}${declining(m.p) ? ' ↓' : ''}</span> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)}${FA.isRestricted(L, m.p) ? ' · <span class="badge new">RFA</span>' : ''}</p>
+      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)}${FA.isRestricted(L, m.p) ? ' · <span class="badge new">RFA</span>' : ''}</p>
       ${rankLine(m.p)}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
