@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.4';
+const APP_VERSION = '0.29.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -320,6 +320,8 @@ async function loadFile(file) {
 function installData(data, keepSnaps = false) {
   {
     state.data = data;
+    // The lottery format follows the file's year unless picked on the lottery screen.
+    state.params.lotteryFormat = 'auto';
     state.leagueIdx = 0;
     if (!keepSnaps) state.snaps.clear();
     state.profiles = [];
@@ -2721,11 +2723,21 @@ async function revealLottery() {
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
     await wait(big ? 1500 : 2300);
   }
-  list.classList.remove('revealing');
   skip.remove();
+  // Let #1 land, then fold the tray away and glide back to the top of the
+  // full order.
+  await wait(1200);
+  list.classList.remove('revealing');
   const tray = $app.querySelector('.lot-tray');
-  if (tray) { tray.classList.add('gone'); setTimeout(() => tray.remove(), 600); }
-  if (done) done.style.display = '';
+  if (tray) {
+    tray.style.maxHeight = `${tray.scrollHeight}px`;
+    void tray.offsetHeight;
+    tray.classList.add('gone');
+    tray.addEventListener('transitionend', e => { if (e.propertyName === 'max-height') tray.remove(); });
+    setTimeout(() => tray.remove(), 1500);
+  }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (done) { done.style.display = ''; done.classList.add('fade-in'); }
   const top = rows[0];
   if (top) {
     const jump = +top.dataset.move;

@@ -829,7 +829,11 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .lot-chip.out .pct { color: #fff; }
 .lot-chip.flash .pct { animation: pctFlash .6s ease-out; }
 @keyframes pctFlash { 0% { color: #5bff8a; transform: scale(1.25); } 100% { transform: none; } }
-.lot-tray.gone { opacity: 0; pointer-events: none; }
+.lot-tray { overflow: hidden; }
+.lot-tray.gone { max-height: 0 !important; opacity: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; border-width: 0; pointer-events: none;
+  transition: max-height .8s cubic-bezier(.4, 0, .2, 1), opacity .5s, padding .8s, margin .8s, border-width .8s; }
+.fade-in { animation: fadeIn .6s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 
 /* Draft pick reveal */

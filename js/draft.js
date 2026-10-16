@@ -400,12 +400,11 @@ export const LOTTERY_FORMATS = {
   old: { name: 'Old School', era: 'NBA 1994–2018', teams: 14, draws: 3, weights: [250, 199, 156, 119, 88, 63, 43, 28, 17, 11, 8, 7, 6, 5] },
 };
 
-// Detect the 3-2-1 format from the odds: 16 teams and the worst seeds having
-// lower odds than seed 4. Anything else gets the Top 4 lottery.
+// The format by the file's year: 3-2-1 from 2027, Top 4 for 2019–2026,
+// Old School before that.
 export function detectLotteryFormat(league) {
-  const s = league.season;
-  const o = s.lotteryOdds || [];
-  return s.lotteryTeams === 16 && o.length >= 4 && o[0] < o[3] ? '321' : 'top4';
+  const yr = league.season.currentYear;
+  return yr >= 2027 ? '321' : yr >= 2019 ? 'top4' : 'old';
 }
 const lotteryFormatOf = (league, format) =>
   LOTTERY_FORMATS[format] ? format : format === 'classic' ? 'top4' : detectLotteryFormat(league);

@@ -154,7 +154,7 @@ Available once the file has a draft class (offseason, before the lottery).
   Each prospect page shows college stats, fit on your team, the scouting report and comps.
 - **Lottery:** three formats, with each team's odds at #1 and at a top pick (20,000 simulations, shown as bars):
   **3-2-1** (NBA 2027+: your league's weights, all lottery picks drawn, worst 3 teams no lower than #12;
-  auto-detected), **Top 4** (NBA 2019–2026: 14 teams, worst 3 at 14%, top 4 drawn) and **Old School**
+  the default for 2027+ files), **Top 4** (NBA 2019–2026, the default for those years: 14 teams, worst 3 at 14%, top 4 drawn) and **Old School**
   (NBA 1994–2018: 14 teams, worst at 25%, top 3 drawn).
 - **Consensus** shows each prospect's overall rank so you know how far down the board you are.
 - **Draft grades** next to every prospect: Consensus #1, Top 5, Lottery, First Round, Second Round, UDFA, or N/A
