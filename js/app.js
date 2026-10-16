@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.5';
+const APP_VERSION = '0.29.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2630,6 +2630,9 @@ function updateTray(tid, pick) {
     // record than the last one placed by record must have been drawn: it's
     // locked into the top picks.
     if (pick > draws) tray.dataset.lastSeed = chip?.dataset.seed ?? tray.dataset.lastSeed;
+    // Drawn picks already revealed (bottom-up, so #3 before #2): they were
+    // drawn in those slots, after whoever is still waiting.
+    else if (chip) tray.dataset.tail = `${chip.dataset.tid},${tray.dataset.tail || ''}`;
     const lastSeed = pick > draws ? +tray.dataset.lastSeed : Infinity;
     for (const c of left) {
       // Once every by-record pick is placed, everyone left was drawn.
@@ -2639,7 +2642,8 @@ function updateTray(tid, pick) {
         c.insertAdjacentHTML('beforeend', `<span class="lock">🔒 Top ${draws}</span>`);
       }
     }
-    odds = drawnOdds(left, draws);
+    const tail = (tray.dataset.tail || '').split(',').filter(Boolean).map(id => $app.querySelector(`.lot-chip[data-tid="${id}"]`));
+    odds = drawnOdds(left, draws, tail);
   } else {
     const total = left.reduce((a, c) => a + +c.dataset.w, 0) || 1;
     odds = new Map(left.map(c => [c, +c.dataset.w / total]));
@@ -2652,38 +2656,28 @@ function updateTray(tid, pick) {
 }
 
 // Exact chance at #1 for the teams still waiting when only the top `draws`
-// picks are drawn: every possible drawn set (all locked teams plus enough of
-// the undecided ones) and every draw order, weighted by the lottery balls.
-function drawnOdds(left, draws) {
-  const all = [...$app.querySelectorAll('.lot-chip')];
-  const W = all.reduce((a, c) => a + +c.dataset.w, 0);
+// picks are drawn. Every possible set of teams for the unrevealed drawn
+// slots (all locked teams plus enough undecided ones), every order of it,
+// then the drawn picks already revealed (`tail`, in pick order), each
+// weighted by the lottery balls left at that draw.
+function drawnOdds(left, draws, tail = []) {
+  const w = c => +c.dataset.w;
+  const W = [...$app.querySelectorAll('.lot-chip')].reduce((a, c) => a + w(c), 0);
   const locked = left.filter(c => c.classList.contains('locked'));
   const open = left.filter(c => !c.classList.contains('locked'));
-  const need = draws - locked.length;
+  const need = draws - tail.length - locked.length;
   const first = new Map(left.map(c => [c, 0]));
   let total = 0;
-  // For a drawn set: each team's chance of coming out first, times the
-  // chance of the rest of the set following in any order.
-  const perms = set => {
-    for (const c of set) {
-      const w = +c.dataset.w;
-      const m = sumOrders(set.filter(x => x !== c), W - w, w / W);
-      first.set(c, first.get(c) + m);
-      total += m;
-    }
+  const tailP = rem => tail.reduce((p, c) => { const q = p * w(c) / rem; rem -= w(c); return q; }, 1);
+  const orders = (set, rem, p, lead) => {
+    if (!set.length) { const m = p * tailP(rem); first.set(lead, first.get(lead) + m); total += m; return; }
+    for (const c of set) orders(set.filter(x => x !== c), rem - w(c), p * w(c) / rem, lead ?? c);
   };
-  // Probability of drawing the rest of a set in any order.
-  const sumOrders = (set, rem, p) => {
-    if (!set.length) return p;
-    let t = 0;
-    for (let i = 0; i < set.length; i++) t += sumOrders(set.filter((_, j) => j !== i), rem - +set[i].dataset.w, p * (+set[i].dataset.w) / rem);
-    return t;
+  const choose = (start, picked) => {
+    if (picked.length === need) { const set = [...locked, ...picked]; if (set.length) orders(set, W, 1, null); return; }
+    for (let i = start; i < open.length; i++) choose(i + 1, [...picked, open[i]]);
   };
-  const choose = (from, k, start, picked) => {
-    if (picked.length === k) { perms([...locked, ...picked]); return; }
-    for (let i = start; i < from.length; i++) choose(from, k, i + 1, [...picked, from[i]]);
-  };
-  if (need >= 0) choose(open, need, 0, []);
+  if (need >= 0) choose(0, []);
   return new Map(left.map(c => [c, total ? first.get(c) / total : 0]));
 }
 
