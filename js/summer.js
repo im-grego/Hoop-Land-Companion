@@ -3,7 +3,8 @@
 // Strength comes from the young players' level, draft pedigree and college
 // production; the result is a final (box score by quarter, overtime if it's
 // tied), a Summer League MVP with his averages, and a small reward for your
-// rookies if your team reaches the final (more if you win it).
+// rookies if your team reaches the final (more if you win it). The Final
+// Four and the semifinals come back too, for the bracket.
 
 import { levelOf, playerName } from './savefile.js';
 import { mulberry32 } from './progression.js';
@@ -38,27 +39,34 @@ const teamScore = (league, team, leagues) => {
   return top.reduce((a, b) => a + b, 0) / 5;
 };
 
-// Run the tournament. Deterministic for a seed (no re-rolls).
+// Run the tournament: pool play, a Final Four, the championship.
+// Deterministic for a seed (no re-rolls).
 export function runSummerLeague(league, leagues, seed) {
   const rng = mulberry32(seed);
   const yr = league.season.currentYear;
   const noise = () => (rng() + rng() + rng() - 1.5) * 6;
   const field = league.teams.map(t => ({ team: t, score: teamScore(league, t, leagues) }));
-  // Pool play and the bracket, compressed: the two best showings meet.
+  // Pool play: the four best showings make the Final Four (1 v 4, 2 v 3).
   const ranked = field.map(f => ({ ...f, run: f.score + noise() })).sort((a, b) => b.run - a.run);
-  const [A, B] = ranked;
-  // The final, quarter by quarter.
-  const edge = (A.score - B.score) / 10;
-  const q = side => Math.max(16, Math.round(23.5 + (side === 'a' ? edge : -edge) + (rng() - 0.5) * 12));
-  const quarters = [[], []];
-  for (let i = 0; i < 4; i++) { quarters[0].push(q('a')); quarters[1].push(q('b')); }
+  const four = ranked.slice(0, 4);
   const sum = a => a.reduce((x, y) => x + y, 0);
-  while (sum(quarters[0]) === sum(quarters[1])) {
-    quarters[0].push(Math.round(6 + rng() * 8));
-    quarters[1].push(Math.round(6 + rng() * 8));
-  }
-  const winner = sum(quarters[0]) > sum(quarters[1]) ? A.team : B.team;
-  const loser = winner === A.team ? B.team : A.team;
+  // One game, quarter by quarter, overtime if it's tied.
+  const game = (A, B) => {
+    const edge = (A.score - B.score) / 10;
+    const q = sign => Math.max(16, Math.round(23.5 + sign * edge + (rng() - 0.5) * 12));
+    const quarters = [[], []];
+    for (let i = 0; i < 4; i++) { quarters[0].push(q(1)); quarters[1].push(q(-1)); }
+    while (sum(quarters[0]) === sum(quarters[1])) {
+      quarters[0].push(Math.round(6 + rng() * 8));
+      quarters[1].push(Math.round(6 + rng() * 8));
+    }
+    const w = sum(quarters[0]) > sum(quarters[1]) ? A : B;
+    return { teams: [A.team.id, B.team.id], quarters, winner: w.team.id, w, l: w === A ? B : A };
+  };
+  const semis = [game(four[0], four[3]), game(four[1], four[2])];
+  const fin = game(semis[0].w, semis[1].w);
+  const winner = fin.w.team, loser = fin.l.team;
+  const strip = g => ({ teams: g.teams, quarters: g.quarters, winner: g.winner });
   // MVP: the champion's (or, now and then, the runner-up's) standout.
   const pool = [winner, winner, loser][Math.floor(rng() * 3)];
   const core = youngCore(league, pool);
@@ -73,7 +81,9 @@ export function runSummerLeague(league, leagues, seed) {
   };
   return {
     seed,
-    final: { teams: [A.team.id, B.team.id], quarters, winner: winner.id },
+    four: four.map(f => f.team.id),
+    semis: semis.map(strip),
+    final: strip(fin),
     mvp: mvp && { pid: mvp.id, tid: pool.id, ...line(mvp) },
   };
 }

@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.27';
+const APP_VERSION = '0.29.28';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -36,7 +36,9 @@ const state = {
   auto: {},                // leagueIdx -> bump summary
   rookieAuto: {},          // leagueIdx -> rookie bump summary
   summer: {},              // leagueIdx -> { players, points } once the age adjustment ran this session
-  summerTour: {},          // leagueIdx -> { result, reward } once the summer league tournament ran
+  summerTour: {},          // leagueIdx -> { result, stage, reward } once the summer league tournament started
+  rookieNums: {},          // leagueIdx -> { locked, picks: { pid: from } } for rookie jersey numbers
+  numPick: null,           // rookie whose number wall is open
   mentor: {},              // leagueIdx -> { seed, list: [{ teamId, mentorId, menteeId, skill, cpu }] }
   contracts: {},           // leagueIdx -> rookie contract changes (for undo)
   fa: {},                  // leagueIdx -> free agency day state
@@ -330,6 +332,9 @@ function installData(data, keepSnaps = false) {
     state.auto = {};
     state.rookieAuto = {};
     state.summer = {};
+    state.summerTour = {};
+    state.rookieNums = {};
+    state.numPick = null;
     state.mentor = {};
     state.contracts = {};
     state.jerseys = {};
@@ -880,7 +885,7 @@ function jerseyCard() {
   const li = state.leagueIdx;
   const done = state.jerseys?.[li];
   const clashes = done ? [] : jerseyClashes(league());
-  if (!done && !clashes.length) return '';
+  if (!done && !clashes.length) return '<fieldset class="frame"><legend>Jersey Numbers</legend><p class="note">👕 No jersey number conflicts: every player has his own number.</p></fieldset>';
   return `<fieldset class="frame"><legend>Jersey Numbers</legend><div class="stack">
     ${done ? `<p class="note"><span class="up">${done.length}</span> players renumbered: ${esc(done.slice(0, 4).map(c => `${c.p.ln} #${c.from}→#${c.to}`).join(', '))}${done.length > 4 ? '…' : ''}</p>
       <button class="btn small" data-act="undoJerseys">↺ Undo</button>`
@@ -943,8 +948,8 @@ screens.camp = () => {
   const ageDone = !!state.summer[state.leagueIdx] || summerDone();
   layout({
     title: 'Summer League',
-    body: `${leagueRookies(league()).length ? ageSection() : '<p class="note">No rookies this year.</p>'}${tourSection(ageDone || !leagueRookies(league()).length)}`,
-    action: ageDone || state.summerTour[state.leagueIdx] ? { act: 'calCampBack', label: 'Wrap Up Summer League' } : null,
+    body: `${leagueRookies(league()).length ? ageSection() : '<p class="note">No rookies this year.</p>'}${numbersSection(ageDone || !leagueRookies(league()).length)}${tourSection((ageDone || !leagueRookies(league()).length) && numbersReady())}`,
+    action: (ageDone || state.summerTour[state.leagueIdx]) && (state.summerTour[state.leagueIdx]?.stage || 'final') === 'final' ? { act: 'calCampBack', label: 'Wrap Up Summer League' } : null,
   });
 };
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
@@ -1050,33 +1055,127 @@ function ageSection() {
   return `<fieldset class="frame"><legend>1 · Age Adjustment</legend><div class="stack">${body}</div></fieldset>`;
 }
 
-// Step 2: the summer league tournament (young cores; your team gets a small
-// boost for reaching the final).
+// Step 2: your rookies pick their numbers, from a wall of every number with
+// teammates' and retired ones taken. Their college number is marked.
+const myRookies = () => leagueRookies(league()).filter(r => r.team && isUserTeam(r.team));
+const numsState = () => (state.rookieNums[state.leagueIdx] ||= { locked: false, picks: {} });
+const numbersReady = () => !myRookies().length || numsState().locked || !!state.summerTour[state.leagueIdx];
+// The number on the player's last college stint.
+function collegeNumber(p) {
+  const s = (p.stats || []).filter(x => x.league > 0 && state.data.seasonLeagues[x.league]?.leagueType !== 0)
+    .sort((a, b) => a.yr - b.yr).pop();
+  const row = s?.season?.[s.season.length - 1];
+  return row && row.num >= 0 ? row.num : null;
+}
+const teamTint = t => {
+  const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
+  return c1 ? `--tc1:${c1};--tc2:${c2 || c1}` : '';
+};
+const jersey = (t, n, cls = '') => `<span class="jersey ${cls}" style="${teamTint(t)}"><span>${n}</span></span>`;
+function setRookieNumber(p, team, n) {
+  const ns = numsState();
+  if (!(p.id in ns.picks)) ns.picks[p.id] = p.num;
+  p.num = n;
+  // The new season's stats row carries the number too.
+  const row = (p.stats || []).filter(s => s.yr === league().season.currentYear).pop();
+  const stint = row?.season?.[row.season.length - 1];
+  if (stint && !stint.GP && stint.tid === team.id) stint.num = n;
+  state.dirty = true;
+}
+function numberWall(r) {
+  const t = r.team, p = r.p, col = collegeNumber(p);
+  const mates = new Map(t.roster.filter(x => x !== p).map(x => [x.num, x]));
+  const retired = new Set((t.retiredNumbers || []).map(x => x.num));
+  const tiles = [];
+  for (let n = 0; n <= 99; n++) {
+    const mate = mates.get(n), ret = retired.has(n);
+    const cls = [n === p.num ? 'cur' : '', n === col ? 'col' : '', mate || ret ? 'taken' : ''].join(' ');
+    tiles.push(`<button class="nw-tile ${cls}" style="${teamTint(t)}" data-act="pickNumber" data-id="${p.id}" data-n="${n}" ${mate || ret ? 'disabled' : ''}>
+      <b>${n}</b><span>${ret ? 'Retired' : mate ? esc(mate.ln) : n === col ? 'College' : ''}</span></button>`);
+  }
+  return `<div class="nw-wall">${tiles.join('')}</div>`;
+}
+function numbersSection(ready) {
+  const mine = myRookies();
+  if (!mine.length) return '';
+  const ns = numsState();
+  const locked = ns.locked || !!state.summerTour[state.leagueIdx];
+  let body;
+  if (!ready) body = '<p class="note muted">Run the age adjustment first.</p>';
+  else {
+    body = `${locked ? '' : '<p class="note">Before they head to Vegas, your rookies pick their numbers. Gold marks the number they wore in college; teammates\' numbers and retired jerseys are off the wall.</p>'}
+      <div class="stack">${mine.map(r => {
+        const col = collegeNumber(r.p);
+        const open = !locked && state.numPick === r.p.id;
+        const colFree = col != null && col !== r.p.num && !r.team.roster.some(x => x !== r.p && x.num === col) && !(r.team.retiredNumbers || []).some(x => x.num === col);
+        return `<div class="nw-row">
+          ${jersey(r.team, r.p.num)}
+          <span class="grow"><b>${esc(playerName(r.p))}</b><br><span class="muted small">${esc(r.team.shortName)} · ${esc(posName(r.p))}${col != null ? ` · Wore <span class="gold">#${col}</span> in college` : ''}</span></span>
+          ${locked ? '' : `<button class="btn small ${open ? 'on' : ''}" data-act="openWall" data-id="${r.p.id}">${open ? 'Close' : '👕 Pick'}</button>`}
+        </div>
+        ${open ? `${colFree ? `<button class="btn small focus" data-act="pickNumber" data-id="${r.p.id}" data-n="${col}">Keep college #${col}</button>` : ''}${numberWall(r)}` : ''}`;
+      }).join('')}</div>
+      ${locked ? '<p class="note small up">Numbers locked in.</p>' : '<button class="btn focus" data-act="lockNumbers">✅ Lock In Numbers</button>'}`;
+  }
+  return `<fieldset class="frame"><legend>2 · Rookie Numbers</legend><div class="stack">${body}</div></fieldset>`;
+}
+actions.openWall = d => { state.numPick = state.numPick === +d.id ? null : +d.id; render(); };
+actions.pickNumber = d => {
+  const r = myRookies().find(x => x.p.id === +d.id);
+  if (!r) return;
+  setRookieNumber(r.p, r.team, +d.n);
+  state.numPick = null;
+  render();
+  toast(`${playerName(r.p)} will wear #${d.n}`);
+};
+actions.lockNumbers = () => { numsState().locked = true; state.numPick = null; state.dirty = true; render(); };
+
+// Step 3: the summer league tournament: pool play sets a Final Four, then
+// the semifinals, then the championship (your team gets a small boost for
+// reaching the final).
+function boxScore(L, g) {
+  const [a, b] = g.teams.map(id => L.teams.find(x => x.id === id));
+  const sum = q => q.reduce((x, y) => x + y, 0);
+  const heads = g.quarters[0].map((_, i) => i < 4 ? `Q${i + 1}` : i === 4 ? 'OT' : `${i - 3}OT`);
+  return `<div class="box-score" style="--cols:${heads.length}">
+    <span></span>${heads.map(h => `<span class="muted">${h}</span>`).join('')}<span class="muted">F</span>
+    ${[a, b].map((tm, k) => `<span class="bs-team ${tm.id === g.winner ? 'win' : ''}">${logoImg(tm)}${esc(tm.shortName)}</span>${g.quarters[k].map(v => `<span>${v}</span>`).join('')}<b class="${tm.id === g.winner ? 'gold' : ''}">${sum(g.quarters[k])}</b>`).join('')}
+  </div>`;
+}
 function tourSection(ready) {
   const L = league();
   const t = state.summerTour[state.leagueIdx];
+  const step = myRookies().length ? 3 : 2;
   let body;
   if (!t) {
     body = ready
-      ? `<p class="note">Every team's rookies and second-year players head to Las Vegas. Reach the final and a couple of your young players pick up a rating point; win it and three of them get two.</p>
-        <button class="btn big focus" data-act="runTour">🏀 Play Summer League</button>`
-      : '<p class="note muted">Run the age adjustment first.</p>';
+      ? `<p class="note">Every team's rookies and second-year players head to Las Vegas. Pool play sets a Final Four, then it's win or go home. Reach the final and a couple of your young players pick up a rating point; win it and three of them get two.</p>
+        <button class="btn big focus" data-act="runTour">🏀 Play Pool Games</button>`
+      : `<p class="note muted">${myRookies().length ? 'Lock in your rookies\' numbers first.' : 'Run the age adjustment first.'}</p>`;
   } else {
     const r = t.result;
-    const [a, b] = r.final.teams.map(id => L.teams.find(x => x.id === id));
-    const sum = q => q.reduce((x, y) => x + y, 0);
-    const heads = r.final.quarters[0].map((_, i) => i < 4 ? `Q${i + 1}` : i === 4 ? 'OT' : `${i - 3}OT`);
-    const mvpTeam = L.teams.find(x => x.id === r.mvp?.tid);
-    body = `<p class="note small muted">Championship game</p>
-      <div class="box-score" style="--cols:${heads.length}">
-        <span></span>${heads.map(h => `<span class="muted">${h}</span>`).join('')}<span class="muted">F</span>
-        ${[a, b].map((tm, k) => `<span class="bs-team ${tm.id === r.final.winner ? 'win' : ''}">${logoImg(tm)}${esc(tm.shortName)}</span>${r.final.quarters[k].map(v => `<span>${v}</span>`).join('')}<b class="${tm.id === r.final.winner ? 'gold' : ''}">${sum(r.final.quarters[k])}</b>`).join('')}
-      </div>
-      <p class="note">🏆 <b>${esc(L.teams.find(x => x.id === r.final.winner).city)} ${esc(L.teams.find(x => x.id === r.final.winner).name)}</b> win the Summer League title.</p>
-      ${r.mvp ? `<div class="mvp-card">${logoImg(mvpTeam)}<span class="grow"><span class="small muted">Summer League MVP</span><br><b>${esc(mvpName(L, r.mvp))}</b> <span class="muted small">${esc(mvpTeam.shortName)}</span><br><span class="small">${r.mvp.ppg} PPG · ${r.mvp.rpg} RPG · ${r.mvp.apg} APG</span></span></div>` : ''}
-      ${t.reward.length ? `<p class="note small up">${t.reward.map(x => `${esc(playerName(x.p))} ${Object.keys(x.gains).map(k => `${k} +1`).join(', ')}`).join(' · ')}</p>` : ''}`;
+    const stage = t.stage || 'final';
+    const team = id => L.teams.find(x => x.id === id);
+    const four = r.four ? `<p class="note small muted">Final Four</p><div class="ff-grid">${r.four.map((id, i) => {
+      const tm = team(id);
+      const out = stage !== 'four' && !r.semis.some(g => g.winner === id);
+      return `<div class="ff-team ${isUserTeam(tm) ? 'mine' : ''} ${out ? 'out' : ''}"><span class="muted small">${i + 1}</span>${logoImg(tm)}<b>${esc(tm.shortName)}</b></div>`;
+    }).join('')}</div>` : '';
+    const semis = stage !== 'four' && r.semis ? `<p class="note small muted">Semifinals</p>${r.semis.map(g => boxScore(L, g)).join('')}` : '';
+    let fin = '';
+    if (stage === 'final') {
+      const champ = team(r.final.winner);
+      const mvpTeam = team(r.mvp?.tid);
+      fin = `<p class="note small muted">Championship</p>${boxScore(L, r.final)}
+        <p class="note">🏆 <b>${esc(champ.city)} ${esc(champ.name)}</b> win the Summer League title.</p>
+        ${r.mvp ? `<div class="mvp-card">${logoImg(mvpTeam)}<span class="grow"><span class="small muted">Summer League MVP</span><br><b>${esc(mvpName(L, r.mvp))}</b> <span class="muted small">${esc(mvpTeam.shortName)}</span><br><span class="small">${r.mvp.ppg} PPG · ${r.mvp.rpg} RPG · ${r.mvp.apg} APG</span></span></div>` : ''}
+        ${t.reward.length ? `<p class="note small up">${t.reward.map(x => `${esc(playerName(x.p))} ${Object.keys(x.gains).map(k => `${k} +1`).join(', ')}`).join(' · ')}</p>` : ''}`;
+    }
+    const next = stage === 'four' ? '<button class="btn big focus" data-act="simSemis">▶ Sim Semifinals</button>'
+      : stage === 'semis' ? '<button class="btn big focus" data-act="simFinal">🏆 Sim Championship</button>' : '';
+    body = four + semis + fin + next;
   }
-  return `<fieldset class="frame"><legend>2 · Summer League</legend><div class="stack">${body}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>${step} · Summer League</legend><div class="stack">${body}</div></fieldset>`;
 }
 
 actions.runTour = () => {
@@ -1084,13 +1183,34 @@ actions.runTour = () => {
   const li = state.leagueIdx;
   if (state.summerTour[li]) return;
   const result = runSummerLeague(L, state.data.seasonLeagues, (state.params.seed ^ (L.season.currentYear * 7919)) >>> 0);
-  const mine = result.final.teams.map(id => L.teams.find(t => t.id === id)).find(isUserTeam);
-  const reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
-  state.summerTour[li] = { result, reward };
+  state.summerTour[li] = { result, stage: 'four', reward: [] };
+  numsState().locked = true;
+  state.dirty = true;
+  render();
+  const mine = result.four.map(id => L.teams.find(t => t.id === id)).find(isUserTeam);
+  toast(mine ? `${mine.shortName} made the Final Four!` : 'The Final Four is set');
+};
+actions.simSemis = () => {
+  const L = league();
+  const t = state.summerTour[state.leagueIdx];
+  if (!t || t.stage !== 'four') return;
+  t.stage = 'semis';
+  render();
+  const [a, b] = t.result.final.teams.map(id => L.teams.find(x => x.id === id));
+  toast(`Championship: ${a.shortName} vs ${b.shortName}`);
+};
+actions.simFinal = () => {
+  const L = league();
+  const t = state.summerTour[state.leagueIdx];
+  if (!t || t.stage !== 'semis') return;
+  const result = t.result;
+  const mine = result.final.teams.map(id => L.teams.find(x => x.id === id)).find(isUserTeam);
+  t.reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
+  t.stage = 'final';
   state.compCache = {};
   state.dirty = true;
   render();
-  const champ = L.teams.find(t => t.id === result.final.winner);
+  const champ = L.teams.find(x => x.id === result.final.winner);
   toast(`${champ.shortName} win Summer League${mine ? (mine === champ ? ': your rookies earned a boost!' : ': you reached the final') : ''}`);
 };
 
