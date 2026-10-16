@@ -157,7 +157,7 @@ Available once the file has a draft class (offseason, before the lottery).
   the default for 2027+ files), **Top 4** (NBA 2019–2026, the default for those years: 14 teams, worst 3 at 14%, top 4 drawn) and **Old School**
   (NBA 1994–2018: 14 teams, worst at 25%, top 3 drawn).
 - **Consensus** shows each prospect's overall rank so you know how far down the board you are.
-- **Draft grades** next to every prospect: Consensus #1, Top 5, Lottery, First Round, Second Round, UDFA, or N/A
+- **Draft grades** next to every prospect: #1 Lock, Top 5, Lottery, First Round, Second Round, UDFA, or N/A
   (projected to go unsigned). They follow the board with a fixed scouting nudge near the cutoffs, so they read like
   projections rather than exact ranks.
 - **Board order:** prospects whose floor and ceiling comps are both

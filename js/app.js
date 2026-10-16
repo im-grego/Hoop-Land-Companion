@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.13';
+const APP_VERSION = '0.29.14';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1981,7 +1981,7 @@ function fillsFor(team, p) {
 // Draft grade: where the board projects them, with a stable scouting
 // nudge near the cutoffs so grades read like real projections, not ranks.
 const GRADES = [
-  ['Consensus #1', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
+  ['#1 Lock', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
   ['Second Round', 'g-r2'], ['UDFA', 'g-udfa'], ['N/A', 'g-na'],
 ];
 function gradeOf(p) {
