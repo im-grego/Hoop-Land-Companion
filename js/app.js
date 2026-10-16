@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.24';
+const APP_VERSION = '0.29.25';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2207,11 +2207,12 @@ const prospectRow = (p, extra = '') => {
   const c = compsFor(p);
   const t = league().teams.find(isUserTeam);
   const fills = t ? fillsFor(t, p) : [];
-  const comp = (label, x, cls = '') => x ? `<span class="pr-comp"><span class="muted">${label}</span><span class="${cls}">${esc(x.name)}</span>${tierTag(x.tier)}</span>` : '';
-  return `<button class="prow cprow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
+  const comp = (label, x) => x ? `<span class="pr-comp"><span class="muted">${label}</span><span>${esc(x.name)}</span></span>` : '';
+  const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
+  return `<button class="prow cprow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
   <span class="name">${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
   <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} ${valueChip(p)}</span>
-  <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${fills.length ? `<span class="up">Fills ${esc(fills.map(n => n.label).join(', '))}</span>` : ''}${extra}</span>
+  <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
 };
 
@@ -2219,7 +2220,7 @@ const prospectRow = (p, extra = '') => {
 function draftConsensus() {
   const rows = boardOrder();
   return {
-    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. + Board adds a prospect to your War Room board; ⇡ Top makes them your #1.</p>
+    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. + Board adds a prospect to your War Room board; ⇡ Top makes them your #1. 🧩 fits a need on your team.</p>
       <div class="list">${rows.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
         <div class="mv2"><button class="mvbtn ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓<span>On Board</span>' : '+<span>Board</span>'}</button><button class="mvbtn" data-act="topBoard" data-id="${p.id}" aria-label="Make #1 on your board">⇡<span>Top</span></button></div></div>`).join('')}</div>`,
   };

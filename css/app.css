@@ -876,3 +876,8 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .pcomp-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .pcomp-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 16px; }
 .pcomp-name .tier { font-size: 11px; padding: 0 5px; }
+
+/* Consensus rows: a puzzle piece in the corner when a prospect fills a need */
+.prow.cprow { position: relative; }
+.fit-chip { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 22px; font-size: 14px; line-height: 1; background: var(--btn-shadow); border: 2px solid var(--btn-edge); }
+.prow.cprow .name { padding-right: 30px; }
