@@ -541,7 +541,7 @@ fieldset.frame > legend {
   display: inline-block; padding: 3px 8px; font-size: 13px; font-weight: 800; letter-spacing: .3px;
   border: 2px solid currentColor; background: var(--bg-dark); white-space: nowrap; vertical-align: middle;
 }
-.grade.g-one { color: var(--marquee); background: var(--gold); border-color: var(--marquee); }
+.grade.g-one { color: var(--marquee); background: var(--gold); border-color: var(--gold); }
 .grade.g-top5 { color: #ff9f43; }
 .grade.g-lot { color: var(--cyan); }
 .grade.g-r1 { color: var(--up); }
@@ -862,3 +862,8 @@ details.dbx[open] summary { margin-bottom: 8px; }
 @media (max-width: 360px) { .cal-body b { font-size: 15px; } .cal { grid-template-columns: 56px 1fr; } .cal-date { font-size: 11px; } }
 
 .lot-go { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
+
+/* Rounded outer frames, like the in-game menus */
+.panel, .marquee, .nav-btn, .hero { border-radius: 10px; }
+fieldset.frame { border-radius: 8px; }
+.overlay .box { border-radius: 10px; }
