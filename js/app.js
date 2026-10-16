@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.3';
+const APP_VERSION = '0.29.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2592,9 +2592,12 @@ function lotteryResultView() {
   // Even rows: the column count that splits the teams evenly (16 → 8 × 2, 14 → 7 × 2).
   const nTeams = setup.lotteryTeams.length;
   const cols = [8, 7, 6, 5, 4].find(c => nTeams % c === 0) || Math.ceil(nTeams / 2);
-  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">Odds at #1</span><div class="lot-chips" style="--cols:${cols}">${setup.lotteryTeams
+  // Top 4 / Old School: only the top `draws` picks are drawn; the rest go by
+  // record, which lets the reveal lock teams into the top picks early.
+  const drawsOnly = !setup.floor && setup.draws < nTeams ? setup.draws : 0;
+  const tray = state.lotteryReveal ? `<div class="lot-tray" data-draws="${drawsOnly}"><span class="lot-tray-label">Odds at #1</span><div class="lot-chips" style="--cols:${cols}">${setup.lotteryTeams
     .map((t, seed) => ({ t, seed, w: setup.odds[seed] ?? 0 })).sort((a, b) => b.w - a.w || a.seed - b.seed)
-    .map(({ t, w }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}" data-w="${w}"><b>${esc(t.shortName)}</b><span class="pct">${(w / totalW * 100).toFixed(1)}%</span></span>`).join('')}</div></div>` : '';
+    .map(({ t, seed, w }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}" data-w="${w}" data-seed="${seed}"><b>${esc(t.shortName)}</b><span class="pct">${(w / totalW * 100).toFixed(1)}%</span></span>`).join('')}</div></div>` : '';
   layout({
     title: 'Draft Lottery',
     body: `${tray}<div class="list lot-result">${order.map((o, i) => {
@@ -2612,15 +2615,74 @@ function lotteryResultView() {
 // A team's pick is in: dim its box (showing the pick) and recompute the
 // #1 odds of the teams still waiting from their lottery weights.
 function updateTray(tid, pick) {
+  const tray = $app.querySelector('.lot-tray');
   const chip = $app.querySelector(`.lot-chip[data-tid="${tid}"]`);
-  if (chip) { chip.classList.add('out'); chip.querySelector('.pct').textContent = `#${pick}`; }
-  const left = [...$app.querySelectorAll('.lot-chip:not(.out)')];
-  const total = left.reduce((a, c) => a + +c.dataset.w, 0) || 1;
+  if (chip) { chip.classList.add('out'); chip.classList.remove('locked'); chip.querySelector('.pct').textContent = `#${pick}`; }
+  const chips = [...$app.querySelectorAll('.lot-chip')];
+  const left = chips.filter(c => !c.classList.contains('out'));
+  const draws = +(tray?.dataset.draws || 0);
+  let odds;
+  if (draws) {
+    // Picks after the drawn ones go by record (worst first), so revealing
+    // them bottom-up places teams best record first. Any team with a worse
+    // record than the last one placed by record must have been drawn: it's
+    // locked into the top picks.
+    if (pick > draws) tray.dataset.lastSeed = chip?.dataset.seed ?? tray.dataset.lastSeed;
+    const lastSeed = pick > draws ? +tray.dataset.lastSeed : Infinity;
+    for (const c of left) {
+      // Once every by-record pick is placed, everyone left was drawn.
+      const lock = pick <= draws + 1 || +c.dataset.seed > lastSeed;
+      if (lock && !c.classList.contains('locked')) {
+        c.classList.add('locked');
+        c.insertAdjacentHTML('beforeend', `<span class="lock">🔒 Top ${draws}</span>`);
+      }
+    }
+    odds = drawnOdds(left, draws);
+  } else {
+    const total = left.reduce((a, c) => a + +c.dataset.w, 0) || 1;
+    odds = new Map(left.map(c => [c, +c.dataset.w / total]));
+  }
   for (const c of left) {
     const el = c.querySelector('.pct');
-    const next = `${(+c.dataset.w / total * 100).toFixed(1)}%`;
+    const next = `${(odds.get(c) * 100).toFixed(1)}%`;
     if (el.textContent !== next) { el.textContent = next; c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
   }
+}
+
+// Exact chance at #1 for the teams still waiting when only the top `draws`
+// picks are drawn: every possible drawn set (all locked teams plus enough of
+// the undecided ones) and every draw order, weighted by the lottery balls.
+function drawnOdds(left, draws) {
+  const all = [...$app.querySelectorAll('.lot-chip')];
+  const W = all.reduce((a, c) => a + +c.dataset.w, 0);
+  const locked = left.filter(c => c.classList.contains('locked'));
+  const open = left.filter(c => !c.classList.contains('locked'));
+  const need = draws - locked.length;
+  const first = new Map(left.map(c => [c, 0]));
+  let total = 0;
+  // For a drawn set: each team's chance of coming out first, times the
+  // chance of the rest of the set following in any order.
+  const perms = set => {
+    for (const c of set) {
+      const w = +c.dataset.w;
+      const m = sumOrders(set.filter(x => x !== c), W - w, w / W);
+      first.set(c, first.get(c) + m);
+      total += m;
+    }
+  };
+  // Probability of drawing the rest of a set in any order.
+  const sumOrders = (set, rem, p) => {
+    if (!set.length) return p;
+    let t = 0;
+    for (let i = 0; i < set.length; i++) t += sumOrders(set.filter((_, j) => j !== i), rem - +set[i].dataset.w, p * (+set[i].dataset.w) / rem);
+    return t;
+  };
+  const choose = (from, k, start, picked) => {
+    if (picked.length === k) { perms([...locked, ...picked]); return; }
+    for (let i = start; i < from.length; i++) choose(from, k, i + 1, [...picked, from[i]]);
+  };
+  if (need >= 0) choose(open, need, 0, []);
+  return new Map(left.map(c => [c, total ? first.get(c) / total : 0]));
 }
 
 // Lottery reveal: the last lottery pick is announced first, then each pick

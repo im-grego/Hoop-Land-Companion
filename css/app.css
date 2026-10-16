@@ -840,3 +840,10 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .lot-row.picked { animation: bigIn .6s ease-out; }
 @keyframes plIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 .pick-skip { position: fixed; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 40; }
+
+/* Locked into the top picks (Top 4 / Old School reveal) */
+.lot-chip.locked { border-color: #ffd34d; background: linear-gradient(180deg, #8a5d00, #4a3300); box-shadow: 0 0 10px rgba(255, 211, 77, .6); animation: lockIn .9s cubic-bezier(.2, 1.4, .4, 1); }
+.lot-chip.locked b { color: #fff; }
+.lot-chip.locked .pct { color: #ffe08a; }
+.lot-chip .lock { font-size: 8.5px; font-weight: 800; color: #ffe08a; white-space: nowrap; }
+@keyframes lockIn { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 211, 77, 1); } 35% { transform: scale(1.18) rotate(-3deg); } 60% { transform: scale(.96) rotate(2deg); } 100% { transform: none; box-shadow: 0 0 10px rgba(255, 211, 77, .6); } }
