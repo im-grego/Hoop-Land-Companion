@@ -1007,3 +1007,38 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .tier-add { display: block; width: 100%; margin: -2px 0; padding: 2px 0; background: none; border: 0; color: #9fb6dc; font: inherit; font-size: 11px; font-weight: 700; opacity: .55; cursor: pointer; }
 .tier-add.on { color: var(--down); opacity: .8; }
 .tier-add:active { opacity: 1; }
+
+/* Summer league sim */
+.sl-ticker { max-height: 190px; overflow: hidden; padding: 6px 8px; background: var(--bg-dark); border: 2px solid var(--btn-edge); transition: opacity .3s, max-height .35s; }
+.sl-ticker.gone { opacity: 0; max-height: 0; }
+.sl-games { display: flex; flex-direction: column; gap: 3px; max-height: 150px; overflow: hidden; }
+.sl-game { font-size: 13px; font-variant-numeric: tabular-nums; opacity: 0; transform: translateY(6px); transition: opacity .12s, transform .12s; }
+.sl-game.shown { opacity: 1; transform: none; }
+.sl-game b { color: var(--gold); }
+.sl-final.pending, .sl-mvp.pending, .sl-reward.pending { display: none; }
+.sl-final { animation: fadeIn .4s ease-out; }
+.box-score.reveal [data-q] { opacity: 0; transition: opacity .25s; }
+.box-score.reveal [data-q].shown { opacity: 1; }
+.box-score.reveal .bs-team.win:not(.shown) { color: inherit; }
+.box-score.reveal b[data-final]:not(.shown) { color: inherit; }
+.box-score.reveal b[data-run].shown { animation: pctFlash .35s ease-out; }
+.sl-champ { opacity: 1; }
+.box-score.reveal ~ .sl-champ:not(.shown) { opacity: 0; }
+.sl-champ.shown { animation: fadeIn .4s ease-out; }
+.sl-mvp.tease .mvp-card { position: relative; animation: teasePulse .5s ease-in-out infinite alternate; }
+.sl-mvp.tease .mvp-card > * { visibility: hidden; }
+.sl-mvp.tease .mvp-card::after { content: '? ? ?'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-weight: 800; font-size: 22px; letter-spacing: 6px; color: var(--gold); }
+.sl-mvp.reveal .mvp-card { animation: top1In 1.1s ease-out; }
+
+/* Skills: one line, name in its category color with the level beside it */
+.skill .sk-line { min-width: 0; }
+.skill .sk-name { font-weight: 800; }
+.sk-fin { color: #5cc8ff; } .sk-sho { color: #4fe08a; } .sk-pla { color: #ffb43a; } .sk-def { color: #ff7a7a; }
+.sk-elite { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .4px; padding: 1px 4px; border: 1px solid var(--gold); color: var(--gold); vertical-align: 2px; }
+.skill .ctrls .btn { min-height: 34px; min-width: 34px; }
+.skill .sk-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.skill .ctrls { gap: 4px; }
+.skill .ctrls .btn { min-height: 32px; min-width: 30px; padding: 0 6px; font-size: 14px; }
+.skill { padding: 6px; gap: 4px; }
+.skill .sk-name { font-size: 14px; }
+.skill .ctrls .btn { min-height: 30px; min-width: 28px; padding: 0 4px; font-size: 13px; }

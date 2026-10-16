@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.33.2';
+const APP_VERSION = '0.34.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1164,13 +1164,16 @@ actions.lockNumbers = () => { numsState().locked = true; state.numPick = null; s
 // Step 3: the summer league tournament: pool play sets a Final Four, then
 // the semifinals, then the championship (your team gets a small boost for
 // reaching the final).
-function boxScore(L, g) {
+// `reveal`: cells start hidden and the running score (the F column) climbs
+// quarter by quarter; the winner is only marked at the end.
+function boxScore(L, g, reveal = false) {
   const [a, b] = g.teams.map(id => L.teams.find(x => x.id === id));
   const sum = q => q.reduce((x, y) => x + y, 0);
   const heads = g.quarters[0].map((_, i) => i < 4 ? `Q${i + 1}` : i === 4 ? 'OT' : `${i - 3}OT`);
-  return `<div class="box-score" style="--cols:${heads.length}">
-    <span></span>${heads.map(h => `<span class="muted">${h}</span>`).join('')}<span class="muted">F</span>
-    ${[a, b].map((tm, k) => `<span class="bs-team ${tm.id === g.winner ? 'win' : ''}">${logoImg(tm)}${esc(tm.shortName)}</span>${g.quarters[k].map(v => `<span>${v}</span>`).join('')}<b class="${tm.id === g.winner ? 'gold' : ''}">${sum(g.quarters[k])}</b>`).join('')}
+  const run = q => q.map((_, i) => sum(q.slice(0, i + 1))).join(',');
+  return `<div class="box-score ${reveal ? 'reveal' : ''}" style="--cols:${heads.length}">
+    <span></span>${heads.map((h, i) => `<span class="muted"${reveal ? ` data-q="${i}"` : ''}>${h}</span>`).join('')}<span class="muted">F</span>
+    ${[a, b].map((tm, k) => `<span class="bs-team ${tm.id === g.winner ? 'win' : ''}"${reveal ? ' data-final' : ''}>${logoImg(tm)}${esc(tm.shortName)}</span>${g.quarters[k].map((v, i) => `<span${reveal ? ` data-q="${i}"` : ''}>${v}</span>`).join('')}<b class="${tm.id === g.winner ? 'gold' : ''}"${reveal ? ` data-run="${run(g.quarters[k])}" data-final` : ''}>${reveal ? '0' : sum(g.quarters[k])}</b>`).join('')}
   </div>`;
 }
 function tourSection(ready) {
@@ -1180,33 +1183,88 @@ function tourSection(ready) {
   let body;
   if (!t) {
     body = ready
-      ? `<p class="note">Every team's rookies and second-year players head to Las Vegas. Pool play sets a Final Four, then it's win or go home. Reach the final and a couple of your young players pick up a rating point; win it and three of them get two.</p>
-        <button class="btn big focus" data-act="runTour">🏀 Play Pool Games</button>`
+      ? `<p class="note">Every team's rookies and second-year players head to Las Vegas. Reach the championship and a couple of your young players pick up a rating point; win it and three of them get two.</p>
+        <button class="btn big focus" data-act="runTour">🏀 Sim Summer League</button>`
       : `<p class="note muted">${myRookies().length ? 'Lock in your rookies\' numbers first.' : 'Run the age adjustment first.'}</p>`;
   } else {
     const r = t.result;
-    const stage = t.stage || 'final';
     const team = id => L.teams.find(x => x.id === id);
-    const four = r.four ? `<p class="note small muted">Final Four</p><div class="ff-grid">${r.four.map((id, i) => {
-      const tm = team(id);
-      const out = stage !== 'four' && !r.semis.some(g => g.winner === id);
-      return `<div class="ff-team ${isUserTeam(tm) ? 'mine' : ''} ${out ? 'out' : ''}"><span class="muted small">${i + 1}</span>${logoImg(tm)}<b>${esc(tm.shortName)}</b></div>`;
-    }).join('')}</div>` : '';
-    const semis = stage !== 'four' && r.semis ? `<p class="note small muted">Semifinals</p>${r.semis.map(g => boxScore(L, g)).join('')}` : '';
-    let fin = '';
-    if (stage === 'final') {
-      const champ = team(r.final.winner);
-      const mvpTeam = team(r.mvp?.tid);
-      fin = `<p class="note small muted">Championship</p>${boxScore(L, r.final)}
-        <p class="note">🏆 <b>${esc(champ.city)} ${esc(champ.name)}</b> win the Summer League title.</p>
-        ${r.mvp ? `<div class="mvp-card">${logoImg(mvpTeam)}<span class="grow"><span class="small muted">Summer League MVP</span><br><b>${esc(mvpName(L, r.mvp))}</b> <span class="muted small">${esc(mvpTeam.shortName)}</span><br><span class="small">${r.mvp.ppg} PPG · ${r.mvp.rpg} RPG · ${r.mvp.apg} APG</span></span></div>` : ''}
-        ${t.reward.length ? `<p class="note small up">${t.reward.map(x => `${esc(playerName(x.p))} ${Object.keys(x.gains).map(k => `${k} +1`).join(', ')}`).join(' · ')}</p>` : ''}`;
-    }
-    const next = stage === 'four' ? '<button class="btn big focus" data-act="simSemis">▶ Sim Semifinals</button>'
-      : stage === 'semis' ? '<button class="btn big focus" data-act="simFinal">🏆 Sim Championship</button>' : '';
-    body = four + semis + fin + next;
+    const champ = team(r.final.winner);
+    const mvpTeam = team(r.mvp?.tid);
+    const anim = !!state.summerReveal;
+    // Pool play flies by (just for show), then the championship quarter by
+    // quarter, then the MVP announcement.
+    const ticker = anim ? `<div class="sl-ticker"><p class="note small muted">Simulating Las Vegas…</p><div class="sl-games">${tickerGames(L, r).map(g => `<div class="sl-game">${esc(g[0].shortName)} <b>${g[2]}</b> – <b>${g[3]}</b> ${esc(g[1].shortName)}</div>`).join('')}</div></div>` : '';
+    body = `${ticker}
+      <div class="sl-final ${anim ? 'pending' : ''}">
+        <p class="note small muted">Championship</p>${boxScore(L, r.final, anim)}
+        <p class="note sl-champ">🏆 <b>${esc(champ.city)} ${esc(champ.name)}</b> win the Summer League title.</p>
+      </div>
+      ${r.mvp ? `<div class="sl-mvp ${anim ? 'pending' : ''}"><p class="note small muted">Summer League MVP</p>
+        <div class="mvp-card">${logoImg(mvpTeam)}<span class="grow"><b>${esc(mvpName(L, r.mvp))}</b> <span class="muted small">${esc(mvpTeam.shortName)}</span><br><span class="small">${r.mvp.ppg} PPG · ${r.mvp.rpg} RPG · ${r.mvp.apg} APG</span></span></div></div>` : ''}
+      ${t.reward.length ? `<p class="note small up sl-reward ${anim ? 'pending' : ''}">${t.reward.map(x => `${esc(playerName(x.p))} ${Object.keys(x.gains).map(k => `${k} +1`).join(', ')}`).join(' · ')}</p>` : ''}`;
   }
   return `<fieldset class="frame"><legend>${step} · Summer League</legend><div class="stack">${body}</div></fieldset>`;
+}
+
+// Made-up pool-play scores for the sim animation (fixed per season).
+function tickerGames(L, r) {
+  const rng = mulberry32((r.seed ^ 0x7a11) >>> 0);
+  const teams = L.teams;
+  const out = [];
+  for (let i = 0; i < 24; i++) {
+    const a = teams[Math.floor(rng() * teams.length)];
+    let b = teams[Math.floor(rng() * teams.length)];
+    if (b === a) b = teams[(teams.indexOf(a) + 1) % teams.length];
+    out.push([a, b, 68 + Math.floor(rng() * 30), 68 + Math.floor(rng() * 30)]);
+  }
+  return out;
+}
+
+async function revealSummer() {
+  const root = $app.querySelector('.sl-final');
+  if (!root) return;
+  const wait = ms => new Promise(res => setTimeout(res, ms));
+  const done = $app.querySelector('.bottom');
+  if (done) done.style.visibility = 'hidden';
+  // 1. Pool play scrolls by.
+  const ticker = $app.querySelector('.sl-ticker');
+  const games = ticker ? [...ticker.querySelectorAll('.sl-game')] : [];
+  ticker?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  for (const g of games) { if (!g.isConnected) return; g.classList.add('shown'); g.scrollIntoView({ block: 'nearest' }); await wait(95); }
+  await wait(400);
+  if (ticker) { ticker.classList.add('gone'); await wait(350); ticker.remove(); }
+  // 2. The championship, a quarter at a time.
+  root.classList.remove('pending');
+  root.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const cols = +(root.querySelector('.box-score')?.style.getPropertyValue('--cols') || 4);
+  for (let q = 0; q < cols; q++) {
+    await wait(750);
+    root.querySelectorAll(`[data-q="${q}"]`).forEach(c => c.classList.add('shown'));
+    root.querySelectorAll('[data-run]').forEach(c => { c.textContent = c.dataset.run.split(',')[q]; c.classList.add('shown'); });
+  }
+  await wait(700);
+  root.querySelectorAll('[data-final]').forEach(c => c.classList.add('shown'));
+  root.querySelector('.sl-champ')?.classList.add('shown');
+  // 3. The MVP: a mystery card, then the big reveal.
+  const mvp = $app.querySelector('.sl-mvp');
+  if (mvp) {
+    await wait(1400);
+    mvp.classList.remove('pending');
+    mvp.classList.add('tease');
+    mvp.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    await wait(2200);
+    mvp.classList.remove('tease');
+    mvp.classList.add('reveal');
+  }
+  await wait(900);
+  $app.querySelector('.sl-reward')?.classList.remove('pending');
+  if (done) { done.style.visibility = ''; done.classList.add('fade-in'); }
+  const t = state.summerTour[state.leagueIdx];
+  const L = league();
+  const champ = L.teams.find(x => x.id === t.result.final.winner);
+  const mine = t.result.final.teams.map(id => L.teams.find(x => x.id === id)).find(isUserTeam);
+  toast(`🏆 ${champ.shortName} win Summer League`, mine ? (mine === champ ? 'Your rookies earned a boost!' : 'You reached the championship.') : '');
 }
 
 actions.runTour = () => {
@@ -1214,35 +1272,16 @@ actions.runTour = () => {
   const li = state.leagueIdx;
   if (state.summerTour[li]) return;
   const result = runSummerLeague(L, state.data.seasonLeagues, (state.params.seed ^ (L.season.currentYear * 7919)) >>> 0);
-  state.summerTour[li] = { result, stage: 'four', reward: [] };
-  numsState().locked = true;
-  state.dirty = true;
-  render();
-  const mine = result.four.map(id => L.teams.find(t => t.id === id)).find(isUserTeam);
-  toast(mine ? `${mine.shortName} made the Final Four!` : 'The Final Four is set');
-};
-actions.simSemis = () => {
-  const L = league();
-  const t = state.summerTour[state.leagueIdx];
-  if (!t || t.stage !== 'four') return;
-  t.stage = 'semis';
-  render();
-  const [a, b] = t.result.final.teams.map(id => L.teams.find(x => x.id === id));
-  toast(`Championship: ${a.shortName} vs ${b.shortName}`);
-};
-actions.simFinal = () => {
-  const L = league();
-  const t = state.summerTour[state.leagueIdx];
-  if (!t || t.stage !== 'semis') return;
-  const result = t.result;
   const mine = result.final.teams.map(id => L.teams.find(x => x.id === id)).find(isUserTeam);
-  t.reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
-  t.stage = 'final';
+  const reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
+  state.summerTour[li] = { result, stage: 'final', reward };
+  numsState().locked = true;
   state.compCache = {};
   state.dirty = true;
+  state.summerReveal = true;
   render();
-  const champ = L.teams.find(x => x.id === result.final.winner);
-  toast(`${champ.shortName} win Summer League${mine ? (mine === champ ? ': your rookies earned a boost!' : ': you reached the final') : ''}`);
+  state.summerReveal = false;
+  revealSummer();
 };
 
 // ---- Mentorship
@@ -1602,13 +1641,10 @@ screens.player = (args) => {
         <div class="stack">
           ${p.skills.map((s, i) => s.level < 1 ? '' : `
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
-              <div><span class="sk-name">${esc(skillName(s.id))}</span><br><span class="hint">${esc(skillTag(s.id))}</span></div>
+              <div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">Lv ${s.level}</span>` : ''}</div>
               <div class="ctrls">
                 <button class="btn ${s.equipped ? 'on' : 'off'}" data-act="equip" data-i="${i}" aria-label="Toggle equipped">${s.equipped ? 'ON' : 'OFF'}</button>
-                ${isLeveled(s.id) ? `
-                <button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down">−</button>
-                <span class="lv">Lv ${s.level}</span>
-                <button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>` : '<span class="lv muted small">No levels</span>'}
+                ${isLeveled(s.id) ? `<button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down">−</button><button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>` : ''}
                 <button class="btn" data-act="skillDel" data-i="${i}" aria-label="Remove skill">✕</button>
               </div>
             </div>`).join('')}
@@ -1626,6 +1662,8 @@ screens.player = (args) => {
 
 // Rating bar colors by group: finishing (light blue), shooting (green),
 // playmaking/handles (orange), defense (red).
+// Skill category → the same colors as the rating bars.
+const SKILL_GROUP = { Finishing: 'fin', Shooting: 'sho', Creating: 'pla', Defense: 'def' };
 const RATING_GROUP = { LAY: 'fin', DNK: 'fin', INS: 'fin', MID: 'sho', TPT: 'sho', FTS: 'sho', DRB: 'pla', PAS: 'pla', ORE: 'pla', DRE: 'def', STL: 'def', BLK: 'def', STR: 'phy', SPD: 'phy', STM: 'phy' };
 const barClass = k => `bar${RATING_GROUP[k] ? ` c-${RATING_GROUP[k]}` : ''}`;
 
