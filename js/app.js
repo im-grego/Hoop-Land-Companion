@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.17';
+const APP_VERSION = '0.29.18';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2210,7 +2210,7 @@ const prospectRow = (p, extra = '') => {
   return `<button class="prow cprow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">
   <span class="name">${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
   <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} ${valueChip(p)}</span>
-  <span class="chg">${comp('Floor', c.floor[0])}${comp('Ceiling', c.ceiling[0], 'up')}${fills.length ? `<span class="up">Fills ${esc(fills.map(n => n.label).join(', '))}</span>` : ''}${extra}</span>
+  <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${fills.length ? `<span class="up">Fills ${esc(fills.map(n => n.label).join(', '))}</span>` : ''}${extra}</span>
 </button>`;
 };
 
@@ -2233,7 +2233,7 @@ function draftWarRoom() {
     html: `<fieldset class="frame"><legend>Your Board</legend>
         ${board.length ? `<div class="brows">${board.map((p, i) => `<div class="brow">
           <span class="rk gold">${i + 1}</span>
-          <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${classYear(p)}</span> ${valueChip(p)}</span>${compsFor(p).ceiling[0] ? `<span class="bceil small"><span class="muted">Ceiling</span> <span class="up">${esc(compsFor(p).ceiling[0].name)}</span></span>` : ''}</button>
+          <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${classYear(p)}</span> ${valueChip(p)}</span>${compsFor(p).ceiling[0] ? `<span class="bceil small"><span class="muted">Ceiling</span> ${esc(compsFor(p).ceiling[0].name)}</span>` : ''}</button>
           <span class="mv"><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvb x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></span>
         </div>`).join('')}</div>`
         : '<p class="note">Your board is empty. Add prospects from Consensus with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
@@ -2463,8 +2463,8 @@ screens.prospect = (args) => {
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       ${collegeBox(p)}
       <div class="grid2">
+        <fieldset class="frame"><legend>Ceiling</legend>${compList(c.ceiling, '')}</fieldset>
         <fieldset class="frame"><legend>Floor</legend>${compList(c.floor, '')}</fieldset>
-        <fieldset class="frame"><legend>Ceiling</legend>${compList(c.ceiling, 'up')}</fieldset>
       </div>
       ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Ratings</legend>

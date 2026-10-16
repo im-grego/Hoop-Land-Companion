@@ -541,7 +541,7 @@ fieldset.frame > legend {
   display: inline-block; padding: 3px 8px; font-size: 13px; font-weight: 800; letter-spacing: .3px;
   border: 2px solid currentColor; background: var(--bg-dark); white-space: nowrap; vertical-align: middle;
 }
-.grade.g-one { color: var(--marquee); background: var(--gold); border-color: var(--gold); }
+.grade.g-one { color: var(--marquee); background: var(--gold); border-color: var(--marquee); }
 .grade.g-top5 { color: #ff9f43; }
 .grade.g-lot { color: var(--cyan); }
 .grade.g-r1 { color: var(--up); }
@@ -695,9 +695,12 @@ body::before {
 .prow.cprow .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
 .prow.cprow .meta .grade { font-size: 11px; padding: 1px 6px; }
 .prow.cprow .chg { display: flex; flex-direction: column; gap: 3px; }
-.pr-comp { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
-.pr-comp > .muted:first-child { min-width: 52px; }
-.pr-comp .tier { font-size: 10px; padding: 0 5px; }
+.pr-comp { display: flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; }
+.pr-comp > .muted:first-child { flex: none; min-width: 38px; }
+.pr-comp > .muted + span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pr-comp .tier { flex: none; }
+.pr-comp .tier { font-size: 9.5px; padding: 0 4px; }
+.prow.cprow .pr-comp { font-size: 12px; }
 .rank-no { vertical-align: 2px; }
 
 /* Trade block: picks two per row */
