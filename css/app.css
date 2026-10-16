@@ -867,3 +867,13 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .panel, .marquee, .nav-btn, .hero { border-radius: 10px; }
 fieldset.frame { border-radius: 8px; }
 .overlay .box { border-radius: 10px; }
+
+/* Prospect page: ceiling and floor comps */
+.pcomp { display: grid; grid-template-columns: 64px 1fr; gap: 10px; align-items: start; padding: 10px 0; }
+.pcomp + .pcomp { border-top: 2px solid var(--btn-edge); }
+.pcomp:first-of-type { padding-top: 2px; }
+.pcomp:last-child { padding-bottom: 0; }
+.pcomp-lbl { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); padding-top: 3px; }
+.pcomp-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pcomp-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 16px; }
+.pcomp-name .tier { font-size: 11px; padding: 0 5px; }

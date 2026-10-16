@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.21';
+const APP_VERSION = '0.29.22';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2445,27 +2445,21 @@ screens.prospect = (args) => {
   if (!p) { back(); return; }
   const c = compsFor(p);
   const fv = rookieLine(p, state.params.recoveryBands), cv = projectedCeiling(p, scoutPot(p));
-  // How much of a dip to expect after the draft: older prospects win
-  // more back in summer league.
-  const loss = fv.reduce((a, v, i) => a + p.attributes[SKILL_ATTRS[i]][0] - v, 0) / SKILL_ATTRS.length;
-  const dip = loss < 1.2 ? ['Small', 'up'] : loss < 2.2 ? ['Moderate', 'gold'] : ['Big', 'down'];
-  const compList = (list, cls) => list.map(x => `<div class="comp">
-    <span class="grow"><b class="${cls}">${esc(x.name)}</b><br>${tierTag(x.tier)}<br><span class="muted small">${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></span></div>`).join('') || '<p class="note muted">—</p>';
+  const compRow = (label, list) => `<div class="pcomp"><span class="pcomp-lbl">${label}</span><div class="pcomp-list">${list.map(x => `<div>
+    <div class="pcomp-name"><b>${esc(x.name)}</b>${tierTag(x.tier)}</div>
+    <span class="muted small">${esc(POSITIONS[x.pos] ?? '')} · ${heightStr(x.ht)}${x.wt ? ` · ${x.wt} lb` : ''}</span></div>`).join('') || '<span class="muted">—</span>'}</div></div>`;
   layout({
     title: 'Prospect',
     body: `
       <div>
         <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span> Draft-day dip: <b class="${dip[1]}">${dip[0]}</b> <span class="muted">(older prospects get more of it back in the age adjustment)</span></p>
+        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span></p>
       </div>
       <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       ${collegeBox(p)}
-      <div class="grid2">
-        <fieldset class="frame"><legend>Ceiling</legend>${compList(c.ceiling, '')}</fieldset>
-        <fieldset class="frame"><legend>Floor</legend>${compList(c.floor, '')}</fieldset>
-      </div>
+      <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
       ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
