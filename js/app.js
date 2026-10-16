@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.34.2';
+const APP_VERSION = '0.35.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -604,7 +604,7 @@ const STEP_SCREENS = {
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], survey: ['survey'], media: ['storylines'], export: ['export'],
 };
-const ALWAYS = ['main', 'settings', 'roster', 'player'];
+const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (phaseRank(league().season) === 0) return true;
@@ -705,7 +705,10 @@ screens.main = () => {
           <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(phaseName(s))} · Your teams: ${esc(yourTeams)}</span></div>
       </div>
       ${calendarCard()}
-      ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> Your Roster</button>' : ''}
+      <div class="grid2">
+        ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> Your Roster</button>' : ''}
+        <button class="btn left" data-act="openLeaders" data-m="ratings"><span class="ico">🏀</span> League</button>
+      </div>
       <div class="grid2">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
@@ -1577,11 +1580,56 @@ function rankBox(p) {
   return `<fieldset class="frame"><legend>${yr} Season</legend>
     <div class="statline rank-line">${RANK_STATS.map(([k, name]) => {
       const n = r.rank[k];
-      return `<div><span class="muted small">${k}</span><b>${r.pg[k].toFixed(1)}</b><span class="small ${n && n <= 10 ? 'gold' : n && n <= 30 ? 'up' : 'muted'}">${n ? ord(n) : '—'}</span></div>`;
+      return `<button class="stat-cell" data-act="openLeaders" data-m="stats" data-k="${k}" aria-label="${name} leaders"><span class="muted small">${k}</span><b>${r.pg[k].toFixed(1)}</b><span class="small ${n && n <= 10 ? 'gold' : n && n <= 30 ? 'up' : 'muted'}">${n ? ord(n) : '—'}</span></button>`;
     }).join('')}</div>
     <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} qualified players.` : `${r.gp} games: not enough to be ranked.`} ${rule}</p>
   </fieldset>`;
 }
+
+// ---------------------------------------------------------------------------
+// League: every player, sorted by a counting stat (last season, qualified
+// players) or by a rating. Highest first; ties go to the higher level.
+
+screens.leaders = (args) => {
+  const L = league();
+  const mode = args.m === 'stats' ? 'stats' : 'ratings';
+  const all = leaguePlayers(L, true);
+  const tname = e => (e.team ? e.team.shortName : 'FA');
+  let rows, k, head, note;
+  if (mode === 'stats') {
+    k = RANK_STATS.some(([x]) => x === args.k) ? args.k : 'PTS';
+    const yr = lastSeasonYear();
+    const { ranks, of, minGp } = seasonRanks(yr);
+    rows = all.map(e => ({ e, r: ranks.get(e.p.id) })).filter(x => x.r?.qualified)
+      .map(x => ({ ...x, v: x.r.pg[k], lv: levelOf(x.e.p) }))
+      .sort((a, b) => b.v - a.v || b.lv - a.lv);
+    head = RANK_STATS.map(([x]) => `<button class="btn small ${x === k ? 'on focus' : 'off'}" data-act="openLeaders" data-m="stats" data-k="${x}" data-r="1">${x}</button>`).join('');
+    note = `${yr} season, per game. ${of} qualified players (at least ${minGp} games).`;
+  } else {
+    k = ATTRS.includes(args.k) ? args.k : 'LAY';
+    rows = all.map(e => ({ e, v: e.p.attributes[k][0], lv: levelOf(e.p) })).sort((a, b) => b.v - a.v || b.lv - a.lv);
+    head = ATTRS.map(x => `<button class="btn small ${x === k ? 'on focus' : 'off'} ${RATING_GROUP[x] ? `sk-${RATING_GROUP[x]}` : ''}" data-act="openLeaders" data-m="ratings" data-k="${x}" data-r="1">${x}</button>`).join('');
+    note = `${ATTR_NAMES[k]}: every player in the league and free agency. Ties go to the higher level.`;
+  }
+  const shown = args.all ? rows : rows.slice(0, 100);
+  const fmt = v => (mode === 'stats' ? v.toFixed(1) : v);
+  layout({
+    title: 'League',
+    body: `<div class="tabs"><button class="btn ${mode === 'stats' ? 'on focus' : 'off'}" data-act="openLeaders" data-m="stats" data-k="${mode === 'stats' ? k : 'PTS'}" data-r="1">Stats</button><button class="btn ${mode === 'ratings' ? 'on focus' : 'off'}" data-act="openLeaders" data-m="ratings" data-k="${mode === 'ratings' ? k : 'LAY'}" data-r="1">Ratings</button></div>
+      <div class="opts wrap ld-keys">${head}</div>
+      <p class="note muted small" style="margin:6px 0">${esc(note)}</p>
+      <div class="stack">${shown.map((x, i) => `<button class="ld-row ${x.e.team && isUserTeam(x.e.team) ? 'mine' : ''}" data-act="openPlayer" data-id="${x.e.p.id}">
+        <span class="ld-n">${i + 1}</span>
+        <span class="grow"><b>${esc(playerName(x.e.p))}</b> <span class="gold small">Lv ${x.lv}</span><br><span class="small muted">${esc(tname(x.e))} · ${esc(posName(x.e.p))} · ${x.e.p.age}y</span></span>
+        <b class="ld-v">${fmt(x.v)}</b></button>`).join('')}</div>
+      ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
+  });
+};
+actions.openLeaders = d => {
+  const args = { m: d.m, k: d.k };
+  if (d.r) replace('leaders', args); else go('leaders', args);
+};
+actions.leadersAll = () => { const a = state.stack[state.stack.length - 1].args || {}; replace('leaders', { ...a, all: true }); };
 
 screens.player = (args) => {
   const e = findPlayer(args.id);
