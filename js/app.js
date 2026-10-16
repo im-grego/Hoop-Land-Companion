@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.34.0';
+const APP_VERSION = '0.34.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1418,6 +1418,9 @@ screens.rookies = () => {
 
 // Stars for a player's current level (Lv 100 = 5, 93 = 4.5, 86 = 4).
 const levelStars = p => Math.max(1, Math.min(10, Math.round((5 - (100 - levelOf(p)) / 14) * 2)));
+// Declining players (past their regression age) lose the stars they've
+// slipped below: potential shows no higher than where they are now.
+const potStars = p => (declining(p) ? Math.min(p.pot, levelStars(p)) : p.pot);
 
 screens.report = (args) => {
   const L = league();
@@ -1480,7 +1483,7 @@ function playerRow(p, d) {
   return `<button class="prow" data-act="openPlayer" data-id="${p.id}">
     <span class="name">${esc(playerName(p))}</span>
     <span class="right">
-      <span class="stars">${stars(p.pot)}</span><br>
+      <span class="stars">${stars(potStars(p))}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
     <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · Lv ${levelOf(p)}</span>
@@ -1595,7 +1598,7 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="gold">Lv ${levelOf(p)}</span> · <span class="stars">${stars(p.pot)}</span></p>
+        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="gold">Lv ${levelOf(p)}</span> · <span class="stars">${stars(potStars(p))}</span></p>
         <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
       </div>
       ${rankBox(p)}
@@ -1620,7 +1623,7 @@ screens.player = (args) => {
             <button class="btn square" data-act="regAge" data-dir="1" aria-label="Later regression">+</button>
           </div>
           <div class="pts-row">
-            <span class="grow">Potential<br><span class="stars">${stars(p.pot)}</span>${injuryText(p)}</span>
+            <span class="grow">Potential<br><span class="stars">${stars(potStars(p))}</span>${declining(p) ? ' <span class="small down">Declining</span><br>' : ''}${injuryText(p)}</span>
             <button class="btn square" data-act="potAdj" data-dir="-1" aria-label="Lower potential">−</button>
             <span class="pts-val ${d.potDelta ? 'gold' : ''}">${p.pot}${d.potDelta ? `<span class="small up"> ${d.potDelta > 0 ? '+' : ''}${d.potDelta}</span>` : ''}</span>
             <button class="btn square" data-act="potAdj" data-dir="1" aria-label="Higher potential">+</button>
@@ -1635,7 +1638,7 @@ screens.player = (args) => {
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
-        <p class="note muted small" style="margin-top:10px">Bar = current rating, green = gained this offseason, gold mark = ceiling. Raising a rating past its ceiling lifts the ceiling with it.</p>
+        <p class="note muted small" style="margin-top:10px">Bar = current rating, lighter shade = gained this offseason, white notch = ceiling. Red = what a declining player has lost from his peak (or a rating lowered this offseason). Raising a rating past its ceiling lifts the ceiling with it.</p>
       </fieldset>
       <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
         <div class="stack">
@@ -1643,7 +1646,6 @@ screens.player = (args) => {
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
               <div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">Lv ${s.level}</span>` : ''}</div>
               <div class="ctrls">
-                <button class="btn ${s.equipped ? 'on' : 'off'}" data-act="equip" data-i="${i}" aria-label="Toggle equipped">${s.equipped ? 'ON' : 'OFF'}</button>
                 ${isLeveled(s.id) ? `<button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down">−</button><button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>` : ''}
                 <button class="btn" data-act="skillDel" data-i="${i}" aria-label="Remove skill">✕</button>
               </div>
@@ -1672,18 +1674,23 @@ function attrRow(p, snap, k, ceilMode) {
   const orig = snap.attributes[k][0];
   const delta = cur - orig;
   const base = Math.min(cur, orig);
+  // Declining: the gap down from his peak (the stored max) is what he's lost,
+  // shown in red with no growth notch. A rating lowered this offseason shows
+  // the drop in red too.
+  const down = declining(p) && ceil > cur;
   return `<div class="attr">
     <button class="btn square" data-act="attr" data-k="${k}" data-dir="-1" aria-label="Lower ${ATTR_NAMES[k]}">−</button>
     <div class="body">
       <div class="top">
         <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
-        <span>${cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${ceil}</span></span>
+        <span>${cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="${down ? 'down' : 'gold'}">/ ${ceil}</span></span>
       </div>
       <div class="${barClass(k)}">
-        <div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>
+        ${down ? `<div class="lost" style="left:${cur / ATTR_MAX * 100}%;width:${(Math.min(ceil, ATTR_MAX) - cur) / ATTR_MAX * 100}%"></div>` : `<div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>`}
         <div class="fill" style="width:${base / ATTR_MAX * 100}%"></div>
         ${delta > 0 ? `<div class="gain" style="left:${orig / ATTR_MAX * 100}%;width:${delta / ATTR_MAX * 100}%"></div>` : ''}
-        <div class="ceil" style="left:calc(${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}% - 2px)"></div>
+        ${delta < 0 && !down ? `<div class="lost" style="left:${cur / ATTR_MAX * 100}%;width:${-delta / ATTR_MAX * 100}%"></div>` : ''}
+        ${down ? '' : `<div class="ceil" style="left:calc(${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}% - 2px)"></div>`}
       </div>
     </div>
     <button class="btn square" data-act="attr" data-k="${k}" data-dir="1" aria-label="Raise ${ATTR_NAMES[k]}">${ceilMode ? '⇡' : '+'}</button>
