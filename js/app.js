@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.12';
+const APP_VERSION = '0.28.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -589,10 +589,10 @@ actions.advLottery = async () => {
   draftState().mock = null;
   state.compCache = {};
   state.dirty = true;
-  const jump = order.indexOf(r1[0]) + 1;
-  // The result shows on the same lottery screen.
+  // The result shows on the same lottery screen, revealed from the last
+  // lottery pick up to #1.
+  state.lotteryReveal = true;
   if (state.stack[state.stack.length - 1].name === 'lottery') render(); else go('lottery');
-  toast(`${`${r1[0].city} ${r1[0].name}`.trim()} win the lottery${jump > 1 ? ` from the ${jump}${[, 'st', 'nd', 'rd'][jump] || 'th'} slot` : ''}!`);
 };
 
 actions.advFreeAgency = async () => {
@@ -2557,15 +2557,59 @@ function lotteryResultView() {
   const order = (actualDraftOrder(L) || []).filter(o => o.rd === 1).slice(0, setup.lotteryTeams.length);
   layout({
     title: 'Draft Lottery',
-    body: `<div class="list">${order.map((o, i) => {
+    body: `<div class="list lot-result">${order.map((o, i) => {
         const move = pre.indexOf(o.orig) - i;
         const rr = rec.get(o.orig.id);
-        return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
+        return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}" data-pick="${i + 1}" data-name="${esc(`${o.orig.city} ${o.orig.name}`.trim())}" data-move="${move}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
           <span class="grow">${esc(o.orig.shortName)} <span class="muted small">${rr ? `${rr.W}-${rr.L}` : ''}</span> ${statusTag(teamStatus(L, o.orig))}${o.owner.id !== o.orig.id ? ` <span class="small gold">→ ${esc(o.owner.shortName)}</span>` : ''}</span>
-          ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
+          <span class="mv ${move > 0 ? 'up' : move < 0 ? 'down' : 'muted'}">${move > 0 ? `▲${move}` : move < 0 ? `▼${-move}` : '—'}</span></div>`;
       }).join('')}</div>
       <button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button>`,
   });
+  if (state.lotteryReveal) { state.lotteryReveal = false; revealLottery(); }
+}
+
+// Lottery reveal: the last lottery pick is announced first, then each pick
+// above it, the view panning up as it goes. The top 5 take longer, with a
+// mystery card before each reveal; #1 gets the big moment.
+async function revealLottery() {
+  const list = $app.querySelector('.lot-result');
+  if (!list) return;
+  const rows = [...list.querySelectorAll('.lot-row')];
+  const done = $app.querySelector('[data-act=faHome]');
+  list.classList.add('revealing');
+  if (done) done.style.display = 'none';
+  const skip = document.createElement('button');
+  skip.className = 'btn small lot-skip';
+  skip.textContent = 'Skip ⏭';
+  list.before(skip);
+  let skipped = false;
+  skip.addEventListener('click', () => { skipped = true; });
+  const wait = ms => new Promise(r => { const t0 = Date.now(); const tick = () => (skipped || Date.now() - t0 >= ms ? r() : requestAnimationFrame(tick)); tick(); });
+  const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+  await wait(500);
+  for (const row of [...rows].reverse()) {
+    if (!row.isConnected) return; // left the screen
+    const pick = +row.dataset.pick;
+    const big = pick <= 5;
+    row.scrollIntoView({ behavior: skipped ? 'auto' : 'smooth', block: 'center' });
+    if (big && !skipped) {
+      row.classList.add('tease');
+      await wait(pick === 1 ? 2600 : pick === 2 ? 2000 : 1400);
+      row.classList.remove('tease');
+    }
+    row.classList.add('shown');
+    if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
+    await wait(big ? 900 : 650);
+  }
+  list.classList.remove('revealing');
+  skip.remove();
+  if (done) done.style.display = '';
+  const top = rows[0];
+  if (top) {
+    const jump = +top.dataset.move;
+    toast(`🎱 ${top.dataset.name} win the lottery!`, jump > 0 ? `Jumped ${jump} spot${jump > 1 ? 's' : ''} to #1.` : 'They held onto the top spot.');
+  }
 }
 
 actions.lotteryDraws = d => {

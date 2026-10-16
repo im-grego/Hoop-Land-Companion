@@ -793,3 +793,25 @@ details.dbx[open] summary { margin-bottom: 8px; }
 
 /* Portrait header pictures: smaller and centered */
 .hero.tall { width: min(240px, 60%); margin: 0 auto; }
+
+/* Lottery reveal */
+.lot-skip { align-self: flex-end; margin-bottom: 8px; }
+.lot-result.revealing .lot-row { opacity: 0; transform: translateY(16px) scale(.97); }
+.lot-result.revealing .lot-row.shown { opacity: 1; transform: none; transition: opacity .4s, transform .5s cubic-bezier(.2, 1.3, .4, 1); }
+.lot-result .lot-row .mv { transition: transform .35s .25s cubic-bezier(.2, 1.6, .4, 1), opacity .3s .25s; }
+.lot-result.revealing .lot-row:not(.shown) .mv { opacity: 0; transform: scale(.4); }
+.lot-result.revealing .lot-row.tease { opacity: 1; transform: none; position: relative; animation: teasePulse .5s ease-in-out infinite alternate; }
+.lot-result .lot-row.tease > :not(.pk) { visibility: hidden; }
+.lot-result .lot-row.tease::after { content: '? ? ?'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-weight: 800; font-size: 20px; letter-spacing: 6px; color: var(--gold); }
+@keyframes teasePulse { from { box-shadow: 0 0 0 0 rgba(255, 180, 58, .0); } to { box-shadow: 0 0 18px 2px rgba(255, 180, 58, .55); } }
+.lot-result .lot-row.big.shown { animation: bigIn .7s ease-out; border-color: var(--gold); }
+.lot-result .lot-row.top1.shown { animation: top1In 1.1s ease-out; border-color: var(--gold); background: linear-gradient(90deg, rgba(255, 180, 58, .35), var(--btn)); }
+.lot-result .lot-row.top1 .pk { font-size: 26px; }
+@keyframes bigIn { 0% { box-shadow: 0 0 0 0 rgba(255, 180, 58, .8); } 100% { box-shadow: 0 0 0 14px rgba(255, 180, 58, 0); } }
+@keyframes top1In {
+  0% { transform: scale(.9); box-shadow: 0 0 0 0 rgba(255, 220, 120, 1); }
+  20% { transform: scale(1.06) rotate(-1deg); }
+  35% { transform: scale(1.02) rotate(1deg); }
+  50% { transform: scale(1.04); }
+  100% { transform: none; box-shadow: 0 0 0 26px rgba(255, 220, 120, 0); }
+}
