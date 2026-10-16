@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.6';
+const APP_VERSION = '0.29.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -260,6 +260,7 @@ function render() {
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
+  $app.dataset.screen = top.name;
   screens[top.name](top.args);
   window.scrollTo(0, view === lastView ? y : top.y ?? 0);
   top.y = null;
@@ -2691,12 +2692,7 @@ async function revealLottery() {
   const done = $app.querySelector('[data-act=faHome]');
   list.classList.add('revealing');
   if (done) done.style.display = 'none';
-  const skip = document.createElement('button');
-  skip.className = 'btn small lot-skip';
-  skip.textContent = 'Skip ⏭';
-  list.before(skip);
-  let skipped = false;
-  skip.addEventListener('click', () => { skipped = true; });
+  const skipped = false; // no skipping: everyone watches the reveal
   const wait = ms => new Promise(r => { const t0 = Date.now(); const tick = () => (skipped || Date.now() - t0 >= ms ? r() : requestAnimationFrame(tick)); tick(); });
   const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
   await wait(500);
@@ -2717,7 +2713,6 @@ async function revealLottery() {
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
     await wait(big ? 1500 : 2300);
   }
-  skip.remove();
   // Let #1 land, then fold the tray away and glide back to the top of the
   // full order.
   await wait(1200);
