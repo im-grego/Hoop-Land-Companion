@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.11';
+const APP_VERSION = '0.29.12';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -261,6 +261,7 @@ function render() {
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
   $app.dataset.screen = top.name;
+  $app.classList.toggle('intro', top.name === 'main' && !state.data);
   // The main menu fits the screen: no page scroll (the calendar scrolls inside).
   document.documentElement.classList.toggle('noscroll', top.name === 'main');
   screens[top.name](top.args);
