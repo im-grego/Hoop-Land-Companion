@@ -859,8 +859,11 @@ html.noscroll, html.noscroll body { overflow: hidden; height: 100%; overscroll-b
 #app[data-screen="main"] { height: 100vh; height: 100dvh; height: min(100dvh, 100%); min-height: 0; box-sizing: border-box; }
 #app[data-screen="main"] > .panel { min-height: 0; overflow: hidden; padding-top: 12px; gap: 12px; }
 #app[data-screen="main"] .panel > * { flex: none; }
-/* The banner gives way first when the screen is short, so the bottom never gets cut. */
-#app[data-screen="main"] .panel > .hero { flex: 1 1 auto; min-height: 0; max-height: 30vh; height: auto; object-fit: cover; }
+/* The banner always shows whole, at its own proportions. On a short screen
+   the intro box below gives way instead (its text scrolls inside). */
+#app[data-screen="main"] .panel > .hero { flex: none; width: 100%; height: auto; max-height: none; object-fit: fill; }
+#app[data-screen="main"] .panel > .frame:not(.cal-frame) { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#app[data-screen="main"] .panel > .frame:not(.cal-frame) > .stack { min-height: 0; overflow-y: auto; }
 #app[data-screen="main"] .cal-frame { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 #app[data-screen="main"] .cal-frame > .calendar { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 #app[data-screen="main"] .panel > .center.muted { margin: 0; }
