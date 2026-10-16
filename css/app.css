@@ -699,10 +699,9 @@ body::before {
 .pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .pick-grid .pick { min-width: 0; }
 
-/* 3-2-1 relegation zone on the odds table */
-.releg-label { margin-top: 6px; padding: 3px 8px; font-size: 11px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: #ff8a8a; background: rgba(255, 90, 90, .12); border-left: 4px solid #ff5a5a; }
-.odds-row.lot.releg { background: rgba(255, 90, 90, .08); }
-.releg-line { height: 0; border-top: 3px dashed #ff5a5a; margin: 2px 0; }
+/* 3-2-1: a red line under the last relegation-zone team */
+.odds-row.lot.releg-cut { border-bottom: 2px solid #ff5a5a; }
+.lot-pick { margin: 4px 0 2px; }
 .lot-row .status { font-size: 10px; padding: 1px 5px; vertical-align: 1px; }
 
 /* Consensus: two compact board buttons */

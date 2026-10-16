@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.27.9';
+const APP_VERSION = '0.27.10';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2517,24 +2517,19 @@ screens.lottery = () => {
   const topN = setup.format === 'old' ? 3 : 4;
   const F = LOTTERY_FORMATS[setup.format];
   const out = setup.table.slice(setup.lotteryTeams.length);
-  const about = {
-    321: `All ${setup.draws} lottery picks are drawn with your league's odds; the 3 worst teams pick no lower than #12.`,
-    top4: 'The 14 non-playoff teams; the 3 worst share the best odds (14% each) and the top 4 picks are drawn. No team falls more than 4 spots.',
-    old: 'The 14 non-playoff teams; the worst team has a 25% shot at #1 and only the top 3 picks are drawn. No team falls more than 3 spots.',
-  }[setup.format];
   layout({
     title: 'Draft Lottery',
     body: `
       <div class="opts lot-formats">${Object.entries(LOTTERY_FORMATS).map(([k, f]) => `<button class="btn ${k === setup.format ? 'on focus' : 'off'}" data-act="lotFormat" data-f="${k}">${f.name}<span class="small">${f.era}</span></button>`).join('')}</div>
-      <p class="note small">${P.lotteryFormat === 'auto' ? 'Picked from your league settings. ' : ''}${about}</p>
+      <p class="note small muted center lot-pick">Select odds</p>
       <fieldset class="frame"><legend>Odds · ${esc(F.name)}</legend>
         <div class="odds-head lot"><span>Seed</span><span>Team</span><span>#1</span><span>Top ${topN}</span></div>
         ${odds.map(r => {
           const rr = rec.get(r.team.id);
           const top = Math.min(100, r.pct.slice(0, topN).reduce((a, b) => a + b, 0));
-          const zone = setup.floor && r.seed === 0 ? '<div class="releg-label">Relegation zone · one ball taken away</div>' : '';
-          const line = setup.floor && r.seed === setup.floor.floorTeams ? '<div class="releg-line"></div>' : '';
-          return `${zone}${line}<div class="odds-row lot ${setup.floor && r.seed < setup.floor.floorTeams ? 'releg' : ''} ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
+          // The last team in the relegation zone gets a red line under it.
+          const cut = setup.floor && r.seed === setup.floor.floorTeams - 1;
+          return `<div class="odds-row lot ${cut ? 'releg-cut' : ''} ${isUserTeam(r.team) ? 'mine' : ''}"><span>${r.seed + 1}</span><span>${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span><span>${r.pct[0].toFixed(1)}%</span><span>${top.toFixed(1)}%</span>
             <span class="odds-bar" aria-hidden="true"><i class="top" style="width:${top}%"></i><i class="one" style="width:${r.pct[0]}%"></i></span></div>`;
         }).join('')}
         ${out.length ? `<p class="note muted small" style="margin-top:8px">Out of the lottery (pick by record): ${out.map(r => esc(r.team.shortName)).join(', ')}.</p>` : ''}
