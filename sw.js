@@ -1,6 +1,6 @@
 // Offline support: cache-first for the app shell, stale-while-revalidate for
 // fonts and team logos.
-const VERSION = 'hlc-v0.29.28';
+const VERSION = 'hlc-v0.32.4';
 const SHELL = [
   './',
   'index.html',
@@ -14,6 +14,9 @@ const SHELL = [
   'js/dropbox.js',
   'js/livedraft.js',
   'js/trades.js',
+  'js/predraft.js',
+  'js/presser.js',
+  'js/survey.js',
   'js/freeagency.js',
   'js/phases.js',
   'js/summer.js',
@@ -36,7 +39,11 @@ const SHELL = [
 self.addEventListener('install', e => {
   // cache: 'reload' skips the browser's HTTP cache, so an update never
   // stores a stale copy of a file next to new ones.
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
+  // Each file is cached on its own: one missing file must never block an
+  // update (addAll fails the whole install if any request fails).
+  e.waitUntil(caches.open(VERSION)
+    .then(c => Promise.all(SHELL.map(u => c.add(new Request(u, { cache: 'reload' })).catch(() => {}))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {

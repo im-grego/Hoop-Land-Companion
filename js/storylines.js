@@ -53,8 +53,15 @@ const f1 = x => x.toFixed(1);
 const statLine = l => (l ? `${f1(l.ppg)} points, ${f1(l.rpg)} rebounds and ${f1(l.apg)} assists` : '');
 const slash = l => (l ? `${f1(l.ppg)}/${f1(l.rpg)}/${f1(l.apg)}` : '');
 
-const won = (p, id, yr) => (p.awards || []).some(a => a.id === id && a.yearsWon?.includes(yr));
-const timesWon = (p, id) => (p.awards || []).filter(a => a.id === id).reduce((n, a) => n + (a.yearsWon?.length || 0), 0);
+// Awards count only for seasons the player spent in this pro league:
+// college awards (MVP, ROTY...) share the same ids, so a rookie's college
+// MVP would otherwise read as a league MVP.
+let PRO = 0;
+const inPro = (p, yr) => (p.stats || []).some(s => s.league === PRO && s.yr === yr &&
+  [...(s.season || []), ...(s.playoffs || [])].some(r => r.GP > 0));
+const proYears = (p, a) => (a.yearsWon || []).filter(yr => inPro(p, yr));
+const won = (p, id, yr) => (p.awards || []).some(a => a.id === id && a.yearsWon?.includes(yr) && inPro(p, yr));
+const timesWon = (p, id) => (p.awards || []).filter(a => a.id === id).reduce((n, a) => n + proYears(p, a).length, 0);
 
 // Career weight for retirements and legacy stories.
 function legacy(p) {
@@ -97,6 +104,7 @@ function eliminatedBy(league, tid, yr) {
 // opts: { leagueIdx, leagues, params, dev: p => diff | null, mentorships: [{ mentor, mentee, skill }] }
 export function buildStorylines(league, opts = {}) {
   const li = opts.leagueIdx ?? 0;
+  PRO = li;
   const yr = Math.max(...league.teams.map(t => teamRecord(t).yr || 0));
   const cur = league.season.currentYear;
   const next = cur > yr ? cur : yr + 1;               // the season ahead
@@ -353,6 +361,9 @@ export function buildStorylines(league, opts = {}) {
     add('mentor', 28 + legacy(m.mentor), '🎓', `Learning from ${playerName(m.mentor)}`,
       `${playerName(m.mentee)} spent the summer at the veteran's side, and it shows: a new ${skillName(m.skill)} game.`, m.mentee.id);
   }
+
+  // Stories from outside (your press conference, last year's promises).
+  for (const x of opts.extra || []) stories.push(x);
 
   // Top 10, at most two per kind (moves and contenders can take three).
   const cap = { move: 3, hump: 3 };

@@ -328,7 +328,7 @@ function positionStats(league, pos) {
     const sd = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length) || 1;
     return { m, sd };
   };
-  const out = { n: peers.length, ht: stat(peers.map(p => p.ht)) };
+  const out = { n: peers.length, ht: stat(peers.map(p => p.ht)), wt: stat(peers.map(p => p.wt).filter(w => w > 0)) };
   for (const k of ATTRS) out[k] = stat(peers.map(p => p.attributes[k][0]));
   byPos.set(pos, out);
   return out;
@@ -377,7 +377,9 @@ const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 's
 // players at the position) and, when there's a college season to go on,
 // production per game against qualified college players in the same role.
 // `leagues` = every league in the save (for college stats).
-export function scoutingReport(p, league, pot = p.pot, leagues = null) {
+// `known(k)`: whether the rating's ceiling has been scouted (hidden ones
+// show today's rating only).
+export function scoutingReport(p, league, pot = p.pot, leagues = null, known = () => true) {
   const st = positionStats(league, p.pos);
   const pos = POSITIONS[p.pos] ?? '';
   const proj = projectedCeiling(p, pot);
@@ -420,7 +422,7 @@ export function scoutingReport(p, league, pot = p.pot, leagues = null) {
     // Strength judged on what they can become; weakness on today + ceiling.
     let up = (top - st[k].m) / st[k].sd;
     let down = ((cur + top) / 2 - st[k].m) / st[k].sd;
-    const rating = top > cur ? `${k} ${cur} → ${top} ceiling` : `${k} ${cur}`;
+    const rating = top > cur && known(k) ? `${k} ${cur} → ${top} ceiling` : `${k} ${cur}`;
     const ev = EVIDENCE[k];
     let detail = rating;
     if (ev?.[0]) {
@@ -452,9 +454,14 @@ export function scoutingReport(p, league, pot = p.pot, leagues = null) {
     else bits.push(`STL ${p.attributes.STL[0]} · BLK ${p.attributes.BLK[0]} · SPD ${p.attributes.SPD[0]}`);
     items.push({ k: 'DEF', up: z * UP.DEF, down: z * DOWN.DEF, detail: bits.join(' · ') });
   }
-  const htZ = (p.ht - st.ht.m) / st.ht.sd * UP.HT;
-  items.push({ k: 'HT', up: htZ, down: htZ, detail: `${heightStr(p.ht)} vs ${heightStr(Math.round(st.ht.m))} avg ${pos}` });
-  const text = (x, side) => x.k === 'HT' ? (side ? `Undersized for a ${pos}` : `Great size for a ${pos}`) : pick(x.k, side);
+  // Size against pros at his position: height first, weight too.
+  const htZ = (p.ht - st.ht.m) / st.ht.sd;
+  const wtZ = p.wt > 0 && st.wt.sd ? (p.wt - st.wt.m) / st.wt.sd : 0;
+  const sizeZ = (0.65 * htZ + 0.35 * wtZ) * UP.HT;
+  const slight = wtZ < -1.3 && htZ > -0.6;
+  const sizeDetail = `${heightStr(p.ht)}, ${p.wt} lb vs ${heightStr(Math.round(st.ht.m))}, ${Math.round(st.wt.m)} lb avg pro ${pos}`;
+  items.push({ k: 'HT', up: htZ * UP.HT, down: slight ? Math.min(sizeZ, wtZ * 0.8) : sizeZ, detail: sizeDetail, slight });
+  const text = (x, side) => x.k === 'HT' ? (side ? (x.slight ? `Slight frame for a ${pos}` : `Undersized for a ${pos}`) : `Great size for a ${pos}`) : pick(x.k, side);
 
   // Up to three strengths (one per idea, real positives only) and up to
   // two weaknesses; always say something about defense.
@@ -475,9 +482,9 @@ export function scoutingReport(p, league, pot = p.pot, leagues = null) {
   const talked = [...strengths, ...weak].some(x => DEFENSE.has(x.k));
   const tone = def.up > 1.0 ? 0 : def.down < -0.6 ? 1 : 2;
   return {
-    strengths: strengths.map(x => ({ text: text(x, 0), detail: x.detail })),
+    strengths: strengths.map(x => ({ k: x.k, text: text(x, 0), detail: x.detail })),
     weakness: weak[0] ? { text: text(weak[0], 1), detail: weak[0].detail } : null,
-    weaknesses: weak.map(x => ({ text: text(x, 1), detail: x.detail })),
+    weaknesses: weak.map(x => ({ k: x.k, text: text(x, 1), detail: x.detail })),
     defense: talked ? null : { text: text(def, tone), detail: def.detail, tone: ['plus', 'minus', 'even'][tone] },
   };
 }

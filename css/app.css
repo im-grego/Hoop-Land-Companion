@@ -762,6 +762,8 @@ body::before {
 .recap-row .lv { display: flex; flex-direction: column; align-items: center; min-width: 46px; padding: 2px 4px; background: #0b2f6bcc; border: 2px solid var(--tc2, var(--btn-edge)); text-shadow: none; }
 .recap-row .lv b { font-size: 20px; color: var(--gold); line-height: 1; }
 .recap-row .lv s { opacity: .6; }
+.recap-row.mine { box-shadow: 0 0 0 2px var(--cyan); }
+.recap-row.clock { box-shadow: 0 0 0 2px var(--gold); }
 .lot-row .grade { margin-left: auto; flex: none; }
 
 /* Free agency */
@@ -914,3 +916,73 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .ff-team { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--btn); border: 3px solid var(--btn-edge); }
 .ff-team.mine { border-color: var(--cyan); }
 .ff-team.out { opacity: .45; }
+
+/* Pre-draft: mocks, combine, Hoop Gram, workouts */
+.mv-chip { flex: none; min-width: 42px; text-align: center; font-weight: 800; font-size: 15px; padding: 3px 6px; background: #0b2f6bcc; border: 2px solid var(--btn-edge); text-shadow: none; }
+.mv-chip.up { color: var(--up); border-color: var(--up); }
+.mv-chip.down { color: var(--down); border-color: var(--down); }
+.mv-chip.new { color: var(--gold); border-color: var(--gold); font-size: 12px; }
+.mv-chip.same { color: #c9d3e6; }
+.out-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 8px 10px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.out-row .out-mv { margin-left: auto; font-weight: 800; white-space: nowrap; }
+.opts.wrap { flex-wrap: wrap; }
+.opts.wrap .btn { flex: 1 1 40%; }
+.linkish { background: none; border: 0; padding: 0; color: var(--cyan); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+.drill-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.drill-row.r1 { border-color: var(--cyan); }
+.drill-row .grow { flex: 1; min-width: 0; }
+.drill-row .pk { min-width: 26px; text-align: right; font-weight: 800; color: var(--gold); }
+.drill-val { font-size: 17px; color: var(--gold); white-space: nowrap; }
+.drill-row .meas { display: flex; flex-direction: column; align-items: flex-end; white-space: nowrap; }
+.hg-post { background: #0b2f6b; border: 3px solid var(--btn-edge); padding: 10px 12px; }
+.hg-head { display: flex; align-items: center; gap: 8px; }
+.hg-avatar { width: 28px; height: 28px; flex: none; display: grid; place-items: center; font-size: 11px; font-weight: 800; background: linear-gradient(135deg, #ff3e8a, var(--gold)); color: #fff; }
+.hg-tag { margin-left: auto; font-size: 12px; color: var(--gold); white-space: nowrap; }
+.hg-text { margin: 8px 0; line-height: 1.4; }
+.hg-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+.combine-grid { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; font-size: 14px; }
+.combine-grid b { text-align: right; }
+.workout { background: var(--btn); border: 3px solid var(--btn-edge); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.workout .wk-q { text-align: left; }
+.workout .wk-a { border-left: 3px solid var(--cyan); padding-left: 8px; }
+
+.pos-rank { font-size: 12px; font-weight: 600; color: #c9d3e6; margin-left: 4px; white-space: nowrap; }
+.pos-rank.top { color: var(--gold); }
+.wk-quote { font-style: italic; }
+
+/* Live draft in team colors: the team on the clock and each pick once it's revealed. */
+.clock-card[style*="--tc1"] { background: linear-gradient(90deg, var(--tc1), color-mix(in srgb, var(--tc1) 55%, #0b2f6b)); border: 4px solid var(--tc2); border-bottom-width: 5px; text-shadow: 0 2px 0 #0008; box-shadow: 0 4px 0 var(--btn-shadow); }
+.clock-card[style*="--tc1"] .muted { color: #e6ecf7; }
+.clock-card[style*="--tc1"] .badge { background: #0b2f6bcc; text-shadow: none; }
+.clock-card.mine[style*="--tc1"] { box-shadow: 0 0 0 3px var(--cyan), 0 4px 0 var(--btn-shadow); }
+.lot-row.tc:not(.pending) { background: linear-gradient(90deg, var(--tc1), color-mix(in srgb, var(--tc1) 40%, #0b2f6b)); border-color: var(--tc2); text-shadow: 0 2px 0 #0009; }
+.lot-row.tc:not(.pending) .muted { color: #e6ecf7; }
+.lot-row.tc:not(.pending) .grade { text-shadow: none; }
+.lot-row.tc.mine:not(.pending) { box-shadow: 0 0 0 2px var(--cyan); }
+
+.pq-opts { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.pq-opts .btn { text-align: left; }
+.presser .outlook .stack { margin-top: 6px; }
+
+/* GM Survey */
+.sv-rows { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.sv-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.sv-row[style*="--tc1"] { background: linear-gradient(90deg, var(--tc1), color-mix(in srgb, var(--tc1) 40%, #0b2f6b)); border-color: var(--tc2); text-shadow: 0 2px 0 #0009; }
+.sv-row[style*="--tc1"] .muted { color: #e6ecf7; }
+.sv-row[style*="--tc1"] .linkish { color: #fff; text-decoration: underline; text-underline-offset: 2px; }
+.sv-row.mine { box-shadow: 0 0 0 2px var(--cyan); }
+.sv-row .grow { flex: 1; min-width: 0; }
+.sv-n { min-width: 18px; text-align: right; font-weight: 800; color: var(--gold); }
+.sv-pct { min-width: 50px; text-align: right; font-size: 16px; color: var(--gold); }
+.sv-bar { display: block; height: 5px; margin-top: 4px; background: #0b2f6b99; }
+.sv-bar > span { display: block; height: 100%; background: var(--gold); }
+.sv-seed { margin-top: 8px; color: var(--gold); font-weight: 700; }
+.sv-last { margin-top: 8px; }
+.tabs.sv-tabs .btn { flex: none; min-width: auto; padding: 8px 12px; white-space: nowrap; }
+/* On the clock: same height for every team (name and needs on one line each). */
+.clock-card { height: 118px; box-sizing: border-box; overflow: hidden; }
+.clock-card .grow > b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clock-card .grow > .small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clock-card .needs-line { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 3px; height: 46px; }
+.clock-card .needs-line .badge { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.clock-card .grow > br { display: none; }

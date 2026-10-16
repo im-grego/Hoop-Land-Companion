@@ -17,9 +17,12 @@ import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractVa
 import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
+import { runSurvey, consensus } from './survey.js';
+import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
+import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.28';
+const APP_VERSION = '0.32.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -220,7 +223,7 @@ function layout({ title, left = '', right = '', body, action = null }) {
       ${right}
     </div>
     <main class="panel">${body}</main>
-    ${action ? `<div class="bottom"><button class="btn action" data-act="${action.act}">${esc(action.label)}</button></div>` : ''}`;
+    ${action ? `<div class="bottom"><button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
 }
 
 const BACK_ARROW = `<svg width="40" height="28" viewBox="0 0 10 7" shape-rendering="crispEdges" aria-hidden="true">
@@ -467,8 +470,16 @@ const CALENDAR = [
     done: () => calFlags().office },
   { key: 'lottery', date: 'Jun 2', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
     done: () => phaseRank(league().season) >= 2 },
-  { key: 'warroom', date: 'Jun 18', title: 'War Room', blurb: 'Scout the class, build your board, run the mock draft and work the phones in the front office.',
-    done: () => calFlags().warroom || phaseRank(league().season) >= 3 },
+  { key: 'mock1', date: 'Jun 3', title: 'Mock Draft 1.0', blurb: 'The lottery is set and the first mock of the cycle is out. See where everyone lands.',
+    done: () => preDone('mock1') },
+  { key: 'scout', date: 'Jun 4', title: 'Scouting', blurb: 'Scout the class, build your board and work the phones in the front office.',
+    done: () => preDone('scout') },
+  { key: 'combine', date: 'Jun 12', title: 'Draft Combine', blurb: 'Measurements, athletic testing and shooting drills. Hoop Gram is buzzing.',
+    done: () => preDone('combine') },
+  { key: 'mock2', date: 'Jun 15', title: 'Mock Draft 2.0', blurb: 'Post-combine mock: who rose, who fell and who fell out of the first round.',
+    done: () => preDone('mock2') },
+  { key: 'workouts', date: 'Jun 18', title: 'Private Workouts', blurb: 'Bring prospects in, see them up close and ask the questions that matter.',
+    done: () => preDone('workouts') },
   { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
   { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
@@ -481,6 +492,8 @@ const CALENDAR = [
     done: () => faDone(3) },
   { key: 'dev', date: 'Sep 15', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
+  { key: 'survey', date: 'Sep 22', title: 'GM Survey', blurb: 'Every GM in the league weighs in: predictions, players, the offseason, rookies, defense and more.',
+    done: () => calFlags().survey || calFlags().media },
   { key: 'media', date: 'Sep 29', title: 'Media Day', blurb: 'Jersey numbers, then the season preview: the top 10 storylines.',
     done: () => calFlags().media },
   { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
@@ -499,7 +512,14 @@ function stepSummary(key) {
     const t = n && L.teams.find(x => x.id === n.tid);
     return t ? `${t.city} ${t.name}`.trim() + ' won the #1 pick.' : 'Draft order set.';
   }
-  if (key === 'warroom') return `${myBoard().length || boardStore().board.length} prospects on your board.`;
+  if (key === 'mock1' || key === 'mock2') {
+    const m = preStore()[key];
+    const p = m && league().draftClass?.find(x => x.id === m[0]?.pid);
+    return p ? `${playerName(p)} projected #1.` : 'Mock published.';
+  }
+  if (key === 'scout') return `${myBoard().length || boardStore().board.length} prospects on your board.`;
+  if (key === 'combine') return 'Combine results are in.';
+  if (key === 'workouts') { const n = Object.keys(preStore().workouts).length; return `${n} prospect${n === 1 ? '' : 's'} worked out for you.`; }
   if (key === 'draft') {
     const first = leagueRookies(L).find(r => r.pick === 1);
     return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
@@ -511,6 +531,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'survey') { const q = surveyNow().questions[0]?.results[0]; return q ? `${q.name}: the GMs' pick to win it all (${q.pct}%).` : 'Survey published.'; }
   return '';
 }
 
@@ -522,7 +543,13 @@ function stepActions(key) {
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
     case 'lottery': return `<button class="btn big focus" data-act="nav" data-to="lottery">🎱 Draft Lottery</button>`;
-    case 'warroom': return `<div class="grid2"><button class="btn" data-act="nav" data-to="draft">🔎 Scouting</button><button class="btn focus" data-act="calDone" data-k="warroom">⏭ Advance to Draft</button></div>`;
+    case 'mock1': return `<button class="btn big focus" data-act="openMock" data-n="1">📰 Read Mock Draft 1.0</button>`;
+    case 'scout': return `<button class="btn big focus" data-act="nav" data-to="draft">🔎 Scouting</button>
+      <button class="btn small off" data-act="preAdvance" data-k="scout" style="margin-top:8px">${preStore().scoutSeen ? '⏭ Advance to the Combine' : 'Skip ahead to the Combine'}</button>`;
+    case 'combine': return `<button class="btn big focus" data-act="nav" data-to="combine">⏱ Draft Combine</button>`;
+    case 'mock2': return `<button class="btn big focus" data-act="openMock" data-n="2">📰 Read Mock Draft 2.0</button>`;
+    case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
+      <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
     case 'camp': return `<button class="btn big focus" data-act="nav" data-to="camp">🏀 Summer League</button>`;
     case 'fa1': case 'fa2': case 'fa3': {
@@ -532,6 +559,7 @@ function stepActions(key) {
       return `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
     case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
+    case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
     case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
     default: return '';
@@ -572,9 +600,9 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  office: ['teams'], lottery: ['lottery'], warroom: ['draft', 'prospect', 'lottery', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'],
+  office: ['teams'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], media: ['storylines'], export: ['export'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], survey: ['survey'], media: ['storylines'], export: ['export'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player'];
 function screenAllowed(name) {
@@ -1067,6 +1095,9 @@ function collegeNumber(p) {
   const row = s?.season?.[s.season.length - 1];
   return row && row.num >= 0 ? row.num : null;
 }
+// Team's full name for the draft screens: city + name (teams saved without
+// a city fall back to their name).
+const teamFull = t => (t ? (t.city ? `${t.city} ${t.name}` : t.name || t.shortName || '').trim() : '');
 const teamTint = t => {
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
   return c1 ? `--tc1:${c1};--tc2:${c2 || c1}` : '';
@@ -1908,6 +1939,8 @@ screens.settings = (args) => {
       options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
       options('Scouting Report Accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]) +
       `<p class="note muted small">How often a prospect's scouting report reads their potential one step high or low (0% / 15% / 25% / 40%).</p>` +
+      options('Private Workouts per Team', 'workoutSlots', [[3, '3'], [6, '6'], [9, '9'], [12, '12']]) +
+      `<p class="note muted small">How many prospects each team you run can bring in for a private workout before the draft.</p>` +
       options('Live Draft: CPU Trade-Ups', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
       options('Commissioner Mode (Trades)', 'commissioner', [[false, 'Off'], [true, 'On']]) +
       `<p class="note muted small">On: trade for any team, force trades through, undo draft-day trades and reset the draft. Off: you trade for the teams you control, CPU teams have to accept, and trades are final.</p>` +
@@ -2025,7 +2058,7 @@ const compLine = c => c.floor[0] || c.ceiling[0]
   : '';
 
 function scoutList(p) {
-  const r = scoutingReport(p, league(), scoutPot(p), state.data.seasonLeagues);
+  const r = scoutingReport(p, league(), scoutPot(p), state.data.seasonLeagues, k => ceilKnown(p, k));
   return `<ul class="scout">
     ${r.strengths.map(s => `<li class="plus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
     ${r.weaknesses.map(s => `<li class="minus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
@@ -2040,7 +2073,22 @@ function saveSalt() {
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
 }
-const scoutPot = p => scoutedPot(p, saveSalt(), state.params.scoutVariance);
+const scoutPot = p => workoutDone(p.id) ? p.pot : scoutedPot(p, saveSalt(), state.params.scoutVariance);
+// Rating ceilings stay hidden until scouted: a few come out during
+// scouting, more at the combine (athletic ones most), and a private workout
+// shows them all. Which ones is fixed per save + prospect.
+const COMBINE_ATTRS = new Set(['STR', 'SPD', 'STM', 'DNK']);
+function ceilStage(p, k) {
+  const h = Math.imul((saveSalt() ^ Math.imul(p.id + 1, 2654435761) ^ Math.imul(k.charCodeAt(0) * 131 + k.charCodeAt(2), 40503)) >>> 0, 2246822519) >>> 0;
+  const r = h / 4294967296;
+  return r < 0.15 ? 1 : r < (COMBINE_ATTRS.has(k) ? 0.5 : 0.3) ? 2 : 9;
+}
+function ceilKnown(p, k) {
+  if (!league().draftClass?.some(x => x.id === p.id)) return true;   // drafted: everything shows
+  if (workoutDone(p.id)) return true;
+  const reached = combineOn() ? 2 : preDone('mock1') ? 1 : 0;
+  return ceilStage(p, k) <= reached;
+}
 // Draft board value: projected ceiling at the scouted tier first, then the
 // floor, with a bonus for both (see draftScore). Vectors cached per class.
 function draftVecs() {
@@ -2072,7 +2120,7 @@ function eliteBonus(p) {
   // ...and All-Star-or-better on both ends goes to the top.
   return tiers + (f >= ALL_STAR && ce >= ALL_STAR ? 1.5 + (f - ALL_STAR) * 0.3 : 0);
 }
-const scoutValue = p => baseValue(p) + eliteBonus(p);
+const scoutValue = p => baseValue(p) + eliteBonus(p) + (combineOn() ? combineBonus(p) : 0);
 // Draft value shown next to prospects: 1–99.
 const valueNum = p => Math.max(1, Math.min(99, Math.round(40 + 10 * scoutValue(p))));
 
@@ -2088,13 +2136,13 @@ function teamOutlook(team) {
 // A CPU team's pick: its own value of each prospect plus draft-day noise.
 // `noise` is how far a team's own read can stray from the board (the mock
 // draft uses more so re-runs differ).
-function teamDraftPick(team, available, rng, noise = 0.35) {
+function teamDraftPick(team, available, rng, noise = 0.35, combine = combineOn()) {
   const v = draftVecs();
   const ctx = teamOutlook(team);
   const gauss = () => { const u = Math.max(1e-9, rng()), w = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w); };
   let best = null, bestScore = -Infinity;
   for (const p of available) {
-    const sc = draftScore(p, v.scales, v.fns, ctx) + eliteBonus(p) + gauss() * noise;
+    const sc = draftScore(p, v.scales, v.fns, ctx) + eliteBonus(p) + (combine ? combineBonus(p) : 0) + gauss() * noise;
     if (sc > bestScore) { best = p; bestScore = sc; }
   }
   return best;
@@ -2226,7 +2274,7 @@ const DRAFT_TABS = [['live', 'Live'], ['consensus', 'Prospects'], ['warroom', 'M
 function draftTabsNow(L = league()) {
   const step = phaseRank(L.season) === 0 ? null : currentStep()?.key;
   if (step === 'draft') return ['live', 'consensus', 'warroom'];
-  if (step === 'warroom') return ['consensus', 'warroom', 'office'];
+  if (step === 'scout' || step === 'workouts') return ['consensus', 'warroom', 'office'];
   return DRAFT_TABS.map(([k]) => k).filter(k => k !== 'live' || liveReady(L));
 }
 const liveReady = (L = league()) => L.season.phase === PHASE_PRE_DRAFT && lotteryDone(L) && L.draftClass?.length > 0;
@@ -2255,6 +2303,7 @@ screens.draft = (args) => {
     });
     return;
   }
+  if (isStep('scout') && !preStore().scoutSeen) { preStore().scoutSeen = true; savePre(); }
   const allowed = draftTabsNow(L);
   const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
@@ -2348,51 +2397,420 @@ function draftConsensus() {
   };
 }
 
-// War Room: your board, then the first-round mock draft.
+// War Room: your board.
 function draftWarRoom() {
   const board = myBoard();
-  const mock = mock30();
-  const byId = new Map(league().draftClass.map(p => [p.id, p]));
   return {
     html: `<fieldset class="frame"><legend>Your Board</legend>
         ${board.length ? `<div class="list">${board.map((p, i) => `<div class="board-row">${prospectRow(p, '', { mine: true }).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
           <div class="mv2 mv3"><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvbtn x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove from your board">✕</button></div></div>`).join('')}</div>`
         : '<p class="note">Your board is empty. Add prospects from Prospects with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
-      </fieldset>
-      <fieldset class="frame"><legend>Mock Draft · First Round</legend>
-        <p class="note muted small" style="margin-bottom:8px">How the first round could go, from each team's stage, needs and board. Trades in the front office change who picks where.</p>
-        <div class="list">${mock.map(m => {
-          const p = byId.get(m.pid);
-          const t = league().teams.find(x => x.id === m.tid);
-          return `<div class="lot-row ${isUserTeam(t) ? 'mine' : ''}"><span class="pk">${m.overall}</span>${logoImg(t)}
-            <span class="grow"><b class="small">${esc(t.shortName)}</b> <span class="small">${p ? `${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${classYear(p)}</span>` : '—'}</span></span>${p ? valueChip(p) : ''}</div>`;
-        }).join('')}</div>
-        <button class="btn" data-act="mockRerun" style="margin-top:10px">🔄 Re-run Mock</button>
       </fieldset>`,
   };
 }
 
+// ---------------------------------------------------------------------------
+// Pre-draft events: Mock 1.0 → Scouting → Combine → Mock 2.0 → Private
+// Workouts. Remembered per league + season.
+
+function preStore() {
+  const key = seasonKey();
+  const cache = (state.pre ||= {});
+  if (!cache[key]) {
+    let v = {};
+    try { v = JSON.parse(localStorage.getItem(`hlc:pre:${key}`)) || {}; } catch { v = {}; }
+    cache[key] = { steps: {}, workouts: {}, ...v };
+  }
+  return cache[key];
+}
+function savePre() {
+  try { localStorage.setItem(`hlc:pre:${seasonKey()}`, JSON.stringify(preStore())); } catch { /* ignore */ }
+}
+const preDone = k => !!preStore().steps[k] || phaseRank(league().season) >= 3;
+function finishPre(k) {
+  preStore().steps[k] = true;
+  savePre();
+  state.undo = null;
+  goHome();
+}
+actions.preAdvance = async d => {
+  const pre = preStore();
+  if (d.k === 'scout' && !pre.scoutSeen && !(await confirmBox('You haven\'t opened scouting yet. Skip it and go to the Combine?', 'Skip Scouting'))) return;
+  if (d.k === 'workouts' && !Object.keys(pre.workouts).length && !(await confirmBox('No one has worked out for you yet. Go to the draft anyway?', 'Go to Draft'))) return;
+  finishPre(d.k);
+};
+actions.preFinish = d => finishPre(d.k);
+
+// The combine counts toward draft stock once its results are out.
+const combineOn = () => !!(state.data && league().draftClass?.length && preStore().combineSeen);
+function combineData() {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has('combine')) {
+    const top = (mockPicks(1) || []).map(m => m.pid).filter(x => x != null);
+    cache.set('combine', runCombine(league().draftClass || [], saveSalt(), top, league().teams.flatMap(t => t.roster)));
+  }
+  return cache.get('combine');
+}
+const combineBonus = p => combineData().byId.get(p.id)?.bonus ?? 0;
+
+// The two published mocks are made once and kept. 1.0: first round, a loose
+// read of the class. 2.0: the whole draft (for where first-round fallers
+// land), tighter, with the combine counted.
+function mockPicks(n) {
+  const pre = preStore();
+  const k = `mock${n}`;
+  if (!pre[k] && league().draftClass?.length && lotteryDone(league())) {
+    const order = actualDraftOrder(league()).filter(o => n === 2 || o.rd === 1);
+    const rng = mulberry32((saveSalt() ^ (n === 1 ? 0x51a7 : 0x2c0e)) >>> 0);
+    const taken = new Set();
+    pre[k] = order.map(o => {
+      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng, n === 1 ? 0.75 : 0.45, n === 2);
+      if (p) taken.add(p.id);
+      return { overall: o.overall, rd: o.rd, tid: o.owner.id, orig: o.orig.id, pid: p?.id ?? null };
+    });
+    savePre();
+  }
+  return pre[k] || null;
+}
+actions.openMock = d => go('mock', { n: +d.n });
+actions.mockView = d => replace('mock', { n: 2, view: d.v });
+
+screens.mock = (args) => {
+  const L = league();
+  const n = args.n === 2 ? 2 : 1;
+  const view = n === 2 && args.view === 'v1' ? 1 : n;
+  const m1 = mockPicks(1);
+  const m2 = n === 2 ? mockPicks(2) : null;
+  if (!m1) { layout({ title: 'Mock Draft', body: '<p class="note">The mock comes out once the lottery is drawn.</p>' }); return; }
+  const byId = new Map(L.draftClass.map(p => [p.id, p]));
+  const teams = new Map(L.teams.map(t => [t.id, t]));
+  const r1 = n === 2 ? m2.filter(x => x.rd === 1) : m1;
+  const list = view === 1 ? m1 : r1;
+  const slot1 = new Map(m1.map(x => [x.pid, x.overall]));
+  const slot2 = new Map((m2 || []).map(x => [x.pid, x.overall]));
+  const move = pk => {
+    if (view !== 2 || pk.pid == null) return '';
+    const was = slot1.get(pk.pid);
+    if (was == null) return '<span class="mv-chip new">NEW</span>';
+    const d = was - pk.overall;
+    return d > 0 ? `<span class="mv-chip up">▲${d}</span>` : d < 0 ? `<span class="mv-chip down">▼${-d}</span>` : '<span class="mv-chip same">—</span>';
+  };
+  const rows = list.map(pk => {
+    const team = teams.get(pk.tid), p = pk.pid != null ? byId.get(pk.pid) : null;
+    const via = pk.orig !== pk.tid ? ` <span class="muted">via ${esc(teams.get(pk.orig)?.shortName || '')}</span>` : '';
+    return pickCard({ overall: pk.overall, team, p, showLv: false, right: move(pk), cls: isUserTeam(team) ? 'mine' : '',
+      extra: { sub: via, star: p && onBoard(p.id) ? '<span class="gold">★</span> ' : '' } });
+  }).join('');
+  const out = view === 2 ? m1.filter(x => x.pid != null && !r1.some(y => y.pid === x.pid)) : [];
+  const outBox = out.length ? `<fieldset class="frame"><legend>Out of the First Round</legend><div class="stack">${out.map(x => {
+      const p = byId.get(x.pid);
+      const now = slot2.get(x.pid);
+      return p ? `<div class="out-row"><b>${esc(playerName(p))}</b> <span class="muted small">${esc(posName(p))}</span>
+        <span class="out-mv"><span>#${x.overall}</span> → <span class="down">${now ? `#${now}${now > 30 ? ' <span class="small">R2</span>' : ''}` : 'Undrafted'}</span></span></div>` : '';
+    }).join('')}</div></fieldset>` : '';
+  const isCur = isStep(`mock${n}`);
+  layout({
+    title: `Mock Draft ${n}.0`,
+    body: `<p class="note small">${n === 1
+        ? 'The lottery is set and our first mock of the cycle is out: how the first round shakes out from each team\'s stage, needs and board.'
+        : 'After the combine, boards tighten up. Green and red show the move from Mock 1.0.'}</p>
+      ${n === 2 ? `<div class="opts recap-sort"><button class="btn small ${view === 2 ? 'on focus' : 'off'}" data-act="mockView" data-v="v2">Mock 2.0</button><button class="btn small ${view === 1 ? 'on focus' : 'off'}" data-act="mockView" data-v="v1">Mock 1.0</button></div>` : ''}
+      <div class="stack recap" style="margin-top:8px">${rows}</div>
+      ${outBox}`,
+    action: isCur ? { act: 'preFinish', label: n === 1 ? 'Continue to Scouting' : 'Continue to Workouts', k: `mock${n}` } : null,
+  });
+};
+
+// ---- Draft Combine
+
+screens.combine = (args) => {
+  const L = league();
+  const pre = preStore();
+  if (!pre.combineSeen) { pre.combineSeen = true; savePre(); state.compCache = {}; }
+  const C = combineData();
+  const tab = args.tab || 'drills';
+  const rank = new Map((mockPicks(1) || []).map((m, i) => [m.pid, i]));
+  const tabs = `<div class="tabs">${[['drills', 'Drills'], ['trending', 'Hoop Gram'], ['measure', 'Measured']].map(([k, l]) =>
+    `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="combineTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  const nameBtn = p => `<button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button>`;
+  let body = '';
+  if (tab === 'trending') {
+    const posts = hoopGram(L.draftClass, C, rank, saveSalt());
+    body = `<p class="note muted small">Trending from the combine on Hoop Gram.</p>
+      <div class="stack">${posts.map(x => `<div class="hg-post">
+        <div class="hg-head"><span class="hg-avatar">HG</span><b>${esc(x.handle)}</b><span class="hg-tag">${esc(x.tag)}</span></div>
+        <p class="hg-text">${esc(x.text)}</p>
+        <div class="hg-foot"><span>❤️ ${x.likes.toLocaleString()}</span>${nameBtn(x.p)}</div>
+      </div>`).join('') || '<p class="note">Quiet combine.</p>'}</div>`;
+  } else if (tab === 'drills') {
+    const d = DRILLS.find(x => x.k === args.drill) || DRILLS[0];
+    const board = C.boards[d.k];
+    const dnp = board.filter(r => r.v == null);
+    const shown = args.all ? board.filter(r => r.v != null) : board.filter(r => r.v != null).slice(0, 25);
+    body = `<div class="opts wrap">${DRILLS.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.name)}</button>`).join('')}</div>
+      <fieldset class="frame"><legend>${esc(d.name)}</legend><div class="stack">${shown.map((r, i) => `<div class="drill-row ${rank.has(r.p.id) && rank.get(r.p.id) < 30 ? 'r1' : ''}">
+        <span class="pk">${i + 1}</span><span class="grow">${nameBtn(r.p)}<br><span class="small muted">${esc(posName(r.p))} · ${heightStr(r.p.ht)} · ${r.p.wt} lb</span></span>
+        <b class="drill-val">${fmtDrill(d, r.v)}</b></div>`).join('')}</div>
+        ${!args.all && board.filter(r => r.v != null).length > 25 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${board.filter(r => r.v != null).length}</button>` : ''}
+        ${dnp.length ? `<p class="note muted small" style="margin-top:8px">Did not participate: ${dnp.map(r => esc(playerName(r.p))).join(', ')}</p>` : ''}
+      </fieldset>`;
+  } else {
+    const sort = args.sort || 'diff';
+    const val = { diff: x => x.wingDiff, ws: x => x.ws, reach: x => x.reach, ht: x => x.htNs, size: x => -x.pro.sizeZ }[sort] || (x => x.wingDiff);
+    const rows = L.draftClass.map(p => ({ p, x: C.byId.get(p.id) })).sort((a, b) => val(b.x) - val(a.x));
+    const shown = args.all ? rows : rows.slice(0, 30);
+    body = `<div class="opts">${[['diff', 'Ape Index'], ['size', 'Undersized'], ['ws', 'Wingspan'], ['reach', 'Reach']].map(([k, l]) =>
+        `<button class="btn small ${k === sort ? 'on focus' : 'off'}" data-act="combineSort" data-s="${k}">${l}</button>`).join('')}</div>
+      <p class="note muted small" style="margin:6px 0">Ape index = wingspan minus height (no shoes). Size compares height and weight with pros at his position.</p>
+      <div class="stack">${shown.map(({ p, x }) => `<div class="drill-row">
+        <span class="grow">${nameBtn(p)}<br><span class="small muted">${esc(posName(p))} · ${inchStr(x.htNs)} · ${x.wt} lb · Reach ${inchStr(x.reach)}</span><br>${sizeLine(p, x)}</span>
+        <span class="meas"><b>${inchStr(x.ws)}</b><span class="small ${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}"</span></span></div>`).join('')}</div>
+      ${!args.all && rows.length > 30 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`;
+  }
+  layout({
+    title: 'Draft Combine',
+    body: tabs + body,
+    action: isStep('combine') ? { act: 'preFinish', label: 'Continue to Mock 2.0', k: 'combine' } : null,
+  });
+};
+const combineArgs = () => state.stack[state.stack.length - 1].args || {};
+actions.combineTab = d => replace('combine', { tab: d.t });
+actions.combineDrill = d => replace('combine', { ...combineArgs(), drill: d.d, all: false });
+actions.combineSort = d => replace('combine', { ...combineArgs(), sort: d.s, all: false });
+actions.combineAll = () => replace('combine', { ...combineArgs(), all: true });
+actions.openProspect = d => go('prospect', { id: +d.id });
+
+// Height and weight against the average pro at his position.
+function sizeLine(p, x, label = true) {
+  const dh = p.ht - x.pro.ht, dw = p.wt - x.pro.wt;
+  const f = (v, u) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v))}${u}`;
+  const cls = x.pro.sizeZ < -1.3 || (x.pro.wtZ < -1.6 && x.pro.htZ > -0.6) ? 'down' : x.pro.sizeZ > 1 ? 'up' : 'muted';
+  return `<span class="small ${cls}">${label ? `vs pro ${esc(posName(p))}: ` : ''}${f(dh, '"')} · ${f(dw, ' lb')}</span>`;
+}
+
+// "#3 of 11 SF": where a result ranks among prospects at his position.
+function posRank(p, d) {
+  const C = combineData();
+  const v = C.byId.get(p.id)?.[d.k];
+  if (v == null) return '';
+  const same = league().draftClass.filter(x => x.pos === p.pos).map(x => C.byId.get(x.id)?.[d.k]).filter(y => y != null);
+  const rank = 1 + same.filter(y => (d.low ? y < v : y > v)).length;
+  return ` <span class="pos-rank${rank <= 3 ? ' top' : ''}">#${rank} of ${same.length} ${esc(posName(p))}</span>`;
+}
+
+function combineBox(p) {
+  if (!combineOn()) return '';
+  const x = combineData().byId.get(p.id);
+  if (!x) return '';
+  return `<fieldset class="frame"><legend>Draft Combine</legend>
+    <div class="combine-grid">
+      <span>Height (no shoes)</span><b>${inchStr(x.htNs)}</b><span>Wingspan</span><b>${inchStr(x.ws)} <span class="small ${x.wingDiff < 0 ? 'down' : 'muted'}">(${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}")</span></b>
+      <span>Standing Reach</span><b>${inchStr(x.reach)}</b><span>Weight</span><b>${x.wt} lb</b>
+      <span>Vs avg pro ${esc(posName(p))}</span><b>${sizeLine(p, x, false)}</b>
+      ${DRILLS.map(d => `<span>${esc(d.name)}</span><b>${fmtDrill(d, x[d.k])}${posRank(p, d)}</b>`).join('')}
+    </div>
+    ${x.skip ? `<p class="note small muted" style="margin-top:6px">Sat out testing: ${esc(x.skip)}.</p>` : ''}
+    ${x.medical && x.medical.level !== 'note' ? `<p class="note small ${x.medical.level === 'red' ? 'down' : 'gold'}" style="margin-top:6px">🩺 ${esc(x.medical.text)}</p>` : ''}
+  </fieldset>`;
+}
+
+// ---- Private workouts
+//
+// A prospect comes in, works out and takes three questions. He answers in
+// his own words, then our staff adds what they saw. His true ceiling (and
+// every rating's ceiling) is revealed once the interview is done.
+
+const INTERVIEW_QS = 3;
+const workoutSlots = () => (state.params.workoutSlots ?? 6) * Math.max(1, state.userTeams.size);
+const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= INTERVIEW_QS;
+const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
+const myTeam = () => league().teams.find(isUserTeam);
+
+// How much a rating can still grow: its ceiling (true potential) minus today.
+function roomFor(p, k) {
+  const i = SKILL_ATTRS.indexOf(k);
+  const now = p.attributes[k][0];
+  const top = i >= 0 ? Math.max(now, projectedCeiling(p, p.pot)[i]) : Math.max(now, p.attributes[k][1]);
+  return top - now;
+}
+const GROWTH = {
+  LAY: 'finishing', DNK: 'explosiveness at the rim', INS: 'post game', MID: 'pull-up game', TPT: 'three-point shot', FTS: 'free throws',
+  DRB: 'handle', PAS: 'passing', ORE: 'work on the offensive glass', DRE: 'rebounding', STL: 'hands on defense', BLK: 'rim protection',
+  STR: 'strength', SPD: 'quickness', STM: 'conditioning', SCO: 'scoring', HT: 'frame',
+};
+const growthNote = (room, what) => room >= 4 ? `real room to grow in his ${what}.`
+  : room >= 2 ? `his ${what} should get better, but not by a lot.`
+  : `his ${what} is close to what it'll be.`;
+const scoringRoom = p => Math.max(roomFor(p, 'LAY'), roomFor(p, 'MID'), roomFor(p, 'TPT'));
+
+// The questions this prospect can be asked: the standard ones, plus his
+// scouting report's weaknesses, his motor, and the combine when it matters.
+function workoutQs(p) {
+  const r = scoutingReport(p, league(), scoutPot(p), state.data.seasonLeagues);
+  const qs = r.weaknesses.map(w => ({ k: `w:${w.k}`, q: `Scouts say "${w.text.charAt(0).toLowerCase() + w.text.slice(1)}." What's your answer?` }));
+  const peers = league().teams.flatMap(t => t.roster).filter(x => Math.abs(x.pos - p.pos) <= 1);
+  const stm = peers.length ? peers.reduce((a, x) => a + x.attributes.STM[0], 0) / peers.length : 14;
+  if (!qs.some(x => x.k === 'w:STM') && p.attributes.STM[0] < stm - 1.5) qs.push({ k: 'motor', q: 'Some teams question your motor. What do you say to that?' });
+  if (combineOn()) {
+    const x = combineData().byId.get(p.id);
+    if (x?.skip) qs.push({ k: 'skip', q: 'Why didn\'t you test at the combine?' });
+    else if (x && x.bonus < -0.25) qs.push({ k: 'combine', q: 'The combine numbers weren\'t great. What did they get wrong?' });
+  }
+  if (r.strengths.length) qs.push({ k: 'best', q: 'What\'s the best part of your game?' });
+  return [...qs,
+    { k: 'body', q: 'How\'s the body holding up?' },
+    { k: 'ready', q: 'Are you ready to play right away, or do you need time?' },
+    { k: 'fit', q: 'How do you see yourself fitting with us?' },
+    { k: 'future', q: 'Where do you see yourself in five years?' },
+    { k: 'model', q: 'Who do you model your game after?' },
+  ];
+}
+const OLD_Q = { work: 'What do you need to work on?' };
+const qText = (p, k) => workoutQs(p).find(x => x.k === k)?.q || OLD_Q[k] || '';
+
+// { quote: his words, staff: what our people think }.
+function workoutAnswer(p, k) {
+  const r = () => scoutingReport(p, league(), p.pot, state.data.seasonLeagues);
+  if (k === 'body') {
+    const m = medicalFlag(p);
+    if (!m) return { quote: vary2(p, 1, ['I feel great. Haven\'t missed time and I don\'t plan to.', 'Never been healthier. I take care of my body.']), staff: 'Doctors: clean bill of health.' };
+    const last = m.major || m.list[m.list.length - 1];
+    const part = (injuryName(last).split(' ').pop() || 'injury').replace(/^([A-Z]{2,})$/, '$1');
+    const quote = m.level === 'red' ? `The ${part.length <= 3 ? part : part.toLowerCase()} was the hardest thing I've been through. I'm stronger for it, and I'm 100% now.`
+      : m.level === 'yellow' ? `The ${part.toLowerCase()} acts up sometimes, but I play through it. It's not a concern.` : 'Nothing serious. A little thing here and there, like everybody.';
+    return { quote, staff: `Doctors: ${m.list.map(i => `${injuryName(i)} (${i.yr}, ${i.gamesOut} games)`).join('; ')}. ${m.level === 'red' ? 'They flag it.' : m.level === 'yellow' ? 'Worth watching.' : 'Nothing to worry about.'}` };
+  }
+  if (k === 'work') {
+    const w = r().weaknesses;
+    return { quote: w.length ? `Honestly? ${w.map(x => x.text.toLowerCase()).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '' };
+  }
+  if (k === 'motor') {
+    return { quote: vary2(p, 2, ['People who say that haven\'t watched me in the fourth quarter. But yeah, my conditioning is my summer focus.', 'That\'s fair. I\'m getting in the best shape of my life this summer.']),
+      staff: `Trainers: ${growthNote(roomFor(p, 'STM'), 'conditioning')}` };
+  }
+  if (k.startsWith('w:')) {
+    const a = k.slice(2);
+    if (a === 'HT') return { quote: 'I\'ve been the smaller guy my whole life. I play bigger than I measure.', staff: roomFor(p, 'STR') >= 3 ? 'Strength staff: he can add the weight to hold up.' : 'Strength staff: not sure his frame fills out.' };
+    const what = GROWTH[a] || 'game';
+    const room = a === 'SCO' ? scoringRoom(p) : roomFor(p, a);
+    return { quote: vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
+      staff: `Coaches: ${growthNote(room, what)}` };
+  }
+  if (k === 'best') {
+    const st = r().strengths[0];
+    const what = GROWTH[st?.k] || 'game';
+    return { quote: `My ${what}. ${vary2(p, 3, ['Nobody in this class does it better.', 'That translates on day one.', 'That\'s what I hang my hat on.'])}`,
+      staff: st?.k && SKILL_ATTRS.includes(st.k) || PHYSICAL.includes(st?.k) ? `Coaches: ${roomFor(p, st.k) >= 3 ? `it's already good and there's more coming.` : `it's about as good as it gets already.`}` : '' };
+  }
+  if (k === 'ready') {
+    const t = myTeam();
+    const slot = t ? rosterSlot(t.roster, rookieLine(p, state.params.recoveryBands), p.pos).rank : 99;
+    return { quote: p.age >= 22 ? 'I\'m ready now. I\'ve played a lot of college basketball.' : vary2(p, 4, ['I\'m ready now. Throw me out there.', 'Whatever the team needs. If I have to earn it, I\'ll earn it.']),
+      staff: slot <= 8 ? 'Coaches: he could crack our rotation as a rookie.' : slot <= 11 ? 'Coaches: bench minutes early, more in year two.' : 'Coaches: he\'s a year or two away from real minutes for us.' };
+  }
+  if (k === 'fit') {
+    const t = myTeam();
+    const fills = t ? fillsFor(t, p) : [];
+    return fills.length
+      ? { quote: `You need ${fills[0].label.toLowerCase().replace(' · ', ' who bring ')}. That's exactly what I do.`, staff: `Front office: he fills ${fills.map(n => n.label).join(' and ')}.` }
+      : { quote: 'I\'ll do whatever you need. I just want to win.', staff: 'Front office: he doesn\'t fill one of our needs on paper.' };
+  }
+  if (k === 'skip') {
+    const x = combineData().byId.get(p.id);
+    const med = x?.skip?.startsWith('Medical');
+    return { quote: med ? 'I wanted to be all the way back before I tested. I didn\'t want to rush it.' : 'My agent and I felt the tape speaks for itself. I wanted to show teams in person.',
+      staff: `Trainers: ${growthNote(Math.max(roomFor(p, 'SPD'), roomFor(p, 'STR')), 'athleticism')}` };
+  }
+  if (k === 'combine') {
+    return { quote: vary2(p, 5, ['Drills aren\'t basketball. Put on the tape.', 'I had a bad day. I\'m not a 40-yard-dash guy, I\'m a hooper.']),
+      staff: `Trainers: ${growthNote(Math.max(roomFor(p, 'SPD'), roomFor(p, 'STR')), 'athleticism')}` };
+  }
+  if (k === 'future') {
+    const reg = p.regressionAge || 30;
+    return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a really good team.']),
+      staff: `Trainers: ${reg >= 33 ? 'built to last, holding his peak into his mid-30s.' : reg >= 31 ? 'takes care of his body, should hold his peak into his early 30s.' : reg >= 29 ? 'a normal arc, holding his peak until about 30.' : 'peaks early, decline could start in his late 20s.'}` };
+  }
+  const c = compsFor(p).ceiling[0];
+  return { quote: c ? `${c.name}. I watch all his film.` : 'Nobody. I want to be the first me.', staff: c ? `Scouts: the ${c.tier} comparison is fair if it all comes together.` : '' };
+}
+const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote">"${esc(a.quote)}"</span>${a.staff ? `<br><span class="muted">${esc(a.staff)}</span>` : ''}`;
+
+function workoutResult(p) {
+  if (!workoutDone(p.id)) return `<span class="muted">Workout in progress: the full read comes after the interview.</span>`;
+  const before = scoutedPot(p, saveSalt(), state.params.scoutVariance);
+  const t = tierFor(p.pot);
+  if (before === p.pot) return `Our scouts had him right: ${t} ceiling. Every rating's ceiling is now on his page.`;
+  return before < p.pot ? `<span class="up">Better than we thought: ${t} ceiling (we had ${tierFor(before)}).</span>`
+    : `<span class="down">Not what we hoped: ${t} ceiling (we had ${tierFor(before)}).</span>`;
+}
+
+function workoutBox(p) {
+  const w = preStore().workouts[p.id];
+  if (!w) return '';
+  return `<fieldset class="frame"><legend>Private Workout${workoutDone(p.id) ? ' ✓' : ''}</legend>
+    <p class="note small">${workoutResult(p)}</p>
+    ${w.qs.map(k => `<p class="note small wk-a" style="margin-top:6px"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}
+  </fieldset>`;
+}
+
+screens.workouts = (args) => {
+  const L = league();
+  const pre = preStore();
+  const ids = Object.keys(pre.workouts).map(Number);
+  const byId = new Map(L.draftClass.map(p => [p.id, p]));
+  const cap = workoutSlots();
+  const left = cap - ids.length;
+  const inGym = ids.map(id => byId.get(id)).filter(Boolean).map(p => {
+    const w = pre.workouts[p.id];
+    const more = INTERVIEW_QS - w.qs.length;
+    return `<div class="workout">
+      <div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>
+      <p class="note small">${workoutResult(p)}</p>
+      ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}
+      ${more > 0 ? workoutQs(p).filter(x => !w.qs.includes(x.k)).map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('') : ''}
+      ${more > 0 ? `<p class="note muted small">${more} question${more > 1 ? 's' : ''} left.</p>` : ''}
+    </div>`;
+  }).join('');
+  const pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
+  const shown = args.all ? pool : pool.slice(0, 40);
+  layout({
+    title: 'Private Workouts',
+    body: `<p class="note small">Bring prospects in to work out and ask them ${INTERVIEW_QS} questions. After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
+      ${inGym ? `<fieldset class="frame"><legend>In the Gym</legend><div class="stack">${inGym}</div></fieldset>` : ''}
+      <fieldset class="frame"><legend>Invite</legend>
+        <p class="note muted small" style="margin-bottom:6px">Your board first, then the rest of the class.</p>
+        <div class="stack">${shown.map(p => `<div class="drill-row">
+          <span class="grow"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b> ${valueChip(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)} · ${heightStr(p.ht)}</span></span>
+          <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`).join('')}</div>
+        ${!args.all && pool.length > 40 ? `<button class="btn small" data-act="workoutAll" style="margin-top:8px">Show all ${pool.length}</button>` : ''}
+      </fieldset>`,
+    action: isStep('workouts') ? { act: 'preAdvance', label: 'Advance to the Draft', k: 'workouts' } : null,
+  });
+};
+actions.invite = d => {
+  const pre = preStore();
+  if (Object.keys(pre.workouts).length >= workoutSlots()) return;
+  pre.workouts[+d.id] = { qs: [] };
+  savePre();
+  render();
+};
+actions.askQ = d => {
+  const w = preStore().workouts[+d.id];
+  if (!w || w.qs.length >= INTERVIEW_QS || w.qs.includes(d.k)) return;
+  w.qs.push(d.k);
+  savePre();
+  if (w.qs.length >= INTERVIEW_QS) {
+    state.compCache = {};
+    const p = league().draftClass.find(x => x.id === +d.id);
+    if (p) toast(`Workout done: ${playerName(p)}`, 'His ceiling and every rating\'s ceiling are on his page.');
+  }
+  render();
+};
+actions.workoutAll = () => replace('workouts', { all: true });
+
 // College class from years already played (Hoop Land's `yrs`).
 const classYear = p => ['Fr', 'So', 'Jr', 'Sr'][Math.max(0, Math.min(3, p.yrs ?? (p.age - 18)))];
 
-// First-round mock from the real order, using every team's own picks logic.
-function mock30() {
-  const ds = draftState();
-  const order = (actualDraftOrder(league()) || draftOrder(league(), null, 1)).filter(o => o.rd === 1);
-  const sig = order.map(o => o.owner.id).join(',');
-  if (!ds.mock30 || ds.mock30.sig !== sig) {
-    const rng = mulberry32(ds.mockSeed ||= Math.floor(Math.random() * 1e9));
-    const taken = new Set();
-    const picks = order.map(o => {
-      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng, 0.75);
-      if (p) taken.add(p.id);
-      return { overall: o.overall, tid: o.owner.id, pid: p?.id };
-    });
-    ds.mock30 = { sig, picks };
-  }
-  return ds.mock30.picks;
-}
-actions.mockRerun = () => { const ds = draftState(); ds.mockSeed = Math.floor(Math.random() * 1e9); ds.mock30 = null; render(); };
 
 // Front Office: your trade block, offers from around the league, and your
 // own trades.
@@ -2513,7 +2931,6 @@ actions.officeAccept = async d => {
   liveExecute(side(team, o.get), side(o.team, o.give));
   for (const x of o.get) ds.block?.delete(x.key);
   ds.offers = null;
-  ds.mock30 = null;
   render();
 };
 
@@ -2579,23 +2996,24 @@ screens.prospect = (args) => {
       </div>
       <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
+      ${workoutBox(p)}${combineBox(p)}
       ${collegeBox(p)}
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
       ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
-        ${SKILL_ATTRS.map(k => {
-          const now = p.attributes[k][0], ceil = Math.max(now, cv[SKILL_ATTRS.indexOf(k)]);
+        ${[...SKILL_ATTRS, ...PHYSICAL].map(k => {
+          const now = p.attributes[k][0];
+          const ceil = Math.min(ATTR_MAX, Math.max(now, SKILL_ATTRS.includes(k) ? cv[SKILL_ATTRS.indexOf(k)] : p.attributes[k][1]));
+          const known = ceilKnown(p, k);
           return `<div class="rk rk2">
           <span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span>
           <span>${now}</span>
-          <span class="gold">${ceil}</span>
-          <div class="${barClass(k)}"><div class="room" style="width:${ceil / ATTR_MAX * 100}%"></div><div class="fill" style="width:${now / ATTR_MAX * 100}%"></div><div class="ceil" style="left:calc(${ceil / ATTR_MAX * 100}% - 2px)"></div></div>
+          <span class="${known ? 'gold' : 'muted'}">${known ? ceil : '?'}</span>
+          <div class="${barClass(k)}">${known ? `<div class="room" style="width:${ceil / ATTR_MAX * 100}%"></div>` : ''}<div class="fill" style="width:${now / ATTR_MAX * 100}%"></div>${known ? `<div class="ceil" style="left:calc(${ceil / ATTR_MAX * 100}% - 2px)"></div>` : ''}</div>
         </div>`;
         }).join('')}
-        ${PHYSICAL.map(k => { const [now, ceil] = p.attributes[k]; return `<div class="rk rk2"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${now}</span><span class="gold">${ceil}</span>
-          <div class="${barClass(k)}"><div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div><div class="fill" style="width:${now / ATTR_MAX * 100}%"></div><div class="ceil" style="left:calc(${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}% - 2px)"></div></div></div>`; }).join('')}
-        <p class="note muted small" style="margin-top:8px">The filled bar is today's rating; the outlined part runs to the projected ceiling (the notch). Scouting isn't perfect.</p>
+        <p class="note muted small" style="margin-top:8px">The filled bar is today's rating; the outlined part runs to the projected ceiling (the notch). <b>?</b> = not scouted yet: some ceilings come out during scouting and the combine, and a private workout shows them all.</p>
       </fieldset>`,
   });
 };
@@ -2619,14 +3037,14 @@ function draftLottery() {
     : ds.lottery;
   if (actual) return {
     html: `<fieldset class="frame"><legend>Lottery Result</legend>
-      <p class="note muted small" style="margin-bottom:8px">The lottery has been drawn in this save. The mock draft uses this order.</p>
+      <p class="note muted small" style="margin-bottom:8px">The lottery has been drawn in this save.</p>
       <div class="list">${result.map((r, i) => {
         const move = r.seed - i;
         const rr = rec.get(r.team.id);
         return `<div class="lot-row ${isUserTeam(r.team) ? 'mine' : ''}"><span class="pk">${i + 1}</span>${logoImg(r.team)}<span class="grow">${esc(r.team.shortName)} <span class="muted small">${rr.W}-${rr.L}</span></span>
           ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
       }).join('')}</div>
-      <button class="btn" data-act="draftTab" data-t="mock" style="margin-top:10px">▶ Mock Draft</button></fieldset>`,
+</fieldset>`,
   };
   return {
     html: `
@@ -2646,7 +3064,7 @@ function draftLottery() {
             ${move > 0 ? `<span class="up">▲${move}</span>` : move < 0 ? `<span class="down">▼${-move}</span>` : '<span class="muted">—</span>'}</div>`;
         }).join('')}
       </div>
-      <button class="btn" data-act="draftTab" data-t="mock" style="margin-top:10px">▶ Mock Draft With This Order</button></fieldset>` : ''}
+</fieldset>` : ''}
       <fieldset class="frame"><legend>Odds</legend>
         <div class="odds-head"><span>Seed</span><span>Team</span><span>Weight</span><span>#1</span><span>Top ${setup.format === '321' ? 4 : draws}</span></div>
         ${odds.map(r => {
@@ -2912,17 +3330,12 @@ function draftMock() {
         <button class="btn" data-act="mockSim" data-u="0" ${onClock ? '' : 'disabled'}>⏭ Sim All</button>
       </div>
       ${userOnClock ? `<button class="btn big focus" data-act="mockChoose">🎯 ${esc(onClock.owner.shortName)} on the clock: make pick #${onClock.overall}</button>` : ''}
-      <div class="list">
-        ${mock.picks.map(pk => {
-          const p = pk.pid != null ? byId.get(pk.pid) : null;
-          const traded = pk.owner.id !== pk.orig.id;
-          return `<div class="lot-row ${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}">
-            <span class="pk">${pk.overall}</span>${logoImg(pk.owner)}
-            <span class="grow">${esc(pk.owner.shortName)}${traded ? ` <span class="muted small">via ${esc(pk.orig.shortName)}</span>` : ''}${pk.rd > 1 ? ` <span class="muted small">R${pk.rd}</span>` : ''}<br>
-              ${p ? `${valueChip(p)} <span class="small">${esc(playerName(p))} · ${esc(posName(p))} · ${heightStr(p.ht)}</span><br><span class="small muted">${compLine(compsFor(p))}</span>` : `<span class="small muted">${pk === onClock ? 'On the clock' : '—'}</span>`}</span>
-          </div>`;
-        }).join('')}
-      </div>`,
+      <div class="stack recap" style="margin-top:8px">${mock.picks.map(pk => {
+        const p = pk.pid != null ? byId.get(pk.pid) : null;
+        const via = pk.owner.id !== pk.orig.id ? ` <span class="muted">via ${esc(pk.orig.shortName)}</span>` : '';
+        const rd = pk.rd > 1 ? ` <span class="muted">R${pk.rd}</span>` : '';
+        return pickCard({ overall: pk.overall, team: pk.owner, p, showLv: false, cls: `${isUserTeam(pk.owner) ? 'mine' : ''} ${pk === onClock ? 'clock' : ''}`, extra: { sub: via + rd }, empty: pk === onClock ? 'On the clock' : '—' });
+      }).join('')}</div>`,
     action: { act: 'mockReset', label: 'Reset' },
   };
 }
@@ -3019,9 +3432,9 @@ function draftLive() {
       ${state.userTeams.size ? '' : '<p class="note muted small">Select your teams to draft for them.</p>'}
       ${done ? draftRecap(live, order) : `
       ${user ? '<div class="you-clock">🚨 You are on the clock</div>' : ''}
-      <div class="clock-card ${user ? 'mine' : ''}">
+      <div class="clock-card ${user ? 'mine' : ''}" ${teamTint(o.owner) ? `style="${teamTint(o.owner)}"` : ''}>
         <span class="pk">#${o.overall}</span>${logoImg(o.owner)}
-        <span class="grow"><b>${esc(o.owner.city)} ${esc(o.owner.name)}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''}</span>
+        <span class="grow"><b>${esc(teamFull(o.owner))}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''}</span>
           <span class="needs-line">${needChips(teamOutlook(o.owner).needs)}</span></span>
       </div>
       ${user ? `<button class="btn big focus" data-act="liveChoose">🎯 Make Pick #${o.overall}</button>` : ''}
@@ -3039,7 +3452,8 @@ function draftLive() {
           const sel = live.sel[q.overall];
           const p = sel ? byId.get(sel.pid) : null;
           const moved = sel && sel.to !== sel.by;
-          return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''}" data-ov="${q.overall}">
+          const tint = p ? teamTint(teamById(sel.to) || q.owner) : '';
+          return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''} ${tint ? 'tc' : ''}" data-ov="${q.overall}" ${tint ? `style="${tint}"` : ''}>
             <span class="pk">${q.overall}</span>${logoImg(q.owner)}
             <span class="grow">${esc(q.owner.shortName)}${q.owner.id !== q.orig.id ? ` <span class="muted small">via ${esc(q.orig.shortName)}</span>` : ''}${q.rd > 1 ? ` <span class="muted small">R${q.rd}</span>` : ''}<br>
               ${p ? `<span class="pl"><span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}</span>` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
@@ -3058,34 +3472,44 @@ function tradesBox(live) {
   </div></fieldset>`;
 }
 
+// Pick card in team colors (Draft Recap look): pick no., logo, player,
+// and the rookie's projected level after the draft drop.
+const rookieLevel = p => { const line = rookieLine(p, state.params.recoveryBands); return levelOf({ pot: p.pot, attributes: Object.fromEntries(SKILL_ATTRS.map((k, i) => [k, [line[i]]])) }); };
+function pickCard({ overall, team, p, extra = {}, cls = '', empty = '—', showLv = true, right = '' }) {
+  const tint = teamTint(team);
+  const now = p && showLv ? levelOf(p) : null, rk = p && showLv ? rookieLevel(p) : null;
+  return `<div class="recap-row ${cls}" ${tint ? `style="${tint}"` : ''}>
+    <span class="pk">${overall}</span>${logoImg(team)}
+    <span class="grow">${p ? `<b>${extra.star || ''}${esc(playerName(p))}</b><br><span class="small">${esc(team.shortName)}${extra.sub || ''} · ${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span>`
+      : `<b>${esc(team.shortName)}</b>${extra.sub || ''}<br><span class="small muted">${empty}</span>`}</span>
+    ${right}${p && showLv ? `<span class="lv"><b>${rk}</b><span class="small">Lv${now !== rk ? ` <s>${now}</s>` : ''}</span></span>` : ''}
+  </div>`;
+}
+const sortToggle = (key, cur) => `<div class="opts recap-sort"><button class="btn small ${cur === 'pick' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="pick">By Pick</button><button class="btn small ${cur === 'level' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="level">Pro Readiness</button></div>`;
+// Level sort: drafted players by projected level, open picks after in order.
+const byReadiness = rows => rows.sort((a, b) => (b.lv ?? -1) - (a.lv ?? -1) || a.overall - b.overall);
+actions.cardSort = d => { draftState()[d.k] = d.s; render(); };
+
 // After the last pick: every pick with the rookie's projected level after
 // the draft dip and summer league, in team colors; sort by pick or level.
 function draftRecap(live, order) {
   const L = league();
   const byId = new Map(L.draftClass.map(p => [p.id, p]));
   const sortBy = draftState().recapSort || 'pick';
-  const lv = (p, line) => levelOf({ pot: p.pot, attributes: Object.fromEntries(SKILL_ATTRS.map((k, i) => [k, [line[i]]])) });
   const rows = order.filter(q => live.sel[q.overall]).map(q => {
     const sel = live.sel[q.overall];
     const p = byId.get(sel.pid);
-    const team = L.teams.find(t => t.id === sel.to);
-    return { q, p, team, now: levelOf(p), rookie: lv(p, rookieLine(p, state.params.recoveryBands)) };
+    return { overall: q.overall, p, team: L.teams.find(t => t.id === sel.to), lv: rookieLevel(p) };
   });
-  if (sortBy === 'level') rows.sort((a, b) => b.rookie - a.rookie || a.q.overall - b.q.overall);
-  const color = t => { const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null); return c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''; };
+  if (sortBy === 'level') byReadiness(rows);
   return `<button class="btn big focus" data-act="liveFinish">✅ Finish Draft</button>
     ${live.trades.length ? tradesBox(live) : ''}
     <fieldset class="frame"><legend>Draft Recap</legend>
-      <div class="opts recap-sort"><button class="btn small ${sortBy === 'pick' ? 'on focus' : 'off'}" data-act="recapSort" data-s="pick">By Pick</button><button class="btn small ${sortBy === 'level' ? 'on focus' : 'off'}" data-act="recapSort" data-s="level">Pro Readiness</button></div>
+      ${sortToggle('recapSort', sortBy)}
       <p class="note muted small" style="margin:6px 0 8px">Level after the draft drop and the age adjustment (older rookies get more of it back): who's most ready to play now.</p>
-      <div class="stack recap">${rows.map(r => `<div class="recap-row" ${color(r.team)}>
-        <span class="pk">${r.q.overall}</span>${logoImg(r.team)}
-        <span class="grow"><b>${esc(playerName(r.p))}</b><br><span class="small">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y · ${classYear(r.p)}</span></span>
-        <span class="lv"><b>${r.rookie}</b><span class="small">Lv${r.now !== r.rookie ? ` <s>${r.now}</s>` : ''}</span></span>
-      </div>`).join('')}</div>
+      <div class="stack recap">${rows.map(r => pickCard(r)).join('')}</div>
     </fieldset>`;
 }
-actions.recapSort = d => { draftState().recapSort = d.s; render(); };
 
 // Picks made since `before` get revealed one by one on the next render.
 const newPicks = (live, before) => Object.keys(live.sel).map(Number).filter(ov => !before.has(ov)).sort((a, b) => a - b);
@@ -3157,7 +3581,6 @@ function liveExecute(A, B, cpu = false) {
   live.trades.push({ rec, moves, text, cpu, at: Object.keys(live.sel).length });
   live.offers = {};
   draftState().offers = null;
-  draftState().mock30 = null;
   state.dirty = true;
   toast('🚨 Trade Alert', text);
 }
@@ -3165,7 +3588,6 @@ function liveExecute(A, B, cpu = false) {
 function liveUndo(t) {
   const live = liveState();
   draftState().offers = null;
-  draftState().mock30 = null;
   undoTrade(t.rec);
   for (const m of t.moves) if (live.sel[m.ov]) live.sel[m.ov].to = m.from;
 }
@@ -3724,30 +4146,162 @@ function currentStorylines() {
     .filter(m => m.mentor && m.mentee);
   const dev = p => { const snap = state.snaps.get(snapKey(p.id, li)); return snap ? diffPlayer(p, snap) : null; };
   const faSignings = state.fa[li]?.signings || [];
-  return { stories: buildStorylines(L, { leagueIdx: li, leagues: state.data.seasonLeagues, params: state.params, dev, mentorships, faSignings }), players };
+  // Your press conference headlines (and last year's promises) always run,
+  // on top of the league's top 10.
+  const pr = presserStore();
+  const podium = [
+    ...promiseStories(L, loadPromises()),
+    ...L.teams.filter(isUserTeam).flatMap(t => presserStories(L, t, pr[t.id], li)),
+  ];
+  return { stories: buildStorylines(L, { leagueIdx: li, leagues: state.data.seasonLeagues, params: state.params, dev, mentorships, faSignings }), players, podium };
 }
 
-function storylinesText(stories) {
+function storylinesText(stories, podium = []) {
   const L = league();
   return `${L.shortName || L.leagueName} ${L.season.currentYear} · Top storylines\n\n` +
+    (podium.length ? `From the podium\n\n${podium.map(s => `${s.icon} ${s.title}\n${s.text}`).join('\n\n')}\n\n` : '') +
     stories.map((s, i) => `${i + 1}. ${s.icon} ${s.title}\n${s.text}`).join('\n\n');
 }
 
+// ---------------------------------------------------------------------------
+// GM Survey (before Media Day). Results are fixed per save + season, and each
+// season's top answers are kept so next year can show "Last year".
+
+function surveyNow() {
+  const key = `${seasonKey()}:${state.leagueIdx}`;
+  const c = (state.survey ||= {});
+  if (!c[key]) c[key] = runSurvey(league(), state.leagueIdx, saveSalt());
+  return c[key];
+}
+const surveyHistKey = () => `hlc:survey:${league().shortName}:${league().meta?.saveName || ''}`;
+function surveyHist() { try { return JSON.parse(localStorage.getItem(surveyHistKey())) || {}; } catch { return {}; } }
+function saveSurveyHist(S) {
+  const h = surveyHist();
+  h[S.year] = Object.fromEntries(S.questions.filter(q => q.results[0]).map(q => [q.id, { name: q.results[0].name, team: q.results[0].team, pct: q.results[0].pct }]));
+  try { localStorage.setItem(surveyHistKey(), JSON.stringify(h)); } catch { /* ignore */ }
+}
+const SURVEY_TABS = ['Predictions', 'Players', 'Offseason', 'Rookies', 'International', 'Defense', 'Coaches', 'Miscellaneous'];
+const SURVEY_LABEL = { Predictions: 'Predictions', Players: 'Players', Offseason: 'Offseason', Rookies: 'Rookies', International: 'Intl', Defense: 'Defense', Coaches: 'Coaches', Miscellaneous: 'Misc' };
+
+function surveyRows(results, n = 5) {
+  return `<div class="sv-rows">${results.slice(0, n).map((r, i) => {
+    const t = league().teams.find(x => x.id === r.tid);
+    const tint = t ? teamTint(t) : '';
+    const name = r.kind === 'player' && r.tid >= 0 ? `<button class="linkish" data-act="openPlayer" data-id="${r.pid}">${esc(r.name)}</button>` : `<b>${esc(r.name)}</b>`;
+    return `<div class="sv-row ${t && isUserTeam(t) ? 'mine' : ''}" ${tint ? `style="${tint}"` : ''}>
+      <span class="sv-n">${i + 1}</span>${t ? logoImg(t) : ''}
+      <span class="grow">${name}${r.coachTeam ? ` <span class="small muted">${esc(r.coachTeam)}</span>` : ''}${r.kind === 'player' ? ` <span class="small muted">${esc(r.team)}${r.country ? ` · ${esc(r.country)}` : ''}${r.pick ? ` · #${r.pick} pick` : ''}</span>` : ''}
+        <span class="sv-bar"><span style="width:${Math.max(2, r.pct)}%"></span></span></span>
+      <b class="sv-pct">${r.pct}%</b></div>`;
+  }).join('') || '<p class="note muted small">No candidates this year.</p>'}</div>`;
+}
+
+screens.survey = (args) => {
+  const S = surveyNow();
+  const hist = surveyHist()[S.year - 1] || {};
+  const tabs = SURVEY_TABS.filter(t => S.questions.some(q => q.section === t));
+  const tab = tabs.includes(args.tab) ? args.tab : tabs[0];
+  const qs = S.questions.filter(q => q.section === tab);
+  const last = q => hist[q.id] ? `<p class="note small muted sv-last">Last year: <b>${esc(hist[q.id].name)}</b>${hist[q.id].team && !hist[q.id].name.includes(hist[q.id].team) ? ` (${esc(hist[q.id].team)})` : ''} · ${hist[q.id].pct}%</p>` : '';
+  const card = q => `<fieldset class="frame sv-q"><legend>${esc(consensus(q.results))}</legend>
+      <p class="note"><b>${esc(q.title)}</b></p>${surveyRows(q.results)}${last(q)}</fieldset>`;
+  let body = qs.map(card).join('');
+  if (tab === 'Predictions') {
+    const seedCards = S.seeds.map(c => `<fieldset class="frame sv-q"><legend>Top 4 · ${esc(c.conf)}</legend>
+      <p class="note"><b>How will the ${esc(c.conf)} seeds finish?</b></p>
+      ${c.seeds.map((list, i) => `<p class="note small sv-seed">No. ${i + 1} seed</p>${surveyRows(list, 3)}`).join('')}</fieldset>`).join('');
+    body = card(qs[0]) + seedCards + qs.slice(1).map(card).join('');
+  }
+  if (tab === 'Players') {
+    body += `<fieldset class="frame sv-q"><legend>Most Votes Overall</legend>
+      <p class="note small muted">Share of every vote cast in the player questions.</p>${surveyRows(S.topVoted)}</fieldset>`;
+  }
+  if (tab === tabs[tabs.length - 1]) body += '<p class="note muted small center" style="margin:10px 0">That\'s all from this year\'s survey.</p>';
+  layout({
+    title: 'GM Survey',
+    body: `<p class="note small">All ${S.gms} general managers answered. GMs can't vote for their own team or players.</p>
+      <div class="tabs sv-tabs">${tabs.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="surveyTab" data-t="${t}">${SURVEY_LABEL[t]}</button>`).join('')}</div>
+      ${body}`,
+    action: isStep('survey') ? { act: 'surveyDone', label: 'Wrap Up the Survey' } : null,
+  });
+};
+actions.surveyTab = d => replace('survey', { tab: d.t });
+actions.surveyDone = () => { saveSurveyHist(surveyNow()); calFlags().survey = true; goHome(); toast('Next up: Media Day'); };
+
+// Press conference answers (per season) and promises (kept across seasons).
+function presserStore() {
+  try { return JSON.parse(localStorage.getItem(`hlc:presser:${seasonKey()}`)) || {}; } catch { return {}; }
+}
+function savePresser(v) { try { localStorage.setItem(`hlc:presser:${seasonKey()}`, JSON.stringify(v)); } catch { /* ignore */ } }
+const promisesKey = () => `hlc:promises:${league().shortName}:${league().meta?.saveName || ''}`;
+function loadPromises() { try { return JSON.parse(localStorage.getItem(promisesKey())) || []; } catch { return []; } }
+function savePromises(v) { try { localStorage.setItem(promisesKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+
+function presserCard() {
+  const L = league();
+  const mine = L.teams.filter(isUserTeam);
+  if (!mine.length) return '';
+  const pr = presserStore();
+  return mine.map(t => {
+    const qs = presserQuestions(L, t, state.leagueIdx);
+    const ans = pr[t.id] || {};
+    const tint = teamTint(t);
+    return `<fieldset class="frame presser"><legend>🎙️ Press Conference</legend>
+      <div class="outlook" ${tint ? `style="${tint}"` : ''}><div class="outlook-top ${tint ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b></div>
+      <div class="stack">${qs.map(q => `<div class="pq">
+        <p class="note small"><b>${esc(q.q)}</b></p>
+        <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}">${esc(o.label)}</button>`).join('')}</div>
+      </div>`).join('')}</div></div>
+      <p class="note muted small" style="margin-top:6px">Your answers run under From the Podium. Promises get remembered next Media Day.</p>
+    </fieldset>`;
+  }).join('');
+}
+actions.presserAnswer = d => {
+  const pr = presserStore();
+  (pr[d.tid] ||= {})[d.k] = d.v;
+  savePresser(pr);
+  if (d.k === 'contract' && d.pid) {
+    const yr = league().season.currentYear;
+    const list = loadPromises().filter(x => !(x.yr === yr && x.tid === +d.tid));
+    list.push({ yr, tid: +d.tid, pid: +d.pid, v: d.v });
+    savePromises(list);
+  }
+  render();
+};
+
+function leagueGramCard() {
+  const posts = leagueGram(league(), isUserTeam, state.leagueIdx);
+  if (!posts.length) return '';
+  return `<h2 class="team-title">Trending on Hoop Gram</h2>
+    <div class="stack">${posts.map(x => `<div class="hg-post">
+      <div class="hg-head"><span class="hg-avatar">HG</span><b>${esc(x.handle)}</b><span class="hg-tag">${esc(x.tag)}</span></div>
+      <p class="hg-text">${esc(x.text)}</p>
+      <div class="hg-foot"><span>❤️ ${x.likes.toLocaleString()}</span><span class="muted">${esc(x.team.shortName)}</span></div>
+    </div>`).join('')}</div>`;
+}
+
 screens.storylines = () => {
-  const { stories, players } = currentStorylines();
+  const { stories, players, podium } = currentStorylines();
   const L = league();
   layout({
     title: 'Media Day',
     body: `
       <img class="hero" src="icons/hero-media.jpg" alt="">
       ${jerseyCard()}
+      ${presserCard()}
+      ${podium.length ? `<h2 class="team-title">From the Podium</h2><ol class="stories">${podium.map(s => `
+        <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
+          <span class="story-n">${s.icon}</span>
+          <div><b>${esc(s.title)}</b><p class="note small">${esc(s.text)}</p></div>
+        </li>`).join('')}</ol>` : ''}
       <h2 class="team-title">Season Preview</h2>
       ${stories.length ? `<ol class="stories">${stories.map((s, i) => `
         <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
           <span class="story-n">${i + 1}</span>
           <div><b>${s.icon} ${esc(s.title)}</b><p class="note small">${esc(s.text)}</p></div>
         </li>`).join('')}</ol>` : '<p class="note">Nothing to report yet.</p>'}
-      <div class="stack">
+      ${leagueGramCard()}
+      <div class="stack" style="margin-top:12px">
         <button class="btn" data-act="copyStories">📋 Copy as Text</button>
         ${isStep('media') ? '<button class="btn big focus" data-act="mediaDone">✅ Wrap Up Media Day</button>' : ''}
       </div>`,
@@ -3757,7 +4311,7 @@ screens.storylines = () => {
 actions.mediaDone = () => { calFlags().media = true; goHome(); toast('Next up: Opening Night'); };
 
 actions.copyStories = async () => {
-  const text = storylinesText(currentStorylines().stories);
+  const text = storylinesText(currentStorylines().stories, currentStorylines().podium);
   try {
     if (!inArtifact() && navigator.share && /iPhone|iPad|Android/i.test(navigator.userAgent)) await navigator.share({ text });
     else { await navigator.clipboard.writeText(text); toast('Storylines copied'); }
@@ -3869,7 +4423,7 @@ actions.dbxUpload = async () => {
 };
 
 actions.dbxUploadStories = async () => {
-  const text = storylinesText(currentStorylines().stories);
+  const text = storylinesText(currentStorylines().stories, currentStorylines().podium);
   await dbxSend(new Blob([text], { type: 'text/plain' }), `${state.fileName} storylines ${league().season.currentYear}.txt`, 'storylines');
 };
 
