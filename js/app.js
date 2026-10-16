@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.1';
+const APP_VERSION = '0.29.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2585,11 +2585,13 @@ function lotteryResultView() {
   const pre = setup.table.map(r => r.team);
   const rec = new Map(setup.table.map(r => [r.team.id, r]));
   const order = (actualDraftOrder(L) || []).filter(o => o.rd === 1).slice(0, setup.lotteryTeams.length);
-  // While revealing: every lottery team in a little box in record order
-  // (worst first, numbered by seed); each fades out as its pick comes in, so
-  // a team from the middle jumping up stands out.
-  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">By<br>record</span>${setup.lotteryTeams
-    .map((t, seed) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}"><small>${seed + 1}</small>${esc(t.shortName)}</span>`).join('')}</div>` : '';
+  // While revealing: every lottery team in a little box with its odds at #1,
+  // best odds first. As picks come in, placed teams dim (showing their pick)
+  // and the odds of the teams still waiting update.
+  const totalW = setup.odds.slice(0, setup.lotteryTeams.length).reduce((a, w) => a + (w || 0), 0) || 1;
+  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">Odds at #1</span><div class="lot-chips">${setup.lotteryTeams
+    .map((t, seed) => ({ t, seed, w: setup.odds[seed] ?? 0 })).sort((a, b) => b.w - a.w || a.seed - b.seed)
+    .map(({ t, w }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}" data-w="${w}"><b>${esc(t.shortName)}</b><span class="pct">${(w / totalW * 100).toFixed(1)}%</span></span>`).join('')}</div></div>` : '';
   layout({
     title: 'Draft Lottery',
     body: `${tray}<div class="list lot-result">${order.map((o, i) => {
@@ -2602,6 +2604,20 @@ function lotteryResultView() {
       <button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button>`,
   });
   if (state.lotteryReveal) { state.lotteryReveal = false; revealLottery(); }
+}
+
+// A team's pick is in: dim its box (showing the pick) and recompute the
+// #1 odds of the teams still waiting from their lottery weights.
+function updateTray(tid, pick) {
+  const chip = $app.querySelector(`.lot-chip[data-tid="${tid}"]`);
+  if (chip) { chip.classList.add('out'); chip.querySelector('.pct').textContent = `#${pick}`; }
+  const left = [...$app.querySelectorAll('.lot-chip:not(.out)')];
+  const total = left.reduce((a, c) => a + +c.dataset.w, 0) || 1;
+  for (const c of left) {
+    const el = c.querySelector('.pct');
+    const next = `${(+c.dataset.w / total * 100).toFixed(1)}%`;
+    if (el.textContent !== next) { el.textContent = next; c.classList.remove('flash'); void c.offsetWidth; c.classList.add('flash'); }
+  }
 }
 
 // Lottery reveal: the last lottery pick is announced first, then each pick
@@ -2634,13 +2650,14 @@ async function revealLottery() {
       row.classList.remove('tease');
     }
     row.classList.add('shown');
-    $app.querySelector(`.lot-chip[data-tid="${row.dataset.tid}"]`)?.classList.add('out');
+    updateTray(row.dataset.tid, pick);
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
     await wait(big ? 1300 : 1600);
   }
   list.classList.remove('revealing');
   skip.remove();
-  $app.querySelector('.lot-tray')?.classList.add('gone');
+  const tray = $app.querySelector('.lot-tray');
+  if (tray) { tray.classList.add('gone'); setTimeout(() => tray.remove(), 600); }
   if (done) done.style.display = '';
   const top = rows[0];
   if (top) {

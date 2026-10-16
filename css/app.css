@@ -816,15 +816,21 @@ details.dbx[open] summary { margin-bottom: 8px; }
   100% { transform: none; box-shadow: 0 0 0 26px rgba(255, 220, 120, 0); }
 }
 
-/* Lottery reveal: teams still waiting, best odds first */
-.lot-tray { position: sticky; top: 6px; z-index: 5; display: flex; flex-wrap: nowrap; align-items: center; overflow-x: auto; gap: 5px; padding: 8px; margin-bottom: 8px; scrollbar-width: none; background: rgba(6, 38, 88, .92); border: 3px solid var(--btn-edge); transition: opacity .5s; }
-.lot-chip { min-width: 36px; padding: 2px 4px; text-align: center; font-size: 11px; font-weight: 800; background: var(--btn); border: 2px solid var(--gold); transition: opacity .5s, transform .5s, filter .5s; }
-.lot-chip.mine { border-color: var(--cyan); color: var(--cyan); }
-.lot-chip.out { opacity: .2; transform: scale(.85); filter: grayscale(1); }
+/* Lottery reveal: every team's odds at #1, best first; all visible */
+.lot-tray { position: sticky; top: 6px; z-index: 5; padding: 6px 8px 8px; margin-bottom: 8px; background: rgba(6, 38, 88, .94); border: 3px solid var(--btn-edge); transition: opacity .5s; }
+.lot-tray-label { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--cyan); }
+.lot-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; }
+.lot-chip { display: flex; flex-direction: column; align-items: center; padding: 2px 2px 3px; line-height: 1.15; background: var(--btn); border: 2px solid var(--gold); transition: opacity .5s, filter .5s; }
+.lot-chip b { font-size: 11px; }
+.lot-chip .pct { font-size: 11px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
+.lot-chip.mine { border-color: var(--cyan); }
+.lot-chip.mine b { color: var(--cyan); }
+.lot-chip.out { opacity: .35; filter: grayscale(1); border-color: var(--btn-edge); }
+.lot-chip.out .pct { color: #fff; }
+.lot-chip.flash .pct { animation: pctFlash .6s ease-out; }
+@keyframes pctFlash { 0% { color: #5bff8a; transform: scale(1.25); } 100% { transform: none; } }
 .lot-tray.gone { opacity: 0; pointer-events: none; }
 
-.lot-tray-label { flex: none; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--cyan); margin-right: 2px; white-space: nowrap; }
-.lot-chip { flex: none; }
 
 /* Draft pick reveal */
 .lot-row.pending .pl { visibility: hidden; }
@@ -834,4 +840,3 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .lot-row.picked { animation: bigIn .6s ease-out; }
 @keyframes plIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
 .pick-skip { position: fixed; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 40; }
-.lot-chip small { display: block; font-size: 9px; opacity: .7; line-height: 1; }
