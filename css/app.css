@@ -22,6 +22,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body { margin: 0; height: 100%; }
+html { background: var(--bg); }
 
 body {
   font-family: var(--font);
@@ -554,7 +555,7 @@ fieldset.frame > legend {
 /* Scrolling Hoop Land tiles behind everything, reaching past every edge
    (status bar and home indicator included) so no gap ever shows. */
 body::before {
-  content: ""; position: fixed; inset: -480px -480px -480px -480px; z-index: -1; pointer-events: none;
+  content: ""; position: fixed; inset: -480px -480px -1200px -480px; z-index: -1; pointer-events: none;
   background: var(--bg) url("../icons/bg-tile.jpg") 0 0 / 300px 200px repeat;
   image-rendering: pixelated;
   animation: bg-scroll 26s linear infinite;
