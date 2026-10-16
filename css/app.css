@@ -989,3 +989,14 @@ details.dbx[open] summary { margin-bottom: 8px; }
 
 /* No double-tap zoom (pinch still works). */
 html, body, button, a, input, select, label { touch-action: manipulation; }
+
+/* Rating bars: this offseason's gain is a lighter, glowing shade of the
+   category color (no stripes), and faint marks at 5, 14 and 18 of 20 show
+   where each rating costs more to raise. */
+.bar .gain { z-index: 1; background: linear-gradient(180deg, color-mix(in srgb, var(--bc) 45%, #fff), color-mix(in srgb, var(--bc) 70%, #fff)); box-shadow: inset 1px 0 0 #0b2f6b88, 0 0 6px color-mix(in srgb, var(--bc) 70%, transparent); }
+.bar[class*="c-"]::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(#0b2f6b, #0b2f6b) calc(25% - 0.5px) 0 / 1px 100% no-repeat,
+    linear-gradient(#0b2f6b, #0b2f6b) calc(70% - 0.5px) 0 / 1px 100% no-repeat,
+    linear-gradient(#0b2f6b, #0b2f6b) calc(90% - 0.5px) 0 / 1px 100% no-repeat;
+  opacity: .55; }
