@@ -986,3 +986,6 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .clock-card .needs-line { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 3px; height: 46px; }
 .clock-card .needs-line .badge { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .clock-card .grow > br { display: none; }
+
+/* No double-tap zoom (pinch still works). */
+html, body, button, a, input, select, label { touch-action: manipulation; }

@@ -11,6 +11,22 @@ const place = t => t.city || `the ${t.name}`;
 const Place = t => { const x = place(t); return x[0].toUpperCase() + x.slice(1); };
 const full = t => `${t.city} ${t.name}`.trim();
 
+// League-wide context for "is the star getting help?": each team's
+// supporting cast (its 2nd-5th best players) and projected strength.
+const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
+const ctxCache = new WeakMap();
+function leagueCtx(league) {
+  if (ctxCache.has(league)) return ctxCache.get(league);
+  const lv = t => [...t.roster].map(levelOf).sort((a, b) => b - a);
+  const support = new Map(league.teams.map(t => { const l = lv(t).slice(1, 5); return [t.id, l.reduce((a, b) => a + b, 0) / (l.length || 1)]; }));
+  const proj = new Map(league.teams.map(t => [t.id, lv(t).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0)]));
+  const order = [...league.teams].sort((a, b) => proj.get(b.id) - proj.get(a.id)).map(t => t.id);
+  const sup = [...support.values()].sort((a, b) => a - b);
+  const ctx = { support, projRank: new Map(order.map((id, i) => [id, i + 1])), supportMedian: sup[Math.floor(sup.length / 2)] || 0 };
+  ctxCache.set(league, ctx);
+  return ctx;
+}
+
 // What the team looks like going into the season.
 export function teamSituation(league, team, li = 0) {
   const yr = Math.max(...league.teams.map(t => teamRecord(t).yr || 0));
@@ -29,11 +45,21 @@ export function teamSituation(league, team, li = 0) {
   const tradedFirsts = league.teams.filter(t => t !== team)
     .flatMap(t => t.draftPicks.filter(pk => pk.rd === 1 && pk.yr > cur && pk.otid === team.id)).length;
   const status = teamStatus(league, team);
+  // Last playoffs: knocked out badly (swept or one win in the series they lost).
+  const row = (team.season || []).find(s => s.yr === yr);
+  const round = row?.round || 0, seriesWins = row?.seriesWins || 0;
+  const champ = round === 4 && seriesWins === 4;
+  const lostBadly = round >= 1 && !champ && seriesWins <= 1;
+  const ctx = leagueCtx(league);
+  // No help only when the cast around the star is thin, not when the team is
+  // still projected near the top without adding anyone.
+  const thinCast = ctx.support.get(team.id) < ctx.supportMedian - 1 && ctx.projRank.get(team.id) > 8;
   let mood = 'normal';
   if (arrivals.length >= 2 || tradedFirsts >= 2) mood = 'allin';
-  else if (star && !arrivals.length && status !== 'rebuilding') mood = 'unsupported';
+  else if (!arrivals.length && lostBadly && status !== 'rebuilding') mood = 'passive';
+  else if (star && !arrivals.length && thinCast && status !== 'rebuilding') mood = 'unsupported';
   else if (status === 'rebuilding' && !arrivals.length) mood = 'quiet';
-  return { star, arrivals, departures, tradedFirsts, status, mood, gs };
+  return { star, arrivals, departures, tradedFirsts, status, mood, gs, round, seriesWins, lostBadly };
 }
 
 const yrsLeft = p => p.contract?.yrs ?? 0;
@@ -81,6 +107,7 @@ export function presserQuestions(league, team, li = 0) {
   const s = sit.star ? playerName(sit.star) : null;
   const q = {
     unsupported: `${s} carried this team last year, and you didn't add anyone. Is the front office doing enough for him?`,
+    passive: `After ${sit.seriesWins === 0 ? 'getting swept' : 'that playoff exit'}, you stood pat this summer. Is internal development enough, or is the front office being passive?`,
     allin: sit.tradedFirsts >= 2 ? 'You traded away a lot of the future this summer. Is it title or bust?' : 'Big summer: a lot of new faces. Is it title or bust this year?',
     quiet: 'A quiet summer for a rebuilding team. Fans want to know: what\'s the plan?',
     normal: 'How do you grade your offseason?',
@@ -127,6 +154,11 @@ export function presserStories(league, team, answers, li = 0) {
           believe: [`Content in ${place(team)}?`, `"We believe in this group." With ${sn} in his prime and no help added, not everyone in ${place(team)} agrees.`],
           notdone: [`${Place(team)} hints at more`, `"We're not done." The clock is on to get ${sn} some help before the deadline.`],
           longterm: [`Is ${place(team)} wasting ${s ? `${s.fn}'s` : 'its'} prime?`, `"It's about the long term," said the front office. ${sn} may not want to wait.`],
+        },
+        passive: {
+          believe: [`${Place(team)} bets on internal growth`, `"We believe in this group." After ${sit.seriesWins === 0 ? 'a sweep' : 'that playoff exit'}, the plan is development, not new faces.`],
+          notdone: [`${Place(team)} promises more after playoff flop`, `"We're not done." Fans in ${place(team)} will hold them to it after a quiet summer.`],
+          longterm: [`Patient or passive in ${place(team)}?`, `"It's about the long term." A tough sell after ${sit.seriesWins === 0 ? 'getting swept' : 'going out that easily'}.`],
         },
         allin: {
           believe: [`All-in ${full(team)} stands by its bet`, `"We believe in this group." After this summer, anything short of a deep run will sting.`],
@@ -179,6 +211,7 @@ export function leagueGram(league, skip, li = 0) {
     if (sit.mood === 'allin') add(team, 7 + sit.arrivals.length + sit.tradedFirsts, '🎰 All In', sit.tradedFirsts >= 2
       ? `${Place(team)} traded ${sit.tradedFirsts} future firsts. Title or bust, no in-between.`
       : `${Place(team)} brought in ${sit.arrivals.slice(0, 3).map(playerName).join(', ')}. Desperate or smart?`, sit.arrivals[0]?.id);
+    if (sit.mood === 'passive') add(team, 6 + (s ? sit.gs(s) / 5 : 0), '🤔 Passive?', `${Place(team)} ${sit.seriesWins === 0 ? 'got swept' : 'went out quietly'} in the playoffs and didn't make a single move. Is development enough?`, s?.id);
     if (sit.mood === 'quiet') add(team, 3, '💤 Quiet', `Not a single real move in ${place(team)} this summer. Tank watch starts now.`);
     const c = contractTarget(team, sit);
     if (c?.kind === 'final' && sit.gs(c.p) >= 15) add(team, 6 + sit.gs(c.p) / 4, '⏳ Contract Year', `${playerName(c.p)} is entering a contract year in ${place(team)}. Every team with cap space next summer is watching.`, c.p.id);
