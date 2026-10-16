@@ -864,8 +864,7 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .lot-go { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; }
 
 /* Rounded outer frames, like the in-game menus */
-.panel, .marquee, .nav-btn, .hero { border-radius: 10px; }
-fieldset.frame { border-radius: 8px; }
+.panel, .marquee, .nav-btn { border-radius: 10px; }
 .overlay .box { border-radius: 10px; }
 
 /* Prospect page: ceiling and floor comps */
