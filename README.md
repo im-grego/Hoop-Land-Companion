@@ -17,21 +17,21 @@ each step unlocks only when the one before it is finished, and each tool opens o
 
 | Date | Step | What happens |
 |---|---|---|
-| Jun 1 | Front Office | Pick the teams you run. |
-| Jun 2 | Draft Lottery | Check the odds, then run the lottery (writes the draft order). |
-| Jun 3 | Mock Draft 1.0 | The first published mock of the cycle (first round, team colors, no ratings). |
-| Jun 4 | Scouting | Scout the class, build your big board, work the phones in the front office. |
-| Jun 12 | Draft Combine | Measurements, athletic and shooting drills (ranked by position), Hoop Gram trending posts. |
-| Jun 15 | Mock Draft 2.0 | Post-combine mock: ▲/▼ moves against 1.0 and who fell out of the first round. |
-| Jun 18 | Private Workouts | Bring prospects in (6 per team, Settings) and ask 3 questions; reveals their true ceiling. |
-| Jun 25 | NBA Draft | The live draft with trades. Finishing moves the save to Post-Draft. |
-| Jul 1–5 | Summer League | Rookies win back draft-drop ratings by age; the rookie bump. |
+| May 1 | Front Office | Pick the teams you run. |
+| May 10 | Draft Lottery | Check the odds, then run the lottery (writes the draft order). |
+| May 11 | Mock Draft 1.0 | The first published mock of the cycle (first round, team colors, no ratings). |
+| May 12 | Scouting | Scout the class, build your big board, work the phones in the front office. |
+| May 14 | Draft Combine | Measurements, athletic and shooting drills (ranked by position), Hoop Gram trending posts. |
+| May 20 | Mock Draft 2.0 | Post-combine mock: ▲/▼ moves against 1.0 and who fell out of the first round. |
+| Jun 1 | Private Workouts | Bring prospects in (6 per team, Settings) and ask 3 questions; reveals their true ceiling. |
+| Jun 23 | NBA Draft | The live draft with trades. Finishing moves the save to Post-Draft. |
+| Jul 3 | Summer League | Rookies win back draft-drop ratings by age; the rookie bump. |
 | Jul 6 | Free Agency · Day 1 | Opening free agency signs the draft picks; the main market. |
 | Jul 7 | Free Agency · Day 2 | Mid-level exception. |
 | Jul 8 | Free Agency · Day 3 | Finalize free agency: veteran minimums. |
 | Aug–Sep | Player Development | Development coach and trainer, mentorship, jersey numbers. |
-| Sep 22 | GM Survey | All 30 GMs vote: predictions, players, offseason, rookies, international, defense, coaches, misc. |
-| Sep 29 | Media Day | Your press conference, the top 10 storylines and Hoop Gram trending. |
+| Sep 25 | GM Survey | All 30 GMs vote: predictions, players, offseason, rookies, international, defense, coaches, misc. |
+| Sep 28 | Media Day | Your press conference, the top 10 storylines and Hoop Gram trending. |
 | Oct 21 | Opening Night | Export once and load the file in Hoop Land. |
 
 Finished steps show what happened (the lottery winner, the #1 pick, each free agency day's biggest deal). The last

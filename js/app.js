@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.35.0';
+const APP_VERSION = '0.35.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -466,23 +466,23 @@ const faDone = day => {
 
 // Each step: when, what, whether it's finished, and what it opens.
 const CALENDAR = [
-  { key: 'office', date: 'Jun 1', title: 'Front Office', blurb: 'Select the teams you run.',
+  { key: 'office', date: 'May 1', title: 'Front Office', blurb: 'Select the teams you run.',
     done: () => calFlags().office },
-  { key: 'lottery', date: 'Jun 2', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
+  { key: 'lottery', date: 'May 10', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
     done: () => phaseRank(league().season) >= 2 },
-  { key: 'mock1', date: 'Jun 3', title: 'Mock Draft 1.0', blurb: 'The lottery is set and the first mock of the cycle is out. See where everyone lands.',
+  { key: 'mock1', date: 'May 11', title: 'Mock Draft 1.0', blurb: 'The lottery is set and the first mock of the cycle is out. See where everyone lands.',
     done: () => preDone('mock1') },
-  { key: 'scout', date: 'Jun 4', title: 'Scouting', blurb: 'Scout the class, build your board and work the phones in the front office.',
+  { key: 'scout', date: 'May 12', title: 'Scouting', blurb: 'Scout the class, build your board and work the phones in the front office.',
     done: () => preDone('scout') },
-  { key: 'combine', date: 'Jun 12', title: 'Draft Combine', blurb: 'Measurements, athletic testing and shooting drills. Hoop Gram is buzzing.',
+  { key: 'combine', date: 'May 14', title: 'Draft Combine', blurb: 'Measurements, athletic testing and shooting drills. Hoop Gram is buzzing.',
     done: () => preDone('combine') },
-  { key: 'mock2', date: 'Jun 15', title: 'Mock Draft 2.0', blurb: 'Post-combine mock: who rose, who fell and who fell out of the first round.',
+  { key: 'mock2', date: 'May 20', title: 'Mock Draft 2.0', blurb: 'Post-combine mock: who rose, who fell and who fell out of the first round.',
     done: () => preDone('mock2') },
-  { key: 'workouts', date: 'Jun 18', title: 'Private Workouts', blurb: 'Bring prospects in, see them up close and ask the questions that matter.',
+  { key: 'workouts', date: 'Jun 1', title: 'Private Workouts', blurb: 'Bring prospects in, see them up close and ask the questions that matter.',
     done: () => preDone('workouts') },
-  { key: 'draft', date: 'Jun 25', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
+  { key: 'draft', date: 'Jun 23', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
-  { key: 'camp', date: 'Jul 2', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
+  { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'No more collusion: the market opens and the big deals happen today. Draft picks sign their rookie contracts.',
     done: () => faDone(1) },
@@ -490,11 +490,11 @@ const CALENDAR = [
     done: () => faDone(2) },
   { key: 'fa3', date: 'Jul 8', title: 'Free Agency · Day 3', blurb: 'Last call: veteran minimums, asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
-  { key: 'dev', date: 'Sep 15', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
+  { key: 'dev', date: 'Sep 21', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
-  { key: 'survey', date: 'Sep 22', title: 'GM Survey', blurb: 'Every GM in the league weighs in: predictions, players, the offseason, rookies, defense and more.',
+  { key: 'survey', date: 'Sep 25', title: 'GM Survey', blurb: 'Every GM in the league weighs in: predictions, players, the offseason, rookies, defense and more.',
     done: () => calFlags().survey || calFlags().media },
-  { key: 'media', date: 'Sep 29', title: 'Media Day', blurb: 'Jersey numbers, then the season preview: the top 10 storylines.',
+  { key: 'media', date: 'Sep 28', title: 'Media Day', blurb: 'Jersey numbers, then the season preview: the top 10 storylines.',
     done: () => calFlags().media },
   { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
     done: () => false },
