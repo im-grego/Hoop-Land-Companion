@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.28.0';
+const APP_VERSION = '0.28.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2600,7 +2600,7 @@ async function revealLottery() {
     }
     row.classList.add('shown');
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
-    await wait(big ? 900 : 650);
+    await wait(big ? 1300 : 1600);
   }
   list.classList.remove('revealing');
   skip.remove();
