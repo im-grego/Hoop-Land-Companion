@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.16';
+const APP_VERSION = '0.29.17';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -579,7 +579,10 @@ function screenAllowed(name) {
   return !!cur && (STEP_SCREENS[cur.key] || []).includes(name);
 }
 
-actions.advLottery = async () => {
+// Sim: draw it and go straight to the full order, no reveal.
+actions.simLotteryNow = () => actions.advLottery({ instant: true });
+
+actions.advLottery = async (opts = {}) => {
   const L = league();
   const P = state.params;
   checkpoint('Lottery');
@@ -594,8 +597,12 @@ actions.advLottery = async () => {
   state.dirty = true;
   // The result shows on the same lottery screen, revealed from the last
   // lottery pick up to #1.
-  state.lotteryReveal = true;
+  state.lotteryReveal = !opts.instant;
   if (state.stack[state.stack.length - 1].name === 'lottery') render(); else go('lottery');
+  if (opts.instant) {
+    const jump = order.indexOf(r1[0]);
+    toast(`🎱 ${`${r1[0].city} ${r1[0].name}`.trim()} win the lottery!`, jump > 0 ? `Jumped ${jump} spot${jump > 1 ? 's' : ''} to #1.` : 'They held onto the top spot.');
+  }
 };
 
 actions.advFreeAgency = async () => {
@@ -2554,7 +2561,7 @@ screens.lottery = () => {
     title: 'Draft Lottery',
     body: `
       <div class="opts lot-formats">${Object.entries(LOTTERY_FORMATS).map(([k, f]) => `<button class="btn ${k === setup.format ? 'on focus' : 'off'}" data-act="lotFormat" data-f="${k}">${f.name}<span class="small">${f.era}</span></button>`).join('')}</div>
-      <button class="btn big focus" data-act="advLottery">🎱 Begin Lottery</button>
+      <div class="lot-go"><button class="btn big focus" data-act="advLottery">🎱 Begin Lottery</button><button class="btn big" data-act="simLotteryNow">⏭ Sim</button></div>
       <fieldset class="frame"><legend>${esc(F.name)}</legend>
         <p class="note muted small odds-key"><span class="gold">■</span> #1 pick · <span class="cyan">■</span> top ${topN}</p>
         <div class="odds-head lot"><span>Seed</span><span>Team</span><span>#1</span><span>Top ${topN}</span></div>
