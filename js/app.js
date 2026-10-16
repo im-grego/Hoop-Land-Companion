@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.26';
+const APP_VERSION = '0.29.27';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2204,14 +2204,15 @@ function outlookCard() {
   }).join('');
 }
 
-const prospectRow = (p, extra = '') => {
+const prospectRow = (p, extra = '', { mine = false } = {}) => {
+  const star = onBoard(p.id) && !mine;
   const c = compsFor(p);
   const t = league().teams.find(isUserTeam);
   const fills = t ? fillsFor(t, p) : [];
   const comp = (label, x) => x ? `<span class="pr-comp"><span class="muted">${label}</span><span>${esc(x.name)}</span></span>` : '';
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
-  return `<button class="prow cprow ${onBoard(p.id) ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
-  <span class="name">${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
+  return `<button class="prow cprow ${star ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
+  <span class="name">${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
   <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} ${valueChip(p)}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
@@ -2234,11 +2235,8 @@ function draftWarRoom() {
   const byId = new Map(league().draftClass.map(p => [p.id, p]));
   return {
     html: `<fieldset class="frame"><legend>Your Board</legend>
-        ${board.length ? `<div class="brows">${board.map((p, i) => `<div class="brow">
-          <span class="rk gold">${i + 1}</span>
-          <button class="bname" data-act="openProspect" data-id="${p.id}"><b>${esc(playerName(p))}</b><span class="bmeta"><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${classYear(p)}</span> ${valueChip(p)}</span>${compsFor(p).ceiling[0] ? `<span class="bceil small"><span class="muted">Ceiling</span> ${esc(compsFor(p).ceiling[0].name)}</span>` : ''}</button>
-          <span class="mv"><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvb" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvb x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove">✕</button></span>
-        </div>`).join('')}</div>`
+        ${board.length ? `<div class="list">${board.map((p, i) => `<div class="board-row">${prospectRow(p, '', { mine: true }).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
+          <div class="mv2 mv3"><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="-1" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button><button class="mvbtn" data-act="moveBoard" data-id="${p.id}" data-dir="1" aria-label="Move down" ${i < board.length - 1 ? '' : 'disabled'}>▼</button><button class="mvbtn x" data-act="toggleBoard" data-id="${p.id}" aria-label="Remove from your board">✕</button></div></div>`).join('')}</div>`
         : '<p class="note">Your board is empty. Add prospects from Prospects with +, then order them here. When you\'re on the clock, your board comes first.</p>'}
       </fieldset>
       <fieldset class="frame"><legend>Mock Draft · First Round</legend>

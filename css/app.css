@@ -885,3 +885,8 @@ details.dbx[open] summary { margin-bottom: 8px; }
 /* Prospects tab: one + button per row */
 .board-row .mv2 .mvbtn { flex: 1; width: 52px; font-size: 26px; }
 .scout .even::before { content: "•"; color: var(--dim); }
+/* My Board: up, down, remove */
+.board-row .mv2.mv3 { gap: 4px; }
+.board-row .mv2.mv3 .mvbtn { font-size: 16px; }
+.board-row .mv2 .mvbtn:disabled { opacity: .35; cursor: default; box-shadow: none; }
+.board-row .mv2 .mvbtn.x { color: #ff8a8a; }
