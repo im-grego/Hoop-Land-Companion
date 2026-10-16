@@ -856,12 +856,19 @@ details.dbx[open] summary { margin-bottom: 8px; }
 
 /* Main menu: fits the screen, nothing scrolls but the calendar */
 html.noscroll, html.noscroll body { overflow: hidden; height: 100%; overscroll-behavior: none; }
-#app[data-screen="main"] { height: 100vh; height: 100dvh; min-height: 0; box-sizing: border-box; }
+#app[data-screen="main"] { height: 100vh; height: 100dvh; height: min(100dvh, 100%); min-height: 0; box-sizing: border-box; }
 #app[data-screen="main"] > .panel { min-height: 0; overflow: hidden; padding-top: 12px; gap: 12px; }
-#app[data-screen="main"] .hero { max-height: 30vh; object-fit: cover; flex: none; }
 #app[data-screen="main"] .panel > * { flex: none; }
+/* The banner gives way first when the screen is short, so the bottom never gets cut. */
+#app[data-screen="main"] .panel > .hero { flex: 1 1 auto; min-height: 0; max-height: 30vh; height: auto; object-fit: cover; }
 #app[data-screen="main"] .cal-frame { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 #app[data-screen="main"] .cal-frame > .calendar { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 #app[data-screen="main"] .panel > .center.muted { margin: 0; }
 #app[data-screen="main"] .league-card { padding: 8px 10px; }
 #app[data-screen="main"] .league-card .league-logo { max-height: 52px; }
+#app[data-screen="main"] > .header .marquee { height: 56px; }
+@media (max-height: 700px) {
+  #app[data-screen="main"] .panel { gap: 8px; padding-bottom: 8px; }
+  #app[data-screen="main"] .frame .note { font-size: 14px; line-height: 1.35; }
+  #app[data-screen="main"] .btn.big { min-height: 52px; }
+}
