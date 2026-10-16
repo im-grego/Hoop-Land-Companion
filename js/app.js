@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.0';
+const APP_VERSION = '0.37.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -311,8 +311,9 @@ async function loadFile(file) {
     state.cal = {};
     installData(data);
     state.dirty = false;
+    const held = holdCpuOffers();
     o.remove();
-    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`);
+    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, held ? `${held} CPU contract offers held until the options deadline.` : '');
     render();
   } catch (err) {
     o.remove();
@@ -4442,6 +4443,25 @@ function optStore() {
 }
 function saveOptStore() { try { localStorage.setItem(`hlc:opts:${seasonKey()}`, JSON.stringify(optStore())); } catch { /* ignore */ } }
 
+// CPU teams don't sign anyone before the options deadline: the game's
+// pending CPU contract offers (to players whose deals are up) are taken out
+// of the save on load and kept here; at the deadline the app makes the CPU's
+// option calls, and the rest of the offers go back in.
+function holdCpuOffers() {
+  const L = league();
+  if (!L || phaseRank(L.season) === 0 || phaseRank(L.season) >= 4 || optStore().done) return 0;
+  const offers = L.contractOffers || [];
+  const hold = offers.filter(o => !state.userTeams.has(o.tid));
+  if (!hold.length) return 0;
+  const st = optStore();
+  const key = o => `${o.pid}:${o.tid}`;
+  st.held = [...new Map([...(st.held || []), ...hold].map(o => [key(o), o])).values()];
+  saveOptStore();
+  L.contractOffers = offers.filter(o => state.userTeams.has(o.tid));
+  state.dirty = true;
+  return hold.length;
+}
+
 const optionPlayers = L => L.teams.flatMap(t => t.roster.filter(p => p.contract && (p.contract.yrs || 0) === 0 && (p.contract.opt === 1 || p.contract.opt === 2)).map(p => ({ p, team: t })));
 const marketValue = p => fairSalary(shownLevel(p));
 const qoAmount = p => Math.max(2, Math.round((p.contract?.sal || 2) * 1.25));
@@ -4539,6 +4559,12 @@ actions.optFinish = async () => {
     }
   }
   for (const { p, team } of qoList) if (!isUserTeam(team)) st.qo[p.id] = qoCall(L, p, team);
+  // The held CPU offers go back in, except for players whose option was just
+  // decided (picked up, or headed to the open market).
+  const decided = new Set(list.map(x => x.p.id));
+  const back = (st.held || []).filter(o => !decided.has(o.pid));
+  if (back.length) L.contractOffers = [...(L.contractOffers || []), ...back];
+  st.held = [];
   st.done = true;
   st.log = { exercised, out };
   saveOptStore();
