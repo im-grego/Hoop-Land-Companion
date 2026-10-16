@@ -307,6 +307,7 @@ const DOWN_IMPACT = {
 const UP_IMPACT = { big: { TPT: 1.1 } };
 export const roleOf = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
 const AWFUL_FT = 6; // free throws only count as a weakness at or below this
+const AWFUL_STM = 15; // stamina is only a weakness at or below this
 
 const statsCache = new WeakMap();
 function positionStats(league, pos) {
@@ -340,6 +341,7 @@ export function scoutingReport(p, league, pot = p.pot) {
     // Strength judged on what they can become; weakness on today + ceiling.
     let down = ((cur + top) / 2 - st[k].m) / st[k].sd * DOWN[k];
     if (k === 'FTS' && cur > AWFUL_FT) down = Infinity;
+    if (k === 'STM' && cur > AWFUL_STM) down = Infinity;
     return {
       k,
       up: (top - st[k].m) / st[k].sd * UP[k],
