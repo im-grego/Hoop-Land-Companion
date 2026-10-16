@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.35.1';
+const APP_VERSION = '0.35.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -706,7 +706,7 @@ screens.main = () => {
       </div>
       ${calendarCard()}
       <div class="grid2">
-        ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> Your Roster</button>' : ''}
+        ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
         <button class="btn left" data-act="openLeaders" data-m="ratings"><span class="ico">🏀</span> League</button>
       </div>
       <div class="grid2">
@@ -1517,13 +1517,13 @@ screens.roster = (args) => {
   let idx = mine.findIndex(t => t.id === +args.arg);
   if (idx < 0) idx = 0;
   const t = mine[idx];
-  const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) }));
+  const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => levelOf(b.p) - levelOf(a.p));
   const pts = rows.reduce((a, r) => a + r.d.apDelta.reduce((x, y) => x + y, 0), 0);
   const many = mine.length > 1;
   const prevT = mine[(idx - 1 + mine.length) % mine.length];
   const nextT = mine[(idx + 1) % mine.length];
   layout({
-    title: 'Team Roster',
+    title: 'My Team',
     left: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">${logoImg(prevT)}◀</button>` : '',
     right: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶${logoImg(nextT)}</button>` : '',
     body: `
