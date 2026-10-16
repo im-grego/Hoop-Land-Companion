@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.34.1';
+const APP_VERSION = '0.34.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1683,7 +1683,7 @@ function attrRow(p, snap, k, ceilMode) {
     <div class="body">
       <div class="top">
         <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
-        <span>${cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="${down ? 'down' : 'gold'}">/ ${ceil}</span></span>
+        <span><span class="${down ? 'down' : ''}">${cur}</span>${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${ceil}</span></span>
       </div>
       <div class="${barClass(k)}">
         ${down ? `<div class="lost" style="left:${cur / ATTR_MAX * 100}%;width:${(Math.min(ceil, ATTR_MAX) - cur) / ATTR_MAX * 100}%"></div>` : `<div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>`}
