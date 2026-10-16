@@ -39,7 +39,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  padding: calc(env(safe-area-inset-top) + 6px) 12px max(12px, env(safe-area-inset-bottom));
   gap: 12px;
 }
 
@@ -853,3 +853,15 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .lot-chip.locked .pct { color: #ffe08a; }
 .lot-chip .lock { font-size: 8.5px; font-weight: 800; color: #ffe08a; white-space: nowrap; }
 @keyframes lockIn { 0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 211, 77, 1); } 35% { transform: scale(1.18) rotate(-3deg); } 60% { transform: scale(.96) rotate(2deg); } 100% { transform: none; box-shadow: 0 0 10px rgba(255, 211, 77, .6); } }
+
+/* Main menu: fits the screen, nothing scrolls but the calendar */
+html.noscroll, html.noscroll body { overflow: hidden; height: 100%; overscroll-behavior: none; }
+#app[data-screen="main"] { height: 100vh; height: 100dvh; min-height: 0; box-sizing: border-box; }
+#app[data-screen="main"] > .panel { min-height: 0; overflow: hidden; padding-top: 12px; gap: 12px; }
+#app[data-screen="main"] .hero { max-height: 30vh; object-fit: cover; flex: none; }
+#app[data-screen="main"] .panel > * { flex: none; }
+#app[data-screen="main"] .cal-frame { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+#app[data-screen="main"] .cal-frame > .calendar { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+#app[data-screen="main"] .panel > .center.muted { margin: 0; }
+#app[data-screen="main"] .league-card { padding: 8px 10px; }
+#app[data-screen="main"] .league-card .league-logo { max-height: 52px; }

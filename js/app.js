@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.8';
+const APP_VERSION = '0.29.9';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -261,7 +261,13 @@ function render() {
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
   $app.dataset.screen = top.name;
+  // The main menu fits the screen: no page scroll (the calendar scrolls inside).
+  document.documentElement.classList.toggle('noscroll', top.name === 'main');
   screens[top.name](top.args);
+  if (top.name === 'main') {
+    const list = $app.querySelector('.calendar'), now = $app.querySelector('.cal.now');
+    if (list && now) list.scrollTop = Math.max(0, now.offsetTop - list.offsetTop - 8);
+  }
   window.scrollTo(0, view === lastView ? y : top.y ?? 0);
   top.y = null;
   lastView = view;
@@ -539,7 +545,7 @@ function calendarCard() {
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
-  return `<fieldset class="frame"><legend>${s.currentYear} Offseason</legend>
+  return `<fieldset class="frame cal-frame"><legend>${s.currentYear} Offseason</legend>
     <ol class="calendar">${CALENDAR.map(st => {
       const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
       return `<li class="cal ${state_}">
