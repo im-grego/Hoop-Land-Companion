@@ -815,3 +815,22 @@ details.dbx[open] summary { margin-bottom: 8px; }
   50% { transform: scale(1.04); }
   100% { transform: none; box-shadow: 0 0 0 26px rgba(255, 220, 120, 0); }
 }
+
+/* Lottery reveal: teams still waiting, best odds first */
+.lot-tray { position: sticky; top: 6px; z-index: 5; display: flex; flex-wrap: nowrap; align-items: center; overflow-x: auto; gap: 5px; padding: 8px; margin-bottom: 8px; scrollbar-width: none; background: rgba(6, 38, 88, .92); border: 3px solid var(--btn-edge); transition: opacity .5s; }
+.lot-chip { min-width: 36px; padding: 2px 4px; text-align: center; font-size: 11px; font-weight: 800; background: var(--btn); border: 2px solid var(--gold); transition: opacity .5s, transform .5s, filter .5s; }
+.lot-chip.mine { border-color: var(--cyan); color: var(--cyan); }
+.lot-chip.out { opacity: .2; transform: scale(.85); filter: grayscale(1); }
+.lot-tray.gone { opacity: 0; pointer-events: none; }
+
+.lot-tray-label { flex: none; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--cyan); margin-right: 2px; white-space: nowrap; }
+.lot-chip { flex: none; }
+
+/* Draft pick reveal */
+.lot-row.pending .pl { visibility: hidden; }
+.lot-row.pending.incoming { position: relative; border-color: var(--gold); animation: teasePulse .45s ease-in-out infinite alternate; }
+.lot-row.pending.incoming::after { content: 'The pick is in…'; position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 13px; font-weight: 800; color: var(--gold); }
+.lot-row.picked .pl { animation: plIn .5s cubic-bezier(.2, 1.3, .4, 1); }
+.lot-row.picked { animation: bigIn .6s ease-out; }
+@keyframes plIn { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.pick-skip { position: fixed; right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 40; }

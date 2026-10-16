@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.28.1';
+const APP_VERSION = '0.29.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2128,7 +2128,37 @@ screens.draft = (args) => {
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
+  if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
+
+// Draft picks come in one at a time: "The pick is in…" then the player,
+// the view following along. Lottery picks (top 14) get a longer beat.
+async function revealPicks(overalls) {
+  const rows = overalls.map(ov => $app.querySelector(`.lot-row[data-ov="${ov}"]`)).filter(Boolean);
+  if (!rows.length) return;
+  rows.forEach(r => r.classList.add('pending'));
+  let skipped = false;
+  let skip = null;
+  if (rows.length > 1) {
+    skip = document.createElement('button');
+    skip.className = 'btn small pick-skip';
+    skip.textContent = 'Skip ⏭';
+    skip.addEventListener('click', () => { skipped = true; });
+    document.body.appendChild(skip);
+  }
+  const wait = ms => new Promise(r => { const t0 = Date.now(); const tick = () => (skipped || Date.now() - t0 >= ms ? r() : requestAnimationFrame(tick)); tick(); });
+  for (const row of rows) {
+    if (!row.isConnected) break;
+    const ov = +row.dataset.ov;
+    if (!skipped) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.add('incoming');
+    await wait(ov <= 14 ? 1100 : 600);
+    row.classList.remove('pending', 'incoming');
+    row.classList.add('picked');
+    await wait(ov <= 14 ? 900 : 450);
+  }
+  skip?.remove();
+}
 
 actions.draftTab = d => replace('draft', { tab: d.t });
 
@@ -2555,12 +2585,17 @@ function lotteryResultView() {
   const pre = setup.table.map(r => r.team);
   const rec = new Map(setup.table.map(r => [r.team.id, r]));
   const order = (actualDraftOrder(L) || []).filter(o => o.rd === 1).slice(0, setup.lotteryTeams.length);
+  // While revealing: every lottery team in a little box, best odds first;
+  // each one fades out as its pick comes in.
+  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">Best odds →</span>${setup.lotteryTeams
+    .map((t, seed) => ({ t, seed, w: setup.odds[seed] ?? 0 })).sort((a, b) => b.w - a.w || a.seed - b.seed)
+    .map(({ t }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}">${esc(t.shortName)}</span>`).join('')}</div>` : '';
   layout({
     title: 'Draft Lottery',
-    body: `<div class="list lot-result">${order.map((o, i) => {
+    body: `${tray}<div class="list lot-result">${order.map((o, i) => {
         const move = pre.indexOf(o.orig) - i;
         const rr = rec.get(o.orig.id);
-        return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}" data-pick="${i + 1}" data-name="${esc(`${o.orig.city} ${o.orig.name}`.trim())}" data-move="${move}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
+        return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}" data-tid="${o.orig.id}" data-pick="${i + 1}" data-name="${esc(`${o.orig.city} ${o.orig.name}`.trim())}" data-move="${move}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
           <span class="grow">${esc(o.orig.shortName)} <span class="muted small">${rr ? `${rr.W}-${rr.L}` : ''}</span> ${statusTag(teamStatus(L, o.orig))}${o.owner.id !== o.orig.id ? ` <span class="small gold">→ ${esc(o.owner.shortName)}</span>` : ''}</span>
           <span class="mv ${move > 0 ? 'up' : move < 0 ? 'down' : 'muted'}">${move > 0 ? `▲${move}` : move < 0 ? `▼${-move}` : '—'}</span></div>`;
       }).join('')}</div>
@@ -2599,11 +2634,13 @@ async function revealLottery() {
       row.classList.remove('tease');
     }
     row.classList.add('shown');
+    $app.querySelector(`.lot-chip[data-tid="${row.dataset.tid}"]`)?.classList.add('out');
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
     await wait(big ? 1300 : 1600);
   }
   list.classList.remove('revealing');
   skip.remove();
+  $app.querySelector('.lot-tray')?.classList.add('gone');
   if (done) done.style.display = '';
   const top = rows[0];
   if (top) {
@@ -2795,11 +2832,11 @@ function draftLive() {
           const sel = live.sel[q.overall];
           const p = sel ? byId.get(sel.pid) : null;
           const moved = sel && sel.to !== sel.by;
-          return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''}">
+          return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''}" data-ov="${q.overall}">
             <span class="pk">${q.overall}</span>${logoImg(q.owner)}
             <span class="grow">${esc(q.owner.shortName)}${q.owner.id !== q.orig.id ? ` <span class="muted small">via ${esc(q.orig.shortName)}</span>` : ''}${q.rd > 1 ? ` <span class="muted small">R${q.rd}</span>` : ''}<br>
-              ${p ? `<span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
-            ${p ? valueChip(p) : ''}
+              ${p ? `<span class="pl"><span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}</span>` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
+            ${p ? `<span class="pl">${valueChip(p)}</span>` : ''}
           </div>`;
         }).join('')}
       </div>`}`,
@@ -2843,7 +2880,15 @@ function draftRecap(live, order) {
 }
 actions.recapSort = d => { draftState().recapSort = d.s; render(); };
 
-actions.liveSim = d => { liveSim(d.m); render(); };
+// Picks made since `before` get revealed one by one on the next render.
+const newPicks = (live, before) => Object.keys(live.sel).map(Number).filter(ov => !before.has(ov)).sort((a, b) => a - b);
+actions.liveSim = d => {
+  const live = liveState();
+  const before = new Set(Object.keys(live.sel).map(Number));
+  liveSim(d.m);
+  state.pickReveal = newPicks(live, before);
+  render();
+};
 
 actions.liveChoose = () => {
   const live = liveState();
@@ -2859,7 +2904,7 @@ actions.liveChoose = () => {
   box.addEventListener('click', e => {
     const b = e.target.closest('[data-id],[data-close]');
     if (!b) return;
-    if (b.dataset.id) makeSelection(live, order, idx, +b.dataset.id);
+    if (b.dataset.id) { makeSelection(live, order, idx, +b.dataset.id); state.pickReveal = [o.overall]; }
     box.remove();
     render();
   });
