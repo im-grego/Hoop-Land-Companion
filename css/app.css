@@ -1060,3 +1060,6 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .statline > .stat-cell { background: var(--bg-dark); border: 2px solid var(--btn-edge); padding: 4px 2px; }
 .opts.wrap.ld-keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .opts.wrap.ld-keys .btn { min-height: 34px; padding: 4px 0; font-size: 13px; flex: none; }
+
+.opt-btns { display: flex; gap: 4px; flex: none; }
+.opt-btns .btn { min-height: 32px; padding: 0 8px; font-size: 13px; }

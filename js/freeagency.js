@@ -271,9 +271,16 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
 // Restricted free agents: first-round picks coming off their rookie deal
 // (drafted within the last 4 seasons). Their old team can match any offer
 // sheet, and a match beats every other offer.
-export function isRestricted(league, p) {
+// Qualifying offers decided at the options deadline: pid -> true (extended,
+// restricted) / false (not extended, unrestricted). No entry = restricted.
+let QO = new Map();
+export function setQualifyingOffers(map) { QO = new Map(Object.entries(map || {}).map(([k, v]) => [+k, v])); }
+export const qoEligible = (league, p) => {
   const d = p.history?.draft;
   return p.status === STATUS_EXPIRING && d?.rd === 1 && d.yr > 0 && league.season.currentYear - d.yr <= 4;
+};
+export function isRestricted(league, p) {
+  return qoEligible(league, p) && QO.get(p.id) !== false;
 }
 
 // Would a CPU team match an offer sheet? Yes unless it's well over what the

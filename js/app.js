@@ -13,7 +13,7 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers } from './livedraft.js';
-import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue } from './trades.js';
+import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
 import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.36.1';
+const APP_VERSION = '0.37.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -262,6 +262,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
+  if (state.data) FA.setQualifyingOffers(optStore().qo);
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -482,6 +483,8 @@ const CALENDAR = [
     done: () => preDone('workouts') },
   { key: 'draft', date: 'Jun 23', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
+  { key: 'options', date: 'Jun 29', title: 'Options & Qualifying Offers', blurb: 'Team and player options come due, and teams decide on qualifying offers for their restricted free agents.',
+    done: () => !!optStore().done || phaseRank(league().season) >= 4 },
   { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'No more collusion: the market opens and the big deals happen today. Draft picks sign their rookie contracts.',
@@ -524,6 +527,7 @@ function stepSummary(key) {
     const first = leagueRookies(L).find(r => r.pick === 1);
     return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
   }
+  if (key === 'options') { const g = optStore().log || {}; return `${g.exercised || 0} options picked up, ${g.out || 0} heading to free agency.`; }
   if (key === 'camp') { const s = state.summer[state.leagueIdx]; return s ? `${s.players} rookies won back +${s.points} in summer league.` : 'Done in the game.'; }
   if (key.startsWith('fa')) {
     const log = calFlags().faLog?.[+key[2]];
@@ -551,6 +555,7 @@ function stepActions(key) {
     case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
       <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
+    case 'options': return `<button class="btn big focus" data-act="nav" data-to="options">📝 Options Deadline</button>`;
     case 'camp': return `<button class="btn big focus" data-act="nav" data-to="camp">🏀 Summer League</button>`;
     case 'fa1': case 'fa2': case 'fa3': {
       const day = +key[2];
@@ -600,7 +605,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  office: ['teams'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'],
+  office: ['teams'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], survey: ['survey'], media: ['storylines'], export: ['export'],
 };
@@ -4421,6 +4426,126 @@ screens.survey = (args) => {
 };
 actions.surveyTab = d => replace('survey', { tab: d.t });
 actions.surveyDone = () => { saveSurveyHist(surveyNow()); calFlags().survey = true; goHome(); toast('Next up: Media Day'); };
+
+// ---------------------------------------------------------------------------
+// Options deadline (Jun 29, Post-Draft). Players whose contracts are up with
+// an option (0 years left, opt 1 = team option, opt 2 = player option) are
+// picked up (1 more year at the same salary, signed) or head to free agency
+// (the option clears and they stay pending). First-rounders off their rookie
+// deal get a qualifying offer or don't (restricted vs unrestricted in FA).
+
+function optStore() {
+  const key = `hlc:opts:${seasonKey()}`;
+  const c = (state.opts ||= {});
+  if (!c[key]) { let v = {}; try { v = JSON.parse(localStorage.getItem(key)) || {}; } catch { v = {}; } c[key] = { team: {}, qo: {}, ...v }; }
+  return c[key];
+}
+function saveOptStore() { try { localStorage.setItem(`hlc:opts:${seasonKey()}`, JSON.stringify(optStore())); } catch { /* ignore */ } }
+
+const optionPlayers = L => L.teams.flatMap(t => t.roster.filter(p => p.contract && (p.contract.yrs || 0) === 0 && (p.contract.opt === 1 || p.contract.opt === 2)).map(p => ({ p, team: t })));
+const marketValue = p => fairSalary(shownLevel(p));
+const qoAmount = p => Math.max(2, Math.round((p.contract?.sal || 2) * 1.25));
+
+// Morale: from the save when it has a morale field, else from the season
+// (a starter's minutes cut, or a losing team for a veteran).
+function moraleLow(p, team) {
+  for (const o of [p, p.season]) for (const [k, v] of Object.entries(o || {})) {
+    if (!/morale|mood|happ/i.test(k) || typeof v?.valueOf() !== 'number') continue;
+    const n = +v; const r = n <= 1 ? n : n <= 10 ? n / 10 : n / 100;
+    return r < 0.35;
+  }
+  const l = seasonLine(p, state.leagueIdx, lastSeasonYear());
+  const rank = 1 + team.roster.filter(x => shownLevel(x) > shownLevel(p)).length;
+  const rec = teamRecord(team);
+  return (!!l && rank <= 5 && l.mpg < 20) || (p.age >= 28 && rec.W + rec.L > 0 && rec.pct < 0.33);
+}
+
+// What happens with each option. Teams pick up almost every option, unless
+// the player clearly isn't worth it. Players opt in unless their option is
+// well under market (they'll test free agency) or their morale is low.
+function optionCall(L, p, team) {
+  const sal = p.contract.sal || 0, worth = marketValue(p);
+  if (p.contract.opt === 1) {
+    if (isUserTeam(team)) return { kind: 'team', choice: optStore().team[p.id] || null, worth, sal };
+    const keep = worth >= sal * 0.75;
+    return { kind: 'team', choice: keep ? 'ex' : 'dec', worth, sal, why: keep ? 'Picked up' : `Declined: not worth $${sal}M` };
+  }
+  const under = worth >= sal * 1.4 && worth - sal >= 5 && p.age < 33;
+  const low = moraleLow(p, team);
+  const out = under || (low && worth >= sal * 0.9);
+  return { kind: 'player', choice: out ? 'out' : 'in', worth, sal,
+    why: under ? `Opting out: he can get about $${worth}M on the market` : out ? 'Opting out: unhappy where he is' : 'Opting in' };
+}
+function qoCall(L, p, team) {
+  if (isUserTeam(team)) return optStore().qo[p.id];
+  return marketValue(p) >= qoAmount(p);
+}
+
+screens.options = () => {
+  const L = league();
+  const st = optStore();
+  const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
+  const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
+  const mine = x => isUserTeam(x.team);
+  const tag = c => c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option · worth ~$${x.c.worth}M</span> ${tag(x.c)}</span>`;
+  const done = !!st.done;
+  const myTeamOpts = list.filter(x => mine(x) && x.c.kind === 'team');
+  const myPlayerOpts = list.filter(x => mine(x) && x.c.kind === 'player');
+  const myQO = qoList.filter(mine);
+  const btn = (act, pid, v, on, label) => `<button class="btn small ${on ? 'on focus' : 'off'}" data-act="${act}" data-id="${pid}" data-v="${v}" ${done ? 'disabled' : ''}>${label}</button>`;
+  const around = list.filter(x => !mine(x) && x.c.choice !== 'ex' && x.c.choice !== 'in').sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
+  const pending = myTeamOpts.some(x => !x.c.choice) || myQO.some(x => st.qo[x.p.id] == null);
+  layout({
+    title: 'Options Deadline',
+    body: `<p class="note small">Options and qualifying offers are due. Picked-up options add one more year at the same salary; anyone else heads to free agency.</p>
+      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => `<div class="drill-row">${head(x)}
+        <span class="opt-btns">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Exercise')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span></div>`).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
+      <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row">${head(x)}
+        <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b></div>`).join('') || '<p class="note muted small">No player options this year.</p>'}</div>
+        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy.</p>' : ''}</fieldset>
+      <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
+        <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Extend')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Skip')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
+        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Extend: he\'s restricted, so you can match any offer sheet in free agency. Skip: he\'s unrestricted.</p>' : ''}</fieldset>
+      <fieldset class="frame"><legend>Around the League</legend><div class="stack">${around.slice(0, 12).map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : 'down'}">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
+      ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
+    action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
+  });
+};
+actions.optTeam = d => { optStore().team[+d.id] = d.v; saveOptStore(); render(); };
+actions.optQO = d => { optStore().qo[+d.id] = d.v === '1'; saveOptStore(); render(); };
+actions.optFinish = async () => {
+  const L = league();
+  const st = optStore();
+  const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
+  const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
+  if (list.some(x => isUserTeam(x.team) && x.c.kind === 'team' && !x.c.choice) || qoList.some(x => isUserTeam(x.team) && st.qo[x.p.id] == null)) {
+    toast('Decide every team option and qualifying offer first'); return;
+  }
+  if (!(await confirmBox('Finalize every option and qualifying offer? Picked-up options are written to the save.', 'Finalize'))) return;
+  checkpoint('Options deadline');
+  const yr = L.season.currentYear;
+  let exercised = 0, out = 0;
+  for (const { p, c } of list) {
+    if (c.choice === 'ex' || c.choice === 'in') {
+      Object.assign(p.contract, { yrs: 1, opt: 0 });
+      p.status = FA.STATUS_SIGNED;
+      const row = (p.stats || []).filter(s => s.yr === yr && s.league === 0).pop();
+      if (row) row.sal = p.contract.sal;
+      exercised++;
+    } else {
+      p.contract.opt = 0;
+      out++;
+    }
+  }
+  for (const { p, team } of qoList) if (!isUserTeam(team)) st.qo[p.id] = qoCall(L, p, team);
+  st.done = true;
+  st.log = { exercised, out };
+  saveOptStore();
+  state.dirty = true;
+  goHome();
+  toast('Options deadline done', `${exercised} picked up · ${out} heading to free agency`);
+};
 
 // Press conference answers (per season) and promises (kept across seasons).
 function presserStore() {

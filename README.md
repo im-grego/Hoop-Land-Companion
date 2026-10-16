@@ -25,6 +25,7 @@ each step unlocks only when the one before it is finished, and each tool opens o
 | May 20 | Mock Draft 2.0 | Post-combine mock: ▲/▼ moves against 1.0 and who fell out of the first round. |
 | Jun 1 | Private Workouts | Bring prospects in (6 per team, Settings) and ask 3 questions; reveals their true ceiling. |
 | Jun 23 | NBA Draft | The live draft with trades. Finishing moves the save to Post-Draft. |
+| Jun 29 | Options & Qualifying Offers | Team/player options (0 years left, opt 1/2) are picked up or go to free agency; QOs decide who's restricted. |
 | Jul 3 | Summer League | Rookies win back draft-drop ratings by age; the rookie bump. |
 | Jul 6 | Free Agency · Day 1 | Opening free agency signs the draft picks; the main market. |
 | Jul 7 | Free Agency · Day 2 | Mid-level exception. |
