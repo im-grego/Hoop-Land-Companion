@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.0';
+const APP_VERSION = '0.29.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2585,11 +2585,11 @@ function lotteryResultView() {
   const pre = setup.table.map(r => r.team);
   const rec = new Map(setup.table.map(r => [r.team.id, r]));
   const order = (actualDraftOrder(L) || []).filter(o => o.rd === 1).slice(0, setup.lotteryTeams.length);
-  // While revealing: every lottery team in a little box, best odds first;
-  // each one fades out as its pick comes in.
-  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">Best odds →</span>${setup.lotteryTeams
-    .map((t, seed) => ({ t, seed, w: setup.odds[seed] ?? 0 })).sort((a, b) => b.w - a.w || a.seed - b.seed)
-    .map(({ t }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}">${esc(t.shortName)}</span>`).join('')}</div>` : '';
+  // While revealing: every lottery team in a little box in record order
+  // (worst first, numbered by seed); each fades out as its pick comes in, so
+  // a team from the middle jumping up stands out.
+  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">By<br>record</span>${setup.lotteryTeams
+    .map((t, seed) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}"><small>${seed + 1}</small>${esc(t.shortName)}</span>`).join('')}</div>` : '';
   layout({
     title: 'Draft Lottery',
     body: `${tray}<div class="list lot-result">${order.map((o, i) => {
