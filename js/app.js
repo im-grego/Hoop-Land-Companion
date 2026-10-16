@@ -19,7 +19,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.29.2';
+const APP_VERSION = '0.29.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2589,7 +2589,10 @@ function lotteryResultView() {
   // best odds first. As picks come in, placed teams dim (showing their pick)
   // and the odds of the teams still waiting update.
   const totalW = setup.odds.slice(0, setup.lotteryTeams.length).reduce((a, w) => a + (w || 0), 0) || 1;
-  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">Odds at #1</span><div class="lot-chips">${setup.lotteryTeams
+  // Even rows: the column count that splits the teams evenly (16 → 8 × 2, 14 → 7 × 2).
+  const nTeams = setup.lotteryTeams.length;
+  const cols = [8, 7, 6, 5, 4].find(c => nTeams % c === 0) || Math.ceil(nTeams / 2);
+  const tray = state.lotteryReveal ? `<div class="lot-tray"><span class="lot-tray-label">Odds at #1</span><div class="lot-chips" style="--cols:${cols}">${setup.lotteryTeams
     .map((t, seed) => ({ t, seed, w: setup.odds[seed] ?? 0 })).sort((a, b) => b.w - a.w || a.seed - b.seed)
     .map(({ t, w }) => `<span class="lot-chip ${isUserTeam(t) ? 'mine' : ''}" data-tid="${t.id}" data-w="${w}"><b>${esc(t.shortName)}</b><span class="pct">${(w / totalW * 100).toFixed(1)}%</span></span>`).join('')}</div></div>` : '';
   layout({
@@ -2644,7 +2647,9 @@ async function revealLottery() {
     const pick = +row.dataset.pick;
     const big = pick <= 5;
     row.scrollIntoView({ behavior: skipped ? 'auto' : 'smooth', block: 'center' });
-    if (big && !skipped) {
+    // Once #2 is in, everyone knows who's #1: no mystery card for the last one.
+    const known = pick === 1;
+    if (big && !skipped && !known) {
       row.classList.add('tease');
       await wait(pick === 1 ? 2600 : pick === 2 ? 2000 : 1400);
       row.classList.remove('tease');
@@ -2652,7 +2657,7 @@ async function revealLottery() {
     row.classList.add('shown');
     updateTray(row.dataset.tid, pick);
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
-    await wait(big ? 1300 : 1600);
+    await wait(big ? 1500 : 2300);
   }
   list.classList.remove('revealing');
   skip.remove();

@@ -819,10 +819,10 @@ details.dbx[open] summary { margin-bottom: 8px; }
 /* Lottery reveal: every team's odds at #1, best first; all visible */
 .lot-tray { position: sticky; top: 6px; z-index: 5; padding: 6px 8px 8px; margin-bottom: 8px; background: rgba(6, 38, 88, .94); border: 3px solid var(--btn-edge); transition: opacity .5s; }
 .lot-tray-label { display: block; margin-bottom: 4px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: var(--cyan); }
-.lot-chips { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 4px; }
+.lot-chips { display: grid; grid-template-columns: repeat(var(--cols, 8), minmax(0, 1fr)); gap: 3px; }
 .lot-chip { display: flex; flex-direction: column; align-items: center; padding: 2px 2px 3px; line-height: 1.15; background: var(--btn); border: 2px solid var(--gold); transition: opacity .5s, filter .5s; }
-.lot-chip b { font-size: 11px; }
-.lot-chip .pct { font-size: 11px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
+.lot-chip b { font-size: 10.5px; }
+.lot-chip .pct { font-size: 10px; letter-spacing: -.2px; font-weight: 700; color: var(--gold); font-variant-numeric: tabular-nums; }
 .lot-chip.mine { border-color: var(--cyan); }
 .lot-chip.mine b { color: var(--cyan); }
 .lot-chip.out { opacity: .35; filter: grayscale(1); border-color: var(--btn-edge); }
