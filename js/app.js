@@ -6,7 +6,7 @@ import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlo
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
-  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot,
+  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
   needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore, LOTTERY_FORMATS,
 } from './draft.js';
@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.33.1';
+const APP_VERSION = '0.33.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2758,8 +2758,41 @@ function workoutAnswer(p, k) {
     return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a really good team.']),
       staff: `Trainers: ${reg >= 33 ? 'built to last, holding his peak into his mid-30s.' : reg >= 31 ? 'takes care of his body, should hold his peak into his early 30s.' : reg >= 29 ? 'a normal arc, holding his peak until about 30.' : 'peaks early, decline could start in his late 20s.'}` };
   }
-  const c = compsFor(p).ceiling[0];
-  return { quote: c ? `${c.name}. I watch all his film.` : 'Nobody. I want to be the first me.', staff: c ? `Scouts: the ${c.tier} comparison is fair if it all comes together.` : '' };
+  const idol = idolFor(p);
+  if (!idol) return { quote: 'Nobody. I want to be the first me.', staff: '' };
+  const sim = Math.max(0, Math.round(100 - idol.dist * 3));
+  return { quote: vary2(p, 7, [`${idol.name}. I grew up watching him.`, `${idol.name}, for sure. I had his poster on my wall.`, `${idol.name}. I used to study his tape as a kid.`]),
+    staff: sim >= 60 ? `Scouts: you can see a lot of ${idol.last} in his game.` : sim >= 40 ? `Scouts: there are flashes of ${idol.last} in his game.` : `Scouts: different players, but you can see where the inspiration comes from.` };
+}
+
+// Who a prospect grew up idolizing: a star (All-Star tier or better) about
+// 10–20 years older who was playing in this league while the prospect was a
+// kid (ages 8–18), with a game like his. Not his ceiling comp.
+function idolFor(p) {
+  const L = league();
+  const cur = L.season.currentYear;
+  const born = cur - p.age;
+  const kid = [born + 8, born + 18];
+  const v = projectedCeiling(p, p.pot);
+  const proYears = x => (x.stats || []).filter(s => s.league === state.leagueIdx && (s.season || []).some(r => r.GP > 0)).map(s => s.yr);
+  const bornOf = x => {
+    const ys = proYears(x);
+    if (x.history?.draft?.yr) return x.history.draft.yr - 20;
+    if (ys.length) return Math.min(...ys) - 20;
+    return cur - (x.age || 0);
+  };
+  let best = null;
+  for (const e of compPool()) {
+    const x = e.p;
+    if (x.id === p.id || (x.pot || 0) < 8) continue;
+    const gap = born - bornOf(x);
+    if (gap < 10 || gap > 20) continue;
+    const ys = proYears(x);
+    if (ys.length && ys.filter(y => y >= kid[0] && y <= kid[1]).length < 2) continue;
+    const d = compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e) - ((x.pot || 8) - 8) * 2.5;
+    if (!best || d < best.score) best = { score: d, dist: compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e), name: playerName(x), last: x.ln || playerName(x) };
+  }
+  return best;
 }
 const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote">"${esc(a.quote)}"</span>${a.staff ? `<br><span class="muted">${esc(a.staff)}</span>` : ''}`;
 
