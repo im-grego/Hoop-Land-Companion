@@ -63,13 +63,19 @@ export function countryInfo(players) {
 }
 export const countryOf = p => null; // kept for older callers
 
-// A team's head coach, if the save stores one (name + potential/rating).
+// A team's head coach: the first coach listed on the team (an array such as
+// `coaches`, or a single coach object). Name from fn/ln or name fields;
+// potential from pot/potential when present.
 function coachOf(t) {
   for (const [k, v] of Object.entries(t)) {
-    if (!/coach/i.test(k) || !v || typeof v !== 'object' || Array.isArray(v)) continue;
-    const name = v.fn || v.ln ? `${v.fn || ''} ${v.ln || ''}`.trim() : v.name || null;
-    const pot = [v.pot, v.potential, v.rating, v.ovr].find(x => typeof x === 'number' || (x && typeof x.valueOf() === 'number'));
-    return { name, pot: pot != null ? Number(pot) : null };
+    if (!/coach/i.test(k) || !v || typeof v !== 'object') continue;
+    const c = Array.isArray(v) ? v.find(x => x && typeof x === 'object') : v;
+    if (!c) continue;
+    const fn = c.fn ?? c.firstName ?? c.first, ln = c.ln ?? c.lastName ?? c.last;
+    const name = fn || ln ? `${fn || ''} ${ln || ''}`.trim() : (typeof c.name === 'string' ? c.name : null);
+    const num = x => (x == null ? null : Number(x.valueOf ? x.valueOf() : x));
+    const pot = [c.pot, c.potential, c.rating, c.ovr].map(num).find(x => Number.isFinite(x));
+    return { name, pot: pot ?? null, raw: c };
   }
   return null;
 }
@@ -216,7 +222,7 @@ export function runSurvey(L, li = 0, salt = 1) {
     const lastRank = new Map([...teams].sort((a, b) => lastStr.get(b.id) - lastStr.get(a.id)).map((t, i) => [t.id, i]));
     const winOrder = [...teams].sort((a, b) => pct(b) - pct(a));
     const expectPct = t => pct(winOrder[lastRank.get(t.id)] || t);          // the record a team that talented "should" have had
-    const over = t => (pct(t) - expectPct(t)) * 10;                          // overachieving
+    const over = t => Math.max(-1.5, Math.min(1.5, (pct(t) - expectPct(t)) * 8));   // overachieving (capped so one fluke season can't own the vote)
     const projZ = t => { const v = [...now.values()]; const m = mean(v), sd = Math.sqrt(mean(v.map(x => (x - m) ** 2))) || 1; return (now.get(t.id) - m) / sd; };
     const playoff = t => (t.season || []).find(x => x.yr === yr)?.round || 0;
     const teamLine = t => {
@@ -229,7 +235,11 @@ export function runSurvey(L, li = 0, salt = 1) {
     const defTalent = t => mean([...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 8).map(p => (A(p, 'STL') + A(p, 'BLK') + A(p, 'DRE') + A(p, 'SPD')) / 4));
     const zMap = f => { const v = teams.map(f); const m = mean(v), sd = Math.sqrt(mean(v.map(x => (x - m) ** 2))) || 1; return new Map(teams.map((t, i) => [t.id, (v[i] - m) / sd])); };
     const offZ = zMap(t => tl.get(t.id).ppg), offTz = zMap(offTalent), defZs = zMap(t => tl.get(t.id).stocks), defTz = zMap(defTalent);
-    const C = (t, score) => { const c = coachOf(t); return { ...T(t, score + (c?.pot != null ? c.pot * 0.25 : 0)), name: c?.name || `${t.city} ${t.name} head coach`.trim(), coachTeam: c?.name ? `${t.city} ${t.name}`.trim() : null }; };
+    const coaches = new Map(teams.map(t => [t.id, coachOf(t)]));
+    const pots = [...coaches.values()].map(c => c?.pot).filter(x => x != null);
+    const pm = mean(pots), psd = Math.sqrt(mean(pots.map(x => (x - pm) ** 2))) || 1;
+    const potZ = t => { const c = coaches.get(t.id); return c?.pot != null ? (c.pot - pm) / psd : 0; };
+    const C = (t, score) => { const c = coaches.get(t.id); return { ...T(t, score + potZ(t) * 0.6), name: c?.name || `${t.city} ${t.name} head coach`.trim(), coachTeam: c?.name ? `${t.city} ${t.name}`.trim() : null }; };
     out.push(ask('coachBest', 'Coaches', 'Who is the best coach in the league?', teams.map(t => C(t, over(t) * 0.6 + pct(t) * 4 + projZ(t) * 0.6 + playoff(t) * 0.4))));
     out.push(ask('coachMotivate', 'Coaches', 'Who is the best motivator of people?', teams.map(t => C(t, over(t) * 1.1 + (now.get(t.id) - lastStr.get(t.id)) * 0.02 + pct(t)))));
     out.push(ask('coachAdjust', 'Coaches', 'Who makes the best in-game adjustments?', teams.map(t => C(t, playoff(t) * 1.2 + over(t) * 0.6 + pct(t) * 2))));
