@@ -22,13 +22,15 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 html, body { margin: 0; height: 100%; }
-html { background: var(--bg); }
+/* Under the moving tiles: the same tiles, still, so a gap at any edge
+   (home indicator, bounce) never shows plain blue. */
+html { background: var(--bg) url("../icons/bg-tile.jpg") 0 0 / 300px 200px repeat; image-rendering: pixelated; }
 
 body {
   font-family: var(--font);
   font-weight: 600;
   color: var(--text);
-  background-color: var(--bg);
+  background: transparent;
   overscroll-behavior: none;
 }
 
