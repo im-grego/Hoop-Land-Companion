@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.35.2';
+const APP_VERSION = '0.36.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1002,7 +1002,7 @@ screens.trainer = () => {
         d.regDelta > 0 ? `<span class="badge lvl">Regression ${p.regressionAge}</span>` : d.regDelta < 0 ? `<span class="badge down-b">Regression ${p.regressionAge}</span>` : '',
       ].join('');
       return `<div class="trainer-row">
-        <div class="tr-top"><b>${esc(playerName(p))}</b> <span class="gold small">Lv ${levelOf(p)}</span><span class="badge ${status[1] === 'up' ? 'lvl' : status[1] === 'down' ? 'down-b' : ''}">${status[0]}</span></div>
+        <div class="tr-top"><b>${esc(playerName(p))}</b> ${lvTag(p)}<span class="badge ${status[1] === 'up' ? 'lvl' : status[1] === 'down' ? 'down-b' : ''}">${status[0]}</span></div>
         <span class="small muted">${esc(posName(p))} · ${p.age}y · ${phys}</span>
         ${h ? `<span class="small">${esc(injuryName(h.worst))}${h.games ? ` · ${h.games} games missed` : ''}${h.sameType + h.sameArea ? ' · recurring' : ''}</span>` : ''}
         ${changes ? `<span>${changes}</span>` : ''}
@@ -1423,7 +1423,45 @@ screens.rookies = () => {
 const levelStars = p => Math.max(1, Math.min(10, Math.round((5 - (100 - levelOf(p)) / 14) * 2)));
 // Declining players (past their regression age) lose the stars they've
 // slipped below: potential shows no higher than where they are now.
-const potStars = p => (declining(p) ? Math.min(p.pot, levelStars(p)) : p.pot);
+const potStars = p => (declining(p) ? Math.min(p.pot, levelStarsOf(shownLevel(p))) : p.pot);
+const levelStarsOf = lv => Math.max(1, Math.min(10, Math.round((5 - (100 - lv) / 14) * 2)));
+
+// In-game regression: the save keeps a player's peak ratings, and the game
+// shows them minus a drop that grows each year past his regression age
+// (same points off any rating, measured on a 20/20 player). Retired players
+// show their peak again, so the app never writes this to the save.
+// Total drop by decline year, LAY → STM (ATTRS order).
+const REG_DROP = {
+  1: [1, 3, 2, 1, 1, 1, 1, 1, 2, 2, 2, 3, 2, 1, 2],
+  2: [2, 5, 3, 1, 1, 1, 2, 1, 4, 3, 3, 5, 3, 2, 3],
+  3: [3, 7, 5, 2, 2, 2, 3, 2, 6, 5, 5, 7, 5, 3, 5],
+  4: [4, 9, 6, 2, 2, 2, 4, 2, 7, 6, 6, 9, 6, 4, 6],
+};
+// Past year 4: keep adding the year 3 → 4 step.
+function regDrop(year, i) {
+  if (year <= 0) return 0;
+  if (REG_DROP[year]) return REG_DROP[year][i];
+  return REG_DROP[4][i] + (REG_DROP[4][i] - REG_DROP[3][i]) * (year - 4);
+}
+// The rating the game shows. Skills never go below 1; physicals fall at
+// half pace once they're under 8 (4 in the game's 10-point display).
+function regressed(p, k) {
+  const core = p.attributes[k][0];
+  const y = regressionYear(p);
+  if (!(y > 0)) return core;
+  const drop = regDrop(y, ATTRS.indexOf(k));
+  if (!PHYSICAL.includes(k)) return Math.max(1, core - drop);
+  if (core - drop >= 8) return core - drop;
+  const above = Math.max(0, core - 8);
+  return Math.max(1, Math.min(core, 8) - Math.floor((drop - above) / 2));
+}
+// Level as the game shows it (from the regressed ratings).
+function shownLevel(p) {
+  if (!declining(p)) return levelOf(p);
+  return levelOf({ pot: p.pot, attributes: Object.fromEntries(ATTRS.map(k => [k, [regressed(p, k), p.attributes[k][1]]])) });
+}
+// "Lv 84" for lists: red with ↓ while declining.
+const lvTag = (p, cls = 'gold small') => declining(p) ? `<span class="${cls.replace('gold', 'down')}">Lv ${shownLevel(p)}↓</span>` : `<span class="${cls}">Lv ${levelOf(p)}</span>`;
 
 screens.report = (args) => {
   const L = league();
@@ -1489,7 +1527,7 @@ function playerRow(p, d) {
       <span class="stars">${stars(potStars(p))}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
-    <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · Lv ${levelOf(p)}</span>
+    <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · ${lvTag(p, 'small')}</span>
     ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
   </button>`;
 }
@@ -1517,7 +1555,7 @@ screens.roster = (args) => {
   let idx = mine.findIndex(t => t.id === +args.arg);
   if (idx < 0) idx = 0;
   const t = mine[idx];
-  const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => levelOf(b.p) - levelOf(a.p));
+  const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
   const pts = rows.reduce((a, r) => a + r.d.apDelta.reduce((x, y) => x + y, 0), 0);
   const many = mine.length > 1;
   const prevT = mine[(idx - 1 + mine.length) % mine.length];
@@ -1601,13 +1639,13 @@ screens.leaders = (args) => {
     const yr = lastSeasonYear();
     const { ranks, of, minGp } = seasonRanks(yr);
     rows = all.map(e => ({ e, r: ranks.get(e.p.id) })).filter(x => x.r?.qualified)
-      .map(x => ({ ...x, v: x.r.pg[k], lv: levelOf(x.e.p) }))
+      .map(x => ({ ...x, v: x.r.pg[k], lv: shownLevel(x.e.p) }))
       .sort((a, b) => b.v - a.v || b.lv - a.lv);
     head = RANK_STATS.map(([x]) => `<button class="btn small ${x === k ? 'on focus' : 'off'}" data-act="openLeaders" data-m="stats" data-k="${x}" data-r="1">${x}</button>`).join('');
     note = `${yr} season, per game. ${of} qualified players (at least ${minGp} games).`;
   } else {
     k = ATTRS.includes(args.k) ? args.k : 'LAY';
-    rows = all.map(e => ({ e, v: e.p.attributes[k][0], lv: levelOf(e.p) })).sort((a, b) => b.v - a.v || b.lv - a.lv);
+    rows = all.map(e => ({ e, v: regressed(e.p, k), core: e.p.attributes[k][0], lv: shownLevel(e.p) })).sort((a, b) => b.v - a.v || b.lv - a.lv);
     head = ATTRS.map(x => `<button class="btn small ${x === k ? 'on focus' : 'off'} ${RATING_GROUP[x] ? `sk-${RATING_GROUP[x]}` : ''}" data-act="openLeaders" data-m="ratings" data-k="${x}" data-r="1">${x}</button>`).join('');
     note = `${ATTR_NAMES[k]}: every player in the league and free agency. Ties go to the higher level.`;
   }
@@ -1620,8 +1658,8 @@ screens.leaders = (args) => {
       <p class="note muted small" style="margin:6px 0">${esc(note)}</p>
       <div class="stack">${shown.map((x, i) => `<button class="ld-row ${x.e.team && isUserTeam(x.e.team) ? 'mine' : ''}" data-act="openPlayer" data-id="${x.e.p.id}">
         <span class="ld-n">${i + 1}</span>
-        <span class="grow"><b>${esc(playerName(x.e.p))}</b> <span class="gold small">Lv ${x.lv}</span><br><span class="small muted">${esc(tname(x.e))} · ${esc(posName(x.e.p))} · ${x.e.p.age}y</span></span>
-        <b class="ld-v">${fmt(x.v)}</b></button>`).join('')}</div>
+        <span class="grow"><b>${esc(playerName(x.e.p))}</b> ${lvTag(x.e.p)}<br><span class="small muted">${esc(tname(x.e))} · ${esc(posName(x.e.p))} · ${x.e.p.age}y</span></span>
+        <b class="ld-v ${x.core != null && x.v < x.core ? 'down' : ''}">${fmt(x.v)}${x.core != null && x.v < x.core ? '↓' : ''}</b></button>`).join('')}</div>
       ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
   });
 };
@@ -1646,7 +1684,7 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · <span class="gold">Lv ${levelOf(p)}</span> · <span class="stars">${stars(potStars(p))}</span></p>
+        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${lvTag(p, 'gold')} · <span class="stars">${stars(potStars(p))}</span></p>
         <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
       </div>
       ${rankBox(p)}
@@ -1686,7 +1724,7 @@ screens.player = (args) => {
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
-        <p class="note muted small" style="margin-top:10px">Bar = current rating, lighter shade = gained this offseason, white notch = ceiling. Red = what a declining player has lost from his peak (or a rating lowered this offseason). Raising a rating past its ceiling lifts the ceiling with it.</p>
+        <p class="note muted small" style="margin-top:10px">Bar = current rating, lighter shade = gained this offseason, white notch = ceiling. Declining players show what the game shows: their peak minus this year's regression (red number with ↓), with the red running up to the peak the save keeps. Raising a rating past its ceiling lifts the ceiling with it.</p>
       </fieldset>
       <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
         <div class="stack">
@@ -1722,21 +1760,22 @@ function attrRow(p, snap, k, ceilMode) {
   const orig = snap.attributes[k][0];
   const delta = cur - orig;
   const base = Math.min(cur, orig);
-  // Declining: the gap down from his peak (the stored max) is what he's lost,
-  // shown in red with no growth notch. A rating lowered this offseason shows
-  // the drop in red too.
-  const down = declining(p) && ceil > cur;
+  // Declining: the game shows his peak minus this year's regression. The bar
+  // fills to that, the red runs from there up to his peak (the rating the
+  // save keeps), and there's no growth notch.
+  const reg = regressed(p, k);
+  const down = reg < cur;
   return `<div class="attr">
     <button class="btn square" data-act="attr" data-k="${k}" data-dir="-1" aria-label="Lower ${ATTR_NAMES[k]}">−</button>
     <div class="body">
       <div class="top">
         <span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span>
-        <span><span class="${down ? 'down' : ''}">${cur}</span>${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${ceil}</span></span>
+        <span>${down ? `<span class="down">${reg}↓</span>` : cur}${delta ? ` <span class="${delta > 0 ? 'up' : 'down'}">(${delta > 0 ? '+' : ''}${delta})</span>` : ''} <span class="gold">/ ${down ? cur : ceil}</span></span>
       </div>
       <div class="${barClass(k)}">
-        ${down ? `<div class="lost" style="left:${cur / ATTR_MAX * 100}%;width:${(Math.min(ceil, ATTR_MAX) - cur) / ATTR_MAX * 100}%"></div>` : `<div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>`}
-        <div class="fill" style="width:${base / ATTR_MAX * 100}%"></div>
-        ${delta > 0 ? `<div class="gain" style="left:${orig / ATTR_MAX * 100}%;width:${delta / ATTR_MAX * 100}%"></div>` : ''}
+        ${down ? `<div class="lost" style="left:${reg / ATTR_MAX * 100}%;width:${(Math.min(cur, ATTR_MAX) - reg) / ATTR_MAX * 100}%"></div>` : `<div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div>`}
+        <div class="fill" style="width:${(down ? Math.min(reg, base) : base) / ATTR_MAX * 100}%"></div>
+        ${delta > 0 && !down ? `<div class="gain" style="left:${orig / ATTR_MAX * 100}%;width:${delta / ATTR_MAX * 100}%"></div>` : ''}
         ${delta < 0 && !down ? `<div class="lost" style="left:${cur / ATTR_MAX * 100}%;width:${-delta / ATTR_MAX * 100}%"></div>` : ''}
         ${down ? '' : `<div class="ceil" style="left:calc(${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}% - 2px)"></div>`}
       </div>
