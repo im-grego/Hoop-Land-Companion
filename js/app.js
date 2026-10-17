@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.38.1';
+const APP_VERSION = '0.38.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -161,10 +161,28 @@ function logoUrl(url) {
   if (!url) return '';
   return url.includes('dropbox.com') ? url.replace(/([?&])dl=0/, '$1raw=1') : url;
 }
+// Logos load right away (no lazy loading) into a box of fixed size, so a
+// slow or missing logo never shifts the layout.
 function logoImg(team, cls = 'logo-sm') {
   const u = logoUrl(team.logoURL);
-  if (!u) return '';
-  return `<img class="${cls}" src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">`;
+  if (!u) return `<span class="${cls} logo-ph" aria-hidden="true"></span>`;
+  return `<img class="${cls}" src="${esc(u)}" alt="" width="34" height="34" decoding="async" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`;
+}
+// Fetch every team logo as soon as a save loads (and keep them), so screens
+// open with their logos already there.
+const logoCache = new Map();
+function preloadLogos(data) {
+  const urls = new Set();
+  for (const L of data.seasonLeagues || []) for (const t of L.teams || []) { const u = logoUrl(t.logoURL); if (u) urls.add(u); }
+  for (const u of urls) {
+    if (logoCache.has(u)) continue;
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer';
+    img.decoding = 'async';
+    try { img.fetchPriority = 'high'; } catch { /* older browsers */ }
+    img.src = u;
+    logoCache.set(u, img);
+  }
 }
 
 // A notification that slides down from the top, like a text message.
@@ -379,6 +397,7 @@ function installData(data, keepSnaps = false) {
       state.leagueAvg[li] = avg;
     });
     data.seasonLeagues.forEach(L => { if (L.draftClass?.length) saveOriginals(L, originalRatings(L)); });
+    preloadLogos(data);
     loadUserTeams();
   }
 }
@@ -4493,6 +4512,7 @@ screens.survey = (args) => {
     // International questions close out the Players tab.
     body += S.questions.filter(q => q.section === 'International').map(card).join('');
   }
+  if (tab === 'Coaches' && S.coachesFound < S.gms) body = `<p class="note small down">Head coaches found for ${S.coachesFound} of ${S.gms} teams in this save; the rest show as "team head coach".</p>` + body;
   if (tab === tabs[tabs.length - 1]) body += '<p class="note muted small center" style="margin:10px 0">That\'s all from this year\'s survey.</p>';
   layout({
     title: 'GM Survey',

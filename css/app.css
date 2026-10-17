@@ -1084,3 +1084,5 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .ld-keys:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, 1fr); }
 .sv-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
 .sv-tabs .btn { min-width: 0; min-height: 40px; padding: 6px 1px; font-size: 13px; letter-spacing: -.2px; white-space: nowrap; }
+.logo-sm { flex: none; display: inline-block; }
+.logo-ph { visibility: hidden; }

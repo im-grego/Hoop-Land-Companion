@@ -63,20 +63,51 @@ export function countryInfo(players) {
 }
 export const countryOf = p => null; // kept for older callers
 
-// A team's head coach: the first coach listed on the team (an array such as
-// `coaches`, or a single coach object). Name from fn/ln or name fields;
-// potential from pot/potential when present.
-function coachOf(t) {
-  for (const [k, v] of Object.entries(t)) {
-    if (!/coach/i.test(k) || !v || typeof v !== 'object') continue;
-    const c = Array.isArray(v) ? v.find(x => x && typeof x === 'object') : v;
-    if (!c) continue;
-    const fn = c.fn ?? c.firstName ?? c.first, ln = c.ln ?? c.lastName ?? c.last;
-    const name = fn || ln ? `${fn || ''} ${ln || ''}`.trim() : (typeof c.name === 'string' ? c.name : null);
-    const num = x => (x == null ? null : Number(x.valueOf ? x.valueOf() : x));
-    const pot = [c.pot, c.potential, c.rating, c.ovr].map(num).find(x => Number.isFinite(x));
-    return { name, pot: pot ?? null, raw: c };
-  }
+// A team's head coach: the first coach listed for the team. Looks on the
+// team (any field with "coach" in its name, a level down too, e.g.
+// staff.coaches), and in league-wide coach lists matched by team id or by
+// id references. Name from fn/ln, firstName/lastName or name; potential from
+// pot/potential/rating/ovr when the save has it.
+const num = x => (x == null ? null : Number(x.valueOf ? x.valueOf() : x));
+function coachName(c) {
+  if (!c || typeof c !== 'object') return null;
+  const fn = c.fn ?? c.firstName ?? c.first ?? c.fName, ln = c.ln ?? c.lastName ?? c.last ?? c.lName;
+  if (fn || ln) return `${fn || ''} ${ln || ''}`.trim();
+  for (const k of ['name', 'fullName', 'n']) if (typeof c[k] === 'string' && c[k].trim()) return c[k].trim();
+  return null;
+}
+function asCoach(c) {
+  const name = coachName(c);
+  if (!name) return null;
+  const pot = [c.pot, c.potential, c.rating, c.ovr, c.overall].map(num).find(x => Number.isFinite(x));
+  return { name, pot: pot ?? null, raw: c };
+}
+// League-wide coach lists (arrays of coach objects).
+function leagueCoaches(L) {
+  const out = [];
+  for (const [k, v] of Object.entries(L || {})) if (/coach|staff/i.test(k) && Array.isArray(v)) out.push(...v.filter(x => x && typeof x === 'object'));
+  return out;
+}
+export function coachOf(t, L = null) {
+  const pool = L ? leagueCoaches(L) : [];
+  const byId = id => pool.find(c => num(c.id ?? c.cid ?? c.pid) === num(id));
+  const first = v => {
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        const c = typeof x === 'object' ? asCoach(x) : (typeof x === 'number' || typeof x?.valueOf?.() === 'number') ? asCoach(byId(x)) : null;
+        if (c) return c;
+      }
+      return null;
+    }
+    if (v && typeof v === 'object') return asCoach(v) || Object.entries(v).filter(([k]) => /coach/i.test(k)).map(([, x]) => first(x)).find(Boolean) || null;
+    if (typeof v === 'number' || typeof v?.valueOf?.() === 'number') return asCoach(byId(v));
+    return null;
+  };
+  for (const [k, v] of Object.entries(t)) if (/coach/i.test(k)) { const c = first(v); if (c) return c; }
+  for (const [k, v] of Object.entries(t)) if (/staff/i.test(k)) { const c = first(v); if (c) return c; }
+  // League lists tied to the team.
+  const mine = pool.filter(c => num(c.tid ?? c.teamId ?? c.team) === num(t.id));
+  for (const c of mine) { const x = asCoach(c); if (x) return x; }
   return null;
 }
 
@@ -235,7 +266,7 @@ export function runSurvey(L, li = 0, salt = 1) {
     const defTalent = t => mean([...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 8).map(p => (A(p, 'STL') + A(p, 'BLK') + A(p, 'DRE') + A(p, 'SPD')) / 4));
     const zMap = f => { const v = teams.map(f); const m = mean(v), sd = Math.sqrt(mean(v.map(x => (x - m) ** 2))) || 1; return new Map(teams.map((t, i) => [t.id, (v[i] - m) / sd])); };
     const offZ = zMap(t => tl.get(t.id).ppg), offTz = zMap(offTalent), defZs = zMap(t => tl.get(t.id).stocks), defTz = zMap(defTalent);
-    const coaches = new Map(teams.map(t => [t.id, coachOf(t)]));
+    const coaches = new Map(teams.map(t => [t.id, coachOf(t, L)]));
     const pots = [...coaches.values()].map(c => c?.pot).filter(x => x != null);
     const pm = mean(pots), psd = Math.sqrt(mean(pots.map(x => (x - pm) ** 2))) || 1;
     const potZ = t => { const c = coaches.get(t.id); return c?.pot != null ? (c.pot - pm) / psd : 0; };
@@ -301,7 +332,8 @@ export function runSurvey(L, li = 0, salt = 1) {
   }
   const topVoted = [...tally.values()].sort((a, b) => b.votes - a.votes).slice(0, 5)
     .map(r => ({ ...r, pct: Math.round(r.votes / (playerBallots || 1) * 1000) / 10 }));
-  return { year: cur, questions: out, seeds, topVoted, gms: teams.length, hasIntl: intl.length > 0, countryKey: ci?.key || null };
+  const coachesFound = teams.filter(t => coachOf(t, L)).length;
+  return { year: cur, questions: out, seeds, topVoted, gms: teams.length, hasIntl: intl.length > 0, countryKey: ci?.key || null, coachesFound };
 }
 
 // How lopsided a result is, in words.
