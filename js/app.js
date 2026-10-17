@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.39.1';
+const APP_VERSION = '0.39.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -687,6 +687,10 @@ actions.advLottery = async (opts = {}) => {
 
 actions.advFreeAgency = async () => {
   const L = league();
+  if (!optStore().done && (optionPlayers(L).length || L.teams.some(t => t.roster.some(p => FA.qoEligible(L, p))))) {
+    const mine = optionPlayers(L).filter(x => isUserTeam(x.team)).length + L.teams.filter(isUserTeam).flatMap(t => t.roster.filter(p => FA.qoEligible(L, p))).length;
+    if (!(await confirmBox(`The options deadline hasn't been run${mine ? `: you have ${mine} option or qualifying-offer decision${mine > 1 ? 's' : ''} waiting` : ''}. Open free agency anyway? Undecided options stay in the save.`, 'Open Anyway'))) { go('options'); return; }
+  }
   checkpoint('Open Free Agency');
   const signed = startFreeAgency(L, { r2Years: state.params.rookieR2Years });
   state.dirty = true;
@@ -4652,11 +4656,13 @@ actions.surveyTab = d => replace('survey', { tab: d.t });
 actions.surveyDone = () => { saveSurveyHist(surveyNow()); calFlags().survey = true; goHome(); toast('Next up: Media Day'); };
 
 // ---------------------------------------------------------------------------
-// Options deadline (Jun 29, Post-Draft). Players whose contracts are up with
-// an option (0 years left, opt 1 = team option, opt 2 = player option) are
-// picked up (1 more year at the same salary, signed) or head to free agency
-// (the option clears and they stay pending). First-rounders off their rookie
-// deal get a qualifying offer or don't (restricted vs unrestricted in FA).
+// Options deadline (Jun 29, Post-Draft). An option covers the last year of a
+// deal (opt 1 = team option, opt 2 = player option), so it comes due with 1
+// year left: picked up, that year is guaranteed (the option clears); declined
+// or opted out, he's a free agent now (deal up, still listed on his team).
+// The odd deal with 0 years left and an option gets one more year if picked
+// up. Free agents with 3 or fewer years in the league get a qualifying offer
+// or don't (restricted vs unrestricted in FA).
 
 function optStore() {
   const key = `hlc:opts:${seasonKey()}`;
@@ -4685,7 +4691,7 @@ function holdCpuOffers() {
   return hold.length;
 }
 
-const optionPlayers = L => L.teams.flatMap(t => t.roster.filter(p => p.contract && (p.contract.yrs || 0) === 0 && (p.contract.opt === 1 || p.contract.opt === 2)).map(p => ({ p, team: t })));
+const optionPlayers = L => L.teams.flatMap(t => t.roster.filter(p => p.contract && (p.status === FA.STATUS_SIGNED || p.status === FA.STATUS_EXPIRING) && (p.contract.yrs || 0) <= 1 && (p.contract.opt === 1 || p.contract.opt === 2)).map(p => ({ p, team: t })));
 const marketValue = p => fairSalary(shownLevel(p));
 const qoAmount = p => Math.max(2, Math.round((p.contract?.sal || 2) * 1.25));
 
@@ -4716,8 +4722,26 @@ function optionCall(L, p, team) {
   const under = worth >= sal * 1.4 && worth - sal >= 5 && p.age < 33;
   const low = moraleLow(p, team);
   const out = under || (low && worth >= sal * 0.9);
-  return { kind: 'player', choice: out ? 'out' : 'in', worth, sal,
+  const reason = under ? 'money' : out ? 'unhappy' : null;
+  const pitch = isUserTeam(team) ? optStore().pitch?.[p.id] : null;
+  if (out && pitch?.ok) return { kind: 'player', choice: 'in', worth, sal, reason, pitch, why: `Opting in: ${PITCHES[pitch.kind].kept}` };
+  return { kind: 'player', choice: out ? 'out' : 'in', worth, sal, reason, pitch,
     why: under ? `Opting out: he can get about $${worth}M on the market` : out ? 'Opting out: unhappy where he is' : 'Opting in' };
+}
+
+// Pitches to keep your own player from opting out. Each one is a promise,
+// remembered next season. Odds depend on why he wants out; one try each.
+const PITCHES = {
+  role: { label: 'Bigger role', promise: 'a bigger role', kept: 'promised a bigger role', odds: { unhappy: 0.65, money: 0.25 } },
+  ext: { label: 'Extension next summer', promise: 'an extension next summer', kept: 'promised an extension next summer', odds: { unhappy: 0.3, money: 0.6 } },
+  win: { label: 'We\'ll add talent', promise: 'help around him', kept: 'promised help around him', odds: { unhappy: 0.45, money: 0.2 } },
+};
+function pitchOdds(p, team, kind, reason) {
+  let o = PITCHES[kind].odds[reason] ?? 0.3;
+  if (p.age >= 30) o += kind === 'win' ? 0.15 : -0.05;
+  if (p.age <= 25 && kind === 'role') o += 0.1;
+  if (teamRecord(team).pct >= 0.6 && kind === 'win') o += 0.1;
+  return Math.max(0.05, Math.min(0.9, o));
 }
 function qoCall(L, p, team) {
   if (isUserTeam(team)) return optStore().qo[p.id];
@@ -4741,21 +4765,41 @@ screens.options = () => {
   const pending = myTeamOpts.some(x => !x.c.choice) || myQO.some(x => st.qo[x.p.id] == null);
   layout({
     title: 'Options Deadline',
-    body: `<p class="note small">Options and qualifying offers are due. Picked-up options add one more year at the same salary; anyone else heads to free agency.</p>
+    body: `<p class="note small">Options and qualifying offers are due. A picked-up option locks in his last year at the same salary; anyone else is a free agent now.</p>
       <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => `<div class="drill-row">${head(x)}
         <span class="opt-btns">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Exercise')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span></div>`).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
-      <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row">${head(x)}
-        <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b></div>`).join('') || '<p class="note muted small">No player options this year.</p>'}</div>
-        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy.</p>' : ''}</fieldset>
+      <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row wrap">${head(x)}
+        <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b>
+        ${x.c.reason && !done ? (x.c.pitch ? (x.c.pitch.ok ? '' : `<p class="note small down full">He heard you out on ${esc(PITCHES[x.c.pitch.kind].promise)}. He's testing the market.</p>`)
+          : `<div class="full"><p class="note small muted">Make him a promise to stay (one try):</p><span class="opt-btns">${Object.entries(PITCHES).map(([k, v]) => `<button class="btn small" data-act="optPitch" data-id="${x.p.id}" data-v="${k}">${esc(v.label)} · ${Math.round(pitchOdds(x.p, x.team, k, x.c.reason) * 100)}%</button>`).join('')}</span></div>`) : ''}</div>`).join('') || '<p class="note muted small">No player options this year.</p>'}</div>
+        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy. Promises are remembered next season.</p>' : ''}</fieldset>
       <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
         <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Extend')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Skip')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
         ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Extend: he\'s restricted, so you can match any offer sheet in free agency. Skip: he\'s unrestricted.</p>' : ''}</fieldset>
-      <fieldset class="frame"><legend>Around the League</legend><div class="stack">${around.slice(0, 12).map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : 'down'}">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
+      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Heading to free agency. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
     action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
   });
 };
 actions.optTeam = d => { optStore().team[+d.id] = d.v; saveOptStore(); render(); };
+actions.optPitch = d => {
+  const L = league(), st = optStore(), pid = +d.id;
+  if (st.done || st.pitch?.[pid]) return;
+  const x = optionPlayers(L).find(y => y.p.id === pid);
+  if (!x) return;
+  const c = optionCall(L, x.p, x.team);
+  if (!c.reason) return;
+  const odds = pitchOdds(x.p, x.team, d.v, c.reason);
+  const ok = mulberry32((saveSalt() ^ pid * 7919 ^ d.v.length * 104729) >>> 0)() < odds;
+  (st.pitch ||= {})[pid] = { kind: d.v, ok };
+  saveOptStore();
+  if (ok) {
+    const all = loadPromises().filter(pr => !(pr.pid === pid && pr.yr === L.season.currentYear && pr.src === 'option'));
+    savePromises([...all, { yr: L.season.currentYear, tid: x.team.id, pid, v: 'commit', kind: d.v, src: 'option' }]);
+  }
+  render();
+  toast(ok ? `${playerName(x.p)} is opting in` : `${playerName(x.p)} isn't convinced`, ok ? `You promised ${PITCHES[d.v].promise}.` : 'He\'s testing free agency.');
+};
 actions.optQO = d => { optStore().qo[+d.id] = d.v === '1'; saveOptStore(); render(); };
 actions.optFinish = async () => {
   const L = league();
@@ -4770,18 +4814,24 @@ actions.optFinish = async () => {
   const yr = L.season.currentYear;
   let exercised = 0, out = 0;
   for (const { p, c } of list) {
+    const row = (p.stats || []).filter(s => s.yr === yr && s.league === 0).pop();
     if (c.choice === 'ex' || c.choice === 'in') {
-      Object.assign(p.contract, { yrs: 1, opt: 0 });
+      // The option year is now guaranteed (a 0-year deal gets that year).
+      Object.assign(p.contract, { yrs: Math.max(1, p.contract.yrs || 0), opt: 0 });
       p.status = FA.STATUS_SIGNED;
-      const row = (p.stats || []).filter(s => s.yr === yr && s.league === 0).pop();
       if (row) row.sal = p.contract.sal;
       exercised++;
     } else {
-      p.contract.opt = 0;
+      // Declined or opted out: a free agent now, unrestricted.
+      Object.assign(p.contract, { yrs: 0, opt: 0, sal: 0, canExt: false });
+      p.status = FA.STATUS_EXPIRING;
+      if (row) row.sal = 0;
+      st.qo[p.id] = false;
       out++;
     }
   }
-  for (const { p, team } of qoList) if (!isUserTeam(team)) st.qo[p.id] = qoCall(L, p, team);
+  for (const { p, team } of qoList) if (!isUserTeam(team) && st.qo[p.id] == null) st.qo[p.id] = qoCall(L, p, team);
+  FA.setQualifyingOffers(st.qo);
   // The held CPU offers go back in, except for players whose option was just
   // decided (picked up, or headed to the open market).
   const decided = new Set(list.map(x => x.p.id));

@@ -268,17 +268,16 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
 }
 
 // ---------------------------------------------------------------------------
-// Restricted free agents: first-round picks coming off their rookie deal
-// (drafted within the last 4 seasons). Their old team can match any offer
+// Restricted free agents: players coming off a deal with 3 or fewer years
+// in the league. Their old team can match any offer
 // sheet, and a match beats every other offer.
 // Qualifying offers decided at the options deadline: pid -> true (extended,
 // restricted) / false (not extended, unrestricted). No entry = restricted.
 let QO = new Map();
 export function setQualifyingOffers(map) { QO = new Map(Object.entries(map || {}).map(([k, v]) => [+k, v])); }
-export const qoEligible = (league, p) => {
-  const d = p.history?.draft;
-  return p.status === STATUS_EXPIRING && d?.rd === 1 && d.yr > 0 && league.season.currentYear - d.yr <= 4;
-};
+// Eligible for a qualifying offer: a free agent now (deal up, still on his
+// team) with 3 or fewer years in the league (the save's `yrs`).
+export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && (p.yrs ?? 99) <= 3;
 export function isRestricted(league, p) {
   return qoEligible(league, p) && QO.get(p.id) !== false;
 }

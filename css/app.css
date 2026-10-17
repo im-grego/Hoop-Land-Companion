@@ -1088,3 +1088,6 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .logo-ph { visibility: hidden; }
 .combine-sorts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .combine-sorts .btn { min-width: 0; padding: 6px 1px; font-size: 12px; white-space: nowrap; }
+.drill-row.wrap { flex-wrap: wrap; }
+.drill-row .full { flex-basis: 100%; }
+.drill-row.tap { cursor: pointer; }

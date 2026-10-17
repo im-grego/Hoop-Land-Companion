@@ -192,6 +192,13 @@ export function promiseStories(league, promises) {
     const hit = all.find(x => x.p.id === pr.pid);
     if (!team || !hit) continue;
     const n = playerName(hit.p);
+    if (pr.src === 'option') {
+      const promise = { role: 'a bigger role', ext: 'an extension', win: 'help around him' }[pr.kind] || 'a future';
+      out.push(hit.t === team
+        ? { kind: 'promise', score: 52, icon: '🤝', title: `${n} opted in on a promise`, text: `${Place(team)} promised ${hit.p.fn} ${promise} to keep him from testing free agency. This is the year it has to show.`, pid: hit.p.id }
+        : { kind: 'promise', score: 62, icon: '💔', title: `${Place(team)} promised ${n} ${promise}. He's gone.`, text: `He opted in on their word last summer. ${hit.p.fn} is ${hit.t ? `in ${place(hit.t)} now` : 'still looking for a team'}.`, pid: hit.p.id });
+      continue;
+    }
     out.push(hit.t === team
       ? { kind: 'promise', score: 50, icon: '🤝', title: `${Place(team)} kept its word`, text: `A year ago the front office said it wanted ${n} long-term. He's still in ${place(team)}.`, pid: hit.p.id }
       : { kind: 'promise', score: 64, icon: '💔', title: `${Place(team)} promised ${n} a future. He's gone.`, text: `"We want him here long-term," they said last Media Day. ${hit.p.fn} is ${hit.t ? `in ${place(hit.t)} now` : 'still looking for a team'}.`, pid: hit.p.id });
