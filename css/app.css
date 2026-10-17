@@ -1078,3 +1078,6 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .as-row:active { border-color: var(--cyan); }
 .as-row .sk-name { flex: 1; font-weight: 800; font-size: 15px; }
 .as-fit { min-width: 40px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.as-count { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; min-width: 46px; }
+.as-count b { font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
+.as-count span { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--dim); }
