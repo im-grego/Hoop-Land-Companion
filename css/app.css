@@ -1065,9 +1065,9 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .opt-btns .btn { min-height: 32px; padding: 0 8px; font-size: 13px; }
 
 /* Star icons */
-.st-row { display: inline-flex; gap: 1px; vertical-align: -2px; }
+.st-row { display: inline-flex; gap: 1px; vertical-align: -2px; width: 79px; justify-content: flex-start; }
 .st { position: relative; display: inline-block; width: 15px; height: 15px; overflow: hidden; flex: none; }
 .st svg { position: absolute; top: 0; left: 0; width: 15px; height: 15px; }
 .st-gold path { fill: var(--gold); }
-.st-faint path { fill: none; stroke: color-mix(in srgb, var(--gold) 45%, transparent); stroke-width: 1.6; }
+.st-faint path { fill: none; stroke: color-mix(in srgb, var(--gold) 55%, transparent); stroke-width: 1.6; stroke-linejoin: round; }
 .st-lost path { fill: none; stroke: #ff5a6a; stroke-width: 2; stroke-linejoin: round; }
