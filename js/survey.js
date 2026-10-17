@@ -80,7 +80,10 @@ function asCoach(c) {
   const name = coachName(c);
   if (!name) return null;
   const pot = [c.pot, c.potential, c.rating, c.ovr, c.overall].map(num).find(x => Number.isFinite(x));
-  return { name, pot: pot ?? null, raw: c };
+  // Hoop Land coaches: attributes { development, motivation, leadership }
+  // as [current, max], and tendencies (offFocus, offTempo, defFocus, ...).
+  const at = k => { const v = c.attributes?.[k]; return Array.isArray(v) ? num(v[0]) : num(v); };
+  return { name, pot: pot ?? null, dev: at('development'), mot: at('motivation'), lead: at('leadership'), tend: c.tendencies || {}, raw: c };
 }
 // League-wide coach lists (arrays of coach objects).
 function leagueCoaches(L) {
@@ -89,6 +92,10 @@ function leagueCoaches(L) {
   return out;
 }
 export function coachOf(t, L = null) {
+  // Hoop Land keeps a team's staff in frontOffice.staff; the first one is
+  // the head coach (a blank name = the job is open).
+  const staff = t.frontOffice?.staff;
+  if (Array.isArray(staff) && staff.length) return asCoach(staff[0]);
   const pool = L ? leagueCoaches(L) : [];
   const byId = id => pool.find(c => num(c.id ?? c.cid ?? c.pid) === num(id));
   const first = v => {
@@ -270,12 +277,20 @@ export function runSurvey(L, li = 0, salt = 1) {
     const pots = [...coaches.values()].map(c => c?.pot).filter(x => x != null);
     const pm = mean(pots), psd = Math.sqrt(mean(pots.map(x => (x - pm) ** 2))) || 1;
     const potZ = t => { const c = coaches.get(t.id); return c?.pot != null ? (c.pot - pm) / psd : 0; };
+    // Coach ratings (development / motivation / leadership, 0–20) as z-scores.
+    const attrZ = key => { const v = [...coaches.values()].map(c => c?.[key]).filter(x => x != null); const m = mean(v), sd = Math.sqrt(mean(v.map(x => (x - m) ** 2))) || 1; return t => { const c = coaches.get(t.id); return c?.[key] != null ? (c[key] - m) / sd : 0; }; };
+    const devZ = attrZ('dev'), motZ = attrZ('mot'), leadZ = attrZ('lead');
+    const tend = (t, k) => num(coaches.get(t.id)?.tend?.[k]) || 0;
+    // Teams with an open head coaching job aren't on the ballot.
+    const hired = teams.filter(t => coaches.get(t.id)?.name);
     const C = (t, score) => { const c = coaches.get(t.id); return { ...T(t, score + potZ(t) * 0.6), name: c?.name || `${t.city} ${t.name} head coach`.trim(), coachTeam: c?.name ? `${t.city} ${t.name}`.trim() : null }; };
-    out.push(ask('coachBest', 'Coaches', 'Who is the best coach in the league?', teams.map(t => C(t, over(t) * 0.6 + pct(t) * 4 + projZ(t) * 0.6 + playoff(t) * 0.4))));
-    out.push(ask('coachMotivate', 'Coaches', 'Who is the best motivator of people?', teams.map(t => C(t, over(t) * 1.1 + (now.get(t.id) - lastStr.get(t.id)) * 0.02 + pct(t)))));
-    out.push(ask('coachAdjust', 'Coaches', 'Who makes the best in-game adjustments?', teams.map(t => C(t, playoff(t) * 1.2 + over(t) * 0.6 + pct(t) * 2))));
-    out.push(ask('coachOff', 'Coaches', 'Which coach runs the best offense?', teams.map(t => C(t, offZ.get(t.id) * 1.2 + (offZ.get(t.id) - offTz.get(t.id)) * 0.8 + pct(t)))));
-    out.push(ask('coachDef', 'Coaches', 'Which coach has the best defensive scheme?', teams.map(t => C(t, defZs.get(t.id) * 1.2 + (defZs.get(t.id) - defTz.get(t.id)) * 0.8 + pct(t)))));
+    const pool = hired.length >= 10 ? hired : teams;
+    out.push(ask('coachBest', 'Coaches', 'Who is the best coach in the league?', pool.map(t => C(t, over(t) * 0.5 + pct(t) * 3 + projZ(t) * 0.4 + playoff(t) * 0.3 + (devZ(t) + motZ(t) + leadZ(t)) * 0.35))));
+    out.push(ask('coachMotivate', 'Coaches', 'Who is the best motivator of people?', pool.map(t => C(t, motZ(t) * 1.4 + over(t) * 0.5 + pct(t) * 0.5))));
+    out.push(ask('coachAdjust', 'Coaches', 'Who makes the best in-game adjustments?', pool.map(t => C(t, leadZ(t) * 1.2 + playoff(t) * 0.6 + over(t) * 0.4 + pct(t)))));
+    out.push(ask('coachOff', 'Coaches', 'Which coach runs the best offense?', pool.map(t => C(t, offZ.get(t.id) * 1.1 + (offZ.get(t.id) - offTz.get(t.id)) * 0.7 + pct(t) + (tend(t, 'offFocus') ? 0.25 : 0) + tend(t, 'offTempo') * 0.2))));
+    out.push(ask('coachDef', 'Coaches', 'Which coach has the best defensive scheme?', pool.map(t => C(t, defZs.get(t.id) * 1.1 + (defZs.get(t.id) - defTz.get(t.id)) * 0.7 + pct(t) + tend(t, 'defFocus') * 0.15 + tend(t, 'defAggression') * 0.15))));
+    out.push(ask('coachDevelop', 'Coaches', 'Which coach is the best at developing young players?', pool.map(t => C(t, devZ(t) * 1.4 + t.roster.filter(p => p.age <= 24).reduce((a, p) => a + Math.max(0, levelOf(p) - 70), 0) * 0.01))));
   }
 
   // ---- Defense
@@ -332,7 +347,7 @@ export function runSurvey(L, li = 0, salt = 1) {
   }
   const topVoted = [...tally.values()].sort((a, b) => b.votes - a.votes).slice(0, 5)
     .map(r => ({ ...r, pct: Math.round(r.votes / (playerBallots || 1) * 1000) / 10 }));
-  const coachesFound = teams.filter(t => coachOf(t, L)).length;
+  const coachesFound = teams.filter(t => coachOf(t, L)?.name).length;
   return { year: cur, questions: out, seeds, topVoted, gms: teams.length, hasIntl: intl.length > 0, countryKey: ci?.key || null, coachesFound };
 }
 

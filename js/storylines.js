@@ -59,8 +59,12 @@ const slash = l => (l ? `${f1(l.ppg)}/${f1(l.rpg)}/${f1(l.apg)}` : '');
 let PRO = 0;
 const inPro = (p, yr) => (p.stats || []).some(s => s.league === PRO && s.yr === yr &&
   [...(s.season || []), ...(s.playoffs || [])].some(r => r.GP > 0));
-const proYears = (p, a) => (a.yearsWon || []).filter(yr => inPro(p, yr));
-const won = (p, id, yr) => (p.awards || []).some(a => a.id === id && a.yearsWon?.includes(yr) && inPro(p, yr));
+// Awards carry the league they were won in (league: 0 = the pro league in
+// an NBA save, 1+ = college); older saves without it fall back to seasons
+// played.
+const proAward = (p, a, yr) => (a.league != null ? a.league === PRO : inPro(p, yr));
+const proYears = (p, a) => (a.yearsWon || []).filter(yr => proAward(p, a, yr));
+const won = (p, id, yr) => (p.awards || []).some(a => a.id === id && a.yearsWon?.includes(yr) && proAward(p, a, yr));
 const timesWon = (p, id) => (p.awards || []).filter(a => a.id === id).reduce((n, a) => n + proYears(p, a).length, 0);
 
 // Career weight for retirements and legacy stories.

@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.38.3';
+const APP_VERSION = '0.39.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -649,7 +649,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], survey: ['survey'], media: ['storylines'], export: ['export'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], export: ['export'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -985,6 +985,108 @@ actions.undoContracts = () => {
   render();
 };
 
+// ---------------------------------------------------------------------------
+// Strength program (Training Camp). Physical ratings don't move after the
+// draft in the game, so this is the one place they can: players 25 and under
+// can add Strength, Speed or Stamina, likelier when young, with room on
+// their frame, high potential and draft pedigree. Written to the save.
+
+const STR_FOCUS = [['STR', 'Strength'], ['SPD', 'Speed'], ['STM', 'Stamina']];
+const STR_MAX_AGE = 25;
+function strengthStore() {
+  const key = `hlc:str:${seasonKey()}`;
+  const c = (state.strength ||= {});
+  if (!c[key]) { let v = {}; try { v = JSON.parse(localStorage.getItem(key)) || {}; } catch { v = {}; } c[key] = { focus: {}, ...v }; }
+  return c[key];
+}
+const saveStrength = () => { try { localStorage.setItem(`hlc:str:${seasonKey()}`, JSON.stringify(strengthStore())); } catch { /* ignore */ } };
+const cpuFocus = p => (p.pos >= 6 ? 'STR' : p.pos <= 2 ? 'SPD' : ['SPD', 'STM', 'STR'][p.id % 3]);
+const focusOf = (p, team) => (isUserTeam(team) && strengthStore().focus[p.id]) || cpuFocus(p);
+function pedigree(p) {
+  const d = p.history?.draft;
+  if (!d?.yr) return 0;
+  return d.rd === 1 ? (d.pk <= 5 ? 1 : d.pk <= 14 ? 0.75 : 0.55) : 0.3;
+}
+// Chance of a gain this offseason (0–0.85).
+function strengthOdds(p) {
+  const youth = Math.max(0, Math.min(1, (STR_MAX_AGE - p.age) / 6));
+  return Math.max(0.05, Math.min(0.85, 0.1 + youth * 0.3 + frameRoom(p) * 0.25 + (p.pot - 6) * 0.03 + pedigree(p) * 0.1));
+}
+function runStrength() {
+  const L = league();
+  const rng = mulberry32((saveSalt() ^ 0x57a3) >>> 0);
+  const out = [];
+  for (const team of L.teams) for (const p of team.roster) {
+    if (p.age > STR_MAX_AGE) continue;
+    const odds = strengthOdds(p);
+    const focus = focusOf(p, team);
+    const gains = {};
+    const bump = k => { if (p.attributes[k][0] >= ATTR_MAX) return; p.attributes[k][0]++; if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0]; gains[k] = (gains[k] || 0) + 1; };
+    if (rng() < odds) {
+      bump(focus);
+      if (rng() < odds * 0.15) bump(focus);                       // a big summer: +2
+      else if (rng() < odds * 0.3) bump(PHYSICAL.filter(k => k !== focus)[Math.floor(rng() * 2)]);
+    }
+    if (!Object.keys(gains).length) continue;
+    const lbs = gains.STR ? Math.round(gains.STR * (4 + rng() * 5)) : 0;
+    if (lbs) p.wt += lbs;
+    out.push({ pid: p.id, tid: team.id, gains, lbs });
+  }
+  return out;
+}
+
+function strengthCard() {
+  const st = strengthStore();
+  const res = st.results;
+  const mine = res ? res.filter(r => isUserTeam(league().teams.find(t => t.id === r.tid))) : [];
+  return `<fieldset class="frame"><legend>Strength Program</legend><div class="stack">
+    ${res ? `<dl class="info"><dt>Players stronger, faster or fitter</dt><dd class="up">${res.length}</dd><dt>Your players</dt><dd class="up">${mine.length}</dd></dl>
+      <button class="btn" data-act="nav" data-to="strength">🏋️ Strength Program Results</button>`
+    : `<p class="note small">Physical ratings only move here. Players ${STR_MAX_AGE} and under can add Strength, Speed or Stamina, likelier when they're young, have room on their frame, high potential and a high draft slot. Pick a focus for your young players first.</p>
+      <button class="btn" data-act="nav" data-to="strength">🏋️ Set Focus &amp; Run</button>`}
+  </div></fieldset>`;
+}
+
+screens.strength = () => {
+  const L = league();
+  const st = strengthStore();
+  const youngMine = L.teams.filter(isUserTeam).flatMap(t => t.roster.filter(p => p.age <= STR_MAX_AGE).map(p => ({ p, t })))
+    .sort((a, b) => strengthOdds(b.p) - strengthOdds(a.p));
+  const odds = p => { const o = strengthOdds(p); return o >= 0.55 ? ['High', 'up'] : o >= 0.3 ? ['Fair', 'gold'] : ['Low', 'muted']; };
+  const gainText = r => Object.entries(r.gains).map(([k, v]) => `+${v} ${k}`).join(' · ') + (r.lbs ? ` · +${r.lbs} lb` : '');
+  let body;
+  if (!st.results) {
+    body = `<p class="note small">Choose what each young player works on this summer. The chance of a gain comes from age, frame, potential and draft slot. CPU players train for their position.</p>
+      <div class="stack">${youngMine.map(({ p }) => {
+        const f = focusOf(p, L.teams.find(t => t.roster.includes(p)));
+        const [lbl, cls] = odds(p);
+        return `<div class="workout"><div class="wk-head"><b>${esc(playerName(p))}</b> ${lvTag(p)} <span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb</span></div>
+          <span class="small">Outlook: <b class="${cls}">${lbl}</b> · STR ${p.attributes.STR[0]} · SPD ${p.attributes.SPD[0]} · STM ${p.attributes.STM[0]}</span>
+          <div class="opts">${STR_FOCUS.map(([k, l]) => `<button class="btn small ${f === k ? 'on focus' : 'off'}" data-act="strFocus" data-id="${p.id}" data-k="${k}">${l}</button>`).join('')}</div></div>`;
+      }).join('') || '<p class="note muted">None of your players are young enough for the program.</p>'}</div>`;
+  } else {
+    const rows = st.results.map(r => ({ r, team: L.teams.find(t => t.id === r.tid), p: L.teams.flatMap(t => t.roster).find(x => x.id === r.pid) })).filter(x => x.p);
+    const mine = rows.filter(x => isUserTeam(x.team)), rest = rows.filter(x => !isUserTeam(x.team));
+    const row = x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> <span class="muted small">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y</span></span><b class="small up">${gainText(x.r)}</b></div>`;
+    body = `<fieldset class="frame"><legend>Your Players</legend><div class="stack">${mine.map(row).join('') || '<p class="note muted small">No gains for your players this summer.</p>'}</div></fieldset>
+      <fieldset class="frame"><legend>Around the League</legend><div class="stack">${rest.map(row).join('') || '<p class="note muted small">None.</p>'}</div></fieldset>`;
+  }
+  layout({ title: 'Strength Program', body, action: st.results ? null : { act: 'strRun', label: 'Run the Strength Program' } });
+};
+actions.strFocus = d => { strengthStore().focus[+d.id] = d.k; saveStrength(); render(); };
+actions.strRun = async () => {
+  const st = strengthStore();
+  if (st.results) return;
+  if (!(await confirmBox('Run the strength program for every team? Gains are written to the save.', 'Run'))) return;
+  checkpoint('Strength program');
+  st.results = runStrength();
+  saveStrength();
+  state.dirty = true;
+  render();
+  const mine = st.results.filter(r => isUserTeam(league().teams.find(t => t.id === r.tid))).length;
+  toast('Strength program done', `${st.results.length} players around the league, ${mine} of yours.`);
+};
+
 screens.offseason = () => {
   const auto = state.auto[state.leagueIdx];
   const P = state.params;
@@ -1015,6 +1117,7 @@ screens.offseason = () => {
             <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
       </fieldset>
+      ${strengthCard()}
       ${contractCard()}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up Training Camp</button>`,
   });
@@ -2817,7 +2920,7 @@ screens.combine = (args) => {
     const val = { diff: x => x.wingDiff, ws: x => x.ws, reach: x => x.reach, ht: x => x.htNs, size: x => -x.pro.sizeZ }[sort] || (x => x.wingDiff);
     const rows = L.draftClass.map(p => ({ p, x: C.byId.get(p.id) })).sort((a, b) => val(b.x) - val(a.x));
     const shown = args.all ? rows : rows.slice(0, 30);
-    body = `<div class="opts">${[['diff', 'Ape Index'], ['size', 'Undersized'], ['ws', 'Wingspan'], ['reach', 'Reach']].map(([k, l]) =>
+    body = `<div class="combine-sorts">${[['diff', 'Ape Index'], ['size', 'Undersized'], ['ws', 'Wingspan'], ['reach', 'Reach']].map(([k, l]) =>
         `<button class="btn small ${k === sort ? 'on focus' : 'off'}" data-act="combineSort" data-s="${k}">${l}</button>`).join('')}</div>
       <p class="note muted small" style="margin:6px 0">Ape index = wingspan minus height (no shoes). Size compares height and weight with pros at his position.</p>
       <div class="stack">${shown.map(({ p, x }) => `<div class="drill-row">
@@ -2912,11 +3015,15 @@ function frameRoom(p) {
   const long = Math.max(0, Math.min(1, (p.ht - avgHt) / 4 + 0.5));   // a taller frame carries more
   return Math.max(0, Math.min(1, youth * 0.5 + light * 0.3 + long * 0.2));
 }
-const frameNote = (p, who = 'Strength staff') => {
+const FRAME_LINES = {
+  frame: [`at {age}, he has the time and the frame to fill out.`, `some room to add to his frame, not a lot.`, `his body is about what it's going to be.`],
+  motor: [`he's {age}; a real conditioning program will show up fast.`, `his conditioning can get better, but don't expect a new engine.`, `what you see is his motor.`],
+  test: [`at {age}, his testing numbers should look better a year from now.`, `a strength program could move his numbers a little.`, `those numbers are close to what he'll test at as a pro.`],
+};
+const frameNote = (p, who = 'Strength staff', kind = 'frame') => {
   const r = frameRoom(p);
-  return r >= 0.6 ? `${who}: at ${p.age}, he has the time and the frame to fill out.`
-    : r >= 0.35 ? `${who}: some room to add to his frame, not a lot.`
-    : `${who}: his body is about what it's going to be.`;
+  const line = FRAME_LINES[kind][r >= 0.6 ? 0 : r >= 0.35 ? 1 : 2].replace('{age}', p.age);
+  return `${who}: ${line}`;
 };
 
 // The questions this prospect can be asked: the standard ones, plus his
@@ -2962,7 +3069,7 @@ function workoutAnswer(p, k) {
   }
   if (k === 'motor') {
     return { quote: vary2(p, 2, ['People who say that haven\'t watched me in the fourth quarter. But yeah, my conditioning is my summer focus.', 'That\'s fair. I\'m getting in the best shape of my life this summer.']),
-      staff: frameNote(p, 'Trainers').replace('fill out.', 'build his conditioning.') };
+      staff: frameNote(p, 'Trainers', 'motor') };
   }
   if (k.startsWith('w:')) {
     const a = k.slice(2);
@@ -2996,11 +3103,11 @@ function workoutAnswer(p, k) {
     const x = combineData().byId.get(p.id);
     const med = x?.skip?.startsWith('Medical');
     return { quote: med ? 'I wanted to be all the way back before I tested. I didn\'t want to rush it.' : 'My agent and I felt the tape speaks for itself. I wanted to show teams in person.',
-      staff: frameNote(p, 'Trainers') };
+      staff: frameNote(p, 'Trainers', 'test') };
   }
   if (k === 'combine') {
     return { quote: vary2(p, 5, ['Drills aren\'t basketball. Put on the tape.', 'I had a bad day. I\'m not a 40-yard-dash guy, I\'m a hooper.']),
-      staff: frameNote(p, 'Trainers') };
+      staff: frameNote(p, 'Trainers', 'test') };
   }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
@@ -4512,9 +4619,9 @@ function surveyRows(results, n = 5) {
 screens.survey = (args) => {
   const S = surveyNow();
   const hist = surveyHist()[S.year - 1] || {};
-  const tabs = SURVEY_TABS.filter(t => S.questions.some(q => q.section === t));
+  const tabs = SURVEY_TABS.filter(t => S.questions.some(q => q.section === t && q.results.length));
   const tab = tabs.includes(args.tab) ? args.tab : tabs[0];
-  const qs = S.questions.filter(q => q.section === tab);
+  const qs = S.questions.filter(q => q.section === tab && q.results.length);
   const last = q => hist[q.id] ? `<p class="note small muted sv-last">Last year: <b>${esc(hist[q.id].name)}</b>${hist[q.id].team && !hist[q.id].name.includes(hist[q.id].team) ? ` (${esc(hist[q.id].team)})` : ''} · ${hist[q.id].pct}%</p>` : '';
   const card = q => `<fieldset class="frame sv-q"><legend>${esc(consensus(q.results))}</legend>
       <p class="note"><b>${esc(q.title)}</b></p>${surveyRows(q.results)}${last(q)}</fieldset>`;
@@ -4529,9 +4636,9 @@ screens.survey = (args) => {
     body += `<fieldset class="frame sv-q"><legend>Most Votes Overall</legend>
       <p class="note small muted">Share of every vote cast in the player questions.</p>${surveyRows(S.topVoted)}</fieldset>`;
     // International questions close out the Players tab.
-    body += S.questions.filter(q => q.section === 'International').map(card).join('');
+    body += S.questions.filter(q => q.section === 'International' && q.results.length).map(card).join('');
   }
-  if (tab === 'Coaches' && S.coachesFound < S.gms) body = `<p class="note small down">Head coaches found for ${S.coachesFound} of ${S.gms} teams in this save; the rest show as "team head coach".</p>` + body;
+  if (tab === 'Coaches' && S.coachesFound < S.gms) body = `<p class="note small muted">${S.gms - S.coachesFound} team${S.gms - S.coachesFound === 1 ? ' has' : 's have'} an open head coaching job and ${S.gms - S.coachesFound === 1 ? 'isn\'t' : 'aren\'t'} on the ballot.</p>` + body;
   if (tab === tabs[tabs.length - 1]) body += '<p class="note muted small center" style="margin:10px 0">That\'s all from this year\'s survey.</p>';
   layout({
     title: 'GM Survey',

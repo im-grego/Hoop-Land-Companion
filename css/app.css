@@ -1086,3 +1086,5 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .sv-tabs .btn { min-width: 0; min-height: 40px; padding: 6px 1px; font-size: 13px; letter-spacing: -.2px; white-space: nowrap; }
 .logo-sm { flex: none; display: inline-block; }
 .logo-ph { visibility: hidden; }
+.combine-sorts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.combine-sorts .btn { min-width: 0; padding: 6px 1px; font-size: 12px; white-space: nowrap; }
