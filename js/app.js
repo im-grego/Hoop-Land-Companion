@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.11';
+const APP_VERSION = '0.38.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -632,7 +632,7 @@ const STEP_SCREENS = {
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer'], survey: ['survey'], media: ['storylines'], export: ['export'],
 };
-const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders'];
+const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (phaseRank(league().season) === 0) return true;
@@ -1669,6 +1669,7 @@ function rankBox(p) {
 // players) or by a rating. Highest first; ties go to the higher level.
 
 screens.leaders = (args) => {
+  if (args.m === 'college') return collegeLeaders(args);
   const L = league();
   const mode = args.m === 'stats' ? 'stats' : 'ratings';
   const all = leaguePlayers(L, true);
@@ -1703,8 +1704,46 @@ screens.leaders = (args) => {
       ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
   });
 };
+// College leaders: one college league's season (its players plus this
+// year's draft class), qualified players only, sortable by the five stats.
+function collegeLeaders(args) {
+  const li = +args.li, yr = +args.yr;
+  const CL = state.data.seasonLeagues[li];
+  const k = RANK_STATS.some(([x]) => x === args.k) ? args.k : 'PTS';
+  const { ranks, of, minGp } = seasonRanks(yr, li);
+  const pool = new Map();
+  for (const { p } of leaguePlayers(CL, true)) pool.set(p.id, p);
+  for (const p of league().draftClass || []) pool.set(p.id, p);
+  const prospects = new Set((league().draftClass || []).map(p => p.id));
+  const teamOf = p => {
+    const st = (p.stats || []).find(x => x.league === li && x.yr === yr);
+    const tid = st?.season?.[st.season.length - 1]?.tid;
+    const t = CL.teams.find(x => x.id === tid);
+    return t ? (t.shortName || t.name) : '';
+  };
+  const rows = [...ranks].filter(([, r]) => r.qualified).map(([id, r]) => ({ p: pool.get(id), r }))
+    .filter(x => x.p).map(x => ({ ...x, v: x.r.pg[k], lv: levelOf(x.p) }))
+    .sort((a, b) => b.v - a.v || b.lv - a.lv);
+  const shown = args.all ? rows : rows.slice(0, 100);
+  layout({
+    title: 'College',
+    body: `<p class="note small"><b>${esc(CL.leagueName || CL.shortName)}</b> · ${yr} season</p>
+      <div class="opts wrap ld-keys">${RANK_STATS.map(([x]) => `<button class="btn small ${x === k ? 'on focus' : 'off'}" data-act="openLeaders" data-m="college" data-k="${x}" data-li="${li}" data-yr="${yr}" data-r="1">${x}</button>`).join('')}</div>
+      <p class="note muted small" style="margin:6px 0">Per game. ${of} qualified players (at least ${minGp} games). Draft prospects open their scouting page.</p>
+      <div class="stack">${shown.map((x, i) => {
+        const pro = prospects.has(x.p.id);
+        const tag = pro ? 'button' : 'div';
+        return `<${tag} class="ld-row ${pro ? '' : 'static'}" ${pro ? `data-act="openProspect" data-id="${x.p.id}"` : ''}>
+        <span class="ld-n">${i + 1}</span>
+        <span class="grow"><b>${esc(playerName(x.p))}</b>${pro ? ' <span class="badge need">Prospect</span>' : ''}<br><span class="small muted">${esc(teamOf(x.p))} · ${esc(posName(x.p))} · ${x.p.age}y · ${classYear(x.p)}</span></span>
+        <b class="ld-v">${x.v.toFixed(1)}</b></${tag}>`;
+      }).join('')}</div>
+      ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
+  });
+}
+
 actions.openLeaders = d => {
-  const args = { m: d.m, k: d.k };
+  const args = { m: d.m, k: d.k, ...(d.li != null ? { li: +d.li, yr: +d.yr } : {}) };
   if (d.r) replace('leaders', args); else go('leaders', args);
 };
 actions.leadersAll = () => { const a = state.stack[state.stack.length - 1].args || {}; replace('leaders', { ...a, all: true }); };
@@ -3187,7 +3226,9 @@ function collegeBox(p) {
     <div class="statline">
       ${[['PTS', f(c.pts)], ['REB', f(c.reb)], ['AST', f(c.ast)], ['STL', f(c.stl)], ['BLK', f(c.blk)],
          ['FG%', f(c.fg)], ['3P%', f(c.tp)], ['3PA', f(c.tpa)], ['FT%', f(c.ft)], ['TOV', f(c.tov)]]
-        .map(([k, v], i) => `<div><span class="muted small">${k}</span><b>${v}</b>${i < 5 ? collegeRank(p, c, RANK_STATS[i][0]) : ''}</div>`).join('')}
+        .map(([k, v], i) => i < 5 && c.li != null
+          ? `<button class="stat-cell" data-act="openLeaders" data-m="college" data-k="${RANK_STATS[i][0]}" data-li="${c.li}" data-yr="${c.yr}" aria-label="College ${RANK_STATS[i][1]} leaders"><span class="muted small">${k}</span><b>${v}</b>${collegeRank(p, c, RANK_STATS[i][0])}</button>`
+          : `<div><span class="muted small">${k}</span><b>${v}</b>${i < 5 ? collegeRank(p, c, RANK_STATS[i][0]) : ''}</div>`).join('')}
     </div>${c.li != null && seasonRanks(c.yr, c.li).ranks.get(p.id)?.qualified ? (sr => `<p class="note muted small" style="margin-top:6px">Ranks among ${sr.of} qualified college players. Qualified: at least ${sr.minGp} games played, half of the league high (${sr.maxGp}).</p>`)(seasonRanks(c.yr, c.li)) : ''}</fieldset>`;
 }
 
