@@ -163,6 +163,7 @@ export function checkOffer(league, team, p, offer, day, used = {}, o = FA_DEFAUL
   if (room.full) return `${team.shortName} roster is full (${o.rosterMax})`;
   if (offer.sal > maxSalary(league, p)) return `Max for ${playerName(p)} is $${maxSalary(league, p)}M`;
   if (offer.yrs < 1 || offer.yrs > (room.bird ? o.birdMaxYears : o.maxYears)) return `1–${room.bird ? o.birdMaxYears : o.maxYears} years`;
+  if (!room.bird && offer.yrs < 2 && isRestricted(league, p)) return 'An offer sheet runs at least 2 years';
   if (room.bird) return null;
   const space = capSpace(league, team);
   if (offer.sal <= space) return null;
@@ -232,6 +233,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
         else if (day >= 3 && m.p.age >= o.vetMinAge && m.ask <= o.vetMin * 1.5) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
         else continue;
       }
+      if (!bird && isRestricted(league, m.p)) offer.yrs = Math.max(2, offer.yrs);
       if (checkOffer(league, team, m.p, offer, day, used, o)) continue;
       const list = bids.get(m.p.id) || [];
       if (list.some(b => b.tid === team.id)) continue;
@@ -268,16 +270,17 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
 }
 
 // ---------------------------------------------------------------------------
-// Restricted free agents: players coming off a deal with 3 or fewer years
-// in the league. Their old team can match any offer
+// Restricted free agents: players given a qualifying offer. Their old team can match any offer
 // sheet, and a match beats every other offer.
 // Qualifying offers decided at the options deadline: pid -> true (extended,
 // restricted) / false (not extended, unrestricted). No entry = restricted.
 let QO = new Map();
 export function setQualifyingOffers(map) { QO = new Map(Object.entries(map || {}).map(([k, v]) => [+k, v])); }
-// Eligible for a qualifying offer: a free agent now (deal up, still on his
-// team) with 3 or fewer years in the league (the save's `yrs`).
-export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && (p.yrs ?? 99) <= 3;
+// Eligible for a qualifying offer (NBA CBA): a free agent now (deal up,
+// still on his team) with 3 or fewer years in the league (the save's `yrs`),
+// or a first-round pick finishing his 4-year rookie deal.
+export const isRookieScale = p => p.history?.draft?.rd === 1 && (p.yrs ?? 99) <= 4;
+export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && ((p.yrs ?? 99) <= 3 || isRookieScale(p));
 export function isRestricted(league, p) {
   return qoEligible(league, p) && QO.get(p.id) !== false;
 }
@@ -311,12 +314,21 @@ export function pendingMatches(league, market, bids, day, userTeams, used = {}, 
 // After the last day: anyone still on a roster without a contract (an
 // expiring deal nobody re-signed) is released to the free-agent pool, so
 // the game doesn't carry them into the season. Returns records for undo.
-export function releaseUnsigned(league) {
+// A restricted free agent nobody signed accepts his qualifying offer: one
+// year with his team at the QO amount (`qoFor(p)`), then unrestricted.
+// Those signings come back in `out.qo` (records for unsignPlayer()).
+export function releaseUnsigned(league, { qoFor = null, day = 3, o = FA_DEFAULTS } = {}) {
   const year = league.season.currentYear;
   const out = [];
+  out.qo = [];
   for (const team of league.teams) {
     for (const p of [...team.roster]) {
       if (p.status !== STATUS_EXPIRING) continue;
+      if (qoFor && isRestricted(league, p) && signedRoster(team).length < o.rosterMax) {
+        const rec = signPlayer(league, p, team, { yrs: 1, sal: qoFor(p), opt: OPT_NONE }, day);
+        out.qo.push({ p, team, sal: qoFor(p), rec });
+        continue;
+      }
       const idx = team.roster.indexOf(p);
       const row = (p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
       const stint = row?.season?.[row.season.length - 1];
@@ -333,6 +345,7 @@ export function releaseUnsigned(league) {
 }
 export function unreleaseUnsigned(league, recs) {
   const year = league.season.currentYear;
+  for (const q of [...(recs.qo || [])].reverse()) unsignPlayer(league, q.rec);
   for (const r of [...recs].reverse()) {
     league.freeAgents.splice(league.freeAgents.indexOf(r.p), 1);
     r.team.roster.splice(r.idx, 0, r.p);

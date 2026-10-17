@@ -16,13 +16,13 @@ import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieCont
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
 import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
-import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay } from './phases.js';
+import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.39.2';
+const APP_VERSION = '0.39.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -352,6 +352,7 @@ async function loadFile(file) {
     installData(data);
     state.dirty = false;
     const held = holdCpuOffers();
+    recordSalaries();
     o.remove();
     toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, held ? `${held} CPU contract offers held until the options deadline.` : '');
     render();
@@ -4418,7 +4419,7 @@ function faResults(s) {
     ${wars ? `<p class="note small gold">${wars} bidding war${wars > 1 ? 's' : ''}</p>` : ''}
     <div class="stack">${list.map(x => `<div class="sign-row ${isUserTeam(x.team) ? 'mine' : ''}">${logoImg(x.team)}
       <p class="note small grow"><b>${esc(playerName(x.p))}</b> → ${esc(x.team.shortName)} · ${offerText(x.offer)} <span class="muted">($${x.offer.sal * x.offer.yrs}M)</span>${x.bidders > 1 ? ` <span class="muted">· ${x.bidders} offers</span>` : ''}${x.kind === 'mle' ? ' <span class="badge new">MLE</span>' : x.kind === 'vetMin' ? ' <span class="badge">Vet min</span>' : ''}<br><span class="muted">${esc(x.why)}</span></p></div>`).join('')}
-    </div>${s.released?.length ? `<p class="note muted small" style="margin-top:8px">${s.released.length} players without a deal were released to free agency.</p>` : ''}</fieldset>`;
+    </div>${s.released?.qo?.length ? `<p class="note small" style="margin-top:8px">Took the qualifying offer (1 year, unrestricted next summer): ${s.released.qo.map(q => `<b class="${isUserTeam(q.team) ? 'gold' : ''}">${esc(playerName(q.p))}</b> (${esc(q.team.shortName)}, $${q.sal}M)`).join(', ')}.</p>` : ''}${s.released?.length ? `<p class="note muted small" style="margin-top:8px">${s.released.length} players without a deal were released to free agency.</p>` : ''}</fieldset>`;
 }
 
 actions.faHome = () => goHome();
@@ -4447,7 +4448,7 @@ actions.faDecide = async () => {
   }
   s.signings = FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams });
   // Last day: anyone still without a deal leaves their old team.
-  if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L);
+  if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L, { qoFor: qoAmount, day: s.day });
   const top = [...s.signings].sort((x, y) => y.offer.sal * y.offer.yrs - x.offer.sal * x.offer.yrs)[0];
   (calFlags().faLog ||= {})[s.day] = { n: s.signings.length, wars: s.signings.filter(x => x.bidders >= 3).length,
     top: top && `${playerName(top.p)} to ${top.team.shortName} ($${top.offer.sal * top.offer.yrs}M)` };
@@ -4461,7 +4462,8 @@ actions.faDecide = async () => {
   state.dirty = true;
   render();
   const mineSigned = s.signings.filter(x => isUserTeam(x.team)).length;
-  toast(`${s.signings.length} signed${mineSigned ? `, ${mineSigned} with your teams` : ''}`);
+  const qos = s.released?.qo || [];
+  toast(`${s.signings.length} signed${mineSigned ? `, ${mineSigned} with your teams` : ''}`, qos.length ? `${qos.length} restricted free agent${qos.length > 1 ? 's' : ''} accepted the qualifying offer.` : '');
 };
 
 actions.faUndo = async () => {
@@ -4693,7 +4695,36 @@ function holdCpuOffers() {
 
 const optionPlayers = L => L.teams.flatMap(t => t.roster.filter(p => p.contract && (p.status === FA.STATUS_SIGNED || p.status === FA.STATUS_EXPIRING) && (p.contract.yrs || 0) <= 1 && (p.contract.opt === 1 || p.contract.opt === 2)).map(p => ({ p, team: t })));
 const marketValue = p => fairSalary(shownLevel(p));
-const qoAmount = p => Math.max(2, Math.round((p.contract?.sal || 2) * 1.25));
+// Qualifying offer amount (NBA CBA): a first-rounder off his rookie deal
+// gets a raise on his 4th-year salary that grows with draft slot (30% for
+// the No. 1 pick up to 50% for No. 30); anyone else gets 135% of his last
+// salary or the minimum, whichever is more. Last salaries come from the
+// app's salary book (the game zeroes a deal once it's up); a first-rounder
+// without one uses his slot's rookie scale.
+function qoAmount(p) {
+  const L = league(), last = salaryBook()[p.id] || 0, d = p.history?.draft;
+  if (FA.isRookieScale(p) && d.pk > 0) {
+    const base = last || rookieScale(L, d.pk);
+    return Math.max(FA.FA_DEFAULTS.minSalary, Math.round(base * (1.3 + 0.2 * (Math.min(30, d.pk) - 1) / 29)));
+  }
+  return Math.max(FA.FA_DEFAULTS.minSalary, Math.round(last * 1.35));
+}
+// Every salary the app has seen, by player (kept across seasons).
+const salaryKey = () => `hlc:sal:${league().shortName}:${league().meta?.saveName || ''}`;
+function salaryBook() {
+  const c = (state.salBook ||= {});
+  const k = salaryKey();
+  if (!c[k]) { try { c[k] = JSON.parse(localStorage.getItem(k)) || {}; } catch { c[k] = {}; } }
+  return c[k];
+}
+function recordSalaries() {
+  const L = league();
+  if (!L) return;
+  const book = salaryBook();
+  let n = 0;
+  for (const t of L.teams) for (const p of t.roster) if (p.contract?.sal > 0 && book[p.id] !== p.contract.sal) { book[p.id] = p.contract.sal; n++; }
+  if (n) try { localStorage.setItem(salaryKey(), JSON.stringify(book)); } catch { /* ignore */ }
+}
 
 // Morale: from the save when it has a morale field, else from the season
 // (a starter's minutes cut, or a losing team for a veteran).
@@ -4775,7 +4806,7 @@ screens.options = () => {
         ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy. Promises are remembered next season.</p>' : ''}</fieldset>
       <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
         <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Extend')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Skip')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
-        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Extend: he\'s restricted, so you can match any offer sheet in free agency. Skip: he\'s unrestricted.</p>' : ''}</fieldset>
+        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Extend: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Skip: he\'s unrestricted.</p>' : ''}</fieldset>
       <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Heading to free agency. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
     action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
