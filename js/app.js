@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.38.0';
+const APP_VERSION = '0.38.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4455,7 +4455,7 @@ function saveSurveyHist(S) {
   h[S.year] = Object.fromEntries(S.questions.filter(q => q.results[0]).map(q => [q.id, { name: q.results[0].name, team: q.results[0].team, pct: q.results[0].pct }]));
   try { localStorage.setItem(surveyHistKey(), JSON.stringify(h)); } catch { /* ignore */ }
 }
-const SURVEY_TABS = ['Predictions', 'Players', 'Offseason', 'Rookies', 'International', 'Defense', 'Coaches', 'Miscellaneous'];
+const SURVEY_TABS = ['Predictions', 'Players', 'Offseason', 'Rookies', 'Defense', 'Coaches', 'Miscellaneous'];
 const SURVEY_LABEL = { Predictions: 'Predictions', Players: 'Players', Offseason: 'Offseason', Rookies: 'Rookies', International: 'Intl', Defense: 'Defense', Coaches: 'Coaches', Miscellaneous: 'Misc' };
 
 function surveyRows(results, n = 5) {
@@ -4490,12 +4490,14 @@ screens.survey = (args) => {
   if (tab === 'Players') {
     body += `<fieldset class="frame sv-q"><legend>Most Votes Overall</legend>
       <p class="note small muted">Share of every vote cast in the player questions.</p>${surveyRows(S.topVoted)}</fieldset>`;
+    // International questions close out the Players tab.
+    body += S.questions.filter(q => q.section === 'International').map(card).join('');
   }
   if (tab === tabs[tabs.length - 1]) body += '<p class="note muted small center" style="margin:10px 0">That\'s all from this year\'s survey.</p>';
   layout({
     title: 'GM Survey',
     body: `<p class="note small">All ${S.gms} general managers answered. GMs can't vote for their own team or players.</p>
-      <div class="tabs sv-tabs">${tabs.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="surveyTab" data-t="${t}">${SURVEY_LABEL[t]}</button>`).join('')}</div>
+      <div class="sv-tabs">${tabs.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="surveyTab" data-t="${t}">${SURVEY_LABEL[t]}</button>`).join('')}</div>
       ${body}`,
     action: isStep('survey') ? { act: 'surveyDone', label: 'Wrap Up the Survey' } : null,
   });
