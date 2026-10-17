@@ -980,11 +980,11 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .sv-last { margin-top: 8px; }
 .tabs.sv-tabs .btn { flex: none; min-width: auto; padding: 8px 12px; white-space: nowrap; }
 /* On the clock: same height for every team (name and needs on one line each). */
-.clock-card { height: 118px; box-sizing: border-box; overflow: hidden; }
+.clock-card { height: 128px; box-sizing: border-box; overflow: hidden; }
 .clock-card .grow > b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .clock-card .grow > .small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.clock-card .needs-line { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 3px; height: 46px; }
-.clock-card .needs-line .badge { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.clock-card .needs-line { flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 4px; margin-top: 6px; }
+.clock-card .needs-line .badge { margin: 0; line-height: 16px; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .clock-card .grow > br { display: none; }
 
 /* No double-tap zoom (pinch still works). */
