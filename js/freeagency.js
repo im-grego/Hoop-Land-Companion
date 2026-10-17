@@ -22,7 +22,7 @@ export const OPT_NONE = 0, OPT_TEAM = 1, OPT_PLAYER = 2;
 export const FA_DEFAULTS = {
   rosterMax: 15,
   mle: 15, mleMaxYears: 2,
-  vetMin: 3, vetMinAge: 30,
+  vetMin: 3, vetMinAge: 30, vetYears: 10,
   minSalary: 2,
   maxYears: 5, birdMaxYears: 5,
   askDrop: [1, 0.9, 0.75],          // asking price by day
@@ -77,7 +77,7 @@ export function baseAsk(league, p, o = FA_DEFAULTS) {
 
 export function askFor(league, p, day, o = FA_DEFAULTS) {
   let a = baseAsk(league, p, o) * o.askDrop[Math.min(2, day - 1)];
-  if (day >= 3 && p.age >= o.vetMinAge) a *= o.vetAskDrop;
+  if (day >= 3 && isVet(p, o)) a *= o.vetAskDrop;
   return Math.max(o.minSalary, Math.round(a));
 }
 
@@ -150,11 +150,11 @@ export function offerRoom(league, team, p, day, used = {}, o = FA_DEFAULTS) {
   const bird = p.status === STATUS_EXPIRING && p.tid === team.id;
   const full = signedRoster(team).length >= o.rosterMax;
   const mle = day >= 2 && !used.mle?.has(team.id) && capSpace(league, team) < o.mle;
-  const vetMin = day >= 3 && p.age >= o.vetMinAge;
+  const min = minOk(p);
   let max = bird ? maxSalary(league, p) : Math.min(maxSalary(league, p), space);
   if (mle) max = Math.max(max, o.mle);
-  if (vetMin) max = Math.max(max, o.vetMin);
-  return { full, bird, space: space > 0, mle, vetMin, max: full ? 0 : max };
+  if (min) max = Math.max(max, minFor(p, o));
+  return { full, bird, space: space > 0, mle, min, vetMin: min && isVet(p, o), max: full ? 0 : max };
 }
 
 // Is this offer allowed? Returns null or the reason it isn't.
@@ -168,20 +168,20 @@ export function checkOffer(league, team, p, offer, day, used = {}, o = FA_DEFAUL
   const space = capSpace(league, team);
   if (offer.sal <= space) return null;
   if (room.mle && offer.sal <= o.mle && offer.yrs <= o.mleMaxYears) return null;
-  if (room.vetMin && offer.sal <= o.vetMin && offer.yrs === 1) return null;
+  if (room.min && offer.sal <= minFor(p, o) && offer.yrs <= minYears(p, o)) return null;
   const tools = [`cap space $${Math.max(0, space)}M`];
   if (room.mle) tools.push(`MLE up to $${o.mle}M × ${o.mleMaxYears}`);
-  if (room.vetMin) tools.push(`vet min $${o.vetMin}M × 1`);
+  if (room.min) tools.push(`${isVet(p, o) ? 'vet min' : 'minimum'} $${minFor(p, o)}M × ${minYears(p, o) > 1 ? `1–${minYears(p, o)}` : 1}`);
   return `Over the cap: ${tools.join(', ')}`;
 }
 
-// Which exception an allowed offer uses ('space' | 'bird' | 'mle' | 'vetMin').
+// Which exception an allowed offer uses ('space' | 'bird' | 'mle' | 'min' | 'vetMin').
 export function offerKind(league, team, p, offer, day, used = {}, o = FA_DEFAULTS) {
   const room = offerRoom(league, team, p, day, used, o);
   if (room.bird) return 'bird';
   if (offer.sal <= capSpace(league, team)) return 'space';
   if (room.mle && offer.sal <= o.mle) return 'mle';
-  return 'vetMin';
+  return isVet(p, o) ? 'vetMin' : 'min';
 }
 
 // ---------------------------------------------------------------------------
@@ -207,7 +207,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
     const cost = m => m.min ?? m.ask;
     const canPay = m => m.from?.id === team.id || cost(m) <= budget * 1.05 ||
       (day >= 2 && !used.mle?.has(team.id) && cost(m) <= o.mle * 1.1) ||
-      (day >= 3 && m.p.age >= o.vetMinAge && cost(m) <= o.vetMin * 1.5);
+      (minOk(m.p) && cost(m) <= minFor(m.p, o) * 1.5);
     // Teams cool on players who already have a crowd of suitors.
     const crowd = m => 1 + 0.15 * (bids.get(m.p.id)?.length || 0);
     const pool = market
@@ -226,11 +226,11 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       let yrs = m.p.age >= 31 ? 1 + Math.floor(rng() * 2) : m.p.age <= 26 ? 3 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3);
       let offer = { tid: team.id, sal, yrs, opt: rng() < 0.2 ? OPT_PLAYER : rng() < 0.2 ? OPT_TEAM : OPT_NONE, cpu: true };
       // A veteran who'll take the minimum gets the minimum.
-      if (day >= 3 && m.min === o.vetMin && m.p.age >= o.vetMinAge) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
+      if (day >= 3 && m.min === o.vetMin && isVet(m.p, o)) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
       else if (!bird && sal > budget) {
         // Fall back to an exception.
         if (day >= 2 && !used.mle?.has(team.id) && m.ask <= o.mle * 1.1) offer = { ...offer, sal: Math.min(o.mle, Math.max(sal, m.ask)), yrs: Math.min(yrs, o.mleMaxYears), opt: rng() < 0.5 ? OPT_PLAYER : OPT_TEAM };
-        else if (day >= 3 && m.p.age >= o.vetMinAge && m.ask <= o.vetMin * 1.5) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
+        else if (minOk(m.p) && m.ask <= minFor(m.p, o) * 1.5) offer = { ...offer, sal: minFor(m.p, o), yrs: 1, opt: OPT_NONE };
         else continue;
       }
       if (!bird && isRestricted(league, m.p)) offer.yrs = Math.max(2, offer.yrs);
@@ -280,6 +280,14 @@ export function setQualifyingOffers(map) { QO = new Map(Object.entries(map || {}
 // still on his team) with 3 or fewer years in the league (the save's `yrs`),
 // or a first-round pick finishing his 4-year rookie deal.
 export const isRookieScale = p => p.history?.draft?.rd === 1 && (p.yrs ?? 99) <= 4;
+// Minimum deals (minimum salary exception): any free agent (no one in free
+// agency is still bound by a rookie-scale deal) can be offered the minimum
+// any day, over the cap, as often as a team likes, for 1 or 2 years: $2M, or
+// the veterans' minimum ($3M) with 10+ years in the league.
+export const isVet = (p, o = FA_DEFAULTS) => (p.yrs ?? 0) >= o.vetYears;
+export const minFor = (p, o = FA_DEFAULTS) => isVet(p, o) ? o.vetMin : o.minSalary;
+export const minYears = () => 2;
+export const minOk = p => p.status === STATUS_EXPIRING || p.status === STATUS_FREE;
 export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && ((p.yrs ?? 99) <= 3 || isRookieScale(p));
 export function isRestricted(league, p) {
   return qoEligible(league, p) && QO.get(p.id) !== false;
@@ -329,19 +337,26 @@ export function releaseUnsigned(league, { qoFor = null, day = 3, o = FA_DEFAULTS
         out.qo.push({ p, team, sal: qoFor(p), rec });
         continue;
       }
-      const idx = team.roster.indexOf(p);
-      const row = (p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
-      const stint = row?.season?.[row.season.length - 1];
-      out.push({ p, team, idx, tid: p.tid, linePos: p.linePos, stintTid: stint?.tid });
-      team.roster.splice(idx, 1);
-      p.status = STATUS_FREE;
-      p.tid = 0;
-      p.linePos = -1;
-      if (stint && !stint.GP) stint.tid = 0;
-      league.freeAgents.push(p);
+      out.push(releasePlayer(league, team, p));
     }
   }
   return out;
+}
+// One expiring player leaves his team for the free-agent pool (you let him
+// walk). Returns a record for unreleaseUnsigned([rec]).
+export function releasePlayer(league, team, p) {
+  const year = league.season.currentYear;
+  const idx = team.roster.indexOf(p);
+  const row = (p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
+  const stint = row?.season?.[row.season.length - 1];
+  const rec = { p, team, idx, tid: p.tid, linePos: p.linePos, stintTid: stint?.tid };
+  team.roster.splice(idx, 1);
+  p.status = STATUS_FREE;
+  p.tid = 0;
+  p.linePos = -1;
+  if (stint && !stint.GP) stint.tid = 0;
+  league.freeAgents.push(p);
+  return rec;
 }
 export function unreleaseUnsigned(league, recs) {
   const year = league.season.currentYear;
@@ -462,7 +477,7 @@ export function unsignPlayer(league, rec) {
 // money take the veterans' minimum rather than sit out the season, whatever
 // they were asking for.
 export function minAccept(p, ask, motive, day, o = FA_DEFAULTS) {
-  if (day >= 3 && p.age >= o.vetMinAge && motive !== 'greed') return o.vetMin;
+  if (day >= 3 && isVet(p, o) && motive !== 'greed') return o.vetMin;
   return Math.max(o.minSalary, Math.round(ask * o.acceptPct[Math.min(2, day - 1)]));
 }
 
