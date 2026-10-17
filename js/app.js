@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.5';
+const APP_VERSION = '0.37.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -137,18 +137,21 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 // = what age has taken (`now` up to `peak`); the faint outline beyond is
 // room still to grow.
 const STAR_PATH = 'M12 2.4l2.95 6.1 6.65.85-4.9 4.55 1.3 6.6L12 17.2l-5.95 3.3 1.3-6.6-4.9-4.55 6.65-.85z';
+// The left half of the same star, closed along the middle.
+const HALF_PATH = 'M12 2.4V17.2l-5.95 3.3 1.3-6.6-4.9-4.55 6.65-.85z';
 function stars(halfStars, now = halfStars / 2, peak = now) {
   const total = halfStars / 2;
   const gold = Math.max(0, Math.min(total, now));
   const red = Math.max(gold, Math.min(total, peak));
   const clip = (a, b) => `clip-path:inset(0 ${(100 - b * 100).toFixed(1)}% 0 ${(a * 100).toFixed(1)}%)`;
-  const svg = (cls, a, b) => (b > a ? `<svg viewBox="0 0 24 24" class="${cls}" style="${clip(a, b)}"><path d="${STAR_PATH}"/></svg>` : '');
+  const svg = (cls, a, b, half) => (b > a ? `<svg viewBox="0 0 24 24" class="${cls}" style="${half && b >= 0.5 && a <= 0 ? '' : clip(a, b)}"><path d="${half ? HALF_PATH : STAR_PATH}"/></svg>` : '');
   const out = [];
   for (let i = 0; i < Math.ceil(total); i++) {
     const end = Math.min(1, total - i);
     const g = Math.max(0, Math.min(end, gold - i));
     const r = Math.max(g, Math.min(end, red - i));
-    out.push(`<span class="st"${end < 1 ? ` style="width:${(15 * end).toFixed(1)}px"` : ''}>${svg('st-faint', r, end)}${svg('st-gold', 0, g)}${svg('st-lost', g, r)}</span>`);
+    const half = end < 1;
+    out.push(`<span class="st"${half ? ' style="width:8.5px"' : ''}>${svg('st-faint', r, end, half)}${svg('st-gold', 0, g, half)}${svg('st-lost', g, r, half)}</span>`);
   }
   const lbl = `${total} star potential, ${Math.round(gold * 10) / 10} now${red > gold ? `, ${Math.round((red - gold) * 10) / 10} lost to age` : ''}`;
   return `<span class="st-row" aria-label="${lbl}">${out.join('')}</span>`;
