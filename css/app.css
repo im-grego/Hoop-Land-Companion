@@ -1070,4 +1070,4 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .st svg { position: absolute; top: 0; left: 0; width: 15px; height: 15px; }
 .st-gold path { fill: var(--gold); }
 .st-faint path { fill: none; stroke: color-mix(in srgb, var(--gold) 55%, transparent); stroke-width: 1.6; stroke-linejoin: round; }
-.st-lost path { fill: none; stroke: #ff5a6a; stroke-width: 2; stroke-linejoin: round; }
+.st-lost path { fill: #8e2233; stroke: #ff5a6a; stroke-width: 1.6; stroke-linejoin: round; }
