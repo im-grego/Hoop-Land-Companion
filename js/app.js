@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.9';
+const APP_VERSION = '0.37.10';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1943,12 +1943,11 @@ actions.addSkill = () => {
   const p = currentPlayer();
   const ranked = rankSkillsFor(p, state.profiles[state.leagueIdx]);
   const o = overlay(`
-    <p class="note">Add a skill to ${esc(playerName(p))}<br><span class="muted small">Best fit for his ratings first</span></p>
+    <p class="note">Add a skill to ${esc(playerName(p))}<br><span class="muted small">Best fits for his game first</span></p>
     <div class="add-skill">
       ${ranked.map(s => `<button class="as-row" data-id="${esc(s.id)}">
         <span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>
         ${lockedXp(p, s.id) ? `<span class="muted small">${lockedXp(p, s.id)} xp</span>` : ''}
-        <span class="as-fit ${s.fit > 0.3 ? 'up' : s.fit > 0 ? '' : 'muted'}">${Math.round(Math.max(0, s.fit) * 100)}%</span>
       </button>`).join('') || '<p class="note">Already has every skill.</p>'}
     </div>
     <button class="btn off" data-close>Cancel</button>`);
