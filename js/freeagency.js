@@ -20,7 +20,9 @@ export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRA
 export const OPT_NONE = 0, OPT_TEAM = 1, OPT_PLAYER = 2;
 
 export const FA_DEFAULTS = {
-  rosterMax: 15,
+  rosterMax: 18,                     // offseason limit (a few extra before cuts)
+  seasonMax: 15,                     // final cuts get every team here
+  cpuRosterMax: 17,                  // CPU teams stop adding here
   mle: 15, mleMaxYears: 2,
   vetMin: 3, vetMinAge: 30, vetYears: 10,
   minSalary: 2,
@@ -202,7 +204,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
   const teams = league.teams.filter(t => !userTeams.has(t.id)).sort(() => rng() - 0.5);
   for (const team of teams) {
     let budget = Math.max(0, capSpace(league, team));
-    let slots = o.rosterMax - signedRoster(team).length;
+    let slots = o.cpuRosterMax - signedRoster(team).length;
     // Best player they can afford first, then the best value for money.
     const cost = m => m.min ?? m.ask;
     const canPay = m => m.from?.id === team.id || cost(m) <= budget * 1.05 ||
@@ -486,4 +488,30 @@ export function buildMarket(league, day, o = FA_DEFAULTS) {
     const ask = askFor(league, p, day, o), motive = motiveOf(league, p);
     return { p, from, ask, motive, min: minAccept(p, ask, motive, day, o) };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Final cuts (end of the offseason): every team down to `seasonMax`. Who
+// goes first: the lowest level, with young players' potential and real
+// money (a guaranteed salary teams would rather not eat) keeping them around.
+export function cutScore(p, level) {
+  const young = p.age <= 24 ? Math.max(0, (p.pot || 0) - 6) * (25 - p.age) * 0.8 : 0;  // pot: half stars (10 = 5★)
+  return level + young + Math.min(10, (p.contract?.sal || 0) * 0.3);
+}
+export function cutPlayer(league, team, p) {
+  const keep = { status: p.status, contract: structuredClone(p.contract) };
+  const rec = releasePlayer(league, team, p);
+  Object.assign(p.contract, { tid: 0, yrs: 0, sal: 0, opt: 0, canExt: false });
+  const row = (p.stats || []).filter(s => s.yr === league.season.currentYear && s.league === 0).pop();
+  if (row) { rec.rowSal = row.sal; row.sal = 0; }
+  return { ...rec, keep };
+}
+export function uncut(league, recs) {
+  unreleaseUnsigned(league, recs);
+  for (const r of recs) {
+    r.p.status = r.keep.status;
+    r.p.contract = r.keep.contract;
+    const row = (r.p.stats || []).filter(s => s.yr === league.season.currentYear && s.league === 0).pop();
+    if (row && r.rowSal != null) row.sal = r.rowSal;
+  }
 }

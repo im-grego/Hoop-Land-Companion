@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.39.5';
+const APP_VERSION = '0.39.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -362,7 +362,7 @@ async function loadFile(file) {
     if (!Array.isArray(data.seasonLeagues) || !data.seasonLeagues.length) throw new Error('No seasonLeagues found');
     state.fileName = file.name;
     state.undo = null;
-    state.cal = {};
+    state.cal = {}; state.cutSel = {}; state.cutSeeded = false;
     installData(data);
     state.dirty = false;
     const held = holdCpuOffers();
@@ -556,6 +556,8 @@ const CALENDAR = [
     done: () => calFlags().survey || calFlags().media },
   { key: 'media', date: 'Sep 28', title: 'Media Day', blurb: 'Jersey numbers, then the season preview: the top 10 storylines.',
     done: () => calFlags().media },
+  { key: 'cuts', date: 'Oct 18', title: 'Final Cuts', blurb: `Rosters can carry a few extra through the summer. Every team gets down to ${FA.FA_DEFAULTS.seasonMax} before the season.`,
+    done: () => !!calFlags().cuts },
   { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
     done: () => false },
 ];
@@ -592,6 +594,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'cuts') { const c = calFlags().cutLog; return c ? `${c.n} players cut across the league${c.mine ? `, ${c.mine} of yours` : ''}.` : 'Every roster is set.'; }
   if (key === 'survey') { const q = surveyNow().questions[0]?.results[0]; return q ? `${q.name}: the GMs' pick to win it all (${q.pct}%).` : 'Survey published.'; }
   return '';
 }
@@ -623,6 +626,7 @@ function stepActions(key) {
     case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
+    case 'cuts': return `<button class="btn big focus" data-act="nav" data-to="cuts">✂️ Final Cuts</button>`;
     case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
     default: return '';
   }
@@ -664,7 +668,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], export: ['export'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -4414,7 +4418,7 @@ screens.fa = (args = {}) => {
           s.day >= 2 ? (space >= O.mle ? '<span class="muted">Under the cap: offer anyone up to your space</span>' : mleOpen ? `<span class="gold">MLE open · up to $${O.mle}M × ${O.mleMaxYears}</span>` : '<span class="muted">MLE used</span>') : '',
           `<span class="muted">Minimum deals any day, over the cap: $${O.minSalary}M, or $${O.vetMin}M for ${O.vetYears}+ years (1–2 yrs)</span>`,
         ].filter(Boolean).join('<br>');
-        return `<div class="books-row">${logoImg(t)}<span class="grow"><b>${esc(t.shortName)}</b> · ${tools}<br><span class="small">${extra || '<span class="muted">Re-sign your own players over the cap (Bird rights)</span>'}</span></span><span class="small muted">${FA.signedRoster(t).length}/${O.rosterMax}</span></div>`;
+        return `<div class="books-row">${logoImg(t)}<span class="grow"><b>${esc(t.shortName)}</b> · ${tools}<br><span class="small">${extra || '<span class="muted">Re-sign your own players over the cap (Bird rights)</span>'}</span></span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${s.stage === 'done' ? faResults(s) : ''}
@@ -4654,7 +4658,7 @@ function sntPackage(L, m, partner, deal, lean, s) {
   const picks = partner.draftPicks.filter(pk => pk.yr > yr).map(pk => ({ pk, v: pickValue(L, pk), label: pickLabel(pk, L) }));
   const pool = (lean === 'picks' ? [...picks, ...players] : [...players, ...picks]);
   const mine = L.teams.find(t => t.id === m.from.id);
-  const room = FA.FA_DEFAULTS.rosterMax - FA.signedRoster(mine).length;
+  const room = FA.FA_DEFAULTS.rosterMax - FA.signedRoster(mine).length;  // offseason limit
   const out = [];
   let sum = 0;
   // Biggest piece that still fits first, then fill (four pieces at most).
@@ -5134,6 +5138,70 @@ actions.copyStories = async () => {
 
 // ---------------------------------------------------------------------------
 // Export
+
+// ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
+// CPU teams cut their lowest by level, potential and salary.
+const cutSel = () => (state.cutSel ||= {});
+const cutRank = t => FA.signedRoster(t).map(p => ({ p, score: FA.cutScore(p, shownLevel(p)) })).sort((a, b) => a.score - b.score);
+screens.cuts = () => {
+  const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
+  const done = !!calFlags().cuts;
+  const mine = L.teams.filter(isUserTeam);
+  // First visit: the likeliest cuts start picked; tap to change.
+  if (!done && !state.cutSeeded) {
+    for (const t of mine) { const r = cutRank(t); for (const x of r.slice(0, Math.max(0, r.length - O.seasonMax))) sel[x.p.id] = true; }
+    state.cutSeeded = true;
+  }
+  const over = L.teams.filter(t => !isUserTeam(t) && FA.signedRoster(t).length > O.seasonMax);
+  const myCards = mine.map(t => {
+    const ranked = cutRank(t);
+    const n = ranked.length, need = Math.max(0, n - O.seasonMax);
+    const picked = ranked.filter(x => sel[x.p.id]).length;
+    if (done || !need) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend><p class="note small up">✓ Roster is set.</p></fieldset>`;
+    return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
+      <p class="note small">Cut <b>${need}</b> (${picked} picked). Lowest first: level, young players' potential and salary.</p>
+      <div class="stack">${ranked.map((x, i) => `<div class="drill-row tap ${sel[x.p.id] ? 'r1' : ''}" data-act="cutToggle" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} ${potStars(x.p)}<br>
+        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${i < need ? ' · <span class="gold">likely cut</span>' : ''}</span></span>
+        <b class="small ${sel[x.p.id] ? 'down' : 'muted'}">${sel[x.p.id] ? '✂️ Cut' : 'Keep'}</b></div>`).join('')}</div></fieldset>`;
+  }).join('');
+  const log = calFlags().cutLog;
+  layout({
+    title: 'Final Cuts',
+    body: `<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
+      ${myCards}
+      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b> cut ${esc(x.names.join(', '))}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}</div>`
+        : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`,
+    action: done ? { act: 'goHomeCuts', label: 'Back to the Calendar' } : { act: 'cutsFinish', label: mine.some(t => FA.signedRoster(t).length - cutRank(t).filter(x => sel[x.p.id]).length > O.seasonMax) ? 'Pick your cuts first' : 'Make the Cuts' },
+  });
+};
+actions.goHomeCuts = () => goHome();
+actions.cutToggle = d => { if (calFlags().cuts) return; const sel = cutSel(); sel[+d.id] = !sel[+d.id]; render(); };
+actions.cutsFinish = async () => {
+  const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
+  const mine = L.teams.filter(isUserTeam);
+  const short = mine.find(t => FA.signedRoster(t).length - cutRank(t).filter(x => sel[x.p.id]).length > O.seasonMax);
+  if (short) { toast(`${short.shortName}: pick ${FA.signedRoster(short).length - O.seasonMax - cutRank(short).filter(x => sel[x.p.id]).length} more to cut`); return; }
+  if (!(await confirmBox('Make the cuts? Cut players are released to free agency.', 'Make the Cuts'))) return;
+  checkpoint('Final cuts');
+  const list = [];
+  let n = 0, mineN = 0;
+  for (const t of L.teams) {
+    const ranked = cutRank(t);
+    const go = isUserTeam(t) ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, ranked.length - O.seasonMax));
+    if (!go.length) continue;
+    for (const x of go) FA.cutPlayer(L, t, x.p);
+    n += go.length;
+    if (isUserTeam(t)) mineN += go.length;
+    list.push({ team: t.shortName, names: go.map(x => playerName(x.p)) });
+  }
+  calFlags().cutLog = { n, mine: mineN, list };
+  calFlags().cuts = true;
+  state.cutSel = {};
+  state.cutSeeded = false;
+  state.dirty = true;
+  render();
+  toast(`✂️ ${n} players cut`, mineN ? `${mineN} from your roster` : '');
+};
 
 screens.export = () => {
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&

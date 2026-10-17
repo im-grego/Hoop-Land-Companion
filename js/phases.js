@@ -61,7 +61,7 @@ export const rookieScale = (league, overall) =>
 
 // Open free agency: sign this year's draft picks and move to Day 1.
 // Returns the signings [{ p, team, sal, yrs }].
-export function startFreeAgency(league, { r2Years = 2, rosterMax = 15, minSalary = 2 } = {}) {
+export function startFreeAgency(league, { r2Years = 2, rosterMax = 18, minSalary = 2 } = {}) {
   if (league.season.phase !== PHASE_POST_DRAFT) throw new Error('The save must be at the Post-Draft phase.');
   const yr = league.season.currentYear;
   const out = [];
