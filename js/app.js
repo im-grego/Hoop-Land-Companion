@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.38.2';
+const APP_VERSION = '0.38.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2786,9 +2786,9 @@ screens.combine = (args) => {
   const pre = preStore();
   if (!pre.combineSeen) { pre.combineSeen = true; savePre(); state.compCache = {}; }
   const C = combineData();
-  const tab = args.tab || 'drills';
+  const tab = args.tab || 'measure';
   const rank = new Map((mockPicks(1) || []).map((m, i) => [m.pid, i]));
-  const tabs = `<div class="tabs">${[['drills', 'Drills'], ['trending', 'Hoop Gram'], ['measure', 'Measured']].map(([k, l]) =>
+  const tabs = `<div class="tabs">${[['measure', 'Measured'], ['drills', 'Drills'], ['trending', 'Trending']].map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="combineTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const nameBtn = p => `<button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button>`;
   let body = '';
@@ -2900,6 +2900,24 @@ const growthNote = (room, what) => room >= 4 ? `real room to grow in his ${what}
   : room >= 2 ? `his ${what} should get better, but not by a lot.`
   : `his ${what} is close to what it'll be.`;
 const scoringRoom = p => Math.max(roomFor(p, 'LAY'), roomFor(p, 'MID'), roomFor(p, 'TPT'));
+// Physical ratings don't move after the draft in the game, so a frame read
+// is about time and room: youth, height and how light he is for a pro at
+// his position. 0 (filled out) – 1 (lots of room).
+function frameRoom(p) {
+  const peers = league().teams.flatMap(t => t.roster).filter(x => Math.abs(x.pos - p.pos) <= 1 && x.wt > 0);
+  const avgWt = peers.length ? peers.reduce((a, x) => a + x.wt, 0) / peers.length : p.wt;
+  const avgHt = peers.length ? peers.reduce((a, x) => a + x.ht, 0) / peers.length : p.ht;
+  const youth = Math.max(0, Math.min(1, (23 - p.age) / 4));          // 19 → 1, 23+ → 0
+  const light = Math.max(0, Math.min(1, (avgWt - p.wt) / 25 + 0.4)); // lighter than pros = more to add
+  const long = Math.max(0, Math.min(1, (p.ht - avgHt) / 4 + 0.5));   // a taller frame carries more
+  return Math.max(0, Math.min(1, youth * 0.5 + light * 0.3 + long * 0.2));
+}
+const frameNote = (p, who = 'Strength staff') => {
+  const r = frameRoom(p);
+  return r >= 0.6 ? `${who}: at ${p.age}, he has the time and the frame to fill out.`
+    : r >= 0.35 ? `${who}: some room to add to his frame, not a lot.`
+    : `${who}: his body is about what it's going to be.`;
+};
 
 // The questions this prospect can be asked: the standard ones, plus his
 // scouting report's weaknesses, his motor, and the combine when it matters.
@@ -2944,12 +2962,13 @@ function workoutAnswer(p, k) {
   }
   if (k === 'motor') {
     return { quote: vary2(p, 2, ['People who say that haven\'t watched me in the fourth quarter. But yeah, my conditioning is my summer focus.', 'That\'s fair. I\'m getting in the best shape of my life this summer.']),
-      staff: `Trainers: ${growthNote(roomFor(p, 'STM'), 'conditioning')}` };
+      staff: frameNote(p, 'Trainers').replace('fill out.', 'build his conditioning.') };
   }
   if (k.startsWith('w:')) {
     const a = k.slice(2);
-    if (a === 'HT') return { quote: 'I\'ve been the smaller guy my whole life. I play bigger than I measure.', staff: roomFor(p, 'STR') >= 3 ? 'Strength staff: he can add the weight to hold up.' : 'Strength staff: not sure his frame fills out.' };
+    if (a === 'HT') return { quote: 'I\'ve been the smaller guy my whole life. I play bigger than I measure.', staff: frameNote(p) };
     const what = GROWTH[a] || 'game';
+    if (PHYSICAL.includes(a)) return { quote: vary2(p, a.charCodeAt(0), ['I\'m living in the weight room this summer.', 'Give me a year with a real strength program.']), staff: frameNote(p) };
     const room = a === 'SCO' ? scoringRoom(p) : roomFor(p, a);
     return { quote: vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
       staff: `Coaches: ${growthNote(room, what)}` };
@@ -2977,11 +2996,11 @@ function workoutAnswer(p, k) {
     const x = combineData().byId.get(p.id);
     const med = x?.skip?.startsWith('Medical');
     return { quote: med ? 'I wanted to be all the way back before I tested. I didn\'t want to rush it.' : 'My agent and I felt the tape speaks for itself. I wanted to show teams in person.',
-      staff: `Trainers: ${growthNote(Math.max(roomFor(p, 'SPD'), roomFor(p, 'STR')), 'athleticism')}` };
+      staff: frameNote(p, 'Trainers') };
   }
   if (k === 'combine') {
     return { quote: vary2(p, 5, ['Drills aren\'t basketball. Put on the tape.', 'I had a bad day. I\'m not a 40-yard-dash guy, I\'m a hooper.']),
-      staff: `Trainers: ${growthNote(Math.max(roomFor(p, 'SPD'), roomFor(p, 'STR')), 'athleticism')}` };
+      staff: frameNote(p, 'Trainers') };
   }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
