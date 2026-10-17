@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.2';
+const APP_VERSION = '0.37.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1431,7 +1431,7 @@ screens.rookies = () => {
         const award = awardOf(r.p);
         return `<button class="prow ${isUserTeam(r.team) ? 'sel' : ''}" data-act="openPlayer" data-id="${r.p.id}">
           <span class="name">${r.pick ? `#${r.pick} ` : ''}${esc(playerName(r.p))}</span>
-          <span class="right"><span class="gold">Lv ${levelOf(r.p)}</span><br>${award ? `<span class="up">+${award} upgrade pts</span>` : '<span class="muted">—</span>'}</span>
+          <span class="right">${lvTag(r.p, 'gold')}<br>${award ? `<span class="up">+${award} upgrade pts</span>` : '<span class="muted">—</span>'}</span>
           <span class="meta">${r.team ? esc(r.team.shortName) : 'Undrafted'} · ${r.round ? `R${r.round}` : 'FA'} · ${esc(POSITIONS[r.p.pos] ?? '')} · ${r.p.age}y · ${heightStr(r.p.ht)}</span>
           ${d.points ? `<span class="chg">Age adjustment <span class="up">+${d.points}</span></span>` : ''}
         </button>`;
@@ -1531,7 +1531,7 @@ function reportRow(p, d) {
   const award = awardOf(p);
   const ups = Object.entries(d.attrs).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${k} ${v > 0 ? '+' : ''}${v}</span>`).join(' ');
   return `<div class="prow rrow">
-    <span class="name"><span class="gold">${esc(playerName(p))}</span> <span class="small">Lv ${levelOf(p)}</span></span>
+    <span class="name"><span class="gold">${esc(playerName(p))}</span> ${lvTag(p, 'small')}</span>
     <span class="right"><span class="stars">${stars(levelStars(p))}</span><br>${award ? `<span class="up">+${award}</span>` : '<span class="muted">—</span>'}</span>
     <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · ${p.yrs ? `${p.yrs} yr${p.yrs > 1 ? 's' : ''} exp` : 'Rookie'} · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'}</span>
     ${ups || d.potDelta || d.regDelta ? `<span class="chg">${ups}${longevityBadges(p, d)}</span>` : ''}
@@ -3087,7 +3087,7 @@ function frontOfficeOffers(team) {
   const ly = lastYear();
   const others = L.teams.filter(t => !isUserTeam(t)).sort(() => rng() - 0.5);
   const text = x => x.pick ? (x.key.startsWith('c:') ? `#${x.key.slice(2)}` : pickLabel(x.pick))
-    : `${playerName(x.player)} (Lv ${levelOf(x.player)}${contractText(x.player) ? `, ${contractText(x.player)}` : ''}${contractValue(x.player).tag ? `, ${contractValue(x.player).tag}` : ''})`;
+    : `${playerName(x.player)} (Lv ${shownLevel(x.player)}${contractText(x.player) ? `, ${contractText(x.player)}` : ''}${contractValue(x.player).tag ? `, ${contractValue(x.player).tag}` : ''})`;
   for (const want of onBlock) {
     let n = 0;
     for (const t of others) {
@@ -3883,7 +3883,7 @@ function liveAssets(team) {
     const l = seasonLine(p, state.leagueIdx, ly);
     const ct = contractText(p);
     const locked = pending(p);
-    out.push({ key: `p:${p.id}`, locked, label: `${esc(playerName(p))} <span class="gold small">Lv ${levelOf(p)}</span>${locked ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : contractBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
+    out.push({ key: `p:${p.id}`, locked, label: `${esc(playerName(p))} ${lvTag(p)}${locked ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : contractBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
   }
   return out;
 }
