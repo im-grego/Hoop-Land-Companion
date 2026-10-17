@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.39.3';
+const APP_VERSION = '0.39.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -206,6 +206,20 @@ function overlay(html) {
   o.innerHTML = `<div class="box">${html}</div>`;
   document.body.appendChild(o);
   return o;
+}
+
+// A question with several answers: choices = [[value, label, class]].
+function choiceBox(msg, choices) {
+  return new Promise(resolve => {
+    const o = overlay(`<p class="note">${msg}</p>
+      <div class="stack">${choices.map(([v, l, c]) => `<button class="btn ${c || ''}" data-r="${esc(v)}">${esc(l)}</button>`).join('')}</div>`);
+    o.addEventListener('click', e => {
+      const b = e.target.closest('[data-r]');
+      if (!b) return;
+      o.remove();
+      resolve(b.dataset.r);
+    });
+  });
 }
 
 function confirmBox(msg, okLabel = 'Confirm', cancelLabel = 'Cancel') {
@@ -4310,7 +4324,7 @@ actions.undoTrade = d => {
 // Free agency
 
 const FA_DAY_RULES = {
-  1: 'No more collusion: the market is open. Teams bid with cap space, a player\'s old team can go over the cap to keep him, and restricted free agents (first-rounders off their rookie deal) can be matched.',
+  1: 'No more collusion: the market is open. Teams bid with cap space, a player\'s old team can go over the cap to keep him, restricted free agents (those given a qualifying offer) can be matched, and your own free agents can be signed and traded to a team that wants them. Deals run up to 5 years.',
   2: `Adds the mid-level exception: one per team over the cap, up to $${FA.FA_DEFAULTS.mle}M for 1–${FA.FA_DEFAULTS.mleMaxYears} years with an option.`,
   3: `Finalize free agency: veteran minimums ($${FA.FA_DEFAULTS.vetMin}M, 1 year, ages ${FA.FA_DEFAULTS.vetMinAge}+). Veterans who aren't chasing money will take the minimum rather than sit out the season.`,
 };
@@ -4418,7 +4432,7 @@ function faResults(s) {
   return `<fieldset class="frame"><legend>Day ${s.day} Signings (${s.signings.length})</legend>
     ${wars ? `<p class="note small gold">${wars} bidding war${wars > 1 ? 's' : ''}</p>` : ''}
     <div class="stack">${list.map(x => `<div class="sign-row ${isUserTeam(x.team) ? 'mine' : ''}">${logoImg(x.team)}
-      <p class="note small grow"><b>${esc(playerName(x.p))}</b> → ${esc(x.team.shortName)} · ${offerText(x.offer)} <span class="muted">($${x.offer.sal * x.offer.yrs}M)</span>${x.bidders > 1 ? ` <span class="muted">· ${x.bidders} offers</span>` : ''}${x.kind === 'mle' ? ' <span class="badge new">MLE</span>' : x.kind === 'vetMin' ? ' <span class="badge">Vet min</span>' : ''}<br><span class="muted">${esc(x.why)}</span></p></div>`).join('')}
+      <p class="note small grow"><b>${esc(playerName(x.p))}</b> → ${esc(x.team.shortName)} · ${offerText(x.offer)} <span class="muted">($${x.offer.sal * x.offer.yrs}M)</span>${x.bidders > 1 ? ` <span class="muted">· ${x.bidders} offers</span>` : ''}${x.kind === 'mle' ? ' <span class="badge new">MLE</span>' : x.kind === 'vetMin' ? ' <span class="badge">Vet min</span>' : x.kind === 'snt' ? ' <span class="badge new">S&amp;T</span>' : ''}<br><span class="muted">${esc(x.why)}</span></p></div>`).join('')}
     </div>${s.released?.qo?.length ? `<p class="note small" style="margin-top:8px">Took the qualifying offer (1 year, unrestricted next summer): ${s.released.qo.map(q => `<b class="${isUserTeam(q.team) ? 'gold' : ''}">${esc(playerName(q.p))}</b> (${esc(q.team.shortName)}, $${q.sal}M)`).join(', ')}.</p>` : ''}${s.released?.length ? `<p class="note muted small" style="margin-top:8px">${s.released.length} players without a deal were released to free agency.</p>` : ''}</fieldset>`;
 }
 
@@ -4443,10 +4457,12 @@ actions.faDecide = async () => {
   const matches = new Map();
   for (const { m, best } of FA.pendingMatches(L, s.market, s.bids, s.day, state.userTeams, s.used)) {
     const by = L.teams.find(t => t.id === best.tid);
-    const yes = await confirmBox(`<b>${esc(playerName(m.p))}</b> (RFA) signed an offer sheet with <b>${esc(by.shortName)}</b>: ${offerText(best)} ($${best.sal * best.yrs}M). Match it to keep him?`, 'Match', 'Let Go');
-    matches.set(m.p.id, yes);
+    const pick = await choiceBox(`<b>${esc(playerName(m.p))}</b> (RFA) signed an offer sheet with <b>${esc(by.shortName)}</b>: ${offerText(best)} ($${best.sal * best.yrs}M). Match it to keep him, or match and trade him?`,
+      [['let', 'Let Go', 'off'], ['snt', '🔁 Sign-and-Trade', ''], ['match', 'Match', 'focus']]);
+    if (pick === 'snt' && await sntBox(m, s)) continue;
+    matches.set(m.p.id, pick === 'match');
   }
-  s.signings = FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams });
+  s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
   // Last day: anyone still without a deal leaves their old team.
   if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L, { qoFor: qoAmount, day: s.day });
   const top = [...s.signings].sort((x, y) => y.offer.sal * y.offer.yrs - x.offer.sal * x.offer.yrs)[0];
@@ -4472,7 +4488,7 @@ actions.faUndo = async () => {
   if (!(await confirmBox('Undo today\'s signings?', 'Undo'))) return;
   if (s.released) { FA.unreleaseUnsigned(L, s.released); s.released = null; }
   if (s.cleared) for (const [o, i] of s.cleared) L.contractOffers.splice(i, 0, o);
-  for (const x of [...s.signings].reverse()) FA.unsignPlayer(L, x.rec);
+  for (const x of [...s.signings].reverse()) { if (x.trade) undoTrade(x.trade); FA.unsignPlayer(L, x.rec); }
   for (const x of s.signings) if (x.kind === 'mle') s.used.mle.delete(x.team.id);
   saveMle(s.used.mle);
   s.signings = [];
@@ -4526,6 +4542,7 @@ actions.faOffer = d => {
       <div class="tabs">${[[0, 'No option'], [1, 'Team opt'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       <p class="note small">Total $${draft.sal * draft.yrs}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
+      ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
       <div class="grid2">
         <button class="btn off" data-k="close">${existing ? 'Withdraw' : 'Cancel'}</button>
         <button class="btn focus" data-k="submit" ${err ? 'disabled' : ''}>${existing ? 'Update Offer' : 'Make Offer'}</button>
@@ -4539,6 +4556,7 @@ actions.faOffer = d => {
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
     else if (k === 'mle') { draft.sal = O.mle; draft.yrs = O.mleMaxYears; }
+    else if (k === 'snt') { box.remove(); sntBox(m, s).then(done => { if (done) render(); }); return; }
     else if (k === 'vetmin') {
       const rest = list().filter(x => x !== existing && x.tid !== draft.tid);
       s.bids.set(m.p.id, [...rest, { tid: draft.tid, sal: O.vetMin, yrs: 1, opt: 0, cpu: false }]);
@@ -4559,6 +4577,111 @@ actions.faOffer = d => {
   box.addEventListener('change', e => { if (e.target.dataset.k === 'tid') { draft.tid = +e.target.value; paint(); } });
   paint();
 };
+
+// ---------------------------------------------------------------------------
+// Sign-and-trade: one of your free agents (restricted, or yours to re-sign
+// with Bird rights) that other teams want. Their offers show who's
+// interested; pick a team, sign him to their terms (up to 5 years with Bird
+// rights) and send him there for players and picks worth about what he is
+// on that deal.
+
+const sntSuitors = (m, s) => {
+  const L = league();
+  const score = b => FA.offerScore(L, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
+  return (s.bids.get(m.p.id) || []).filter(b => !isUserTeam({ id: b.tid }) && b.tid !== m.from?.id).sort((a, b) => score(b) - score(a));
+};
+const sntOk = (m, s) => s.stage === 'bidding' && m.from && isUserTeam(m.from) && m.p.status === FA.STATUS_EXPIRING && sntSuitors(m, s).length > 0;
+
+// His trade value on a contract (the contract set just for the count).
+function valueOnDeal(p, deal) {
+  const keep = { ...p.contract }, st = p.status;
+  Object.assign(p.contract, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0 });
+  p.status = FA.STATUS_SIGNED;
+  const v = faValue(p);
+  Object.assign(p.contract, keep);
+  p.status = st;
+  return v;
+}
+// What the other team sends back: players and future picks adding up to
+// about his value (a CPU team wants a little more than it gives, so the
+// target is value / 1.08). `lean` = 'players' | 'picks' goes first.
+function sntPackage(L, m, partner, deal, lean, s) {
+  const target = valueOnDeal(m.p, deal) / 1.08;
+  const yr = L.season.currentYear;
+  const fresh = new Set(s.signings.map(x => x.p.id));
+  const players = FA.signedRoster(partner).filter(p => !fresh.has(p.id) && p.status === FA.STATUS_SIGNED)
+    .map(p => ({ p, v: faValue(p), label: `${playerName(p)} (Lv ${shownLevel(p)}, $${p.contract.sal}M × ${p.contract.yrs})` }));
+  const picks = partner.draftPicks.filter(pk => pk.yr > yr).map(pk => ({ pk, v: pickValue(L, pk), label: pickLabel(pk, L) }));
+  const pool = (lean === 'picks' ? [...picks, ...players] : [...players, ...picks]);
+  const mine = L.teams.find(t => t.id === m.from.id);
+  const room = FA.FA_DEFAULTS.rosterMax - FA.signedRoster(mine).length;
+  const out = [];
+  let sum = 0;
+  // Biggest piece that still fits first, then fill (four pieces at most).
+  const sorted = lean === 'picks' ? pool : [...pool].sort((a, b) => b.v - a.v);
+  for (const a of sorted) {
+    if (out.length >= 4 || sum >= target * 0.97) break;
+    if (a.p && out.filter(x => x.p).length >= room) continue;
+    if (sum + a.v <= target * 1.03) { out.push(a); sum += a.v; }
+  }
+  return { items: out, sum, target, fair: sum >= target * 0.8 };
+}
+
+// Returns true when a deal was made.
+function sntBox(m, s) {
+  const L = league();
+  const suitors = sntSuitors(m, s);
+  if (!suitors.length) return Promise.resolve(false);
+  return new Promise(resolve => {
+    const box = overlay('');
+    let pick = 0, lean = 'players';
+    let deal = { ...suitors[0] };
+    const paint = () => {
+      const offer = suitors[pick];
+      const partner = L.teams.find(t => t.id === offer.tid);
+      const pkg = sntPackage(L, m, partner, deal, lean, s);
+      const v = valueOnDeal(m.p, deal);
+      box.querySelector('.box').innerHTML = `
+        <p class="note"><b>🔁 Sign-and-Trade: ${esc(playerName(m.p))}</b> <span class="gold">Lv ${shownLevel(m.p)}</span> · ${esc(posName(m.p))} · ${m.p.age}y</p>
+        <p class="note small muted">Interest comes from their offers. Pick a team: you sign him to their terms with Bird rights (up to 5 years), then send him there.</p>
+        <div class="stack">${suitors.map((b, i) => { const t = L.teams.find(x => x.id === b.tid); return `<button class="btn small ${i === pick ? 'on focus' : 'off'}" data-k="team" data-i="${i}">${esc(t.shortName)} · ${offerText(b)}</button>`; }).join('')}</div>
+        <div class="pts-row"><span class="grow">Salary</span><span class="pts-val">$${deal.sal}M</span></div>
+        <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${deal.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
+        <p class="note small">His value on this deal: <b>${Math.round(v)}</b></p>
+        <div class="tabs">${[['players', 'Players first'], ['picks', 'Picks first']].map(([k, l]) => `<button class="btn ${lean === k ? 'on focus' : 'off'}" data-k="lean" data-v="${k}">${l}</button>`).join('')}</div>
+        <fieldset class="frame"><legend>${esc(partner.shortName)} send</legend><div class="stack">${pkg.items.map(a => `<p class="note small">${a.p ? '👤' : '🎟️'} ${esc(a.label)} <span class="muted">· ${Math.round(a.v)}</span></p>`).join('') || '<p class="note small muted">Nothing that fits.</p>'}</div>
+          <p class="note small">${Math.round(pkg.sum)} back for ${Math.round(v)} · ${pkg.fair ? '<span class="up">Fair value</span>' : '<span class="down">The best they can do</span>'}</p></fieldset>
+        <div class="grid2"><button class="btn off" data-k="close">Back</button><button class="btn focus" data-k="go" ${pkg.items.length ? '' : 'disabled'}>Make the Deal</button></div>`;
+      box._pkg = pkg; box._partner = partner;
+    };
+    box.addEventListener('click', e => {
+      const b = e.target.closest('[data-k]');
+      if (!b) return;
+      const k = b.dataset.k;
+      if (k === 'team') { pick = +b.dataset.i; deal = { ...suitors[pick] }; }
+      else if (k === 'yrs') deal.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, deal.yrs + +b.dataset.d));
+      else if (k === 'lean') lean = b.dataset.v;
+      else if (k === 'close') { box.remove(); resolve(false); return; }
+      else if (k === 'go') {
+        const partner = box._partner, pkg = box._pkg;
+        const mine = L.teams.find(t => t.id === m.from.id);
+        const rec = FA.signPlayer(L, m.p, mine, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0 }, s.day);
+        const trade = executeTrade({ team: mine, players: [m.p], picks: [] }, { team: partner, players: pkg.items.filter(a => a.p).map(a => a.p), picks: pkg.items.filter(a => a.pk).map(a => a.pk) }, L.season.currentYear);
+        s.bids.delete(m.p.id);
+        const back = pkg.items.map(a => a.p ? playerName(a.p) : pickLabel(a.pk, L)).join(', ');
+        s.signings.push({ p: m.p, from: m.from, team: partner, offer: { ...deal }, motive: m.motive, bidders: suitors.length, kind: 'snt', matched: false,
+          why: `🔁 Sign-and-trade: ${mine.shortName} get ${back}`, rec, trade });
+        state.dirty = true;
+        box.remove();
+        toast('🔁 Sign-and-Trade', `${playerName(m.p)} to ${partner.shortName} (${offerText(deal)}) for ${back}`);
+        resolve(true);
+        return;
+      }
+      paint();
+    });
+    paint();
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Storylines

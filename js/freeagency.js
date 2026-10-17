@@ -24,7 +24,7 @@ export const FA_DEFAULTS = {
   mle: 15, mleMaxYears: 2,
   vetMin: 3, vetMinAge: 30,
   minSalary: 2,
-  maxYears: 4, birdMaxYears: 5,
+  maxYears: 5, birdMaxYears: 5,
   askDrop: [1, 0.9, 0.75],          // asking price by day
   vetAskDrop: 0.85,                  // extra on day 3 for 30+
   acceptPct: [0.92, 0.85, 0.75],     // lowest offer (vs ask) a player takes, by day
@@ -223,7 +223,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       if (slots <= 0) break;
       let sal = Math.round(m.ask * (1 + (rng() * 2 - 1) * o.cpuOverbid));
       sal = Math.max(o.minSalary, Math.min(maxSalary(league, m.p), sal));
-      let yrs = m.p.age >= 31 ? 1 + Math.floor(rng() * 2) : m.p.age <= 26 ? 3 + Math.floor(rng() * 2) : 2 + Math.floor(rng() * 2);
+      let yrs = m.p.age >= 31 ? 1 + Math.floor(rng() * 2) : m.p.age <= 26 ? 3 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3);
       let offer = { tid: team.id, sal, yrs, opt: rng() < 0.2 ? OPT_PLAYER : rng() < 0.2 ? OPT_TEAM : OPT_NONE, cpu: true };
       // A veteran who'll take the minimum gets the minimum.
       if (day >= 3 && m.min === o.vetMin && m.p.age >= o.vetMinAge) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
