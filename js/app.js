@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.1';
+const APP_VERSION = '0.37.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -130,9 +130,26 @@ function findPlayer(pid) { return allEntries().find(e => e.p.id === pid); }
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-function stars(halfStars) {
-  const full = Math.floor(halfStars / 2);
-  return '★'.repeat(full) + (halfStars % 2 ? '½' : '');
+// Stars drawn as icons (a real half star, not "½"). `halfStars` is the
+// potential in half stars; `lost` (in stars) is shown as a red, hollow
+// outline over the end of the row: what a declining player has given back.
+const STAR_PATH = 'M12 2.4l2.95 6.1 6.65.85-4.9 4.55 1.3 6.6L12 17.2l-5.95 3.3 1.3-6.6-4.9-4.55 6.65-.85z';
+function stars(halfStars, lost = 0) {
+  const total = halfStars / 2;
+  const keep = Math.max(0, total - Math.max(0, lost));
+  const clip = (a, b) => `clip-path:inset(0 ${(100 - b * 100).toFixed(1)}% 0 ${(a * 100).toFixed(1)}%)`;
+  const out = [];
+  for (let i = 0; i < Math.ceil(total); i++) {
+    const end = Math.min(1, total - i);
+    const gold = Math.max(0, Math.min(end, keep - i));
+    const layers = [];
+    // A half star keeps a faint outline on its empty half.
+    if (end < 1) layers.push(`<svg viewBox="0 0 24 24" class="st-faint" style="${clip(end, 1)}"><path d="${STAR_PATH}"/></svg>`);
+    if (gold > 0) layers.push(`<svg viewBox="0 0 24 24" class="st-gold" style="${clip(0, gold)}"><path d="${STAR_PATH}"/></svg>`);
+    if (end > gold) layers.push(`<svg viewBox="0 0 24 24" class="st-lost" style="${clip(gold, end)}"><path d="${STAR_PATH}"/></svg>`);
+    out.push(`<span class="st">${layers.join('')}</span>`);
+  }
+  return `<span class="st-row" aria-label="${total} star${total === 1 ? '' : 's'}${lost > 0 ? `, ${Math.round(lost * 100) / 100} lost to age` : ''}">${out.join('')}</span>`;
 }
 
 function logoUrl(url) {
@@ -1429,7 +1446,13 @@ screens.rookies = () => {
 const levelStars = p => Math.max(1, Math.min(10, Math.round((5 - (100 - levelOf(p)) / 14) * 2)));
 // Declining players (past their regression age) lose the stars they've
 // slipped below: potential shows no higher than where they are now.
-const potStars = p => (declining(p) ? Math.min(p.pot, levelStarsOf(shownLevel(p))) : p.pot);
+// Potential stars; a declining player's show what age has taken in red:
+// 14 rating points (the 12 skill ratings) = half a star.
+function regPoints(p) {
+  if (!declining(p)) return 0;
+  return SKILL_ATTRS.reduce((a, k) => a + Math.max(0, p.attributes[k][0] - regressed(p, k)), 0);
+}
+const potStars = p => stars(p.pot, Math.min(p.pot / 2, regPoints(p) / 28));
 const levelStarsOf = lv => Math.max(1, Math.min(10, Math.round((5 - (100 - lv) / 14) * 2)));
 
 // In-game regression: the save keeps a player's peak ratings, and the game
@@ -1467,7 +1490,7 @@ function shownLevel(p) {
   return levelOf({ pot: p.pot, attributes: Object.fromEntries(ATTRS.map(k => [k, [regressed(p, k), p.attributes[k][1]]])) });
 }
 // "Lv 84" for lists: red while declining.
-const lvTag = (p, cls = 'gold small') => declining(p) ? `<span class="${cls.replace('gold', 'down')}">Lv ${shownLevel(p)}</span>` : `<span class="${cls}">Lv ${levelOf(p)}</span>`;
+const lvTag = (p, cls = 'gold small') => declining(p) ? `<span class="${cls.replace('gold', '')} down">Lv ${shownLevel(p)}</span>` : `<span class="${cls}">Lv ${levelOf(p)}</span>`;
 
 screens.report = (args) => {
   const L = league();
@@ -1530,7 +1553,7 @@ function playerRow(p, d) {
   return `<button class="prow" data-act="openPlayer" data-id="${p.id}">
     <span class="name">${esc(playerName(p))}</span>
     <span class="right">
-      <span class="stars">${stars(potStars(p))}</span><br>
+      <span class="stars">${potStars(p)}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
     <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · ${lvTag(p, 'small')}</span>
@@ -1690,7 +1713,7 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${lvTag(p, 'gold')} · <span class="stars">${stars(potStars(p))}</span></p>
+        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${lvTag(p, 'gold')} · <span class="stars">${potStars(p)}</span></p>
         <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
       </div>
       ${rankBox(p)}
@@ -1715,7 +1738,7 @@ screens.player = (args) => {
             <button class="btn square" data-act="regAge" data-dir="1" aria-label="Later regression">+</button>
           </div>
           <div class="pts-row">
-            <span class="grow">Potential<br><span class="stars">${stars(potStars(p))}</span>${declining(p) ? ' <span class="small down">Declining</span><br>' : ''}${injuryText(p)}</span>
+            <span class="grow">Potential<br><span class="stars">${potStars(p)}</span>${declining(p) ? ' <span class="small down">Declining</span><br>' : ''}${injuryText(p)}</span>
             <button class="btn square" data-act="potAdj" data-dir="-1" aria-label="Lower potential">−</button>
             <span class="pts-val ${d.potDelta ? 'gold' : ''}">${p.pot}${d.potDelta ? `<span class="small up"> ${d.potDelta > 0 ? '+' : ''}${d.potDelta}</span>` : ''}</span>
             <button class="btn square" data-act="potAdj" data-dir="1" aria-label="Higher potential">+</button>
