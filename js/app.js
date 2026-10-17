@@ -22,7 +22,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.37.3';
+const APP_VERSION = '0.37.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -143,11 +143,10 @@ function stars(halfStars, lost = 0) {
     const end = Math.min(1, total - i);
     const gold = Math.max(0, Math.min(end, keep - i));
     const layers = [];
-    // A half star keeps a faint outline on its empty half.
-    if (end < 1) layers.push(`<svg viewBox="0 0 24 24" class="st-faint" style="${clip(end, 1)}"><path d="${STAR_PATH}"/></svg>`);
     if (gold > 0) layers.push(`<svg viewBox="0 0 24 24" class="st-gold" style="${clip(0, gold)}"><path d="${STAR_PATH}"/></svg>`);
     if (end > gold) layers.push(`<svg viewBox="0 0 24 24" class="st-lost" style="${clip(gold, end)}"><path d="${STAR_PATH}"/></svg>`);
-    out.push(`<span class="st">${layers.join('')}</span>`);
+    // A half star is just the left half of a star (the box is cut to fit).
+    out.push(`<span class="st"${end < 1 ? ` style="width:${(15 * end).toFixed(1)}px"` : ''}>${layers.join('')}</span>`);
   }
   return `<span class="st-row" aria-label="${total} star${total === 1 ? '' : 's'}${lost > 0 ? `, ${Math.round(lost * 100) / 100} lost to age` : ''}">${out.join('')}</span>`;
 }
