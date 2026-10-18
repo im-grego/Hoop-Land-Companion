@@ -24,7 +24,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.41.2';
+const APP_VERSION = '0.41.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2534,25 +2534,30 @@ function fillsFor(team, p) {
 }
 // Draft grade: where the board projects them, with a stable scouting
 // nudge near the cutoffs so grades read like real projections, not ranks.
+// Draft grades are absolute, not class ranks: what scouts project him to
+// become (his ceiling and floor comps' tiers), so a deep class can have
+// several Locks or 20 lottery grades and a thin one none. Comp tiers by
+// potential: 11 Legend, 10 Hall of Fame, 9 Superstar, 8 All-Star,
+// 7 Starter, 6 Role Player, 5 Bench Depth.
 const GRADES = [
-  ['#1 Lock', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
+  ['Lock', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
   ['Second Round', 'g-r2'], ['UDFA', 'g-udfa'], ['N/A', 'g-na'],
 ];
+const compAvg = list => { const xs = (list || []).slice(0, 3).map(x => x.pot || 0).filter(Boolean); return xs.length ? xs.reduce((a, v, i) => a + v * [0.5, 0.3, 0.2][i], 0) / [0.5, 0.3, 0.2].slice(0, xs.length).reduce((a, b) => a + b, 0) : 0; };
+// Grade score: comp tiers (ceiling counts most) plus how high his projected
+// top ratings run, younger a little better. Thresholds are fixed, so the
+// count of each grade follows the strength of the class.
+function gradeScore(p) {
+  const c = compsFor(p), v = draftVecs();
+  const top8 = a => { const t = [...a].sort((x, y) => y - x).slice(0, 8); return t.reduce((q, w) => q + w, 0) / (t.length || 1); };
+  const C = compAvg(c.ceiling), F = compAvg(c.floor);
+  if (!C) return null;
+  return C + 0.6 * F + 0.5 * (top8(v.fns.ceilOf(p)) - 13) + (p.age <= 19 ? (19 - p.age) * 0.15 : -(p.age - 19) * 0.2);
+}
 function gradeOf(p) {
-  const cache = (state.compCache[state.leagueIdx] ||= new Map());
-  if (!cache.has('ranks')) cache.set('ranks', new Map(boardOrder().map((x, i) => [x.id, i + 1])));
-  const rank = cache.get('ranks').get(p.id);
-  if (!rank) return GRADES[6];
-  if (rank === 1) return GRADES[0];
-  const n = cache.get('ranks').size;
-  const jitter = ((Math.imul(p.id + 7919, 2654435761) >>> 0) / 4294967296 - 0.5) * 0.4;   // ±20%
-  const eff = Math.max(2, Math.round(rank * (1 + jitter)));
-  if (eff <= 5) return GRADES[1];
-  if (eff <= 14) return GRADES[2];
-  if (eff <= 30) return GRADES[3];
-  if (eff <= 60) return GRADES[4];
-  if (eff <= 60 + Math.max(5, Math.ceil((n - 60) / 2))) return GRADES[5];
-  return GRADES[6];
+  const s = gradeScore(p);
+  if (s == null) return GRADES[6];
+  return GRADES[s >= 15.2 ? 0 : s >= 14 ? 1 : s >= 12.5 ? 2 : s >= 11.4 ? 3 : s >= 9.6 ? 4 : s >= 7.6 ? 5 : 6];
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
 // One prospect in the "make your pick" list.
