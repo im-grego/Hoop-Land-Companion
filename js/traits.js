@@ -112,7 +112,14 @@ export function fillTraits(L) {
   let n = 0;
   const everyone = [...L.teams.flatMap(t => t.roster.map(p => [p, t.id])), ...(L.freeAgents || []).map(p => [p, 0]), ...(L.draftClass || []).map(p => [p, 0])];
   for (const [p, tid] of everyone) {
-    if (!p.traits || traitsSet(p)) continue;
+    if (!p.traits) continue;
+    // Values written on a 0-100 scale (an edited player) come down to 1-20.
+    if (TRAIT_KEYS.some(k => p.traits[k] > 20)) {
+      for (const k of TRAIT_KEYS) if (p.traits[k] > 0) p.traits[k] = clamp20(p.traits[k] / 5);
+      n++;
+      continue;
+    }
+    if (traitsSet(p)) continue;
     const real = REAL[`${p.fn} ${p.ln}`.trim()];
     const g = real ? Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, real[i]])) : generateTraits(p, tid);
     for (const k of TRAIT_KEYS) p.traits[k] = clamp20(g[k]);

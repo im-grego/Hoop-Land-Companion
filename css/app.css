@@ -987,7 +987,7 @@ details.dbx[open] summary { margin-bottom: 8px; }
 .clock-card .grow > br { display: none; }
 
 /* No double-tap zoom (pinch still works). */
-html, body, button, a, input, select, label { touch-action: manipulation; }
+html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 
 /* Rating bars: this offseason's gain is a lighter, glowing shade of the
    category color (no stripes), and faint marks at 10, 14 and 18 of 20 show

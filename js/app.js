@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.4';
+const APP_VERSION = '0.45.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -340,14 +340,40 @@ window.addEventListener('beforeunload', e => {
   if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
-$app.addEventListener('click', e => {
-  const el = e.target.closest('[data-act]');
-  if (!el) return;
+function runAct(el, e) {
   const act = el.dataset.act;
   if (act === 'back') return back();
   const fn = actions[act];
   if (fn) fn(el.dataset, el, e);
+}
+// Touch taps run on finger-up: iOS sometimes spends the first tap on a
+// "hover" and only clicks on the second. A tap that moved (a scroll) or
+// was taken over by the browser doesn't count; the click iOS sends after
+// a handled tap is skipped.
+let tapStart = null, tapDone = null;
+$app.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse') { tapStart = null; return; }
+  const el = e.target.closest('[data-act]');
+  tapStart = el ? { el, x: e.clientX, y: e.clientY, t: Date.now() } : null;
 });
+$app.addEventListener('pointercancel', () => { tapStart = null; });
+$app.addEventListener('pointerup', e => {
+  const s = tapStart;
+  tapStart = null;
+  if (!s || e.pointerType === 'mouse') return;
+  const el = e.target.closest('[data-act]');
+  if (el !== s.el || el.disabled || Math.hypot(e.clientX - s.x, e.clientY - s.y) > 10 || Date.now() - s.t > 800) return;
+  tapDone = { el, t: Date.now() };
+  runAct(el, e);
+});
+$app.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  if (tapDone && Date.now() - tapDone.t < 800) { tapDone = null; return; }
+  runAct(el, e);
+});
+// No zooming of any kind (pinch included).
+for (const ev of ['gesturestart', 'gesturechange']) document.addEventListener(ev, e => e.preventDefault(), { passive: false });
 
 $app.addEventListener('change', e => {
   if (e.target.id === 'fileInput' && e.target.files[0]) loadFile(e.target.files[0]);
@@ -5851,7 +5877,7 @@ screens.recruit = (args = {}) => {
   const u = RC.usedThisWeek(M, t.id);
   const done = M.week > RC.WEEKS;
   const mineIds = new Set([...Object.entries(M.offers).filter(([, o]) => o[t.id] !== undefined).map(([id]) => +id), ...Object.entries(M.commit).filter(([, v]) => v === t.id).map(([id]) => +id), ...Object.keys(M.acts).map(Number)]);
-  const row = x => `<div class="drill-row tap ${M.offers[x.id]?.[t.id] !== undefined || M.commit[x.id] === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${x.id}"><span class="grow"><span class="small muted">${x.transfer ? 'T-' : ''}${x.rank}</span> <b>${esc(playerName(x.p))}</b> ${rStars(x.stars)}${isAllAmerican(x.p) ? ' <span class="small gold">⭐ AA</span>' : ''}<br>
+  const row = x => `<div class="drill-row tap ${M.offers[x.id]?.[t.id] !== undefined || M.commit[x.id] === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${x.id}"><span class="grow"><span class="rank-no">${x.transfer ? 'T-' : ''}${x.rank}</span><b>${esc(playerName(x.p))}</b> ${rStars(x.stars)}${isAllAmerican(x.p) ? ' <span class="small gold">⭐ AA</span>' : ''}<br>
       <span class="small muted">${esc(posName(x.p))} · ${heightStr(x.p.ht)} · Lv ${x.lv} · ${x.transfer ? `${classOf(x.p.yrs ?? 0)} transfer` : `${esc(x.city)}, ${x.st}`} · ${Math.round(RC.miles(x.p.loc, t.location))} mi</span></span>
     <span class="small" style="text-align:right;max-width:40%">${recruitStatus(x, c)}</span></div>`;
   let body = '';
