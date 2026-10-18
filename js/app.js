@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.7';
+const APP_VERSION = '0.45.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -191,7 +191,10 @@ function preloadLogos(data) {
 
 // A notification that slides down from the top, like a text message.
 // `detail` adds a second line (trade alerts show the deal).
-function toast(msg, detail = '', ms = detail ? 4000 : 2400) {
+// College runs without the pop-ups; only warnings (a tap that did nothing,
+// and why) still show there.
+function toast(msg, detail = '', ms = detail ? 4000 : 2400, warning = false) {
+  if (!warning && state.data && isCollege()) return;
   document.querySelector('.toast')?.remove();
   const t = document.createElement('div');
   t.className = 'toast';
@@ -291,7 +294,7 @@ const screens = {};
 const actions = {};
 
 function go(name, args = {}) {
-  if (!screenAllowed(name)) { toast('Finish the current step on the calendar first'); return; }
+  if (!screenAllowed(name)) { toast('Finish the current step on the calendar first', '', 2400, true); return; }
   state.stack[state.stack.length - 1].y = window.scrollY;
   state.stack.push({ name, args });
   history.pushState({ depth: state.stack.length }, '');
@@ -5867,6 +5870,7 @@ actions.playShowcase = () => {
 };
 actions.showcaseDone = () => { if (market() && !market().showcase) actions.playShowcase(); calFlags().showcase = true; goHome(); nextUp(); };
 actions.openRecruit = d => go('recruitee', { id: +d.id });
+actions.stepRecruit = d => replace('recruitee', { id: +d.id });
 
 // Recruiting board.
 screens.recruit = (args = {}) => {
@@ -5890,6 +5894,8 @@ screens.recruit = (args = {}) => {
     let list = view === 'hs' ? cls.hs : view === 'tr' ? cls.tr : cls.all.filter(x => mineIds.has(x.id));
     if (fs) list = list.filter(x => x.stars === fs);
     if (fg) list = list.filter(x => RC.GROUP(x.p) === fg);
+    // The list a recruit page steps through with ◀ ▶.
+    state.recruitNav = list.map(x => x.id);
     const chip = (k, v, label) => `<button class="btn small ${String(args[k] || '') === String(v) ? 'on focus' : 'off'}" data-act="recruitFilter" data-k="${k}" data-v="${v}">${label}</button>`;
     body = `${view !== 'mine' ? `<div class="tabs fa-tabs" style="grid-template-columns:repeat(5,1fr)">${chip('stars', '', 'All ★')}${[5, 4, 3, 2].map(n => chip('stars', n, `${n}★`)).join('')}</div>
       <div class="tabs fa-tabs" style="grid-template-columns:repeat(4,1fr);margin-top:4px">${chip('g', '', 'All')}${['Guards', 'Wings', 'Bigs'].map(g => chip('g', g, g)).join('')}</div>` : ''}
@@ -5957,14 +5963,29 @@ screens.recruitee = ({ id }) => {
   const sch = tid => S.byId.get(tid)?.t;
   const f1 = v => v.toFixed(1);
   const line = x.transfer ? (() => { const s = seasonLine(p, state.leagueIdx, league().season.currentYear - 1); return s ? `${f1(s.ppg)}/${f1(s.rpg)}/${f1(s.apg)} in ${s.gp} games last season` : 'No college stats'; })() : `Senior year: ${f1(x.hs.ppg)} pts, ${f1(x.hs.rpg)} reb, ${f1(x.hs.apg)} ast`;
+  const navIds = state.recruitNav?.includes(id) ? state.recruitNav : null;
+  const at = navIds ? navIds.indexOf(id) : -1;
+  const prevId = at > 0 ? navIds[at - 1] : null, nextId = navIds && at < navIds.length - 1 ? navIds[at + 1] : null;
+  const navBtn = (rid, dir) => rid == null ? '' : `<button class="nav-btn" data-act="stepRecruit" data-id="${rid}" aria-label="${dir < 0 ? 'Previous' : 'Next'} recruit">${dir < 0 ? '◀' : '▶'}</button>`;
+  // Strengths and weaknesses against college players at his position;
+  // before a visit scouts his potential, his star rating stands in for it.
+  const rep = scoutingReport(p, league(), scouted ? p.pot : ({ 5: 9, 4: 8, 3: 7, 2: 5 }[x.stars] || 6), x.transfer ? state.data.seasonLeagues : null);
+  const repHtml = `<fieldset class="frame"><legend>Scouting Report</legend><ul class="scout">
+    ${rep.strengths.map(r => `<li class="plus"><b>${esc(r.text)}</b><span class="muted small"> · ${esc(r.detail)}</span></li>`).join('')}
+    ${rep.weaknesses.map(r => `<li class="minus"><b>${esc(r.text)}</b><span class="muted small"> · ${esc(r.detail)}</span></li>`).join('')}
+    ${rep.defense ? `<li class="${rep.defense.tone}"><b>${esc(rep.defense.text)}</b><span class="muted small"> · ${esc(rep.defense.detail)}</span></li>` : ''}
+  </ul></fieldset>`;
   layout({
     title: playerName(p),
+    left: navBtn(prevId, -1),
+    right: navBtn(nextId, 1),
     body: `<fieldset class="frame"><legend>${x.transfer ? `Transfer · No. ${x.rank}` : `Class of ${league().season.currentYear + 0} · No. ${x.rank}`}</legend>
         <p class="note"><b>${esc(playerName(p))}</b> ${rStars(x.stars)}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         <p class="note small">${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lbs · ${p.age}y · ${x.transfer ? `${classOf(p.yrs ?? 0)}, ${Math.max(1, 4 - (p.yrs ?? 0))} yr${4 - (p.yrs ?? 0) > 1 ? 's' : ''} left` : `${esc(x.city)}, ${x.st}`} · ${Math.round(RC.miles(p.loc, t.location))} mi from campus</p>
         <p class="note small">Lv ${x.lv} now · Potential ${scouted ? `<span class="stars">${stars(p.pot)}</span>` : '<span class="muted">? (a visit scouts him)</span>'}</p>
         <p class="note small muted">${line}</p>
         <div class="stat-grid cat-grid" style="margin-top:6px;grid-template-columns:repeat(6,1fr)">${SKILL_ATTRS.map(k => `<div class="c-${RATING_GROUP[k]}"><b>${p.attributes[k][0]}</b><span>${k}</span></div>`).join('')}</div></fieldset>
+      ${repHtml}
       ${com !== undefined ? `<p class="note ${com === t.id ? 'up' : ''}">✍️ ${com === t.id ? 'Committed to you.' : `Committed to ${esc(sch(com)?.city || '?')}.`}${!done && com !== t.id ? ' A big push can still flip him.' : ''}</p>` : ''}
       <fieldset class="frame"><legend>What He Wants</legend>
         ${known ? `<div class="stack">${mot.map(([k, v]) => `<div class="need-row"><span class="small grow"><b>${dots(v)}</b> ${MOTIVE[k]}</span><span class="small">${esc(t.shortName)}: ${word(comps[k])}</span></div>`).join('')}</div>
@@ -5987,22 +6008,22 @@ actions.recruitOffer = d => {
   const { M, t, me } = recruitCtx();
   const id = +d.id, amt = +d.amt;
   const cur = M.offers[id]?.[t.id] || 0;
-  if (me.spent - cur + amt > me.budget + 1e-9) { toast('Not enough NIL left'); return; }
+  if (me.spent - cur + amt > me.budget + 1e-9) { toast('Not enough NIL left', '', 2400, true); return; }
   (M.offers[id] ||= {})[t.id] = amt;
   saveMarket(); render();
 };
 actions.recruitPull = d => {
   const { M, t } = recruitCtx();
   const id = +d.id;
-  if (M.commit[id] === t.id) { toast('He\'s committed to you'); return; }
+  if (M.commit[id] === t.id) { toast('He\'s committed to you', '', 2400, true); return; }
   if (M.offers[id]) delete M.offers[id][t.id];
   saveMarket(); render();
 };
 actions.recruitAct = d => {
   const { M, t } = recruitCtx();
   const id = +d.id;
-  if (d.kind !== 'call' && M.offers[id]?.[t.id] === undefined) { toast('Offer him first'); return; }
-  if (!RC.act(M, id, t.id, d.kind, d.pitch)) { toast('None of those left this week'); return; }
+  if (d.kind !== 'call' && M.offers[id]?.[t.id] === undefined) { toast('Offer him first', '', 2400, true); return; }
+  if (!RC.act(M, id, t.id, d.kind, d.pitch)) { toast('None of those left this week', '', 2400, true); return; }
   (M.known ||= {})[id] = 1;
   saveMarket(); render();
 };
