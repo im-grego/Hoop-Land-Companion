@@ -1161,3 +1161,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .tend-edit .trait-ctl { display: flex; align-items: center; gap: 6px; }
 .tend-edit .trait-ctl b { min-width: 22px; text-align: center; }
 .btn.tiny:disabled { opacity: .3; }
+.plan-row { display: flex; flex-direction: column; gap: 4px; }
+.plan-opts { display: flex; flex-wrap: wrap; gap: 4px; }
+.plan-opts .btn.tiny { padding: 4px 8px; }
+.plan-locked { opacity: .55; }

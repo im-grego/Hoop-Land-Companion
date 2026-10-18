@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.0';
+const APP_VERSION = '0.46.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -850,8 +850,8 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -1286,6 +1286,7 @@ function coachCard() {
     <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${coachPoints()}</b> to spend</p>
     <p class="note small muted">${CO.BRANCHES.map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
+    <button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button>
   </div></fieldset>`;
 }
 
@@ -1395,6 +1396,43 @@ actions.resetTend = d => {
   if (!o) return;
   Object.assign(e.p.tendencies, o);
   saveTend();
+  render();
+};
+
+// Game plan: set the head coach's scheme settings (the Scheme tier opens
+// each group). The coach's own settings are kept to reset to.
+screens.gameplan = () => {
+  const c = myCoach(), sch = tierNow('scheme');
+  if (!c?.tendencies) { layout({ title: 'Game Plan', body: '<p class="note">No head coach on your staff.</p>' }); return; }
+  const own = treeStore().planOrig?.[c.id] || c.tendencies;
+  layout({
+    title: 'Game Plan',
+    body: `<p class="note small">${esc(`${c.fn} ${c.ln}`)}'s settings, used by the game when it sims. Scheme tier ${sch} of 3: ${['nothing open yet', 'offense open', 'offense and defense open', 'everything open'][sch]}.</p>
+      ${CO.PLAN.map(g => `<fieldset class="frame ${sch >= g.tier ? '' : 'plan-locked'}"><legend>${g.group}${sch >= g.tier ? '' : ` · 🔒 Scheme ${g.tier}`}</legend><div class="stack">${g.keys.map(([k, label, max]) => {
+        const v = c.tendencies[k] ?? 0;
+        return `<div class="plan-row"><span class="small">${label}${v !== (own[k] ?? 0) ? ' <span class="up">•</span>' : ''}</span><div class="plan-opts">${Array.from({ length: max + 1 }, (_, i) => `<button class="btn tiny ${i === v ? 'on focus' : 'off'}" data-act="setPlan" data-k="${k}" data-v="${i}" ${sch >= g.tier ? '' : 'disabled'}>${esc(CO.planOption(k, i))}</button>`).join('')}</div></div>`;
+      }).join('')}</div></fieldset>`).join('')}
+      ${treeStore().planOrig?.[c.id] ? '<button class="btn small" data-act="resetPlan">↺ Back to his own settings</button>' : ''}`,
+  });
+};
+actions.setPlan = d => {
+  const c = myCoach(), tree = treeStore();
+  if (!c?.tendencies) return;
+  const g = CO.PLAN.find(x => x.keys.some(([k]) => k === d.k));
+  if (!g || tierNow('scheme') < g.tier) return;
+  (tree.planOrig ||= {})[c.id] ||= { ...c.tendencies };
+  c.tendencies[d.k] = +d.v;
+  saveTree();
+  state.dirty = true;
+  render();
+};
+actions.resetPlan = () => {
+  const c = myCoach(), o = treeStore().planOrig?.[c?.id];
+  if (!o) return;
+  Object.assign(c.tendencies, o);
+  delete treeStore().planOrig[c.id];
+  saveTree();
+  state.dirty = true;
   render();
 };
 

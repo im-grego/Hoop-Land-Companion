@@ -13,7 +13,7 @@ export const BRANCHES = [
   { k: 'dev', label: 'Player Development', icon: '📈', rating: 'development',
     tiers: ['+10% offseason progression, +15% potential odds', '+20% progression, +30% potential odds', '+30% progression, +45% potential odds'] },
   { k: 'scheme', label: 'Scheme', icon: '🧠', rating: 'leadership',
-    tiers: ['2 tendency nudges per player', '3 nudges per player', '4 nudges per player; a tendency can move 3'] },
+    tiers: ['2 tendency nudges per player · game plan: offense', '3 nudges per player · game plan: defense', '4 nudges per player; a tendency can move 3 · game plan: rotation'] },
   { k: 'culture', label: 'Culture', icon: '🤝', rating: 'motivation',
     tiers: ['+1 Locker Room and Loyalty (up to 14) · +10% recruiting pull', '+2 (up to 16) · +20% recruiting pull', '+3 (up to 18) · +30% recruiting pull'] },
 ];
@@ -67,3 +67,15 @@ export function nudgesFor(p, schemeTier) {
 }
 // How far one tendency can move from where the offseason started.
 export const maxShift = schemeTier => (schemeTier >= 3 ? 3 : 2);
+
+// Game plan: the head coach's own scheme settings in the save (the game
+// uses them when it sims). Each is a numbered option; 0 is the default most
+// coaches use. Option names go in `names` once they're matched to the
+// game's coach screen. Scheme tier 1 opens offense, 2 defense, 3 rotation.
+export const PLAN = [
+  { tier: 1, group: 'Offense', keys: [['offFocus', 'Offensive focus', 3], ['offTempo', 'Tempo', 1], ['offRebounding', 'Offensive rebounding', 2]] },
+  { tier: 2, group: 'Defense', keys: [['defFocus', 'Defensive focus', 2], ['defAggression', 'Defensive aggression', 2], ['defRebounding', 'Defensive rebounding', 2]] },
+  { tier: 3, group: 'Rotation', keys: [['benchDepth', 'Bench depth', 2], ['benchUtilization', 'Bench usage', 2], ['closingLineup', 'Closing lineup', 1]] },
+];
+export const PLAN_NAMES = {};
+export const planOption = (k, v) => PLAN_NAMES[k]?.[v] || (v === 0 ? 'Default' : `Option ${v}`);
