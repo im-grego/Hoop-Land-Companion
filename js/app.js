@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.3';
+const APP_VERSION = '0.45.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -369,6 +369,7 @@ async function loadFile(file) {
     state.undo = null;
     state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null;
     installData(data);
+    if (isCollege()) freshCollegeCheck();
     state.dirty = false;
     const held = holdCpuOffers();
     recordSalaries();
@@ -462,6 +463,7 @@ function buildExport() {
     const s = league().season;
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
+  if (isCollege()) rememberExport();
   const text = serializeSave(state.data);
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
@@ -624,6 +626,42 @@ const isCollege = () => state.mode?.kind === 'college';
 // College steps are remembered per save and season, since the offseason
 // spans several game phases (and reloads) for the showcase and recruiting.
 const collegeCalKey = () => `hlc:ccal:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+// College progress is remembered per save and year, but only for the file
+// it started from (reloaded) or a file the app exported from it. Any other
+// save of that year (say, the original simmed again to the same spot)
+// starts the offseason fresh.
+const saveFingerprint = (L = league()) => [L.season.phase, L.season.currentDay || 0, (L.season.news || []).length, L.meta?.uPID || 0, L.teams.reduce((n, t) => n + t.roster.length, 0)].join(':');
+const fpKey = () => `hlc:cfp:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+function freshCollegeCheck() {
+  const fp = saveFingerprint();
+  let known = null;
+  try { known = JSON.parse(localStorage.getItem(fpKey())); } catch { known = null; }
+  if (known && (known.base === fp || (known.exports || []).includes(fp))) return;
+  {
+    // A different save (or progress stored before saves were told apart):
+    // forget this season's stored progress.
+    const L = league();
+    const tails = [`:${L.shortName}:${L.meta?.saveName || ''}:${L.season.currentYear}`, `:${seasonKey(L)}`];
+    try {
+      const drop = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k?.startsWith('hlc:') && k !== fpKey() && tails.some(t => k.endsWith(t))) drop.push(k);
+      }
+      drop.forEach(k => localStorage.removeItem(k));
+    } catch { /* ignore */ }
+    state.rm = null;
+    for (const k of ['strength', 'opts', 'pre', 'extS']) state[k] = {};
+  }
+  try { localStorage.setItem(fpKey(), JSON.stringify({ base: fp, exports: [] })); } catch { /* ignore */ }
+}
+function rememberExport() {
+  let known = null;
+  try { known = JSON.parse(localStorage.getItem(fpKey())) || { base: null, exports: [] }; } catch { known = { base: null, exports: [] }; }
+  const fp = saveFingerprint();
+  if (!(known.exports ||= []).includes(fp)) known.exports.push(fp);
+  try { localStorage.setItem(fpKey(), JSON.stringify(known)); } catch { /* ignore */ }
+}
 const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.title}`); };
 const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR);
 const currentStep = () => activeCal().find(st => !st.done());
