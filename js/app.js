@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.47.2';
+const APP_VERSION = '0.47.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4889,9 +4889,10 @@ screens.fa = (args = {}) => {
   else rows = rows.filter(m => !isUserTeam(m.from));
   if (view === 'bids') rows = rows.filter(m => s.bids.get(m.p.id)?.length);
   if (['guards', 'wings', 'bigs'].includes(view)) rows = rows.filter(m => posGroup(m.p) === view);
+  if (view === 'vets') rows = rows.filter(m => m.p.age >= 30);
   const total = rows.length;
   rows = rows.slice(0, args.all ? 400 : 60);
-  const views = [['top', 'Best'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs'], ['bids', 'Bidding'], ['mine', 'Yours']];
+  const views = [['top', 'Best'], ['vets', 'Vets 30+'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs'], ['bids', 'Bidding'], ['mine', 'Yours']];
   const O = FA.FA_DEFAULTS;
   const stageBtn = s.stage === 'open'
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
@@ -4934,7 +4935,7 @@ screens.fa = (args = {}) => {
       ${s.stage === 'done' ? faResults(s) : ''}
       <div class="stack">${stageBtn}</div>
       ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
-      <div class="tabs fa-tabs">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="tabs fa-tabs fa-tabs7">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(row).join('')}</div>
       ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`,
   });
@@ -4983,8 +4984,9 @@ function faResults(s) {
   const list = [...s.signings].sort((a, b) => b.offer.sal - a.offer.sal || b.offer.yrs - a.offer.yrs);
   return `<fieldset class="frame"><legend>Day ${s.day} Signings (${s.signings.length})</legend>
     ${wars ? `<p class="note small gold">${wars} bidding war${wars > 1 ? 's' : ''}</p>` : ''}
-    <div class="stack">${list.map(x => `<div class="sign-row ${isUserTeam(x.team) ? 'mine' : ''}">${logoImg(x.team)}
-      <p class="note small grow"><b>${esc(playerName(x.p))}</b> → ${esc(x.team.shortName)} · ${offerText(x.offer)} <span class="muted">($${x.offer.sal * x.offer.yrs}M)</span>${x.bidders > 1 ? ` <span class="muted">· ${x.bidders} offers</span>` : ''}${x.kind === 'mle' ? ' <span class="badge new">MLE</span>' : x.kind === 'vetMin' ? ' <span class="badge">Vet min</span>' : x.kind === 'min' ? ' <span class="badge">Min</span>' : x.kind === 'snt' ? ' <span class="badge new">S&amp;T</span>' : ''}<br><span class="muted">${esc(x.why)}</span></p></div>`).join('')}
+    <div class="stack">${list.map(x => `<div class="drill-row tap ${isUserTeam(x.team) ? 'r1' : ''}" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br>
+      <span class="small">${offerText(x.offer)} <span class="muted">($${x.offer.sal * x.offer.yrs}M)</span>${x.kind === 'mle' ? ' <span class="badge new">MLE</span>' : x.kind === 'vetMin' ? ' <span class="badge">Vet min</span>' : x.kind === 'min' ? ' <span class="badge">Min</span>' : x.kind === 'snt' ? ' <span class="badge new">S&amp;T</span>' : ''}</span><br>
+      <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${x.bidders > 1 ? ` · ${x.bidders} offers` : ''} · ${esc(String(x.why).replace(/\s*\(\$[\d.]+M\)\s*$/, ''))}</span></span><span class="small">${logoImg(x.team)} ${esc(x.team.shortName)}</span></div>`).join('')}
     </div>${s.released?.qo?.length ? `<p class="note small" style="margin-top:8px">Took the qualifying offer (1 year, unrestricted next summer): ${s.released.qo.map(q => `<b class="${isUserTeam(q.team) ? 'gold' : ''}">${esc(playerName(q.p))}</b> (${esc(q.team.shortName)}, $${q.sal}M)`).join(', ')}.</p>` : ''}${s.released?.length ? `<p class="note muted small" style="margin-top:8px">${s.released.length} players without a deal were released to free agency.</p>` : ''}</fieldset>`;
 }
 
