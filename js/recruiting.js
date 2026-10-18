@@ -228,14 +228,17 @@ export const pitchMult = (x, s, M, k) => 0.55 + 2.2 * x.w[k] * components(x, s, 
 const bestPitch = (x, s, M) => PITCHES.map(p => p.k).reduce((a, k) => (pitchMult(x, s, M, k) > pitchMult(x, s, M, a) ? k : a), 'nil');
 const addInt = (M, rid, tid, v) => { const o = (M.int[rid] ||= {}); o[tid] = Math.round(((o[tid] || 0) + v) * 10) / 10; };
 
-// Who is leading for him: schools with an offer, best first, with a share
-// of the race (score squared) for the board.
+// The race: every school with an offer fills its own bar toward 100%; the
+// first to get there (the highest, if several get there the same week)
+// gets the commitment. Better recruits take more to win over.
+export const GOAL = { 5: 82, 4: 67, 3: 54, 2: 46 };
+export const goalOf = x => GOAL[x.stars] || 60;
 export function race(x, S, M) {
   const offs = M.offers[x.id] || {};
+  const goal = goalOf(x);
   const list = Object.keys(offs).map(Number).map(tid => S.byId.get(tid)).filter(Boolean).map(s => ({ s, score: scoreOf(x, s, M), nil: offs[s.id] }));
   list.sort((a, b) => b.score - a.score);
-  const tot = list.reduce((a, e) => a + e.score ** 2, 0) || 1;
-  for (const e of list) e.pct = Math.round((e.score ** 2 / tot) * 100);
+  for (const e of list) e.pct = Math.min(100, Math.round((e.score / goal) * 100));
   return list;
 }
 
@@ -341,13 +344,12 @@ export function advanceWeek(C, li, M, cls, userIds, rngSeed) {
   for (const x of order) {
     const rc = race(x, S, M).filter(e => e.s.seats > 0);
     if (!rc.length) continue;
-    const lead = rc[0], second = rc[1];
-    const margin = second ? lead.score - second.score : lead.score;
-    const go = last || (M.week >= x.ready && lead.score >= 40 && margin >= 4 && r() < 0.35 + 0.15 * M.week);
+    const lead = rc[0];
+    // He commits once a school's bar is full (and he's ready to decide);
+    // on Signing Day everyone still out there takes the leader.
+    const go = last || (M.week >= x.ready && lead.pct >= 100);
     if (!go) continue;
-    // He usually takes the leader, but a close race can go either way.
-    const top = rc.slice(0, 4);
-    const pick = pickW(r, top, e => (e.score / lead.score) ** 8);
+    const pick = lead;
     M.commit[x.id] = pick.s.id;
     (last ? news.signed : news.commits).push({ id: x.id, to: pick.s.id });
     pick.s.seats--; pick.s.commits.push(x); pick.s.groups[GROUP(x.p)].push(x.lv);

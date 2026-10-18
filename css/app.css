@@ -1175,3 +1175,12 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .so-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .so-ctl b { min-width: 38px; text-align: center; }
 .so-row select { width: 100%; }
+
+/* Recruiting race: bars that fill to 100% */
+.race-row { display: grid; grid-template-columns: auto 52px 1fr 40px; align-items: center; gap: 8px; padding: 6px 8px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.race-row.mine { border-color: var(--cyan); }
+.race-row > span:last-child { text-align: right; }
+.race-bar { position: relative; height: 12px; background: var(--bg-dark); border: 2px solid var(--btn-edge); }
+.race-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); }
+.race-row.mine .race-bar i { background: var(--cyan); }
+.race-bar i.full { background: var(--up); }

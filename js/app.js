@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.3';
+const APP_VERSION = '0.46.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6132,7 +6132,7 @@ function recruitStatus(x, c) {
   const rc = RC.race(x, S, M);
   const i = rc.findIndex(e => e.s.id === t.id);
   if (i === 0) return `<span class="up">You lead · ${rc[0].pct}%</span>`;
-  if (i > 0) return `<span class="gold">You're ${ordinal(i + 1)} · ${rc[i].pct}%</span><br><span class="muted">${esc(rc[0].s.t.shortName)} leads</span>`;
+  if (i > 0) return `<span class="gold">You're ${ordinal(i + 1)} · ${rc[i].pct}%</span><br><span class="muted">${esc(rc[0].s.t.shortName)} ${rc[0].pct}%</span>`;
   if (rc.length) return `<span class="muted">${rc.length} offer${rc.length > 1 ? 's' : ''}<br>${esc(rc[0].s.t.shortName)} leads</span>`;
   return '<span class="muted">No offers</span>';
 }
@@ -6298,7 +6298,7 @@ screens.recruitee = ({ id }) => {
         ${known ? `<div class="stack">${mot.map(([k, v]) => `<div class="need-row"><span class="small grow"><b>${dots(v)}</b> ${MOTIVE[k]}</span><span class="small">${esc(t.shortName)}: ${word(comps[k])}</span></div>`).join('')}</div>
           <p class="note muted small" style="margin-top:6px">NIL ${myNil ? `is your $${myNil}M against` : 'compares your offer with'} what he's looking for (about $${x.ask}M).</p>`
           : '<p class="note small muted">Call him to find out what matters to him.</p>'}</fieldset>
-      <fieldset class="frame"><legend>The Race</legend><div class="stack">${rc.slice(0, 5).map(e => `<div class="stand-row ${e.s.t === t ? 'mine' : ''}">${logoImg(e.s.t)}<span class="grow small"><b>${esc(e.s.t.shortName)}</b></span><span class="small">${e.pct}%</span></div>`).join('') || '<p class="note small muted">No offers yet.</p>'}</div>
+      <fieldset class="frame"><legend>The Race</legend><p class="note small muted" style="margin-bottom:6px">Every school with an offer fills its own bar. The first to 100% gets his commitment${x.stars >= 4 ? '; the best recruits take the most winning over' : ''}.</p><div class="stack">${rc.slice(0, 5).map(e => `<div class="race-row ${e.s.t === t ? 'mine' : ''}">${logoImg(e.s.t)}<b class="small">${esc(e.s.t.shortName)}</b><span class="race-bar"><i style="width:${e.pct}%" class="${e.pct >= 100 ? 'full' : ''}"></i></span><span class="small">${e.pct}%</span></div>`).join('') || '<p class="note small muted">No offers yet.</p>'}</div>
         ${rc.length > 5 ? `<p class="note small muted">${rc.length - 5} more offer${rc.length > 6 ? 's' : ''}.</p>` : ''}</fieldset>
       ${done ? '' : `<fieldset class="frame"><legend>Your Offer</legend>
         <p class="note small">${myNil !== undefined ? `Offered: <b>$${myNil}M</b> NIL with a scholarship.` : 'No offer yet.'} $${left.toFixed(1).replace('.0', '')}M available.</p>
