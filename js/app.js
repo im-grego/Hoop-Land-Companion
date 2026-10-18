@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.0';
+const APP_VERSION = '0.45.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5692,16 +5692,16 @@ actions.seniorsDone = () => { calFlags().seniors = true; goHome(); nextUp(); };
 // game's. The market (offers, interest, commitments) is kept per save and
 // season; the class is rebuilt from its seed on every load.
 const rmKey = () => `hlc:rm:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
-// Saves the app recruits from: the start of the college offseason (8) or
-// the showcase phase (5), before the game's own signing days.
-const RECRUIT_PHASES = [8, 5];
+// The save the app recruits from: day 1 of the game's signing period
+// (phase 6), after the game has played its showcase and before anyone signs.
+const recruitableSave = () => { const s = league().season; return s.phase === 6 && (s.currentDay || 1) <= 1 && !(s.news || []).some(n => n.type === 14); };
 function market() {
   if (!isCollege()) return null;
   const key = rmKey();
   if (state.rm?.key === key) return state.rm.M;
   let M = null;
   try { M = JSON.parse(localStorage.getItem(key)) || null; } catch { M = null; }
-  if (!M && RECRUIT_PHASES.includes(league().season.phase)) M = RC.newMarket(league());
+  if (!M && recruitableSave()) M = RC.newMarket(league());
   state.rm = { key, M, cls: null };
   saveMarket();
   return M;
@@ -5727,7 +5727,7 @@ const PITCH_ICON = Object.fromEntries(RC.PITCHES.map(p => [p.k, p.icon]));
 // offseason save). Returns how many were added.
 function applyRecruiting() {
   const M = market();
-  if (!M || M.week <= RC.WEEKS || !RECRUIT_PHASES.includes(league().season.phase)) return 0;
+  if (!M || M.week <= RC.WEEKS || !recruitableSave()) return 0;
   const added = RC.applySignings(state.data, state.leagueIdx, M, rclass());
   for (const p of added) state.snaps.set(snapKey(p.id, state.leagueIdx), snapshot(p));
   saveMarket();
@@ -5750,7 +5750,7 @@ function recruitStatus(x, c) {
   if (rc.length) return `<span class="muted">${rc.length} offer${rc.length > 1 ? 's' : ''}<br>${esc(rc[0].s.t.shortName)} leads</span>`;
   return '<span class="muted">No offers</span>';
 }
-const noMarket = title => layout({ title, body: '<p class="note">The app runs recruiting from your save at the start of the college offseason (before the showcase). Load that save to recruit.</p>' });
+const noMarket = title => layout({ title, body: '<p class="note">The app runs recruiting from your save on Day 1 of the game\'s signing period (after the game plays its showcase, before anyone signs). Load that save to recruit.</p>' });
 
 // All-American Showcase: the top 20 of the class, East vs West.
 const aaKey = () => `hlc:aa:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
@@ -5964,7 +5964,7 @@ screens.recruitweek = ({ w }) => {
       <fieldset class="frame"><legend>${last ? 'Signing Day Decisions' : 'Around the Country'}</legend><div class="stack">${all.slice(0, 15).map(i => rowOf(i)).join('') || '<p class="note small muted">Nobody committed this week.</p>'}</div>
         ${all.length > 15 ? `<p class="note small muted">${all.length - 15} more on the News tab.</p>` : ''}${e.late.length ? `<p class="note small muted">${e.late.length} late signings filled out rosters.</p>` : ''}</fieldset>
       <fieldset class="frame"><legend>Top Classes</legend><div class="stack">${rk.slice(0, 10).map(r => `<div class="stand-row ${r.s.t === t ? 'mine' : ''}"><span class="small muted">${r.rank}</span>${logoImg(r.s.t)}<span class="grow small"><b>${esc(r.s.t.shortName)}</b> <span class="muted">${r.list.length} · ${r.list.filter(x => x.stars >= 4).length} 4★+</span></span></div>`).join('')}</div></fieldset>
-      ${last ? '<p class="note small">Every class is on its roster now. The game\'s own recruiting pool and showcase rosters were cleared, so its signing days pass with nobody left to sign.</p>' : ''}`,
+      ${last ? '<p class="note small">Every class is on its roster now. The game\'s own recruiting pool and offers were cleared, so its signing days pass with nobody left to sign.</p>' : ''}`,
     action: { act: 'recruitBack', label: M.week > RC.WEEKS ? 'Back to the Calendar' : 'Recruiting Board' },
   });
 };

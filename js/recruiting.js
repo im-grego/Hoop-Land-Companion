@@ -440,7 +440,7 @@ export function playShowcase(M, cls) {
 }
 
 // Signing Day results into the save: every signing onto its roster, and the
-// game's own recruiting cleared (its pool, offers and showcase rosters).
+// game's own recruiting cleared (its pool and offers).
 // Safe to run again on a fresh load of the same save.
 export function applySignings(data, li, M, cls) {
   const C = data.seasonLeagues[li];
@@ -454,13 +454,9 @@ export function applySignings(data, li, M, cls) {
     signToSchool(C, li, t, x.p, { sal });
     added.push(x.p);
   }
+  // The game's showcase is left alone (it has already been played).
   C.freeAgents = [];
   C.contractOffers = [];
-  for (const s of C.starTeams || []) {
-    s.roster = [];
-    if (Array.isArray(s.startingLineup)) s.startingLineup = [];
-    if (Array.isArray(s.currentLineup)) s.currentLineup = [];
-  }
   C.meta.uPID = Math.max(C.meta.uPID || 0, cls.maxId);
   M.applied = true;
   return added;
