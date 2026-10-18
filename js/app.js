@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.47.0';
+const APP_VERSION = '0.47.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -88,6 +88,8 @@ function saveUserTeams() {
 }
 function loadUserTeams() {
   let ids = null;
+  // Franchise saves: always the team the save is built around.
+  { const L = league(); if (L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId)) { state.userTeams = new Set([L.season.teamId]); return; } }
   try { ids = JSON.parse(localStorage.getItem(teamsKey())); } catch { /* ignore */ }
   if (!Array.isArray(ids)) {
     const L = league();
@@ -703,7 +705,10 @@ function rememberExport() {
   try { localStorage.setItem(fpKey(), JSON.stringify(known)); } catch { /* ignore */ }
 }
 const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.title}`); };
-const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR);
+// Franchise saves (one team, the game's own mode 0) skip Front Office: the
+// team is the one the save is built around, like college.
+const isFranchise = () => { const L = league(); return L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId); };
+const activeCal = () => (isCollege() ? COLLEGE_CAL : isFranchise() ? CALENDAR.filter(st => st.key !== 'office') : CALENDAR);
 const currentStep = () => activeCal().find(st => !st.done());
 const isStep = key => currentStep()?.key === key;
 
