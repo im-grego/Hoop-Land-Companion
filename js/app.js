@@ -25,7 +25,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.42.7';
+const APP_VERSION = '0.42.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -594,7 +594,8 @@ const COLLEGE_CAL = [
     done: () => !!calFlags().recruit },
   { key: 'signing', date: 'Jun 20', title: 'Signing Class Grades', blurb: 'Every school\'s class graded, yours in detail, and the needs still open.',
     done: () => !!calFlags().signing },
-  { key: 'summer', date: 'Jul 15', title: 'Summer Development', blurb: 'Workouts, progression and the strength program.', done: () => false, soon: true },
+  { key: 'summer', date: 'Jul 15', title: 'Summer Development', blurb: 'Off-season progression, a check-in with the trainer, mentorship and the strength program.',
+    done: () => !!calFlags().summer },
   { key: 'preseason', date: 'Oct 15', title: 'Preseason', blurb: 'Top 25, conference picks and Media Day.', done: () => false, soon: true },
 ];
 const isCollege = () => state.mode?.kind === 'college';
@@ -632,6 +633,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'summer') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'signing') { const t = league().teams.find(isUserTeam); const c = t && signingClasses(state.data, state.leagueIdx, new Set(aaStore().ids || []), shownLevel).byTeam.get(t.id); return c ? `Your class: ${c.grade}, No. ${c.rank} (${c.players.length} signee${c.players.length > 1 ? 's' : ''}).` : 'No class this year.'; }
   if (key === 'recruit') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const b = recruitBoard(state.data, state.leagueIdx, t); return `${b.mineClass.n} commit${b.mineClass.n === 1 ? '' : 's'}${b.rank ? `, class ranked No. ${b.rank}` : ''}.`; }
   if (key === 'showcase') { const a = aaStore(); return a.ids?.length ? `${a.ids.length} All-Americans${a.mvp ? `, MVP ${a.mvp}` : ''}.` : 'Done.'; }
@@ -654,6 +656,7 @@ function stepActions(key) {
   const st = activeCal().find(x => x.key === key);
   if (st?.soon) return '<p class="note small muted">Coming soon.</p>';
   switch (key) {
+    case 'summer': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Summer Workouts</button><button class="btn" data-act="calDone" data-k="summer" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'signing': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="signing">🖊️ Signing Classes</button><button class="btn" data-act="calDone" data-k="signing">✅ Wrap Up</button></div>`;
     case 'recruit': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="recruit">📋 Recruiting Board</button><button class="btn" data-act="calDone" data-k="recruit">✅ Wrap Up</button></div>`;
     case 'showcase': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="showcase">⭐ All-American Showcase</button><button class="btn" data-act="calDone" data-k="showcase">✅ Wrap Up</button></div>`;
@@ -729,7 +732,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'], recruit: ['recruit'], signing: ['signing'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'], recruit: ['recruit'], signing: ['signing'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -1177,10 +1180,10 @@ screens.offseason = () => {
   const P = state.params;
   const bands = P.ageBands;
   layout({
-    title: 'Training Camp',
+    title: isCollege() ? 'Summer Development' : 'Training Camp',
     body: `
       <img class="hero" src="icons/hero-camp.jpg" alt="">
-      ${mentorCard()}
+      ${isCollege() ? '' : mentorCard()}
       <fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
           ${auto ? `
@@ -1204,7 +1207,7 @@ screens.offseason = () => {
       </fieldset>
       ${strengthCard()}
       ${contractCard()}
-      <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up Training Camp</button>`,
+      <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
 
@@ -1219,7 +1222,10 @@ screens.camp = () => {
   });
 };
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
-actions.calDevBack = () => { calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.'); };
+actions.calDevBack = () => {
+  if (isCollege()) { calFlags().summer = true; state.undo = null; goHome(); toast('Summer development done. Next up: Preseason.'); return; }
+  calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.');
+};
 
 // Meet with the trainer: your players' health, physicals and what changed.
 screens.trainer = () => {
