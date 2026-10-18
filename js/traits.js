@@ -5,15 +5,18 @@
 // Real players we know get judged values (REAL, by full name); everyone
 // else is generated from his own data plus a little stable noise.
 
+// Scale: 1-5 the low name, 6-9 Low, 10-14 Solid, 15-17 the high name,
+// 18-20 the top tier.
 export const TRAITS = [
-  { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Ironman' },
-  { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Indifferent', hi: 'Ring chaser' },
-  { k: 'money', label: 'Money', icon: '💰', lo: 'Takes less', hi: 'Max or bust' },
-  { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Lifer' },
-  { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Coasts', hi: 'Relentless' },
-  { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Problem', hi: 'Leader' },
-  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Rises' },
+  { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Durable', top: 'Ironman' },
+  { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Me-first', hi: 'Competitor', top: 'Winner' },
+  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Wants the bag', top: 'Max or bust' },
+  { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Loyal', top: 'One-teamer' },
+  { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'High motor', top: 'Relentless' },
+  { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', top: 'Captain' },
+  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Rises', top: 'Shines' },
 ];
+export const traitLabel = (t, v) => (v >= 18 ? t.top : v >= 15 ? t.hi : v <= 5 ? t.lo : v <= 9 ? 'Low' : 'Solid');
 export const TRAIT_KEYS = TRAITS.map(t => t.k);
 export const traitWord = v => v >= 18 ? 'Elite' : v >= 15 ? 'High' : v >= 11 ? 'Solid' : v >= 7 ? 'Low' : 'Very low';
 export const traitsSet = p => !!p.traits && TRAIT_KEYS.some(k => (p.traits[k] || 0) > 0);

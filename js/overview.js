@@ -22,8 +22,8 @@ export const TEND_LABELS = {
   stealOnBall: 'On-ball steals', stealOffBall: 'Passing lanes', block: 'Block shots',
 };
 export const TEND_GROUPS = [
-  ['Scoring', ['dunk', 'floater', 'hook', 'post', 'twoPoint', 'threePoint']],
-  ['Creating', ['pumpFake', 'fades', 'cross', 'spin', 'step', 'pass', 'lob', 'runPlay']],
+  ['Scoring & Shooting', ['dunk', 'floater', 'hook', 'post', 'twoPoint', 'threePoint', 'pumpFake', 'fades']],
+  ['Creating & IQ', ['cross', 'spin', 'step', 'pass', 'lob', 'runPlay']],
   ['Effort & Defense', ['offReb', 'defReb', 'takeCharge', 'stealOnBall', 'stealOffBall', 'block']],
 ];
 const STYLES = [

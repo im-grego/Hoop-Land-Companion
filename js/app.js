@@ -18,7 +18,7 @@ import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
-import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
+import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
 import * as CO from './coaching.js';
@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.48.2';
+const APP_VERSION = '0.48.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2911,9 +2911,10 @@ const compLine = c => c.floor[0] || c.ceiling[0]
 function scoutList(p) {
   const r = scoutingReport(p, league(), scoutPot(p), state.data.seasonLeagues, k => ceilKnown(p, k));
   return `<ul class="scout">
-    ${r.strengths.map(s => `<li class="plus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
-    ${r.weaknesses.map(s => `<li class="minus"><b>${esc(s.text)}</b><span class="muted small"> · ${esc(s.detail)}</span></li>`).join('')}
-    ${r.defense ? `<li class="${r.defense.tone}"><b>${esc(r.defense.text)}</b><span class="muted small"> · ${esc(r.defense.detail)}</span></li>` : ''}
+    ${[...r.strengths.map(x => ({ ...x, tone: 'plus' })), ...(r.defense ? [r.defense] : []), ...r.weaknesses.map(x => ({ ...x, tone: 'minus' }))]
+      // Positives first, then the neutral defense read, then the negatives.
+      .sort((a, b) => ({ plus: 0, even: 1, minus: 2 }[a.tone] - { plus: 0, even: 1, minus: 2 }[b.tone]))
+      .map(x => `<li class="${x.tone}"><b>${esc(x.text)}</b><span class="muted small"> · ${esc(x.detail)}</span></li>`).join('')}
   </ul>`;
 }
 
@@ -3189,7 +3190,7 @@ screens.draft = (args) => {
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   const preview = isStep('preview');
-  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + (preview ? rangeCard() : '') + tabs + body.html, action: preview ? { act: 'previewDone', label: 'Wrap Up the Preview' } : body.action });
+  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + tabs + body.html, action: preview ? { act: 'previewDone', label: 'Wrap Up the Preview' } : body.action });
   if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
 
@@ -3235,7 +3236,7 @@ function outlookCard() {
   return mine.map(t => {
     const o = teamOutlook(t);
     const now = order.length ? order.filter(q => q.owner.id === t.id).map(q => `#${q.overall}${q.orig.id !== t.id ? ` <span class="muted">(${esc(q.orig.shortName)})</span>` : ''}`)
-      : draftPosition(L, t, state.params.lotteryFormat).map(x => `${x.lottery ? `~#${x.likely}` : `#${x.slot}`}${x.orig.id !== t.id ? ` <span class="muted">(${esc(x.orig.shortName)})</span>` : ''}`);
+      : draftPosition(L, t, state.params.lotteryFormat).map(x => `${x.lottery ? `Proj #${x.likely}` : `#${x.slot}`}${x.orig.id !== t.id ? ` <span class="muted">(${esc(x.orig.shortName)})</span>` : ''}`);
     const byYear = new Map();
     for (const pk of [...t.draftPicks].filter(pk => pk.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
       if (!byYear.has(pk.yr)) byYear.set(pk.yr, []);
@@ -3264,7 +3265,7 @@ const prospectRow = (p, extra = '', { mine = false } = {}) => {
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
   return `<button class="prow cprow ${star ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
   <span class="name">${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
-  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}</span>
+  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
 };
@@ -3935,19 +3936,18 @@ screens.prospect = (args) => {
   layout({
     title: 'Prospect',
     body: `
-      <div>
+      <div class="pros-head">
+        <button class="mvbtn pros-add ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button>
         <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span></p>
       </div>
-      <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
+      ${collegeBox(p)}
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
+      <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
       ${playStyleBox(p)}
       ${traitsBox(p, true)}
       ${workoutBox(p)}${combineBox(p)}
-      ${collegeBox(p)}
-      <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
-      ${slotBox(p, fv, cv)}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
         ${[...SKILL_ATTRS, ...PHYSICAL].map(k => {
@@ -5801,8 +5801,8 @@ function traitsBox(p, prospect = false) {
   return `<fieldset class="frame"><legend>Traits${isReal(p) ? ' <span class="muted small">· real-life read</span>' : ''}</legend><div class="stack">${TRAITS.map(t => {
     const v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
-    return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 15 ? 'hi' : v <= 6 ? 'lo' : ''}"></span></span>
-      <span class="small"><b>${v}</b> <span class="muted">${v >= 15 ? t.hi : v <= 6 ? t.lo : traitWord(v)}</span></span>
+    return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 18 ? 'top' : v >= 15 ? 'hi' : v <= 5 ? 'lo' : ''}"></span></span>
+      <span class="small"><b>${v}</b> <span class="${v >= 18 ? 'gold' : 'muted'}">${traitLabel(t, v)}</span></span>
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
   }).join('')}</div>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
