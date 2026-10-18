@@ -28,7 +28,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.57.1';
+const APP_VERSION = '0.58.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5609,7 +5609,7 @@ screens.options = () => {
   const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
   const mine = x => isUserTeam(x.team);
   const tag = c => c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
-  const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option · worth ~$${x.c.worth}M</span> ${tag(x.c)}</span>`;
+  const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option · market value $${x.c.worth}M</span> ${tag(x.c)}</span>`;
   const done = !!st.done;
   const myTeamOpts = list.filter(x => mine(x) && x.c.kind === 'team');
   const myPlayerOpts = list.filter(x => mine(x) && x.c.kind === 'player');
@@ -5619,9 +5619,10 @@ screens.options = () => {
   const pending = myTeamOpts.some(x => !x.c.choice) || myQO.some(x => st.qo[x.p.id] == null);
   layout({
     title: 'Options Deadline',
-    body: `<p class="note small">Options and qualifying offers are due. A picked-up option locks in his last year at the same salary; anyone else is a free agent now.</p>
-      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => `<div class="drill-row">${head(x)}
-        <span class="opt-btns">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Exercise')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span></div>`).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
+    body: `<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, decline it to let him go, or negotiate: decline it for a longer deal now, before anyone else can bid.</p>
+      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
+        <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}${btn('optNeg', x.p.id, 'deal', x.c.choice === 'deal', deal ? '✍️ New Deal' : 'Negotiate')}</span>
+        ${deal ? `<p class="note small up full">Option declined for a new deal: $${deal.sal}M × ${deal.yrs}${deal.opt === FA.OPT_PLAYER ? ' · PO' : deal.opt === FA.OPT_TEAM ? ' · TO' : ''} <span class="tot">$${deal.sal * deal.yrs}M</span></p>` : neg?.last && !neg.last.ok ? `<p class="note small down full">${esc(neg.last.text)}${neg.tries >= 3 ? ' Talks are over.' : ''}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
       <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row wrap">${head(x)}
         <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b>
         ${x.c.reason && !done ? (x.c.pitch ? (x.c.pitch.ok ? '' : `<p class="note small down full">He heard you out on ${esc(PITCHES[x.c.pitch.kind].promise)}. He's testing the market.</p>`)
@@ -5635,7 +5636,54 @@ screens.options = () => {
     action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
   });
 };
-actions.optTeam = d => { optStore().team[+d.id] = d.v; saveOptStore(); render(); };
+actions.optTeam = d => { const st = optStore(); st.team[+d.id] = d.v; if (st.deals) delete st.deals[+d.id]; saveOptStore(); render(); };
+// Negotiate: decline the option and work out a longer deal now, before
+// anyone else can bid. Same give-and-take as an extension (three offers);
+// a deal replaces the option at the deadline.
+actions.optNeg = d => {
+  const L = league(), st = optStore();
+  const t = L.teams.find(x => x.roster.some(p => p.id === +d.id));
+  const p = t?.roster.find(x => x.id === +d.id);
+  if (!p || st.done) return;
+  if (st.deals?.[p.id]) { st.team[p.id] = 'deal'; saveOptStore(); render(); return; }
+  const a = extAsk(p, t);
+  const neg = ((st.neg ||= {})[p.id] ||= { sal: a.sal, yrs: Math.min(a.yrs[1], Math.max(a.yrs[0], 3)), opt: 0, tries: 0, last: null });
+  if (neg.tries >= 3) { toast('Talks are over: accept or decline the option'); return; }
+  const box = overlay('');
+  const paint = () => {
+    box.querySelector('.box').innerHTML = `
+      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · option $${p.contract.sal}M · asks $${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}</span></p>
+      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${neg.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
+      <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${neg.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
+      <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${neg.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      <p class="note small">Total <span class="tot">$${neg.sal * neg.yrs}M</span> · ${3 - neg.tries} offer${3 - neg.tries === 1 ? '' : 's'} left${neg.last ? `<br><span class="down">${esc(neg.last.text)}</span>` : ''}</p>
+      <div class="grid2"><button class="btn off" data-k="close">Cancel</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
+  };
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-k]');
+    if (!b) return;
+    const k = b.dataset.k;
+    if (k === 'sal') neg.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p), neg.sal + +b.dataset.d));
+    else if (k === 'yrs') neg.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, neg.yrs + +b.dataset.d));
+    else if (k === 'opt') neg.opt = +b.dataset.v;
+    else if (k === 'close') { saveOptStore(); box.remove(); render(); return; }
+    else if (k === 'submit') {
+      if (neg.yrs >= 5 && !neg.opt) { toast('A 5-year deal needs an option (4 + 1)', '', 2400, true); return; }
+      const r = extAnswer(p, t, neg);
+      neg.tries++;
+      neg.last = r;
+      if (r.ok) {
+        (st.deals ||= {})[p.id] = { sal: neg.sal, yrs: neg.yrs, opt: neg.opt };
+        st.team[p.id] = 'deal';
+        toast(`✍️ ${playerName(p)} agrees`, `$${neg.sal}M × ${neg.yrs}: the option is declined for the new deal`);
+      }
+      saveOptStore();
+      if (r.ok || neg.tries >= 3) { box.remove(); render(); return; }
+    }
+    paint();
+  });
+  paint();
+};
 actions.optPitch = d => {
   const L = league(), st = optStore(), pid = +d.id;
   if (st.done || st.pitch?.[pid]) return;
@@ -5669,7 +5717,14 @@ actions.optFinish = async () => {
   let exercised = 0, out = 0;
   for (const { p, c } of list) {
     const row = (p.stats || []).filter(s => s.yr === yr && s.league === 0).pop();
-    if (c.choice === 'ex' || c.choice === 'in') {
+    const deal = c.choice === 'deal' && st.deals?.[p.id];
+    if (deal) {
+      // Option declined for a new deal that starts this season.
+      Object.assign(p.contract, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, canExt: false });
+      p.status = FA.STATUS_SIGNED;
+      if (row) row.sal = deal.sal;
+      exercised++;
+    } else if (c.choice === 'ex' || c.choice === 'in') {
       // The option year is now guaranteed (a 0-year deal gets that year).
       Object.assign(p.contract, { yrs: Math.max(1, p.contract.yrs || 0), opt: 0 });
       p.status = FA.STATUS_SIGNED;
