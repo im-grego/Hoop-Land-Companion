@@ -1184,3 +1184,6 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .race-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--gold); }
 .race-row.mine .race-bar i { background: var(--cyan); }
 .race-bar i.full { background: var(--up); }
+
+/* Weekly recruiting list in the school's colors */
+.drill-row.team-tint[style*="--tc1"] { background: linear-gradient(90deg, var(--tc1), color-mix(in srgb, var(--tc1) 40%, #0b2f6b)); border-color: var(--tc2); text-shadow: 0 2px 0 #0009; }

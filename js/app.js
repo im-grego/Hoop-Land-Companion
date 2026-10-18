@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.5';
+const APP_VERSION = '0.46.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6354,14 +6354,13 @@ screens.recruitweek = ({ w }) => {
   const e = M?.log.find(l => l.week === w);
   if (!e) { layout({ title: 'Recruiting', body: '<p class="note">No results yet.</p>' }); return; }
   const sch = tid => S.byId.get(tid)?.t;
-  // Commitment cards in the school's colors (the Draft Recap look).
+  // The weekly list, in the committed school's colors; stars on their own
+  // line so every row is the same height.
   const rowOf = (i, extra = '') => {
     const x = cls.byId.get(i.id), team = sch(i.to), tint = team ? teamTint(team) : '';
-    return `<div class="recap-row tap ${i.to === t.id ? 'mine' : ''}" ${tint ? `style="${tint}"` : ''} data-act="openRecruit" data-id="${i.id}">
-      <span class="pk">${x.transfer ? 'T' : x.rank}</span>${team ? logoImg(team) : ''}
-      <span class="grow"><b>${esc(playerName(x.p))}</b><br><span class="small">${rStars(x.stars)} ${esc(team?.shortName || '')} · ${esc(posName(x.p))}${x.transfer ? ' · Transfer' : ''}${extra}</span></span>
-      <span class="lv"><b>${x.lv}</b><span class="small">Lv</span></span></div>`;
+    return `<div class="drill-row tap team-tint ${i.to === t.id ? 'r1' : ''}" ${tint ? `style="${tint}"` : ''} data-act="openRecruit" data-id="${i.id}"><span class="grow"><b>${esc(playerName(x.p))}</b><br>${rStars(x.stars)}<br><span class="small">${x.transfer ? 'Transfer' : `No. ${x.rank}`} · ${esc(posName(x.p))} · Lv ${x.lv}${extra}</span></span><span class="small">${logoImg(team)} ${esc(team?.shortName || '')}</span></div>`;
   };
+
   const all = [...e.commits, ...e.signed].sort((a, b) => cls.byId.get(a.id).rank - cls.byId.get(b.id).rank);
   const mine = [...all, ...e.late].filter(i => i.to === t.id);
   const gained = e.flips.filter(f => f.to === t.id), lost = e.flips.filter(f => f.from === t.id);
