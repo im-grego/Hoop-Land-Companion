@@ -244,14 +244,15 @@ export function recruitBoard(data, li, team) {
 // they can help now. Letter grades are by rank among schools that signed
 // anyone, so a grade means "compared with this year's classes".
 const LETTERS = [[0.95, 'A+'], [0.85, 'A'], [0.75, 'A-'], [0.65, 'B+'], [0.55, 'B'], [0.45, 'B-'], [0.35, 'C+'], [0.25, 'C'], [0.15, 'C-'], [0.05, 'D'], [0, 'F']];
-export function signingClasses(data, li, aaIds = new Set(), levelOf = p => 50) {
+export function signingClasses(data, li, aaIds = new Set(), levelOf = p => 50, own = null) {
   const C = data.seasonLeagues[li];
   const T = new Map(C.teams.map(t => [t.id, t]));
-  const transfers = new Set((C.season.news || []).filter(n => n.type === 34).map(n => n.pid));
+  // own: the app's recruiting ({ commits: [{ pid, tid }], transfers: Set }).
+  const transfers = own?.transfers || new Set((C.season.news || []).filter(n => n.type === 34).map(n => n.pid));
   const where = new Map(C.teams.flatMap(t => t.roster.map(p => [p.id, { t, p }])));
   const value = p => Math.max(0, (p.pot || 0) - 4) + (aaIds.has(p.id) ? 0.75 : 0) + (transfers.has(p.id) ? Math.max(0, (levelOf(p) - 40) / 15) : 0);
   const classes = new Map();
-  for (const n of (C.season.news || []).filter(x => x.type === 14)) {
+  for (const n of own?.commits || (C.season.news || []).filter(x => x.type === 14)) {
     const w = where.get(n.pid);
     if (!w) continue;
     const c = classes.get(n.tid) || { team: T.get(n.tid), players: [], score: 0, stars: 0 };

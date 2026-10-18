@@ -33,12 +33,13 @@ function zeroStats(o) {
   return o;
 }
 
-export function generateRecruit(L, li, rng, { stars = 3, id, template }) {
+export function generateRecruit(L, li, rng, { stars = 3, id, template, pot: potIn }) {
   const p = clone(template);
   const pos = Math.floor(rng() * 9);
   const g = groupOf(pos);
   const [lo, hi] = POT_BY_STARS[stars];
-  const pot = clamp(Math.round(lo + rng() * (hi - lo + 0.99) - 0.49), 4, 10);
+  const drawn = clamp(Math.round(lo + rng() * (hi - lo + 0.99) - 0.49), 4, 10);
+  const pot = potIn ?? drawn;
   const age = rng() < 0.75 ? 18 : 17;
   const polish = clamp(0.5 + gauss(rng) * 0.08 + (age === 18 ? 0.03 : 0) + (stars - 3) * 0.03, 0.35, 0.8);
   const [h0, h1] = HT[pos];
