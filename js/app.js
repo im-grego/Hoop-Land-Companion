@@ -19,12 +19,13 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
+import { detectMode, seasonReview, collegePhaseName } from './college.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.41.4';
+const APP_VERSION = '0.42.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -390,7 +391,9 @@ function installData(data, keepSnaps = false) {
     state.data = data;
     // The lottery format follows the file's year unless picked on the lottery screen.
     state.params.lotteryFormat = 'auto';
-    state.leagueIdx = 0;
+    // College franchise saves open on the college league.
+    state.mode = detectMode(data);
+    state.leagueIdx = state.mode.li;
     if (!keepSnaps) state.snaps.clear();
     state.profiles = [];
     state.leagueAvg = [];
@@ -573,7 +576,23 @@ const CALENDAR = [
   { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
     done: () => false },
 ];
-const currentStep = () => CALENDAR.find(st => !st.done());
+// College franchise offseason. The game runs the showcase (phase 5) and three
+// days of recruiting (6); the app adds everything around them.
+const COLLEGE_CAL = [
+  { key: 'review', date: 'Apr 8', title: 'Season in Review', blurb: 'How your season ended, the national picture, your leaders and the awards.',
+    done: () => !!calFlags().review },
+  { key: 'departures', date: 'Apr 26', title: 'Draft Departures', blurb: 'Who left for the pros, and how they project.', done: () => false, soon: true },
+  { key: 'seniors', date: 'May 10', title: 'Senior Send-off', blurb: 'Your graduates, their legacies and the records they leave.', done: () => false, soon: true },
+  { key: 'portal', date: 'May 15', title: 'Transfer Portal', blurb: 'Who entered, from where, and who you want.', done: () => false, soon: true },
+  { key: 'showcase', date: 'Jun 1', title: 'All-American Showcase', blurb: 'East vs West: the top of next year\'s class.', done: () => false, soon: true },
+  { key: 'recruit', date: 'Jun 3', title: 'Recruiting', blurb: 'Three days to land your class.', done: () => false, soon: true },
+  { key: 'signing', date: 'Jun 20', title: 'Signing Class Grades', blurb: 'Every school\'s class, graded.', done: () => false, soon: true },
+  { key: 'summer', date: 'Jul 15', title: 'Summer Development', blurb: 'Workouts, progression and the strength program.', done: () => false, soon: true },
+  { key: 'preseason', date: 'Oct 15', title: 'Preseason', blurb: 'Top 25, conference picks and Media Day.', done: () => false, soon: true },
+];
+const isCollege = () => state.mode?.kind === 'college';
+const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR);
+const currentStep = () => activeCal().find(st => !st.done());
 const isStep = key => currentStep()?.key === key;
 
 // What finished steps show.
@@ -606,6 +625,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'review') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = seasonReview(state.data, state.leagueIdx, t); return `${r.row?.seasonStats?.W ?? 0}-${r.row?.seasonStats?.L ?? 0} · ${r.finish.replace('🏆 ', '')}.`; }
   if (key === 'ext') { const g = extStore().log || {}; return `${g.mine || 0} of yours and ${g.cpu || 0} around the league signed extensions.`; }
   if (key === 'overview') { const t = league().teams.find(isUserTeam); return t ? `${TIER_NAMES[teamStanding(league(), t).tier]}. ${rosterNeeds(league(), t, { level: shownLevel }).filter(n => n.sev >= 2).length} big needs flagged.` : 'Done.'; }
   if (key === 'preview') return `${boardStore().board.length} prospects on your board.`;
@@ -618,7 +638,10 @@ function stepSummary(key) {
 function stepActions(key) {
   const L = league();
   const s = L.season;
+  const st = activeCal().find(x => x.key === key);
+  if (st?.soon) return '<p class="note small muted">Coming soon.</p>';
   switch (key) {
+    case 'review': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="review">📜 Season in Review</button><button class="btn" data-act="calDone" data-k="review">✅ Wrap Up</button></div>`;
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
     case 'overview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="overview">📊 Offseason Overview</button><button class="btn" data-act="calDone" data-k="overview">✅ Wrap Up</button></div>`;
@@ -652,12 +675,12 @@ function stepActions(key) {
 
 function calendarCard() {
   const s = league().season;
-  if (phaseRank(s) === 0) {
+  if (phaseRank(s) === 0 && !isCollege()) {
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
   return `<fieldset class="frame"><legend>${s.currentYear} Offseason</legend>
-    <ol class="calendar">${CALENDAR.map(st => {
+    <ol class="calendar">${activeCal().map(st => {
       const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
       return `<li class="cal ${state_}">
         <span class="cal-date">${esc(st.date)}</span>
@@ -687,10 +710,12 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
+  review: ['review'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
+  if (isCollege()) { const cur = currentStep(); return !cur || (STEP_SCREENS[cur.key] || []).includes(name) || name === 'review'; }
   if (phaseRank(league().season) === 0) return true;
   const cur = currentStep();
   return !!cur && (STEP_SCREENS[cur.key] || []).includes(name);
@@ -790,7 +815,7 @@ screens.main = () => {
       <div class="league-card">
         ${leagueBadge(L)}
         <div class="grow"><b>${esc(L.meta?.saveName || state.fileName)}</b>
-          <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(phaseName(s))} · Your teams: ${esc(yourTeams)}</span></div>
+          <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() ? 'school' : 'teams'}: ${esc(yourTeams)}</span></div>
       </div>
       ${calendarCard()}
       <div class="grid2">
@@ -5497,6 +5522,59 @@ actions.extClose = async () => {
   render();
   toast('Extension window closed', `${list.length} extensions around the league`);
 };
+
+// ---------------------------------------------------------------------------
+// College: Season in Review.
+function reviewHeadline(r, t) {
+  const st = r.row?.seasonStats || {};
+  const W = st.W || 0, Lo = st.L || 0, p = W / Math.max(1, W + Lo);
+  if (r.won) return `${t.city} are national champions.`;
+  if (r.round >= r.rounds - 1 && r.rounds) return `A Final Four run for ${t.city}.`;
+  if (r.round >= 3) return `${t.city} made a real March run before it ended in ${r.finish.replace('Lost in ', '')}.`;
+  if (r.round) return p >= 0.6 ? `A strong season that ended too soon: ${r.finish.toLowerCase()}.` : `${t.city} snuck into the tournament and went out in ${r.finish.replace('Lost in ', '')}.`;
+  return p >= 0.5 ? `A winning record, but no tournament for ${t.city}.` : `A losing season and no tournament. Rebuilding starts now.`;
+}
+screens.review = () => {
+  const L = league();
+  const t = L.teams.find(isUserTeam);
+  if (!t) { layout({ title: 'Season in Review', body: '<p class="note">Pick your school first.</p>' }); return; }
+  const r = seasonReview(state.data, state.leagueIdx, t);
+  const st = r.row?.seasonStats || {};
+  const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
+  const f1 = x => x.toFixed(1);
+  const wl = a => (a ? `${a[0]}-${a[1]}` : '—');
+  const s = r.stats;
+  const tag = n => n.team != null ? ` <span class="muted">(${['1st', '2nd', '3rd'][n.team] || ''} team)</span>` : '';
+  const pRow = (p, right) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y</span></span><span class="small" style="text-align:right">${right}</span></div>`;
+  layout({
+    title: 'Season in Review',
+    body: `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
+        <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b><span class="status s-${r.won ? 'favorites' : r.round ? 'contending' : 'rebuilding'}">${r.yr}</span></div>
+        <p class="note" style="padding:8px 10px 0"><b>${st.W || 0}-${st.L || 0}</b> · ${esc(r.finish)}${r.seed ? ` · No. ${r.seed} overall seed` : ''}</p>
+        <p class="note small" style="padding:4px 10px 10px">${esc(reviewHeadline(r, t))}</p>
+      </div>
+      ${s ? `<fieldset class="frame"><legend>The Season</legend>
+        <div class="stat-grid">
+          <div><b>${f1(s.ppg)}</b><span>PPG</span></div><div><b>${f1(s.opp)}</b><span>Opp PPG</span></div><div><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span></div>
+          <div><b>${f1(s.fg)}%</b><span>FG</span></div><div><b>${f1(s.tp)}%</b><span>3PT</span></div><div><b>${f1(s.ft)}%</b><span>FT</span></div>
+        </div>
+        <p class="note small" style="margin-top:8px">Conference ${wl(s.conf)} · Home ${wl(s.home)} · Road ${wl(s.away)} · vs Top 25 ${wl(s.top25)} · Last 10: ${s.l10}-${10 - s.l10}</p>
+      </fieldset>` : ''}
+      <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
+      ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => pRow(w.p, `🏅 ${esc(w.name)}${tag(w)}`)).join('')}</div></fieldset>` : ''}
+      <fieldset class="frame"><legend>National Picture</legend>
+        ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">National champions${r.runnerUp ? `, over ${esc(r.runnerUp.shortName)}` : ''}</span></span><span>🏆</span></div>` : ''}
+        ${r.finalFour.length ? `<p class="note small" style="margin-top:6px">Final Four: ${r.finalFour.map(x => `<b class="${x === t ? 'gold' : ''}">${esc(x.shortName)}</b>`).join(' · ')}</p>` : ''}
+        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => `<div class="drill-row tap" data-act="openPlayer" data-id="${w.p.id}"><span class="grow small"><b>${esc(w.name)}</b></span><span class="small">${esc(playerName(w.p))}</span></div>`).join('') || '<p class="note small muted">None recorded.</p>'}</div>
+        ${r.allTeams.length ? `<h4 class="ov-h">First Teams</h4><div class="stack">${[...new Set(r.allTeams.map(w => w.name))].map(n => `<p class="note small"><b>${esc(n)}:</b> ${r.allTeams.filter(w => w.name === n).map(w => esc(playerName(w.p))).join(', ')}</p>`).join('')}</div>` : ''}
+      </fieldset>
+      <fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
+        <div class="stack">${r.standings.map((x, i) => `<div class="stand-row ${x.t === t ? 'mine' : ''}"><span class="small muted">${i + 1}</span>${logoImg(x.t)}<span class="grow small"><b>${esc(x.t.shortName)}</b></span><span class="small">${x.W}-${x.L}</span><span class="small muted">${x.cW}-${x.cL} conf</span></div>`).join('')}</div>
+      </fieldset>`,
+    action: isStep('review') ? { act: 'reviewDone', label: 'Wrap Up the Season' } : null,
+  });
+};
+actions.reviewDone = () => { calFlags().review = true; goHome(); toast('Next up: Draft Departures'); };
 
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.

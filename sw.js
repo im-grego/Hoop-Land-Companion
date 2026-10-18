@@ -1,6 +1,6 @@
 // Offline support: cache-first for the app shell, stale-while-revalidate for
 // fonts and team logos.
-const VERSION = 'hlc-v0.41.4';
+const VERSION = 'hlc-v0.42.0';
 const SHELL = [
   './',
   'index.html',
@@ -22,6 +22,7 @@ const SHELL = [
   'js/summer.js',
   'js/overview.js',
   'js/traits.js',
+  'js/college.js',
   'manifest.webmanifest',
   'icons/icon.svg',
   'icons/hoopland-logo.png',

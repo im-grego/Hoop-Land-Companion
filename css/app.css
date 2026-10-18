@@ -1123,3 +1123,12 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .status.s-favorites { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 6px rgba(255, 180, 58, .5); }
 .status.s-contending { color: var(--up); }
 .status.s-selling { color: var(--dim); }
+/* College: season review */
+.stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.stat-grid div { display: flex; flex-direction: column; align-items: center; padding: 6px; background: var(--btn); border: 2px solid var(--btn-edge); }
+.stat-grid b { font-size: 18px; }
+.stat-grid span { font-size: 11px; color: var(--dim); text-transform: uppercase; }
+.stand-row { display: flex; align-items: center; gap: 8px; padding: 3px 6px; }
+.stand-row.mine { background: var(--btn); border: 2px solid var(--gold); }
+.stand-row .logo-sm { width: 22px !important; height: 22px !important; }
+.stand-row .grow { flex: 1; }
