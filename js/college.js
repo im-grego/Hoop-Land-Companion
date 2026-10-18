@@ -119,3 +119,29 @@ export function draftDepartures(data, li) {
   });
   return out.sort((a, b) => (a.pick ? a.pick.pk : 999) - (b.pick ? b.pick.pk : 999));
 }
+
+// Senior Send-off. Graduates who aren't drafted leave the save; the game
+// keeps a few in the college league's retirees (status 7, yrs 4) and the
+// drafted seniors live on in the pro league (history.yrs 3). Plus your
+// rising seniors' last season ahead, and league records your players hold.
+const careerOf = p => { const c = (p.history?.collegeStats?.season?.GP ? p.history.collegeStats.season : p.careerStats?.season) || {}; const gp = c.GP || 0; return { gp, pts: c.PTS || 0, ppg: gp ? c.PTS / gp : 0, rpg: gp ? c.REB / gp : 0, apg: gp ? c.AST / gp : 0 }; };
+const lastCollegeTid = (p, li) => { const s = (p.stats || []).filter(x => x.league === li && (x.season || []).length).pop(); return s ? s.season[s.season.length - 1].tid : null; };
+export function seniorSendoff(data, li, team) {
+  const C = data.seasonLeagues[li];
+  const schools = new Map(C.teams.map(t => [t.id, t]));
+  const yr = C.season.currentYear - 1;
+  const grads = [
+    ...(C.retirees || []).filter(p => (p.yrs ?? 0) >= 4).map(p => ({ p, school: schools.get(lastCollegeTid(p, li)) || null, outcome: 'Graduated', pro: null })),
+    ...draftDepartures(data, li).filter(x => x.cls === 'Senior').map(x => ({ p: x.p, school: x.school, outcome: x.pick ? `Drafted #${x.pick.pk}` : 'Undrafted', pro: x.pro })),
+  ].map(g => ({ ...g, career: careerOf(g.p) })).sort((a, b) => b.career.pts - a.career.pts);
+  const mineGrads = grads.filter(g => g.school === team);
+  const rising = team.roster.filter(p => (p.yrs ?? 0) >= 3).map(p => ({ p, career: careerOf(p), awards: (p.awards || []).filter(a => a.league === li), records: p.records || 0 }))
+    .sort((a, b) => b.career.pts - a.career.pts);
+  const AW = C.awards || [];
+  const awardNames = list => list.map(a => `${AW[a.id]?.name || 'Award'}${a.yearsWon?.length > 1 ? ` ×${a.yearsWon.length}` : ''}`);
+  const STAT = { PTS: 'points', FGM: 'field goals', TPM: 'threes', FTM: 'free throws', REB: 'rebounds', AST: 'assists', STL: 'steals', BLK: 'blocks', TO: 'turnovers' };
+  const ids = new Set(team.roster.map(p => p.id));
+  const records = [];
+  for (const [k, list] of Object.entries(C.records?.season || {})) (list || []).forEach((r, i) => { if (ids.has(r.pid) && k !== 'TO') records.push({ stat: STAT[k] || k, value: r.value, yr: r.yr, rank: i + 1, p: team.roster.find(p => p.id === r.pid) }); });
+  return { yr, grads, mineGrads, rising, records, awardNames };
+}

@@ -19,13 +19,13 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
-import { detectMode, seasonReview, collegePhaseName, draftDepartures } from './college.js';
+import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff } from './college.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.42.2';
+const APP_VERSION = '0.42.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -583,7 +583,8 @@ const COLLEGE_CAL = [
     done: () => !!calFlags().review },
   { key: 'departures', date: 'Apr 26', title: 'Draft Departures', blurb: 'Who left for the pros, where they were drafted and how they project.',
     done: () => !!calFlags().departures },
-  { key: 'seniors', date: 'May 10', title: 'Senior Send-off', blurb: 'Your graduates, their legacies and the records they leave.', done: () => false, soon: true },
+  { key: 'seniors', date: 'May 10', title: 'Senior Send-off', blurb: 'The graduating class, your seniors\' last season ahead and the records your players hold.',
+    done: () => !!calFlags().seniors },
   { key: 'portal', date: 'May 15', title: 'Transfer Portal', blurb: 'Who entered, from where, and who you want.', done: () => false, soon: true },
   { key: 'showcase', date: 'Jun 1', title: 'All-American Showcase', blurb: 'East vs West: the top of next year\'s class.', done: () => false, soon: true },
   { key: 'recruit', date: 'Jun 3', title: 'Recruiting', blurb: 'Three days to land your class.', done: () => false, soon: true },
@@ -626,6 +627,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'seniors') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = seniorSendoff(state.data, state.leagueIdx, t); return `${r.mineGrads.length} graduate${r.mineGrads.length === 1 ? '' : 's'} sent off; ${r.rising.length} senior${r.rising.length === 1 ? '' : 's'} back for a last season.`; }
   if (key === 'departures') { const d = draftDepartures(state.data, state.leagueIdx); const t = league().teams.find(isUserTeam); const m = d.filter(x => x.school === t).length; return `${d.length} players left for the pros${m ? `, ${m} of them yours` : ''}.`; }
   if (key === 'review') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = seasonReview(state.data, state.leagueIdx, t); return `${r.row?.seasonStats?.W ?? 0}-${r.row?.seasonStats?.L ?? 0} · ${r.finish.replace('🏆 ', '')}.`; }
   if (key === 'ext') { const g = extStore().log || {}; return `${g.mine || 0} of yours and ${g.cpu || 0} around the league signed extensions.`; }
@@ -643,6 +645,7 @@ function stepActions(key) {
   const st = activeCal().find(x => x.key === key);
   if (st?.soon) return '<p class="note small muted">Coming soon.</p>';
   switch (key) {
+    case 'seniors': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="seniors">🎓 Senior Send-off</button><button class="btn" data-act="calDone" data-k="seniors">✅ Wrap Up</button></div>`;
     case 'departures': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="departures">🎓 Draft Departures</button><button class="btn" data-act="calDone" data-k="departures">✅ Wrap Up</button></div>`;
     case 'review': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="review">📜 Season in Review</button><button class="btn" data-act="calDone" data-k="review">✅ Wrap Up</button></div>`;
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
@@ -713,7 +716,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -5607,6 +5610,32 @@ screens.departures = () => {
   });
 };
 actions.departuresDone = () => { calFlags().departures = true; goHome(); toast('Next up: Senior Send-off'); };
+
+// College: Senior Send-off.
+screens.seniors = () => {
+  const L = league();
+  const t = L.teams.find(isUserTeam);
+  if (!t) { layout({ title: 'Senior Send-off', body: '<p class="note">Pick your school first.</p>' }); return; }
+  const r = seniorSendoff(state.data, state.leagueIdx, t);
+  const f1 = v => v.toFixed(1);
+  const cline = c => `${c.gp} games · ${f1(c.ppg)}/${f1(c.rpg)}/${f1(c.apg)} · ${c.pts} pts`;
+  const gRow = g => `<div class="drill-row ${g.school === t ? 'r1' : ''}"><span class="grow"><b>${esc(playerName(g.p))}</b> <span class="small muted">${esc(posName(g.p))}</span><br>
+      <span class="small muted">${esc(g.school?.shortName || '?')} · ${cline(g.career)}</span></span>
+      <span class="small" style="text-align:right">${esc(g.outcome)}${g.pro ? `<br>${esc(g.pro.shortName)}` : ''}</span></div>`;
+  layout({
+    title: 'Senior Send-off',
+    body: `<fieldset class="frame"><legend>Your Graduates</legend>${r.mineGrads.length ? `<div class="stack">${r.mineGrads.map(gRow).join('')}</div>` : `<p class="note small muted">No seniors graduated from ${esc(t.city)} last season.</p>`}</fieldset>
+      <fieldset class="frame"><legend>The Last Dance</legend>
+        ${r.rising.length ? `<p class="note small">Back for one more year:</p><div class="stack">${r.rising.map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br>
+          <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${cline(x.career)}</span>
+          ${x.awards.length || x.records ? `<br><span class="small gold">${esc([...r.awardNames(x.awards), x.records ? `${x.records} league record${x.records > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · '))}</span>` : ''}</span></div>`).join('')}</div>` : '<p class="note small muted">No seniors on next year\'s roster.</p>'}
+      </fieldset>
+      ${r.records.length ? `<fieldset class="frame"><legend>Records Your Players Hold</legend><div class="stack">${r.records.map(x => `<p class="note small">🏅 <b>${esc(playerName(x.p))}</b>: ${x.value} ${esc(x.stat)} in a game (${x.yr}), No. ${x.rank} all-time</p>`).join('')}</div></fieldset>` : ''}
+      <fieldset class="frame"><legend>Class of ${r.yr}</legend><p class="note small muted">The league's notable graduates, by career points.</p><div class="stack">${r.grads.slice(0, 15).map(gRow).join('') || '<p class="note small muted">None on record.</p>'}</div></fieldset>`,
+    action: isStep('seniors') ? { act: 'seniorsDone', label: 'Wrap Up the Send-off' } : null,
+  });
+};
+actions.seniorsDone = () => { calFlags().seniors = true; goHome(); toast('Next up: Transfer Portal'); };
 
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
