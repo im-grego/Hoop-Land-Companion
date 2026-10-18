@@ -1141,3 +1141,8 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .box-row > span:not(.grow), .box-head > span:not(.grow) { text-align: center; }
 .grade-hero { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
 .grade-big { font-size: 40px; font-weight: 900; min-width: 56px; text-align: center; border: 3px solid currentColor; padding: 2px 6px; }
+
+/* Recruit skill boxes in the rating-bar category colors */
+.cat-grid > .c-fin { --bc: #5cc8ff; } .cat-grid > .c-sho { --bc: #4fe08a; } .cat-grid > .c-pla { --bc: #ffb43a; } .cat-grid > .c-def { --bc: #ff5a5a; }
+.cat-grid > div { background: color-mix(in srgb, var(--bc) 22%, var(--bg-dark)); border-color: var(--bc); }
+.cat-grid > div span { color: var(--bc); }

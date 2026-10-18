@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.1';
+const APP_VERSION = '0.45.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5888,7 +5888,7 @@ screens.recruitee = ({ id }) => {
         <p class="note small">${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lbs · ${p.age}y · ${x.transfer ? `${classOf(p.yrs ?? 0)}, ${Math.max(1, 4 - (p.yrs ?? 0))} yr${4 - (p.yrs ?? 0) > 1 ? 's' : ''} left` : `${esc(x.city)}, ${x.st}`} · ${Math.round(RC.miles(p.loc, t.location))} mi from campus</p>
         <p class="note small">Lv ${x.lv} now · Potential ${scouted ? `<span class="stars">${stars(p.pot)}</span>` : '<span class="muted">? (a visit scouts him)</span>'}</p>
         <p class="note small muted">${line}</p>
-        <div class="stat-grid" style="margin-top:6px;grid-template-columns:repeat(6,1fr)">${SKILL_ATTRS.map(k => `<div><b>${p.attributes[k][0]}</b><span>${k}</span></div>`).join('')}</div></fieldset>
+        <div class="stat-grid cat-grid" style="margin-top:6px;grid-template-columns:repeat(6,1fr)">${SKILL_ATTRS.map(k => `<div class="c-${RATING_GROUP[k]}"><b>${p.attributes[k][0]}</b><span>${k}</span></div>`).join('')}</div></fieldset>
       ${com !== undefined ? `<p class="note ${com === t.id ? 'up' : ''}">✍️ ${com === t.id ? 'Committed to you.' : `Committed to ${esc(sch(com)?.city || '?')}.`}${!done && com !== t.id ? ' A big push can still flip him.' : ''}</p>` : ''}
       <fieldset class="frame"><legend>What He Wants</legend>
         ${known ? `<div class="stack">${mot.map(([k, v]) => `<div class="need-row"><span class="small grow"><b>${dots(v)}</b> ${MOTIVE[k]}</span><span class="small">${esc(t.shortName)}: ${word(comps[k])}</span></div>`).join('')}</div>

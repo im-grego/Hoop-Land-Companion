@@ -454,7 +454,11 @@ export function applySignings(data, li, M, cls) {
     signToSchool(C, li, t, x.p, { sal });
     added.push(x.p);
   }
-  // The game's showcase is left alone (it has already been played).
+  // The game's showcase is left alone (it has already been played), but its
+  // recruit pool goes: news and posts that point at those recruits go with
+  // it, or the game draws a missing player in the news box.
+  const gone = new Set((C.freeAgents || []).map(p => p.id).filter(id => !on.has(id) && !added.some(p => p.id === id)));
+  if (gone.size) for (const k of ['news', 'posts']) if (Array.isArray(C.season[k])) C.season[k] = C.season[k].filter(n => !gone.has(n.pid));
   C.freeAgents = [];
   C.contractOffers = [];
   C.meta.uPID = Math.max(C.meta.uPID || 0, cls.maxId);
