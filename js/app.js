@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.8';
+const APP_VERSION = '0.45.9';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -335,8 +335,10 @@ function render() {
   lastView = view;
 }
 
+// The app keeps its own scroll positions per screen.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 window.addEventListener('popstate', () => {
-  if (state.stack.length > 1) { state.stack.pop(); render(); }
+  if (state.stack.length > 1) { state.stack.pop(); state.backHome = state.stack.length === 1; if (state.backHome) state.stack[0].y = 0; render(); }
 });
 
 window.addEventListener('beforeunload', e => {
@@ -800,6 +802,17 @@ function stepActions(key) {
   }
 }
 
+// Back on the calendar from a step's screens: the current step, ready to
+// advance, right at the top.
+function backHomeCard() {
+  const back = state.backHome;
+  state.backHome = false;
+  const cur = back && phaseRank(league().season) !== 0 || back && isCollege() ? currentStep() : null;
+  if (!cur) return '';
+  const acts = stepActions(cur.key);
+  if (!acts) return '';
+  return `<fieldset class="frame now-card"><legend>Up Now · ${esc(cur.date)}</legend><b>${esc(cur.title)}</b>${acts}</fieldset>`;
+}
 function calendarCard() {
   const s = league().season;
   if (phaseRank(s) === 0 && !isCollege()) {
@@ -949,6 +962,7 @@ screens.main = () => {
         <div class="grow"><b>${esc(L.meta?.saveName || state.fileName)}</b>
           <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() ? 'school' : 'teams'}: ${esc(yourTeams)}</span></div>
       </div>
+      ${backHomeCard()}
       ${calendarCard()}
       <div class="grid2">
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}

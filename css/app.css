@@ -1146,3 +1146,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .cat-grid > .c-fin { --bc: #5cc8ff; } .cat-grid > .c-sho { --bc: #4fe08a; } .cat-grid > .c-pla { --bc: #ffb43a; } .cat-grid > .c-def { --bc: #ff5a5a; }
 .cat-grid > div { background: color-mix(in srgb, var(--bc) 22%, var(--bg-dark)); border-color: var(--bc); }
 .cat-grid > div span { color: var(--bc); }
+
+/* Back on the calendar: the current step up top */
+.now-card { border-color: var(--gold); }
+.now-card > b { display: block; margin-bottom: 8px; font-size: 18px; }
