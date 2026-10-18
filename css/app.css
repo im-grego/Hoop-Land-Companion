@@ -1091,3 +1091,22 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .drill-row.wrap { flex-wrap: wrap; }
 .drill-row .full { flex-basis: 100%; }
 .drill-row.tap { cursor: pointer; }
+/* Offseason Overview */
+.ov-h { margin: 10px 0 6px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+.need-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.need-row .grow { flex: 1 1 160px; min-width: 0; }
+.sev { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--dim); }
+.sev.s2 { background: var(--gold); }
+.sev.s3 { background: var(--down); box-shadow: 0 0 6px var(--down); }
+.dir-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.dir-team { display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 2px 2px; background: var(--btn); border: 2px solid var(--btn-edge); }
+.dir-team.mine { border-color: var(--gold); }
+.dir-team .logo-sm { width: 22px !important; height: 22px !important; }
+.style-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.style-chip { padding: 3px 8px; background: var(--btn); border: 2px solid var(--cyan); font-size: 13px; font-weight: 700; }
+.tend-wrap summary { cursor: pointer; color: var(--cyan); margin-top: 6px; }
+.tend-row { display: grid; grid-template-columns: 110px 1fr 28px; align-items: center; gap: 8px; padding: 2px 0; }
+.tbar2 { position: relative; height: 8px; background: var(--bg-dark); border: 1px solid var(--btn-edge); }
+.tb-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--dim); }
+.tb-fill { position: absolute; top: 0; bottom: 0; background: var(--up); }
+.tb-fill.neg { background: var(--down); }

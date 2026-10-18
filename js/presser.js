@@ -67,7 +67,7 @@ const yrsLeft = p => p.contract?.yrs ?? 0;
 // Contract question target: best player in his final year, else the best
 // extension-eligible one.
 function contractTarget(team, sit) {
-  const byStar = [...team.roster].filter(p => p.status === 3 || p.contract?.tid === team.id).sort((a, b) => sit.gs(b) - sit.gs(a));
+  const byStar = [...team.roster].filter(p => (p.status === 3 || p.contract?.tid === team.id) && !(p.contract?.ext?.yrs > 0)).sort((a, b) => sit.gs(b) - sit.gs(a));
   const last = byStar.find(p => yrsLeft(p) === 1 && sit.gs(p) >= 8);
   if (last) return { p: last, kind: 'final' };
   const ext = byStar.find(p => p.contract?.canExt && yrsLeft(p) <= 2 && sit.gs(p) >= 10);

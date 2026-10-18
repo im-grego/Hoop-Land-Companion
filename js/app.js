@@ -18,11 +18,12 @@ import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
+import { setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.39.6';
+const APP_VERSION = '0.40.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -367,8 +368,9 @@ async function loadFile(file) {
     state.dirty = false;
     const held = holdCpuOffers();
     recordSalaries();
+    const kicked = applyExtensions();
     o.remove();
-    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, held ? `${held} CPU contract offers held until the options deadline.` : '');
+    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, [held ? `${held} CPU contract offers held until the options deadline.` : '', kicked ? `${kicked} extension${kicked > 1 ? 's' : ''} signed last summer kicked in.` : ''].filter(Boolean).join(' '));
     render();
   } catch (err) {
     o.remove();
@@ -402,6 +404,7 @@ function installData(data, keepSnaps = false) {
     state.awards = {};
     state.draft = {};
     state.compPools = {};
+    setStyleRefs(data.seasonLeagues[0]);
     state.compCache = {};
     data.seasonLeagues.forEach((L, li) => {
       const players = leaguePlayers(L, true).map(e => e.p);
@@ -526,6 +529,10 @@ const faDone = day => {
 const CALENDAR = [
   { key: 'office', date: 'May 1', title: 'Front Office', blurb: 'Select the teams you run.',
     done: () => calFlags().office },
+  { key: 'overview', date: 'May 3', title: 'Offseason Overview', blurb: 'Where you stand: the books, real roster needs, your draft position and the league rumor mill.',
+    done: () => !!calFlags().overview || phaseRank(league().season) >= 2 },
+  { key: 'preview', date: 'May 5', title: 'Draft Preview', blurb: 'Meet the class before the lottery: the board, who projects in your range and who fits your needs.',
+    done: () => !!calFlags().preview || phaseRank(league().season) >= 2 },
   { key: 'lottery', date: 'May 10', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
     done: () => phaseRank(league().season) >= 2 },
   { key: 'mock1', date: 'May 11', title: 'Mock Draft 1.0', blurb: 'The lottery is set and the first mock of the cycle is out. See where everyone lands.',
@@ -542,6 +549,8 @@ const CALENDAR = [
     done: () => phaseRank(league().season) >= 3 },
   { key: 'options', date: 'Jun 29', title: 'Options & Qualifying Offers', blurb: 'Team and player options come due, and teams decide on qualifying offers for their restricted free agents.',
     done: () => !!optStore().done || phaseRank(league().season) >= 4 },
+  { key: 'ext', date: 'Jul 1', title: 'Extension Window', blurb: 'Lock up players heading into their final year before they ever reach free agency.',
+    done: () => !!extStore().done || phaseRank(league().season) >= 4 },
   { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'No more collusion: the market opens and the big deals happen today. Draft picks sign their rookie contracts.',
@@ -594,6 +603,9 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'ext') { const g = extStore().log || {}; return `${g.mine || 0} of yours and ${g.cpu || 0} around the league signed extensions.`; }
+  if (key === 'overview') { const t = league().teams.find(isUserTeam); return t ? `${STATUS_NAMES[teamStanding(league(), t).status]}. ${rosterNeeds(league(), t, { level: shownLevel }).filter(n => n.sev >= 2).length} big needs flagged.` : 'Done.'; }
+  if (key === 'preview') return `${boardStore().board.length} prospects on your board.`;
   if (key === 'cuts') { const c = calFlags().cutLog; return c ? `${c.n} players cut across the league${c.mine ? `, ${c.mine} of yours` : ''}.` : 'Every roster is set.'; }
   if (key === 'survey') { const q = surveyNow().questions[0]?.results[0]; return q ? `${q.name}: the GMs' pick to win it all (${q.pct}%).` : 'Survey published.'; }
   return '';
@@ -606,6 +618,8 @@ function stepActions(key) {
   switch (key) {
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
+    case 'overview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="overview">📊 Offseason Overview</button><button class="btn" data-act="calDone" data-k="overview">✅ Wrap Up</button></div>`;
+    case 'preview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🔭 Draft Preview</button><button class="btn" data-act="calDone" data-k="preview">✅ Wrap Up</button></div>`;
     case 'lottery': return `<button class="btn big focus" data-act="nav" data-to="lottery">🎱 Draft Lottery</button>`;
     case 'mock1': return `<button class="btn big focus" data-act="openMock" data-n="1">📰 Read Mock Draft 1.0</button>`;
     case 'scout': return `<button class="btn big focus" data-act="nav" data-to="draft">🔎 Scouting</button>
@@ -616,6 +630,7 @@ function stepActions(key) {
       <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
     case 'options': return `<button class="btn big focus" data-act="nav" data-to="options">📝 Options Deadline</button>`;
+    case 'ext': return `<button class="btn big focus" data-act="nav" data-to="extensions">🖊️ Extension Window</button>`;
     case 'camp': return `<button class="btn big focus" data-act="nav" data-to="camp">🏀 Summer League</button>`;
     case 'fa1': case 'fa2': case 'fa3': {
       const day = +key[2];
@@ -666,7 +681,7 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  office: ['teams'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'],
+  office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
 };
@@ -1944,6 +1959,7 @@ screens.player = (args) => {
         <p class="note grow">Rating changes: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
         <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
       </div>
+      ${playStyleBox(p)}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
@@ -2653,6 +2669,7 @@ function draftTabsNow(L = league()) {
   const step = phaseRank(L.season) === 0 ? null : currentStep()?.key;
   if (step === 'draft') return ['live', 'consensus', 'warroom'];
   if (step === 'scout' || step === 'workouts') return ['consensus', 'warroom', 'office'];
+  if (step === 'preview') return ['consensus', 'warroom'];
   return DRAFT_TABS.map(([k]) => k).filter(k => k !== 'live' || liveReady(L));
 }
 const liveReady = (L = league()) => L.season.phase === PHASE_PRE_DRAFT && lotteryDone(L) && L.draftClass?.length > 0;
@@ -2686,7 +2703,8 @@ screens.draft = (args) => {
   const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
-  layout({ title: tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + tabs + body.html, action: body.action });
+  const preview = isStep('preview');
+  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' ? '' : outlookCard()) + (preview ? rangeCard() : '') + tabs + body.html, action: preview ? { act: 'previewDone', label: 'Wrap Up the Preview' } : body.action });
   if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
 
@@ -2731,7 +2749,8 @@ function outlookCard() {
   const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
   return mine.map(t => {
     const o = teamOutlook(t);
-    const now = order.filter(q => q.owner.id === t.id).map(q => `#${q.overall}${q.orig.id !== t.id ? ` <span class="muted">(${esc(q.orig.shortName)})</span>` : ''}`);
+    const now = order.length ? order.filter(q => q.owner.id === t.id).map(q => `#${q.overall}${q.orig.id !== t.id ? ` <span class="muted">(${esc(q.orig.shortName)})</span>` : ''}`)
+      : draftPosition(L, t, state.params.lotteryFormat).map(x => `${x.lottery ? `~#${x.likely}` : `#${x.slot}`}${x.orig.id !== t.id ? ` <span class="muted">(${esc(x.orig.shortName)})</span>` : ''}`);
     const byYear = new Map();
     for (const pk of [...t.draftPicks].filter(pk => pk.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
       if (!byYear.has(pk.yr)) byYear.set(pk.yr, []);
@@ -3438,6 +3457,7 @@ screens.prospect = (args) => {
       </div>
       <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
+      ${playStyleBox(p)}
       ${workoutBox(p)}${combineBox(p)}
       ${collegeBox(p)}
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
@@ -5138,6 +5158,305 @@ actions.copyStories = async () => {
 
 // ---------------------------------------------------------------------------
 // Export
+
+// ---------------------------------------------------------------------------
+// Offseason Overview (May 3): your team (standing, books, needs, style,
+// draft position, focus) and the league rumor mill.
+
+const worthOf = p => fairSalary(shownLevel(p));
+const sevDot = n => `<span class="sev s${n}" aria-label="${['', 'Minor', 'Real', 'Big'][n]} need"></span>`;
+const pctStr = v => v >= 9.95 ? `${Math.round(v)}%` : `${v.toFixed(1)}%`;
+function pickLine(x) {
+  const from = x.orig && !isUserTeam(x.orig) ? ` <span class="muted">(via ${esc(x.orig.shortName)})</span>` : '';
+  if (x.lottery) return `<b>R1 · lottery seed ${x.seed}</b>${from}<br><span class="small">#1: <b>${pctStr(x.p1)}</b> · Top 4: <b>${pctStr(x.top4)}</b> · most likely <b>#${x.likely}</b> · no lower than #${x.worst}</span>`;
+  return `<b>R${x.rd} · pick #${x.slot}</b>${from}`;
+}
+// Where to put your focus: a few plain calls from the needs, books, cap and rumors.
+function focusCalls(L, t, st, books, needs, rumors) {
+  const calls = [];
+  const top = needs.filter(n => n.sev >= 2 && n.group !== 'style').slice(0, 2);
+  const route = st.status === 'contending' ? 'Free agency or trade' : 'Draft';
+  for (const n of top) calls.push(n.kind === 'Upside' ? `🎓 Draft: take swings at ${n.group} with upside.` : `${st.status === 'contending' ? '🤝' : '🎓'} ${route}: ${n.group} (${n.text.charAt(0).toLowerCase() + n.text.slice(1)}).`);
+  const up = needs.find(n => n.kind === 'Upside' && !top.includes(n));
+  if (up && st.status !== 'contending') calls.push(`🎓 Draft: no young ${up.group} with real upside. Take more than one swing.`);
+  const sty = needs.find(n => n.group === 'style' && n.sev >= 2);
+  if (sty) calls.push(`🧩 Style: ${sty.text.charAt(0).toLowerCase() + sty.text.slice(1)}. Prospects who fill it are marked 🧩.`);
+  const keep = books.expiring.filter(x => x.level >= 76 && x.p.age < 33)[0];
+  if (keep) calls.push(`✍️ Re-sign priority: ${playerName(keep.p)} (Lv ${keep.level}, worth ~$${keep.worth}M)${keep.rfa ? ', restricted if you extend the QO' : ''}.`);
+  for (const o of books.options.filter(o => o.kind === 'team')) {
+    if (o.worth >= o.sal * 1.3) calls.push(`✅ Team option: pick up ${playerName(o.p)} ($${o.sal}M, worth ~$${o.worth}M).`);
+    else if (o.worth < o.sal * 0.75) calls.push(`❌ Team option: ${playerName(o.p)} costs $${o.sal}M for ~$${o.worth}M of play. Decline candidate.`);
+  }
+  const po = books.options.find(o => o.kind === 'player' && o.worth >= o.sal * 1.4);
+  if (po) calls.push(`⚠️ ${playerName(po.p)} can beat his $${po.sal}M player option on the market. Expect an opt-out unless you make a promise.`);
+  if (books.space >= 15) calls.push(`💰 About $${books.space}M of cap space projected for July.`);
+  const ext = books.ext[0];
+  if (ext && ext.level >= 78) calls.push(`🖊️ Extension: ${playerName(ext.p)} enters his final year. Lock him up in the extension window.`);
+  const target = rumors.find(r => r.kind === 'star' && st.status === 'contending') || rumors.find(r => r.kind === 'vet' && st.status === 'contending');
+  if (target) calls.push(`📰 Trade target: ${playerName(target.p)} (${target.team.shortName}), ${target.why[0]}.`);
+  return calls.slice(0, 6);
+}
+function overviewTeam(L, t) {
+  const st = teamStanding(L, t);
+  const books = teamBooks(L, t, { level: shownLevel, worth: worthOf, qoEligible: FA.qoEligible });
+  const needs = rosterNeeds(L, t, { level: shownLevel, li: state.leagueIdx });
+  const ident = teamIdentity(t, shownLevel).filter(x => x.n >= 2).slice(0, 3);
+  const picks = draftPosition(L, t, state.params.lotteryFormat);
+  const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
+  const calls = focusCalls(L, t, st, books, needs, rumors);
+  const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
+  const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span><span class="small" style="text-align:right">${right}</span></div>`;
+  const valTag = (sal, worth) => worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
+      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(st.status)}</div>
+      <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
+    </div>
+    <fieldset class="frame"><legend>Where to Focus</legend><div class="stack">${calls.map(c => `<p class="note small">${esc(c)}</p>`).join('') || '<p class="note small muted">No glaring holes. Best player available.</p>'}</div></fieldset>
+    <fieldset class="frame"><legend>The Books</legend>
+      <p class="note small">Committed next season: <b>$${books.committed}M</b> of a $${books.cap}M cap · ${books.space >= 0 ? `<span class="up">~$${books.space}M space</span>` : `<span class="down">$${-books.space}M over</span>`}</p>
+      <h4 class="ov-h">Expiring (${books.expiring.length})</h4><div class="stack">${books.expiring.map(x => row(x, `worth ~$${x.worth}M${x.rfa ? '<br><span class="badge new">RFA</span>' : ''}`, ` · ${x.p.yrs ?? 0} yrs exp`)).join('') || '<p class="note small muted">Nobody.</p>'}</div>
+      <h4 class="ov-h">Options Due Jun 29 (${books.options.length})</h4><div class="stack">${books.options.map(x => row(x, `${x.kind === 'team' ? 'Team' : 'Player'} option $${x.sal}M<br>worth ~$${x.worth}M ${valTag(x.sal, x.worth)}`)).join('') || '<p class="note small muted">None.</p>'}</div>
+      <h4 class="ov-h">Extension Eligible (${books.ext.length})</h4><div class="stack">${books.ext.map(x => row(x, `$${x.sal}M, final year<br>worth ~$${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
+    </fieldset>
+    <fieldset class="frame"><legend>Roster Needs</legend><div class="stack">${needs.map(n => `<div class="need-row">${sevDot(n.sev)}<span class="badge need">${esc(n.group === 'style' ? 'Style' : `${n.group[0].toUpperCase()}${n.group.slice(1)} · ${n.kind}`)}</span><span class="small grow">${esc(n.text)}</span></div>`).join('') || '<p class="note small muted">No real holes.</p>'}</div>
+      <p class="note muted small" style="margin-top:6px">Next season's roster (players under contract, options assumed picked up). Rotation and starter lines come from the whole league.</p></fieldset>
+    <fieldset class="frame"><legend>How You Play</legend>${ident.length ? `<div class="stack">${ident.map(x => `<p class="note small">${x.icon} <b>${esc(x.label)}</b> · ${x.n} rotation player${x.n > 1 ? 's' : ''} ${esc(x.text.replace(/^lives/, 'live').replace(/^gets/, 'get').replace(/^pulls/, 'pull').replace(/^wants/, 'want').replace(/^creates his/, 'create their').replace(/^looks/, 'look').replace(/^throws and catches/, 'throw and catch').replace(/^crashes/, 'crash').replace(/^goes/, 'go').replace(/^jumps/, 'jump').replace(/^stands his/, 'stand their').replace(/pokes/, 'poke'))}</p>`).join('')}</div>` : '<p class="note small muted">No clear identity.</p>'}
+      <p class="note muted small" style="margin-top:6px">From the rotation's tendencies.</p></fieldset>
+    <fieldset class="frame"><legend>Draft Position</legend><div class="stack">${picks.map(x => `<p class="note small">${pickLine(x)}</p>`).join('') || '<p class="note small muted">No picks this year.</p>'}</div></fieldset>`;
+}
+function overviewRumors(L) {
+  const all = L.teams.map(t => ({ t, st: teamStanding(L, t) }));
+  const col = k => all.filter(x => x.st.status === k).sort((a, b) => b.st.pct - a.st.pct);
+  const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
+  const heat = n => '🔥'.repeat(Math.max(1, n));
+  const kind = { star: 'Disgruntled?', vet: 'Could be moved' };
+  return `<fieldset class="frame"><legend>Team Directions</legend>
+      ${['contending', 'developing', 'rebuilding'].map(k => `<h4 class="ov-h">${statusTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></span>`).join('')}</div>`).join('')}
+    </fieldset>
+    <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 14).map(r => `<div class="drill-row tap" data-act="openPlayer" data-id="${r.p.id}"><span class="grow"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br>
+        <span class="small muted">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y${r.mpg ? ` · ${r.mpg.toFixed(0)} mpg` : ''} · morale ${r.morale}</span><br><span class="small">${esc(r.why.join(', '))}</span></span>
+        <span class="small" style="text-align:right">${heat(r.heat)}<br><span class="gold">${kind[r.kind]}</span></span></div>`).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div>
+      <p class="note muted small" style="margin-top:6px">Built from losing seasons, early exits, a missing co-star and morale. Stars playing big minutes are slower to sour.</p></fieldset>`;
+}
+screens.overview = (args = {}) => {
+  const L = league();
+  const tab = args.tab === 'rumors' ? 'rumors' : 'team';
+  const mine = L.teams.filter(isUserTeam);
+  layout({
+    title: 'Offseason Overview',
+    body: `<div class="tabs">${[['team', 'Your Team'], ['rumors', 'Rumor Mill']].map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="ovTab" data-t="${k}">${l}</button>`).join('')}</div>
+      ${tab === 'team' ? (mine.map(t => overviewTeam(L, t)).join('') || '<p class="note">Select your team first.</p>') : overviewRumors(L)}`,
+    action: isStep('overview') ? { act: 'overviewDone', label: 'On to the Draft Preview' } : null,
+  });
+};
+actions.ovTab = d => replace('overview', { tab: d.t });
+actions.overviewDone = () => { calFlags().overview = true; goHome(); toast('Next up: Draft Preview'); };
+actions.previewDone = () => { calFlags().preview = true; goHome(); toast('Next up: the Draft Lottery'); };
+
+// Draft Preview: who projects around your first pick (the consensus board),
+// with fits for your needs and play-style holes.
+function rangeCard() {
+  const L = league();
+  const t = L.teams.find(isUserTeam);
+  if (!t || !L.draftClass?.length) return '';
+  const picks = draftPosition(L, t, state.params.lotteryFormat).filter(x => x.rd === 1);
+  const first = [...picks].sort((a, b) => (a.lottery ? a.exp : a.slot) - (b.lottery ? b.exp : b.slot))[0];
+  const board = boardOrder();
+  if (!first) return '<fieldset class="frame"><legend>In Your Range</legend><p class="note small muted">No pick this year. The board is still worth a look for trades.</p></fieldset>';
+  const at = Math.round(first.lottery ? first.exp : first.slot);
+  const lo = Math.max(0, at - 4), hi = Math.min(board.length, at + 4);
+  const needs = rosterNeeds(L, t, { level: shownLevel }).filter(n => n.group === 'style');
+  const styleFit = p => needs.filter(n => playStyles(p, 3).some(s => s.k === n.style));
+  return `<fieldset class="frame"><legend>In Your Range · ${first.lottery ? `likely #${first.likely} (avg #${at})` : `#${at}`}</legend>
+    <div class="stack">${board.slice(lo, hi).map((p, i) => {
+      const fills = fillsFor(t, p), sf = styleFit(p);
+      const st = playStyles(p, 2);
+      return `<button class="prow" data-act="openProspect" data-id="${p.id}"><span class="name">${lo + i + 1}. ${esc(playerName(p))} ${valueChip(p)}</span>
+        <span class="right small">${fills.length || sf.length ? '🧩 ' : ''}${esc([...fills.map(n => n.label), ...sf.map(n => n.style === 'shooter' ? 'Spacing' : n.style === 'rim' ? 'Rim pressure' : n.style === 'playmaker' ? 'Playmaking' : n.style === 'protector' ? 'Rim protection' : 'Rebounding')].slice(0, 2).join(', '))}</span>
+        <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${st.length ? ` · ${st.map(x => `${x.icon} ${esc(x.label)}`).join(' · ')}` : ''}</span></button>`;
+    }).join('')}</div>
+    <p class="note muted small" style="margin-top:6px">By today's consensus board. Scouting, the combine and workouts will move it.</p></fieldset>`;
+}
+
+// Play style from the save's tendencies (players and prospects).
+function playStyleBox(p) {
+  if (!p.tendencies) return '';
+  const st = playStyles(p, 3), w = wontDo(p);
+  const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
+  return `<fieldset class="frame"><legend>Play Style</legend>
+    ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
+    <p class="note small">${esc(styleLine(p))}</p>
+    <details class="tend-wrap"><summary class="small">All tendencies</summary>
+      ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
+    </details></fieldset>`;
+}
+
+// ---------------------------------------------------------------------------
+// Extension window (Jul 1): players heading into the last year of their deal
+// can sign an extension that starts when it ends. The extension goes into
+// the save's own contract.ext slot, and the app keeps a ledger: next
+// offseason, an extended player whose deal is up is signed to it on load
+// (in case the game doesn't apply it itself).
+
+function extStore() {
+  const key = `hlc:ext:${seasonKey()}`;
+  const c = (state.extS ||= {});
+  if (!c[key]) { let v = {}; try { v = JSON.parse(localStorage.getItem(key)) || {}; } catch { v = {}; } c[key] = { talks: {}, ...v }; }
+  return c[key];
+}
+function saveExtStore() { try { localStorage.setItem(`hlc:ext:${seasonKey()}`, JSON.stringify(extStore())); } catch { /* ignore */ } }
+const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;
+function extLedger() { try { return JSON.parse(localStorage.getItem(extLedgerKey())) || []; } catch { return []; } }
+function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+
+const extEligible = (L, t) => t.roster.filter(p => p.status === FA.STATUS_SIGNED && (p.contract?.yrs || 0) === 1 && p.contract.canExt !== false && !(p.contract.ext?.yrs > 0) && !(p.contract.opt > 0));
+// Where he'll be in a year: young players still climbing, veterans near
+// their decline age slipping.
+function projLevel(p) {
+  const lv = shownLevel(p);
+  const up = p.age <= 22 ? 4 : p.age <= 24 ? 2 : p.age <= 26 ? 1 : 0;
+  const down = p.age >= (p.regressionAge || 32) - 1 ? 2 : 0;
+  return lv + Math.round(up * Math.max(0.5, ((p.pot || 7) - 5) / 3)) - down;
+}
+// What he wants: { sal, yrs: [min, max], mood } — mood: 'eager' | 'open' | 'market'.
+function extAsk(p, team) {
+  const proj = projLevel(p);
+  const base = fairSalary(proj);
+  const morale = p.season?.morale ?? 70;
+  const rookie = FA.isRookieScale(p);
+  let sal = Math.round(base * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
+  sal = Math.max(FA.minFor(p), Math.min(FA.maxSalary(league(), p), sal));
+  const yrs = p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
+  const mood = morale < 40 ? 'market' : morale >= 75 || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
+  return { sal, yrs, mood, proj };
+}
+// His answer to an offer: { ok, counter, text }.
+function extAnswer(p, team, offer) {
+  const a = extAsk(p, team);
+  const off = offer.yrs < a.yrs[0] ? a.yrs[0] - offer.yrs : offer.yrs > a.yrs[1] ? offer.yrs - a.yrs[1] : 0;
+  const need = Math.round(a.sal * (1 + 0.06 * off) * (a.mood === 'market' ? 1.25 : a.mood === 'eager' ? 0.95 : 1));
+  if (offer.sal >= need) return { ok: true, text: 'Deal.' };
+  const yrs = Math.min(Math.max(offer.yrs, a.yrs[0]), a.yrs[1]);
+  return { ok: false, counter: { sal: Math.round(a.sal * (a.mood === 'market' ? 1.25 : a.mood === 'eager' ? 0.95 : 1)), yrs },
+    text: a.mood === 'market' ? 'His camp wants to see what free agency brings. It would take an overpay.' : offer.sal < need * 0.8 ? 'Not close. His agent walked out of the room.' : 'Close, but not there yet.' };
+}
+function signExtension(L, t, p, deal, cpu = false) {
+  p.contract.ext = { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, noTrd: 0 };
+  p.contract.canExt = false;
+  const led = extLedger().filter(x => x.pid !== p.id);
+  led.push({ pid: p.id, tid: t.id, yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, yr: L.season.currentYear, cpu });
+  saveExtLedger(led);
+}
+// On load: last summer's extensions for players whose deal is now up.
+function applyExtensions() {
+  const L = league();
+  if (!L) return 0;
+  const led = extLedger();
+  let n = 0;
+  const keep = [];
+  for (const x of led) {
+    const t = L.teams.find(tt => tt.roster.some(p => p.id === x.pid));
+    const p = t?.roster.find(pp => pp.id === x.pid);
+    if (x.yr >= L.season.currentYear || !p) { if (x.yr >= L.season.currentYear) keep.push(x); continue; }
+    if (p.status === FA.STATUS_EXPIRING) {
+      p.status = FA.STATUS_SIGNED;
+      Object.assign(p.contract, { tid: t.id, pid: p.id, yrs: x.yrs, sal: x.sal, opt: x.opt || 0, canExt: false, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } });
+      const row = (p.stats || []).filter(s => s.yr === L.season.currentYear && s.league === 0).pop();
+      if (row) row.sal = x.sal;
+      n++;
+      state.dirty = true;
+    }
+  }
+  saveExtLedger(keep);
+  return n;
+}
+
+screens.extensions = () => {
+  const L = league(), st = extStore();
+  const done = !!st.done;
+  const mine = L.teams.filter(isUserTeam);
+  const card = (t, p) => {
+    const a = extAsk(p, t);
+    const talk = (st.talks[p.id] ||= { sal: a.sal, yrs: Math.min(a.yrs[1], Math.max(a.yrs[0], 3)), tries: 0, last: null, signed: null });
+    const moodTxt = { eager: '<span class="up">Wants to stay</span>', open: '<span class="gold">Open to talks</span>', market: '<span class="down">Eyeing free agency</span>' }[a.mood];
+    if (talk.signed) return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small up">✍️ Extended: $${talk.signed.sal}M × ${talk.signed.yrs} (starts next season)</span></span></div>`;
+    const over = talk.tries >= 3;
+    return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br>
+      <span class="small muted">${esc(posName(p))} · ${p.age}y · now $${p.contract.sal}M (final year) · projects Lv ${a.proj} · morale ${p.season?.morale ?? '?'}</span><br>
+      <span class="small">${moodTxt} · looking for ~$${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}${FA.isRookieScale(p) ? ' · rookie extension' : ''}</span></span>
+      ${done || over ? `<p class="note small full ${over ? 'down' : 'muted'}">${over ? 'Talks broke off. He\'ll play out the year.' : 'Window closed.'}</p>` : `<div class="full">
+        <div class="pts-row"><span class="grow small">Salary</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="sal" data-d="-1">−</button><span class="pts-val">$${talk.sal}M</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="sal" data-d="1">+</button></div>
+        <div class="pts-row"><span class="grow small">Years</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="yrs" data-d="-1">−</button><span class="pts-val">${talk.yrs}</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="yrs" data-d="1">+</button></div>
+        ${talk.last ? `<p class="note small ${talk.last.ok ? 'up' : 'down'}">${esc(talk.last.text)}${talk.last.counter ? ` Counter: $${talk.last.counter.sal}M × ${talk.last.counter.yrs}.` : ''}</p>` : ''}
+        <button class="btn small focus" data-act="extOffer" data-id="${p.id}">Make Offer (${3 - talk.tries} left)</button></div>`}
+    </div>`;
+  };
+  const log = st.log;
+  layout({
+    title: 'Extension Window',
+    body: `<p class="note small">Players heading into the last year of their deal. An extension starts when the current deal ends; a player who doesn't sign plays out the year and hits free agency next summer. Three offers each.</p>
+      ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)}</legend><div class="stack">${extEligible(L, t).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => card(t, p)).join('') || (Object.values(st.talks).some(x => x.signed) ? '' : '<p class="note small muted">Nobody heading into a final year.</p>')}
+        ${L.teams.length ? t.roster.filter(p => st.talks[p.id]?.signed && !extEligible(L, t).includes(p)).map(p => `<div class="drill-row"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small up">✍️ Extended: $${st.talks[p.id].signed.sal}M × ${st.talks[p.id].signed.yrs}</span></span></div>`).join('') : ''}</div></fieldset>`).join('')}
+      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${(log.list || []).map(x => `<p class="note small"><b>${esc(x.name)}</b> (${esc(x.team)}) · $${x.sal}M × ${x.yrs}</p>`).join('') || '<p class="note small muted">Nobody else extended.</p>'}</div>` : '<p class="note small muted">CPU teams make their calls when the window closes.</p>'}</fieldset>`,
+    action: done ? null : { act: 'extClose', label: 'Close the Window' },
+  });
+};
+actions.extAdj = d => {
+  const L = league(), p = L.teams.flatMap(t => t.roster).find(x => x.id === +d.id);
+  const talk = extStore().talks[+d.id];
+  if (!p || !talk) return;
+  if (d.k === 'sal') talk.sal = Math.max(FA.minFor(p), Math.min(FA.maxSalary(L, p), talk.sal + +d.d));
+  else talk.yrs = Math.max(1, Math.min(5, talk.yrs + +d.d));
+  saveExtStore(); render();
+};
+actions.extOffer = d => {
+  const L = league(), st = extStore();
+  const t = L.teams.find(tt => tt.roster.some(x => x.id === +d.id));
+  const p = t?.roster.find(x => x.id === +d.id);
+  const talk = st.talks[+d.id];
+  if (!p || !talk || talk.tries >= 3 || st.done) return;
+  const r = extAnswer(p, t, talk);
+  talk.tries++;
+  talk.last = r;
+  if (r.ok) {
+    checkpoint(`Extend ${playerName(p)}`);
+    signExtension(L, t, p, talk);
+    talk.signed = { sal: talk.sal, yrs: talk.yrs };
+    state.dirty = true;
+    toast(`✍️ ${playerName(p)} extended`, `$${talk.sal}M × ${talk.yrs}, starting next season`);
+  }
+  saveExtStore(); render();
+};
+actions.extClose = async () => {
+  const L = league(), st = extStore();
+  if (!(await confirmBox('Close the extension window? CPU teams make their calls, and anyone unsigned plays out his final year.', 'Close'))) return;
+  const rng = mulberry32((saveSalt() ^ 0xe7e1) >>> 0);
+  const list = [];
+  for (const t of L.teams.filter(tt => !isUserTeam(tt))) {
+    const status = teamStatus(L, t);
+    for (const p of extEligible(L, t)) {
+      const lv = shownLevel(p);
+      if (lv < (p.age <= 25 ? 74 : 78)) continue;
+      const a = extAsk(p, t);
+      let odds = a.mood === 'market' ? 0.08 : a.mood === 'eager' ? 0.45 : 0.28;
+      if (status === 'rebuilding' && p.age >= 28) odds *= 0.4;
+      if (status === 'contending' && lv >= 80) odds += 0.15;
+      if (p.age >= 32) odds *= 0.5;
+      if (rng() < odds) {
+        const deal = { sal: a.sal, yrs: a.yrs[0] + Math.floor(rng() * (a.yrs[1] - a.yrs[0] + 1)) };
+        signExtension(L, t, p, deal, true);
+        list.push({ name: playerName(p), team: t.shortName, sal: deal.sal, yrs: deal.yrs, lv });
+      }
+    }
+  }
+  list.sort((a, b) => b.sal * b.yrs - a.sal * a.yrs);
+  st.done = true;
+  st.log = { mine: Object.values(st.talks).filter(x => x.signed).length, cpu: list.length, list };
+  saveExtStore();
+  state.dirty = true;
+  render();
+  toast('Extension window closed', `${list.length} extensions around the league`);
+};
 
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
