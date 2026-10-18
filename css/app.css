@@ -1239,3 +1239,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .band-row > span:first-child { font-weight: 700; font-size: 14px; }
 .band-step { display: flex; align-items: center; justify-content: center; gap: 2px; }
 .band-step b { min-width: 22px; text-align: center; font-size: 14px; }
+.cap-bar { display: flex; height: 12px; margin: 2px 0 4px; background: color-mix(in srgb, var(--up) 30%, var(--bg-dark)); border: 2px solid var(--btn-edge); overflow: hidden; }
+.cap-bar .cb-pay { background: var(--cyan); }
+.cap-bar .cb-dead { background: var(--down); }
+.cap-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-bottom: 4px; }

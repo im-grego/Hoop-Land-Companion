@@ -59,7 +59,12 @@ export function marketPlayers(league) {
 
 export const signedRoster = team => team.roster.filter(p => p.status === STATUS_SIGNED || p.status === STATUS_DRAFTED);
 export const payroll = team => signedRoster(team).reduce((s, p) => s + (p.contract?.sal || 0), 0);
-export const capSpace = (league, team) => league.season.salaryCap - payroll(team);
+// Dead money (cut players still being paid) is tracked by the app; set per
+// team for the coming season.
+let DEAD = new Map();
+export function setDeadMoney(map) { DEAD = new Map(Object.entries(map || {}).map(([k, v]) => [+k, v])); }
+export const deadMoney = team => DEAD.get(team.id) || 0;
+export const capSpace = (league, team) => league.season.salaryCap - payroll(team) - deadMoney(team);
 
 // Max salary by years in the league (the save's maxContract, % of the cap).
 export function maxSalary(league, p) {

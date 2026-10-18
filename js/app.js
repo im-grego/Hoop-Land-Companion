@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.54.0';
+const APP_VERSION = '0.55.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -326,7 +326,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
-  if (state.data) FA.setQualifyingOffers(optStore().qo);
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -3579,6 +3579,13 @@ const workoutSlots = () => (state.params.workoutSlots ?? 6) * Math.max(1, state.
 const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= INTERVIEW_QS;
 const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
 const myTeam = () => league().teams.find(isUserTeam);
+// Each prospect gets six questions in a random order (fixed per save), in
+// three pairs: each round you ask one of the two, and the other is gone.
+function interviewPairs(p) {
+  const rng = mulberry32((saveSalt() ^ Math.imul(p.id + 7, 2654435761)) >>> 0);
+  const qs = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 6).map(y => y.x);
+  return [qs.slice(0, 2), qs.slice(2, 4), qs.slice(4, 6)].filter(x => x.length);
+}
 
 // How much a rating can still grow: its ceiling (true potential) minus today.
 function roomFor(p, k) {
@@ -3639,6 +3646,7 @@ function workoutQs(p) {
     { k: 'fit', q: 'How do you see yourself fitting with us?' },
     { k: 'future', q: 'Where do you see yourself in five years?' },
     { k: 'model', q: 'Who do you model your game after?' },
+    { k: 'work', q: 'What do you need to work on?' },
   ];
 }
 const OLD_Q = { work: 'What do you need to work on?' };
@@ -3658,7 +3666,8 @@ function workoutAnswer(p, k) {
   }
   if (k === 'work') {
     const w = r().weaknesses;
-    return { quote: w.length ? `Honestly? ${w.map(x => x.text.toLowerCase()).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '' };
+    const firstPerson = t => t.toLowerCase().replace(/\bhim\b/g, 'me').replace(/\bhis\b/g, 'my').replace(/\bhe\b/g, 'I').replace(/\bhimself\b/g, 'myself');
+    return { quote: w.length ? `Honestly? ${w.map(x => firstPerson(x.text)).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '' };
   }
   if (k === 'motor') {
     return { quote: vary2(p, 2, ['People who say that haven\'t watched me in the fourth quarter. But yeah, my conditioning is my summer focus.', 'That\'s fair. I\'m getting in the best shape of my life this summer.']),
@@ -3777,15 +3786,14 @@ screens.workouts = (args) => {
       <div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>
       <p class="note small">${workoutResult(p)}</p>
       ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}
-      ${more > 0 ? workoutQs(p).filter(x => !w.qs.includes(x.k)).map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('') : ''}
-      ${more > 0 ? `<p class="note muted small">${more} question${more > 1 ? 's' : ''} left.</p>` : ''}
+      ${more > 0 && interviewPairs(p)[w.qs.length] ? `<p class="note muted small">Question ${w.qs.length + 1} of ${INTERVIEW_QS}: pick one.</p>${interviewPairs(p)[w.qs.length].map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
     </div>`;
   }).join('');
   const pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
   const shown = args.all ? pool : pool.slice(0, 40);
   layout({
     title: 'Private Workouts',
-    body: `<p class="note small">Bring prospects in to work out and ask them ${INTERVIEW_QS} questions. After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
+    body: `<p class="note small">Bring prospects in to work out. Three rounds of questions: pick one of two each time. After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
       ${inGym ? `<fieldset class="frame"><legend>In the Gym</legend><div class="stack">${inGym}</div></fieldset>` : ''}
       <fieldset class="frame"><legend>Invite</legend>
         <p class="note muted small" style="margin-bottom:6px">Your board first, then the rest of the class.</p>
@@ -3806,7 +3814,10 @@ actions.invite = d => {
 };
 actions.askQ = d => {
   const w = preStore().workouts[+d.id];
-  if (!w || w.qs.length >= INTERVIEW_QS || w.qs.includes(d.k)) return;
+  const p0 = league().draftClass.find(x => x.id === +d.id);
+  if (!w || !p0 || w.qs.length >= INTERVIEW_QS || w.qs.includes(d.k)) return;
+  // Only one of this round's pair can be asked.
+  if (!(interviewPairs(p0)[w.qs.length] || []).some(x => x.k === d.k)) return;
   w.qs.push(d.k);
   savePre();
   if (w.qs.length >= INTERVIEW_QS) {
@@ -5019,7 +5030,7 @@ screens.fa = (args = {}) => {
         const mleOpen = s.day >= 2 && space < O.mle && !s.used.mle.has(t.id);
         const tools = space > 0 ? `<span class="up">$${space}M cap space</span>` : `<span class="down">$${-space}M over the cap</span>`;
         const extra = s.day >= 2 && space < O.mle ? (mleOpen ? '<span class="gold">Mid-level exception available</span>' : '<span class="muted">MLE used</span>') : '';
-        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${tools}${extra ? `<br><span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
+        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBar(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${s.stage === 'done' ? faResults(s) : ''}
@@ -5800,7 +5811,7 @@ function overviewTeam(L, t) {
       <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
     </div>
     <fieldset class="frame"><legend>The Books</legend>
-      <p class="note small">Committed next season: <b>$${books.committed}M</b> of a $${books.cap}M cap · ${books.space >= 0 ? `<span class="up">$${books.space}M space</span>` : `<span class="down">$${-books.space}M over</span>`}</p>
+      ${capBarOf(books.committed, deadFor(t.id), books.cap)}
       <h4 class="ov-h">Expiring (${books.expiring.length})</h4><div class="stack">${books.expiring.map(x => row(x, x.rfa ? '<span class="badge new">RFA</span>' : '', ` · ${x.p.yrs ?? 0} yrs exp · market value $${x.worth}M`)).join('') || '<p class="note small muted">Nobody.</p>'}</div>
       <h4 class="ov-h">Options (${books.options.length})</h4><div class="stack">${books.options.map(x => row(x, valTag(x.sal, x.worth), `<br>${x.kind === 'team' ? 'Team' : 'Player'} option $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
       <h4 class="ov-h">Extension Eligible (${books.ext.length})</h4><div class="stack">${books.ext.map(x => row(x, '', `<br>Final year $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
@@ -5939,6 +5950,26 @@ function extStore() {
   return c[key];
 }
 function saveExtStore() { try { localStorage.setItem(`hlc:ext:${seasonKey()}`, JSON.stringify(extStore())); } catch { /* ignore */ } }
+// Dead money: a cut player with years left is still paid, and it counts
+// against the cap for each of those seasons (in the app; the game itself
+// doesn't track it). [{ pid, name, tid, sal, yrs, yr }] per save.
+const deadKey = () => `hlc:dead:${league().shortName}:${league().meta?.saveName || ''}`;
+function deadLedger() { try { return JSON.parse(localStorage.getItem(deadKey())) || []; } catch { return []; } }
+function saveDead(v) { try { localStorage.setItem(deadKey(), JSON.stringify(v)); } catch { /* ignore */ } syncDead(); }
+const deadFor = (tid, yr = league().season.currentYear) => deadLedger().filter(x => x.tid === tid && yr >= x.yr && yr < x.yr + x.yrs).reduce((a, x) => a + x.sal, 0);
+function syncDead() {
+  if (!state.data) return;
+  FA.setDeadMoney(Object.fromEntries(league().teams.map(t => [t.id, deadFor(t.id)])));
+}
+// Cap bar: payroll, dead money (red) and room under the cap.
+const capBar = t => capBarOf(FA.payroll(t), deadFor(t.id), league().season.salaryCap || 1);
+function capBarOf(pay, dead, cap) {
+  const free = cap - pay - dead;
+  const pct = v => Math.max(0, Math.min(100, v / Math.max(cap, pay + dead) * 100));
+  return `<div class="cap-bar"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span></div>
+    <div class="cap-legend small"><span>Payroll $${pay}M</span>${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="${free >= 0 ? 'up' : 'down'}">${free >= 0 ? `Free $${free}M` : `Over $${-free}M`}</span><span class="muted">Cap $${cap}M</span></div>`;
+}
+
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;
 function extLedger() { try { return JSON.parse(localStorage.getItem(extLedgerKey())) || []; } catch { return []; } }
 function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stringify(v)); } catch { /* ignore */ } }
@@ -6711,15 +6742,16 @@ actions.portalDone = () => { calFlags().portal = true; goHome(); nextUp(); };
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
 const cutSel = () => (state.cutSel ||= {});
-// Only players in the last year of their deal can be cut (no dead money).
-const cutRank = t => FA.signedRoster(t).filter(p => (p.contract?.yrs || 0) <= 1).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
+// CPU teams only cut players in the last year of their deal; you can cut
+// anyone, and years left become dead money.
+const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
 screens.cuts = () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const done = !!calFlags().cuts;
   const mine = L.teams.filter(isUserTeam);
   // First visit: the likeliest cuts start picked; tap to change.
   if (!done && !state.cutSeeded) {
-    for (const t of mine) { const r = cutRank(t); for (const x of r.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax))) sel[x.p.id] = true; }
+    for (const t of mine) { const r = cutRank(t).filter(x => (x.p.contract?.yrs || 0) <= 1); for (const x of r.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax))) sel[x.p.id] = true; }
     state.cutSeeded = true;
   }
   const over = L.teams.filter(t => !isUserTeam(t) && FA.signedRoster(t).length > O.seasonMax);
@@ -6727,11 +6759,12 @@ screens.cuts = () => {
     const ranked = cutRank(t);
     const n = FA.signedRoster(t).length, need = Math.min(ranked.length, Math.max(0, n - O.seasonMax));
     const picked = ranked.filter(x => sel[x.p.id]).length;
-    if (done || !need) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend><p class="note small up">✓ Roster is set.</p></fieldset>`;
+    if (done) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>${capBar(t)}<p class="note small up">✓ Roster is set.</p></fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
-      <p class="note small">Cut <b>${need}</b> (${picked} picked). Only players in the final year of their deal can be cut.</p>
+      ${capBar(t)}
+      <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} Cutting a player with years left leaves his salary on your books as dead money.</p>
       <div class="stack">${ranked.map((x, i) => `<div class="drill-row tap ${sel[x.p.id] ? 'r1' : ''}" data-act="cutToggle" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} ${potStars(x.p)}<br>
-        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${i < need ? ' · <span class="gold">likely cut</span>' : ''}</span></span>
+        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? ` · <span class="down">$${x.p.contract.sal * x.p.contract.yrs}M dead if cut</span>` : ''}</span></span>
         <b class="small ${sel[x.p.id] ? 'down' : 'muted'}">${sel[x.p.id] ? '✂️ Cut' : 'Keep'}</b></div>`).join('')}</div></fieldset>`;
   }).join('');
   const log = calFlags().cutLog;
@@ -6753,7 +6786,8 @@ actions.cutsFinish = async () => {
   const mine = L.teams.filter(isUserTeam);
   const short = mine.find(t => cutsShort(t, sel) > 0);
   if (short) { toast(`${short.shortName}: pick ${cutsShort(short, sel)} more to cut`); return; }
-  if (!(await confirmBox('Make the cuts? Cut players are released to free agency.', 'Make the Cuts'))) return;
+  const deadNew = mine.flatMap(t => cutRank(t).filter(x => sel[x.p.id] && (x.p.contract?.yrs || 0) > 1)).reduce((a, x) => a + x.p.contract.sal * x.p.contract.yrs, 0);
+  if (!(await confirmBox(`Make the cuts? Cut players are released to free agency.${deadNew ? ` <b class="down">$${deadNew}M</b> stays on your books as dead money.` : ''}`, 'Make the Cuts'))) return;
   checkpoint('Final cuts');
   const list = [];
   let n = 0, mineN = 0;
@@ -6761,7 +6795,11 @@ actions.cutsFinish = async () => {
     const ranked = cutRank(t);
     const go = isUserTeam(t) ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax));
     if (!go.length) continue;
-    for (const x of go) FA.cutPlayer(L, t, x.p);
+    for (const x of go) {
+      const c = x.p.contract || {};
+      if (isUserTeam(t) && (c.yrs || 0) > 1) saveDead([...deadLedger(), { pid: x.p.id, name: playerName(x.p), tid: t.id, sal: c.sal || 0, yrs: c.yrs, yr: L.season.currentYear }]);
+      FA.cutPlayer(L, t, x.p);
+    }
     n += go.length;
     if (isUserTeam(t)) mineN += go.length;
     list.push({ team: t.shortName, names: go.map(x => playerName(x.p)) });
