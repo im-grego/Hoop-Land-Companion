@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.2';
+const APP_VERSION = '0.45.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -455,6 +455,13 @@ async function loadReference(file) {
 
 function buildExport() {
   state.data.seasonLeagues.forEach((L, li) => { if (state.summer[li]) markSummerDone(L); });
+  // College: once Signing Day is written in, the file goes out on the last
+  // day of the signing period (like pro free agency), so one more advance
+  // in the game starts the new season.
+  if (isCollege() && market()?.applied) {
+    const s = league().season;
+    if (s.phase === 6) s.currentDay = s.signingDays || 3;
+  }
   const text = serializeSave(state.data);
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
