@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.7';
+const APP_VERSION = '0.46.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6354,8 +6354,10 @@ screens.recruitweek = ({ w }) => {
   const e = M?.log.find(l => l.week === w);
   if (!e) { layout({ title: 'Recruiting', body: '<p class="note">No results yet.</p>' }); return; }
   const sch = tid => S.byId.get(tid)?.t;
-  // Stars on their own line so every row is the same height.
-  const rowOf = (i, extra = '') => { const x = cls.byId.get(i.id); return `<div class="drill-row tap ${i.to === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${i.id}"><span class="grow"><b>${esc(playerName(x.p))}</b><br>${rStars(x.stars)}<br><span class="small muted">${x.transfer ? 'Transfer' : `No. ${x.rank}`} · ${esc(posName(x.p))} · Lv ${x.lv}${extra}</span></span><span class="small">${logoImg(sch(i.to))} ${esc(sch(i.to)?.shortName || '')}</span></div>`; };
+  // Rank (T- for transfers) in the gold box, level next to the name, stars
+  // on their own line (every row the same height), then position, height
+  // and weight.
+  const rowOf = (i, extra = '') => { const x = cls.byId.get(i.id); return `<div class="drill-row tap ${i.to === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${i.id}"><span class="grow"><span class="rank-no">${x.transfer ? 'T-' : ''}${x.rank}</span><b>${esc(playerName(x.p))}</b> <span class="gold small nowrap">Lv ${x.lv}</span><br>${rStars(x.stars)}<br><span class="small muted">${esc(posName(x.p))} · ${heightStr(x.p.ht)} · ${x.p.wt} lbs${extra}</span></span><span class="small">${logoImg(sch(i.to))} ${esc(sch(i.to)?.shortName || '')}</span></div>`; };
 
 
   const all = [...e.commits, ...e.signed].sort((a, b) => cls.byId.get(a.id).rank - cls.byId.get(b.id).rank);
