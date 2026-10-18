@@ -145,3 +145,36 @@ export function seniorSendoff(data, li, team) {
   for (const [k, list] of Object.entries(C.records?.season || {})) (list || []).forEach((r, i) => { if (ids.has(r.pid) && k !== 'TO') records.push({ stat: STAT[k] || k, value: r.value, yr: r.yr, rank: i + 1, p: team.roster.find(p => p.id === r.pid) }); });
   return { yr, grads, mineGrads, rising, records, awardNames };
 }
+
+// Transfer portal. Entries are news type 34 (tid = the school he left);
+// portal players wait in the college free-agent pool with high-school
+// prospects (they have college stats and a class year of 1+). Eligibility
+// left = 4 - class year.
+const GROUP = p => (p.pos <= 2 ? 'Guards' : p.pos <= 5 ? 'Wings' : 'Bigs');
+const dist = (a, b) => Math.hypot((a?.x || 0) - (b?.x || 0), (a?.y || 0) - (b?.y || 0));
+export function rosterNeedsCollege(team, rosterMax = 12) {
+  const groups = { Guards: [], Wings: [], Bigs: [] };
+  for (const p of team.roster) groups[GROUP(p)].push(p);
+  const want = { Guards: 4, Wings: 3, Bigs: 3 };
+  const short = Object.entries(want).map(([g, n]) => ({ g, have: groups[g].length, want: n, short: Math.max(0, n - groups[g].length) }));
+  return { groups, short, open: Math.max(0, rosterMax - team.roster.length) };
+}
+export function portalBoard(data, li, team) {
+  const C = data.seasonLeagues[li];
+  const schools = new Map(C.teams.map(t => [t.id, t]));
+  const entries = new Map((C.season.news || []).filter(n => n.type === 34).map(n => [n.pid, n.tid]));
+  const onRoster = new Map(C.teams.flatMap(t => t.roster.map(p => [p.id, t])));
+  const pool = new Set((C.freeAgents || []).map(p => p.id));
+  const yr = C.season.currentYear - 1;
+  const needs = rosterNeedsCollege(team);
+  const all = [...entries].map(([pid, from]) => {
+    const p = (C.freeAgents || []).find(x => x.id === pid) || onRoster.get(pid)?.roster.find(x => x.id === pid);
+    if (!p) return null;
+    const near = [...C.teams].sort((a, b) => dist(a.location, p.loc) - dist(b.location, p.loc)).indexOf(team) + 1;
+    return { p, from: schools.get(from) || null, now: pool.has(pid) ? null : onRoster.get(pid) || null, line: seasonLine(p, li, yr),
+      left: Math.max(1, 4 - (p.yrs ?? 0)), cls: classOf(p.yrs ?? 0), group: GROUP(p), near, fit: needs.short.some(s => s.short > 0 && s.g === GROUP(p)) };
+  }).filter(Boolean);
+  const offers = new Map();
+  for (const o of C.contractOffers || []) (offers.get(o.pid) || offers.set(o.pid, []).get(o.pid)).push(o);
+  return { all, needs, offers, lost: all.filter(x => x.from === team), schools };
+}
