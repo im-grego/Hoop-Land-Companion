@@ -1186,3 +1186,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .race-bar i.full { background: var(--up); }
 .fa-tabs.fa-tabs7 { grid-template-columns: repeat(4, 1fr); }
 .league-logo.px { width: 24px; height: 54px; image-rendering: pixelated; margin: 5px 10px; }
+
+/* Season in Review: league rank under each team number */
+.stat-grid .rk-of { font-size: 11px; color: var(--gold); text-transform: none; }
+.drill-row.one-line .grow, .drill-row.one-line > span:last-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

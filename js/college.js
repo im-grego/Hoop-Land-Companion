@@ -54,13 +54,23 @@ export function seasonReview(data, li, team) {
   const bracket = (L.season.playoffs || []).find(p => p.yr === yr && p.rounds?.length);
   const rounds = bracket?.rounds.length || 0;
   const T = new Map(L.teams.map(t => [t.id, t]));
-  let champ = null, runnerUp = null, finalFour = [];
+  let champ = null, runnerUp = null, finalFour = [], semis = [], finalsScore = '';
   if (bracket) {
     const fin = bracket.rounds[rounds - 1].series[0];
     champ = T.get(fin.winner) || null;
     runnerUp = T.get(fin.winner === fin.topSeed ? fin.lowerSeed : fin.topSeed) || null;
-    finalFour = (bracket.rounds[rounds - 2]?.series || []).flatMap(s => [s.topSeed, s.lowerSeed]).map(id => T.get(id)).filter(Boolean);
+    // Series score: the loser won the games past the winner's first-to.
+    if (fin.firstTo > 1) finalsScore = `${fin.firstTo}-${Math.max(0, Math.min(fin.firstTo - 1, (fin.currentGame || fin.firstTo) - fin.firstTo))}`;
+    semis = (bracket.rounds[rounds - 2]?.series || []).map(x => [T.get(x.topSeed), T.get(x.lowerSeed)]).filter(x => x[0] && x[1]);
+    finalFour = semis.flat();
   }
+  // Where the team's numbers ranked in the league (1 = best).
+  const lgRows = L.teams.map(t => ({ t, r: rowOf(t, yr)?.seasonStats })).filter(x => x.r?.GP);
+  const val = {
+    ppg: r => r.PTS / r.GP, opp: r => -r.OPP / r.GP, margin: r => (r.PTS - r.OPP) / r.GP,
+    fg: r => (r.FGA ? r.FGM / r.FGA : 0), tp: r => (r.TPA ? r.TPM / r.TPA : 0), ft: r => (r.FTA ? r.FTM / r.FTA : 0),
+  };
+  const ranks = st.GP ? Object.fromEntries(Object.entries(val).map(([k, f]) => [k, 1 + lgRows.filter(x => f(x.r) > f(st)).length])) : {};
   const round = row?.round || 0;
   const won = champ === team;
   const pro = L.leagueType !== 1;
@@ -81,15 +91,21 @@ export function seasonReview(data, li, team) {
   }
   const mineIds = new Set(lines.map(x => x.p));
   const mine = won_.filter(w => mineIds.has(w.p));
-  const national = won_.filter(w => !AW[w.id]?.team && w.id !== 0);
-  const allTeams = won_.filter(w => AW[w.id]?.team && w.team === 0);
+  // League awards in order of importance: the big ones by name, then the
+  // stat titles, then anything else (custom leagues) by Hall of Fame weight;
+  // clutch awards last. The Finals MVP sits with the champion.
+  const ORDER = [/^most valuable/i, /defensive player/i, /rookie of the year/i, /sixth man/i, /most improved/i, /scoring/i, /rebound/i, /assist/i, /steal/i, /block/i, /coach/i];
+  const rankOf = w => { const n = w.name || ''; if (/clutch/i.test(n)) return 900; const i = ORDER.findIndex(re => re.test(n)); return i >= 0 ? i : 100 - (AW[w.id]?.HOFValue || 0); };
+  const finalsMvp = won_.find(w => /finals mvp/i.test(w.name)) || null;
+  const national = won_.filter(w => !AW[w.id]?.team && w.id !== 0 && w !== finalsMvp).sort((a, b) => rankOf(a) - rankOf(b));
+  const allTeams = won_.filter(w => AW[w.id]?.team && w.team === 0).sort((a, b) => (AW[b.id]?.HOFValue || 0) - (AW[a.id]?.HOFValue || 0));
   // Division standings.
   const divs = L.divisions || [];
   const standings = L.teams.filter(t => t.division === team.division).map(t => {
     const r = rowOf(t, yr)?.seasonStats || {};
     return { t, W: r.W || 0, L: r.L || 0, cW: r.CONF?.[0] || 0, cL: r.CONF?.[1] || 0 };
   }).sort((a, b) => b.W / Math.max(1, b.W + b.L) - a.W / Math.max(1, a.W + a.L) || b.cW - a.cW);
-  return { pro, yr, row, stats, finish, won, round, rounds, seed: row?.seed || 0, champ, runnerUp, finalFour, leaders, mine, national, allTeams,
+  return { pro, ranks, semis, finalsScore, finalsMvp, yr, row, stats, finish, won, round, rounds, seed: row?.seed || 0, champ, runnerUp, finalFour, leaders, mine, national, allTeams,
     division: divs[team.division] || '', standings, place: standings.findIndex(x => x.t === team) + 1 };
 }
 

@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.48.0';
+const APP_VERSION = '0.48.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6004,7 +6004,8 @@ screens.review = () => {
   const wl = a => (a ? `${a[0]}-${a[1]}` : '—');
   const s = r.stats;
   const tag = n => n.team != null ? ` <span class="muted">(${['1st', '2nd', '3rd'][n.team] || ''} team)</span>` : '';
-  const pRow = (p, right) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y</span></span><span class="small" style="text-align:right">${right}</span></div>`;
+  const pRow = (p, right) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}</span><span class="small" style="text-align:right">${right}</span></div>`;
+  const rk = k => r.ranks?.[k] ? `<span class="rk-of">${ordinal(r.ranks[k])}</span>` : '';
   layout({
     title: 'Season in Review',
     body: `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
@@ -6014,17 +6015,18 @@ screens.review = () => {
       </div>
       ${s ? `<fieldset class="frame"><legend>The Season</legend>
         <div class="stat-grid">
-          <div><b>${f1(s.ppg)}</b><span>PPG</span></div><div><b>${f1(s.opp)}</b><span>Opp PPG</span></div><div><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span></div>
-          <div><b>${f1(s.fg)}%</b><span>FG</span></div><div><b>${f1(s.tp)}%</b><span>3PT</span></div><div><b>${f1(s.ft)}%</b><span>FT</span></div>
+          <div><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
+          <div><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
         </div>
-        <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`} · Last 10: ${s.l10}-${10 - s.l10}</p>
+        <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
       ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => pRow(w.p, `🏅 ${esc(w.name)}${tag(w)}`)).join('')}</div></fieldset>` : ''}
       <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
-        ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.shortName)}` : ''}</span></span><span>🏆</span></div>` : ''}
-        ${r.finalFour.length ? `<p class="note small" style="margin-top:6px">${r.pro ? 'Conference Finals' : 'Final Four'}: ${r.finalFour.map(x => `<b class="${x === t ? 'gold' : ''}">${esc(x.shortName)}</b>`).join(' · ')}</p>` : ''}
-        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => `<div class="drill-row tap" data-act="openPlayer" data-id="${w.p.id}"><span class="grow small"><b>${esc(w.name)}</b></span><span class="small">${esc(playerName(w.p))}</span></div>`).join('') || '<p class="note small muted">None recorded.</p>'}</div>
+        ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}
+        ${r.finalsMvp ? `<div class="drill-row tap" data-act="openPlayer" data-id="${r.finalsMvp.p.id}"><span class="grow small"><b>${esc(r.finalsMvp.name)}</b></span><span class="small">${esc(playerName(r.finalsMvp.p))}</span></div>` : ''}
+        ${r.semis.length ? `<p class="note small" style="margin-top:6px">${r.pro ? 'Conference Finals' : 'Final Four'}: ${r.semis.map(([a, b]) => `<b class="${a === t ? 'gold' : ''}">${esc(a.shortName)}</b> v <b class="${b === t ? 'gold' : ''}">${esc(b.shortName)}</b>`).join(' · ')}</p>` : ''}
+        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${w.p.id}"><span class="grow small"><b>${esc(w.name)}</b></span><span class="small">${esc(playerName(w.p))}</span></div>`).join('') || '<p class="note small muted">None recorded.</p>'}</div>
         ${r.allTeams.length ? `<h4 class="ov-h">First Teams</h4><div class="stack">${[...new Set(r.allTeams.map(w => w.name))].map(n => `<p class="note small"><b>${esc(n)}:</b> ${r.allTeams.filter(w => w.name === n).map(w => esc(playerName(w.p))).join(', ')}</p>`).join('')}</div>` : ''}
       </fieldset>
       <fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
