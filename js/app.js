@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.6';
+const APP_VERSION = '0.46.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6354,12 +6354,9 @@ screens.recruitweek = ({ w }) => {
   const e = M?.log.find(l => l.week === w);
   if (!e) { layout({ title: 'Recruiting', body: '<p class="note">No results yet.</p>' }); return; }
   const sch = tid => S.byId.get(tid)?.t;
-  // The weekly list, in the committed school's colors; stars on their own
-  // line so every row is the same height.
-  const rowOf = (i, extra = '') => {
-    const x = cls.byId.get(i.id), team = sch(i.to), tint = team ? teamTint(team) : '';
-    return `<div class="drill-row tap team-tint ${i.to === t.id ? 'r1' : ''}" ${tint ? `style="${tint}"` : ''} data-act="openRecruit" data-id="${i.id}"><span class="grow"><b>${esc(playerName(x.p))}</b><br>${rStars(x.stars)}<br><span class="small">${x.transfer ? 'Transfer' : `No. ${x.rank}`} · ${esc(posName(x.p))} · Lv ${x.lv}${extra}</span></span><span class="small">${logoImg(team)} ${esc(team?.shortName || '')}</span></div>`;
-  };
+  // Stars on their own line so every row is the same height.
+  const rowOf = (i, extra = '') => { const x = cls.byId.get(i.id); return `<div class="drill-row tap ${i.to === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${i.id}"><span class="grow"><b>${esc(playerName(x.p))}</b><br>${rStars(x.stars)}<br><span class="small muted">${x.transfer ? 'Transfer' : `No. ${x.rank}`} · ${esc(posName(x.p))} · Lv ${x.lv}${extra}</span></span><span class="small">${logoImg(sch(i.to))} ${esc(sch(i.to)?.shortName || '')}</span></div>`; };
+
 
   const all = [...e.commits, ...e.signed].sort((a, b) => cls.byId.get(a.id).rank - cls.byId.get(b.id).rank);
   const mine = [...all, ...e.late].filter(i => i.to === t.id);
