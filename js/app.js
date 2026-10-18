@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.53.0';
+const APP_VERSION = '0.54.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2737,146 +2737,131 @@ actions.revertOne = () => {
 
 const STEP_FIELDS = {
   general: [
-    ['seed', 'Random Seed', 1, 0, 999999],
-    ['starterMpg', 'Starter MPG (bonus)', 1, 0, 48],
+    ['seed', 'Random seed', 1, 0, 999999],
+    ['starterMpg', 'Starter MPG (bonus at)', 1, 0, 48],
     ['benchMpg', 'Bench MPG (penalty below)', 1, 0, 48],
-    ['regFirstYearChance', 'Delay Regression: 1st Year %', 5, 0, 100],
-    ['regLaterChance', 'Delay Regression: Later Years %', 5, 0, 100],
-    ['prodPotUpPerZ', 'Trainer: Potential Up % Per σ', 2, 0, 50],
-    ['prodPotDownChance', 'Trainer: Potential Down %', 1, 0, 50],
-    ['regDownStructural', 'Trainer: Regress Sooner, Structural %', 5, 0, 100],
-    ['regDownNagging', 'Trainer: Regress Sooner, Nagging %', 5, 0, 100],
-    ['regDownStandard', 'Trainer: Regress Sooner, Standard %', 1, 0, 100],
-    ['regDownProdChance', 'Trainer: Regress Sooner, Poor Season %', 1, 0, 100],
-    ['naturalGamesPct', 'Earned Longevity: % Of Games', 5, 0, 100],
-    ['naturalMinutesPct', 'Earned Longevity: % Of Minutes', 2.5, 0, 100],
-    ['naturalMinAge', 'Earned Longevity: Min Age', 1, 18, 45],
-    ['potUpChance', 'Potential Upgrade %', 1, 0, 100],
-    ['potUpMaxAge', 'Potential Upgrade Max Age', 1, 18, 40],
-    ['mentorMinAge', 'Mentor: Min Age', 1, 25, 45],
-    ['menteeMaxAge', 'Mentee: Max Age', 1, 18, 30],
-    ['mentorPosRange', 'Mentor: Position Steps Apart', 1, 0, 8],
-    ['mentorMaxMentees', 'Mentor: Players Per Vet', 1, 1, 5],
-    ['mentorshipChance', 'Mentor: CPU Chance %', 5, 0, 100],
-    ['injuryMinGames', 'Injury: Min Games Missed', 1, 0, 82],
-    ['injuryPotPerGame', 'Injury: % Risk Per Game', 0.1, 0, 2],
-    ['injuryPotMax', 'Injury: Max Risk %', 5, 0, 100],
-    ['injuryLowerBodyMult', 'Injury: Lower-Body Multiplier', 0.1, 1, 2],
-    ['injuryLongevityCut', 'Injury: Cut To Regression Delay %', 5, 0, 100],
-    ['naggingRiskMult', 'Nagging Injury: Risk ×', 0.05, 1, 3],
-    ['naggingPointsMult', 'Nagging Injury: Bump Points ×', 0.05, 0, 1],
-    ['structuralRiskMult', 'Structural Injury: Risk ×', 0.05, 1, 3],
-    ['structuralLongevityCut', 'Structural: Cut To Regression Delay %', 5, 0, 100],
+    ['regFirstYearChance', 'Delay, at regression age %', 5, 0, 100],
+    ['regLaterChance', 'Delay, year before / paused %', 5, 0, 100],
+    ['prodPotUpPerZ', 'Potential up % per standout step', 2, 0, 50],
+    ['prodPotDownChance', 'Potential down %', 1, 0, 50],
+    ['regDownStructural', 'Sooner after structural %', 5, 0, 100],
+    ['regDownNagging', 'Sooner after nagging %', 5, 0, 100],
+    ['regDownStandard', 'Sooner after standard %', 1, 0, 100],
+    ['regDownProdChance', 'Sooner after poor season %', 1, 0, 100],
+    ['naturalGamesPct', 'Earned year: % of games', 5, 0, 100],
+    ['naturalMinutesPct', 'Earned year: % of minutes', 2.5, 0, 100],
+    ['naturalMinAge', 'Earned year: min age', 1, 18, 45],
+    ['potUpChance', 'Potential up %', 1, 0, 100],
+    ['potUpMaxAge', 'Potential up: max age', 1, 18, 40],
+    ['mentorMinAge', 'Mentor min age', 1, 25, 45],
+    ['menteeMaxAge', 'Mentee max age', 1, 18, 30],
+    ['mentorPosRange', 'Position steps apart', 1, 0, 8],
+    ['mentorMaxMentees', 'Players per vet', 1, 1, 5],
+    ['mentorshipChance', 'CPU chance %', 5, 0, 100],
+    ['injuryMinGames', 'Min games missed', 1, 0, 82],
+    ['injuryPotPerGame', '% risk per game', 0.1, 0, 2],
+    ['injuryPotMax', 'Max risk %', 5, 0, 100],
+    ['injuryLowerBodyMult', 'Lower-body ×', 0.1, 1, 2],
+    ['injuryLongevityCut', 'Cut to regression delay %', 5, 0, 100],
+    ['naggingRiskMult', 'Nagging: risk ×', 0.05, 1, 3],
+    ['naggingPointsMult', 'Nagging: bump points ×', 0.05, 0, 1],
+    ['structuralRiskMult', 'Structural: risk ×', 0.05, 1, 3],
+    ['structuralLongevityCut', 'Structural: delay cut %', 5, 0, 100],
   ],
   skills: [
-    ['newSkillChance', 'New Skill Chance %', 5, 0, 100],
-    ['skillMaxAge', 'New Skill Max Age', 1, 18, 45],
-    ['skillMinPoints', 'Min Points For New Skill', 1, 0, 20],
-    ['maxSkills', 'Max Skills Per Player', 1, 0, 24],
-    ['levelUpChance', 'Skill Level-Up Chance %', 5, 0, 100],
-    ['levelUpMaxAge', 'Level-Up Max Age', 1, 18, 45],
+    ['newSkillChance', 'New skill chance %', 5, 0, 100],
+    ['skillMaxAge', 'New skill max age', 1, 18, 45],
+    ['skillMinPoints', 'Min points for a new skill', 1, 0, 20],
+    ['maxSkills', 'Max skills per player', 1, 0, 24],
+    ['levelUpChance', 'Level-up chance %', 5, 0, 100],
+    ['levelUpMaxAge', 'Level-up max age', 1, 18, 45],
   ],
 };
 
-function stepper(label, act, data, value) {
-  return `<fieldset class="frame"><legend>${esc(label)}</legend>
-    <div class="stepper">
-      <button class="btn square" data-act="${act}" ${data} data-dir="-1" aria-label="Decrease">−</button>
-      <div class="val">${esc(value)}</div>
-      <button class="btn square" data-act="${act}" ${data} data-dir="1" aria-label="Increase">+</button>
-    </div></fieldset>`;
-}
-
-function options(label, key, opts) {
+// Settings rows: label on the left, a small − value + (or a row of option
+// buttons underneath) on the right.
+const setStep = (label, act, data, value) => `<div class="set-row"><span class="grow">${esc(label)}</span>
+  <button class="mvbtn" data-act="${act}" ${data} data-dir="-1" aria-label="Decrease">−</button><b>${esc(value)}</b><button class="mvbtn" data-act="${act}" ${data} data-dir="1" aria-label="Increase">+</button></div>`;
+const field = k => { const f = [...STEP_FIELDS.general, ...STEP_FIELDS.skills].find(x => x[0] === k); return setStep(f[1], 'step', `data-k="${k}" data-s="${f[2]}"`, state.params[k]); };
+function options(label, key, opts, note = '') {
   const v = state.params[key];
-  return `<fieldset class="frame"><legend>${esc(label)}</legend><div class="opts">
-    ${opts.map(([val, text]) => `<button class="btn ${v === val ? 'on focus' : 'off'}" data-act="setOpt" data-k="${key}" data-v='${JSON.stringify(val)}'>${esc(text)}</button>`).join('')}
-  </div></fieldset>`;
+  return `<div class="set-row col"><span class="grow">${esc(label)}</span><div class="seg">
+    ${opts.map(([val, text]) => `<button class="btn small ${v === val ? 'on focus' : 'off'}" data-act="setOpt" data-k="${key}" data-v='${JSON.stringify(val)}'>${esc(text)}</button>`).join('')}
+  </div>${note ? `<span class="note muted small">${note}</span>` : ''}</div>`;
 }
+const setGroup = (title, rows) => `<fieldset class="frame"><legend>${esc(title)}</legend><div class="set-list">${rows.join('')}</div></fieldset>`;
+const SETTINGS_TABS = [['general', 'General'], ['progress', 'Progression'], ['injury', 'Injuries'], ['rookies', 'Draft'], ['ages', 'Ages'], ['skills', 'Skills']];
 
 screens.settings = (args) => {
-  const tab = args.tab || 'general';
+  const tab = SETTINGS_TABS.some(([k]) => k === args.tab) ? args.tab : 'general';
   const P = state.params;
   let body = '';
+  const band = (act, i, j, v) => `<span class="band-step"><button class="mvbtn" data-act="${act}" data-i="${i}" data-j="${j}" data-dir="-1" aria-label="Decrease">−</button><b>${v}</b><button class="mvbtn" data-act="${act}" data-i="${i}" data-j="${j}" data-dir="1" aria-label="Increase">+</button></span>`;
   if (tab === 'general') {
     body = `
-      ${state.data && state.data.seasonLeagues.length > 1 ? `<fieldset class="frame"><legend>League</legend><div class="opts">
-        ${state.data.seasonLeagues.map((L, i) => `<button class="btn ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}
-      </div></fieldset>` : ''}
-      ${options('Include Free Agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']])}
-      ${options('Offseason Bump', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']])}
-      ${options('Mentors Teach Elite Skills', 'mentorTeachElite', [[false, 'No'], [true, 'Yes']])}
-      ${options('CPU Points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']])}
-      <p class="note muted small">Commissioner saves: the CPU holds points unless in-game auto progression is on. "Spend Now" applies CPU points to ratings in this app instead.</p>
-      ${options('Point Focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']])}
-      ${STEP_FIELDS.general.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('')}
-      ${options('Starter Multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']])}
-      ${options('Bench Multiplier', 'benchMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']])}`;
+      ${state.data && state.data.seasonLeagues.length > 1 ? setGroup('League', [`<div class="seg">${state.data.seasonLeagues.map((L, i) => `<button class="btn small ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}</div>`]) : ''}
+      ${setGroup('Offseason Bump', [
+        options('Bump gives', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']]),
+        options('Point focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']]),
+        options('Include free agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']]),
+        options('CPU points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']], 'Commissioner saves: "Spend Now" applies CPU points to ratings here.'),
+        field('seed'),
+      ])}
+      ${setGroup('Minutes', [
+        field('starterMpg'), field('benchMpg'),
+        options('Starter multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]),
+        options('Bench multiplier', 'benchMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']]),
+      ])}
+      ${setGroup('Mentorship', [field('mentorMinAge'), field('menteeMaxAge'), field('mentorPosRange'), field('mentorMaxMentees'), field('mentorshipChance'),
+        options('Teach elite skills', 'mentorTeachElite', [[false, 'No'], [true, 'Yes']])])}`;
+  } else if (tab === 'progress') {
+    body = setGroup('Regression', [field('regFirstYearChance'), field('regLaterChance'), field('naturalGamesPct'), field('naturalMinutesPct'), field('naturalMinAge')]) +
+      setGroup('Trainer', [field('regDownStructural'), field('regDownNagging'), field('regDownStandard'), field('regDownProdChance')]) +
+      setGroup('Potential', [field('potUpChance'), field('potUpMaxAge'), field('prodPotUpPerZ'), field('prodPotDownChance')]);
+  } else if (tab === 'injury') {
+    body = setGroup('Injury Risk', [field('injuryMinGames'), field('injuryPotPerGame'), field('injuryPotMax'), field('injuryLowerBodyMult'), field('injuryLongevityCut')]) +
+      setGroup('Injury Classes', [field('naggingRiskMult'), field('naggingPointsMult'), field('structuralRiskMult'), field('structuralLongevityCut')]);
   } else if (tab === 'ages') {
     let lo = 0;
-    body = `<p class="note">Upgrade points each player earns this offseason, by age (before the minutes multiplier). Players older than the last band get nothing.</p>` +
-      P.ageBands.map((b, i) => {
-        const label = `Age ${lo === 0 ? 'up to ' : `${lo}–`}${b[0]}`;
+    body = setGroup('Points by Age', [
+      '<div class="band-head"><span>Ages</span><span>Up to</span><span>Min</span><span>Max</span></div>',
+      ...P.ageBands.map((b, i) => {
+        const label = `${lo === 0 ? '≤' : `${lo}–`}${b[0]}`;
         lo = b[0] + 1;
-        return `<fieldset class="frame"><legend>${label}</legend>
-          <div class="grid2">
-            <div><p class="note muted small center">Min pts</p><div class="stepper">
-              <button class="btn square" data-act="band" data-i="${i}" data-j="1" data-dir="-1" aria-label="Decrease">−</button>
-              <div class="val">${b[1]}</div>
-              <button class="btn square" data-act="band" data-i="${i}" data-j="1" data-dir="1" aria-label="Increase">+</button></div></div>
-            <div><p class="note muted small center">Max pts</p><div class="stepper">
-              <button class="btn square" data-act="band" data-i="${i}" data-j="2" data-dir="-1" aria-label="Decrease">−</button>
-              <div class="val">${b[2]}</div>
-              <button class="btn square" data-act="band" data-i="${i}" data-j="2" data-dir="1" aria-label="Increase">+</button></div></div>
-          </div>
-          <div class="stepper" style="margin-top:8px">
-            <button class="btn square" data-act="band" data-i="${i}" data-j="0" data-dir="-1" aria-label="Decrease">−</button>
-            <div class="val small">Up to age ${b[0]}</div>
-            <button class="btn square" data-act="band" data-i="${i}" data-j="0" data-dir="1" aria-label="Increase">+</button></div>
-        </fieldset>`;
-      }).join('');
+        return `<div class="band-row"><span>${label}</span>${band('band', i, 0, b[0])}${band('band', i, 1, b[1])}${band('band', i, 2, b[2])}</div>`;
+      }),
+      '<p class="note muted small">Upgrade points a player earns this offseason by age, before minutes. Older than the last band: none.</p>',
+    ]);
   } else if (tab === 'rookies') {
     let lo = 0;
-    body = `<p class="note">Rookie bump after the draft: upgrade points by age, times a multiplier by draft round.</p>` +
-      P.rookieBands.map((b, i) => {
+    body = setGroup('Rookie Bump', [
+      '<div class="band-head three"><span>Ages</span><span>Min</span><span>Max</span></div>',
+      ...P.rookieBands.map((b, i) => {
         const last = i === P.rookieBands.length - 1;
-        const label = last ? `Age ${lo}+` : `Age ${lo === 0 ? 'up to ' : `${lo}–`}${b[0]}`;
+        const label = last ? `${lo}+` : `${lo === 0 ? '≤' : `${lo}–`}${b[0]}`;
         lo = b[0] + 1;
-        const st = (j, v, lbl) => `<div><p class="note muted small center">${lbl}</p><div class="stepper">
-          <button class="btn square" data-act="rband" data-i="${i}" data-j="${j}" data-dir="-1" aria-label="Decrease">−</button>
-          <div class="val">${v}</div>
-          <button class="btn square" data-act="rband" data-i="${i}" data-j="${j}" data-dir="1" aria-label="Increase">+</button></div></div>`;
-        return `<fieldset class="frame"><legend>${label}</legend><div class="grid2">${st(1, b[1], 'Min pts')}${st(2, b[2], 'Max pts')}</div></fieldset>`;
-      }).join('') +
-      `<fieldset class="frame"><legend>Age Adjustment</legend><div class="stack">${P.recoveryBands.map((b, i) => `<div class="pts-row">
-        <span class="grow">Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}</span>
-        <button class="btn square" data-act="recBand" data-i="${i}" data-dir="-1" aria-label="Less recovery">−</button>
-        <span class="pts-val">+${b[1]}</span>
-        <button class="btn square" data-act="recBand" data-i="${i}" data-dir="1" aria-label="More recovery">+</button></div>`).join('')}
-        <p class="note muted small">Draft-drop points won back right after the draft (of the −${DRAFT_DROP}, at most +2).</p></div></fieldset>` +
-      options('Undrafted Rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]) +
-      options('Scouting Report Accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]) +
-      `<p class="note muted small">How often a prospect's scouting report reads their potential one step high or low (0% / 15% / 25% / 40%).</p>` +
-      options('Private Workouts per Team', 'workoutSlots', [[3, '3'], [6, '6'], [9, '9'], [12, '12']]) +
-      `<p class="note muted small">How many prospects each team you run can bring in for a private workout before the draft.</p>` +
-      options('Live Draft: CPU Trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
-      options('Commissioner Mode (Trades)', 'commissioner', [[false, 'Off'], [true, 'On']]) +
-      `<p class="note muted small">On: trade for any team, force trades through, undo draft-day trades and reset the draft. Off: you trade for the teams you control, CPU teams have to accept, and trades are final.</p>` +
-      options('2nd-Round Rookie Deals', 'rookieR2Years', [[2, '2 years'], [3, '3 years'], [4, 'Game default (4)']]) +
-      options('Free Agency: Game\'s CPU Offers', 'faClearCpuOffers', [[true, 'Clear after each day'], [false, 'Keep']]) +
-      `<p class="note muted small">How often CPU teams trade up before a first-round pick. Just-drafted rookies can be traded right away.</p>`;
+        return `<div class="band-row three"><span>${label}</span>${band('rband', i, 1, b[1])}${band('rband', i, 2, b[2])}</div>`;
+      }),
+      options('Undrafted rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]),
+    ]) +
+      setGroup('Age Adjustment', P.recoveryBands.map((b, i) => setStep(`Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}: points back`, 'recBand', `data-i="${i}"`, `+${b[1]}`))) +
+      setGroup('Scouting & Draft', [
+        options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]),
+        options('Private workouts', 'workoutSlots', [[3, '3'], [6, '6'], [9, '9'], [12, '12']]),
+        options('CPU draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]),
+        options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
+      ]) +
+      setGroup('Contracts', [
+        options('2nd-round deals (CPU)', 'rookieR2Years', [[2, '2 yrs'], [3, '3 yrs'], [4, '4 yrs']]),
+        options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
+      ]);
   } else {
-    body = `<p class="note">Optional: let the bump also unlock or level up skills. Off (0%) by default.</p>` +
-      STEP_FIELDS.skills.map(([k, l, s]) => stepper(l, 'step', `data-k="${k}" data-s="${s}"`, P[k])).join('') +
-      `<p class="note muted small">New skills are chosen to fit each player's strongest ratings.</p>`;
+    body = setGroup('Skills From the Bump', [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
   }
   layout({
-    title: 'Bump Settings',
+    title: 'Settings',
     body: `
-      <div class="tabs">
-        ${[['general', 'General'], ['ages', 'Ages'], ['rookies', 'Rookies'], ['skills', 'Skills']].map(([k, l]) =>
-          `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="setTab" data-t="${k}">${l}</button>`).join('')}
-      </div>
+      <div class="sv-tabs">${SETTINGS_TABS.map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="setTab" data-t="${k}">${l}</button>`).join('')}</div>
       ${body}
       ${state.auto[state.leagueIdx] ? '<p class="note gold small">The bump already ran. Changes apply the next time you run or re-roll it.</p>' : ''}`,
     action: { act: 'resetParams', label: 'Defaults' },
@@ -5206,6 +5191,7 @@ actions.faOffer = d => {
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
         <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asking $${m.ask}M × ${askYears(m)}</span></p>
       ${prodBoxes(m.p)}
+      ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}${isLeveled(x.id) ? ` ${x.level}` : ''}</span>`).join(' · ')}</p>` : ''}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${quick(team)}
