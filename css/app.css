@@ -1132,3 +1132,10 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .stand-row.mine { background: var(--btn); border: 2px solid var(--gold); }
 .stand-row .logo-sm { width: 22px !important; height: 22px !important; }
 .stand-row .grow { flex: 1; }
+.score-card { display: flex; align-items: center; justify-content: space-around; padding: 10px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.score-card > div { display: flex; flex-direction: column; align-items: center; }
+.big-n { font-size: 34px; font-weight: 900; }
+.box-head, .box-row { display: grid; grid-template-columns: 1fr 34px 34px 34px 34px 44px; align-items: center; gap: 4px; }
+.box-row { padding: 4px 6px; background: var(--btn); border: 2px solid var(--btn-edge); }
+.box-row.mvp { border-color: var(--gold); }
+.box-row > span:not(.grow), .box-head > span:not(.grow) { text-align: center; }

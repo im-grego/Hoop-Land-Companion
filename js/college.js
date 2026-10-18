@@ -152,7 +152,7 @@ export function seniorSendoff(data, li, team) {
 // left = 4 - class year.
 const GROUP = p => (p.pos <= 2 ? 'Guards' : p.pos <= 5 ? 'Wings' : 'Bigs');
 const dist = (a, b) => Math.hypot((a?.x || 0) - (b?.x || 0), (a?.y || 0) - (b?.y || 0));
-export function rosterNeedsCollege(team, rosterMax = 12) {
+export function rosterNeedsCollege(team, rosterMax = 15) {
   const groups = { Guards: [], Wings: [], Bigs: [] };
   for (const p of team.roster) groups[GROUP(p)].push(p);
   const want = { Guards: 4, Wings: 3, Bigs: 3 };
@@ -177,4 +177,23 @@ export function portalBoard(data, li, team) {
   const offers = new Map();
   for (const o of C.contractOffers || []) (offers.get(o.pid) || offers.set(o.pid, []).get(o.pid)).push(o);
   return { all, needs, offers, lost: all.filter(x => x.from === team), schools };
+}
+
+// All-American Showcase: the college league's two star teams. Phase 8:
+// rosters set, not played. Phase 5: played (the league's currentGame holds
+// the score: [total, 1st half, 2nd half]; news category 1 type 9 = MVP).
+// Phase 6 on: rosters empty (the players joined the recruiting pool).
+export function showcase(C) {
+  const teams = (C.starTeams || []).filter(t => t.roster?.length);
+  if (!teams.length) return null;
+  const g = C.currentGame || {};
+  const ids = teams.map(t => t.id);
+  const played = ids.includes(g.homeTeam?.id) && ids.includes(g.roadTeam?.id) && teams.some(t => t.roster.some(p => p.gameStats?.GP));
+  const side = (id, sc) => ({ t: teams.find(t => t.id === id), total: sc?.[0] ?? 0, halves: (sc || []).slice(1) });
+  const score = played ? { home: side(g.homeTeam.id, g.homeScore), road: side(g.roadTeam.id, g.roadScore) } : null;
+  const mvpNews = played ? (C.season.news || []).find(n => n.category === 1 && n.type === 9 && n.gid === g.gId) : null;
+  const all = teams.flatMap(t => t.roster.map(p => ({ p, t })));
+  const mvp = mvpNews ? all.find(x => x.p.id === mvpNews.pid) || null : null;
+  const box = p => { const s = p.gameStats || {}; return { pts: s.PTS || 0, reb: s.REB || 0, ast: s.AST || 0, stl: s.STL || 0, blk: s.BLK || 0, fgm: s.FGM || 0, fga: s.FGA || 0, tpm: s.TPM || 0, tpa: s.TPA || 0, min: Math.round((s.MIN?.[0] || 0) / 60) }; };
+  return { played, score, mvp, teams: teams.map(t => ({ t, roster: t.roster.map(p => ({ p, box: box(p) })).sort((a, b) => b.box.pts - a.box.pts || b.p.pot - a.p.pot) })) };
 }

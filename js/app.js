@@ -19,13 +19,13 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
-import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard } from './college.js';
+import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase } from './college.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.42.4';
+const APP_VERSION = '0.42.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -371,6 +371,7 @@ async function loadFile(file) {
     const held = holdCpuOffers();
     recordSalaries();
     const kicked = applyExtensions();
+    recordShowcase();
     const filled = fillTraits(data.seasonLeagues[0]);
     if (filled) state.dirty = true;
     o.remove();
@@ -587,7 +588,8 @@ const COLLEGE_CAL = [
     done: () => !!calFlags().seniors },
   { key: 'portal', date: 'May 15', title: 'Transfer Portal', blurb: 'Who entered, from where, their stats and eligibility, and who fits your needs.',
     done: () => !!calFlags().portal },
-  { key: 'showcase', date: 'Jun 1', title: 'All-American Showcase', blurb: 'East vs West: the top of next year\'s class.', done: () => false, soon: true },
+  { key: 'showcase', date: 'Jun 1', title: 'All-American Showcase', blurb: 'East vs West: the top of next year\'s class. Every player leaves with an All-American tag.',
+    done: () => !!calFlags().showcase },
   { key: 'recruit', date: 'Jun 3', title: 'Recruiting', blurb: 'Three days to land your class.', done: () => false, soon: true },
   { key: 'signing', date: 'Jun 20', title: 'Signing Class Grades', blurb: 'Every school\'s class, graded.', done: () => false, soon: true },
   { key: 'summer', date: 'Jul 15', title: 'Summer Development', blurb: 'Workouts, progression and the strength program.', done: () => false, soon: true },
@@ -628,6 +630,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'showcase') { const a = aaStore(); return a.ids?.length ? `${a.ids.length} All-Americans${a.mvp ? `, MVP ${a.mvp}` : ''}.` : 'Done.'; }
   if (key === 'portal') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const b = portalBoard(state.data, state.leagueIdx, t); return `${b.all.length} in the portal${b.lost.length ? `, ${b.lost.length} from your school` : ''}.`; }
   if (key === 'seniors') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = seniorSendoff(state.data, state.leagueIdx, t); return `${r.mineGrads.length} graduate${r.mineGrads.length === 1 ? '' : 's'} sent off; ${r.rising.length} senior${r.rising.length === 1 ? '' : 's'} back for a last season.`; }
   if (key === 'departures') { const d = draftDepartures(state.data, state.leagueIdx); const t = league().teams.find(isUserTeam); const m = d.filter(x => x.school === t).length; return `${d.length} players left for the pros${m ? `, ${m} of them yours` : ''}.`; }
@@ -647,6 +650,7 @@ function stepActions(key) {
   const st = activeCal().find(x => x.key === key);
   if (st?.soon) return '<p class="note small muted">Coming soon.</p>';
   switch (key) {
+    case 'showcase': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="showcase">⭐ All-American Showcase</button><button class="btn" data-act="calDone" data-k="showcase">✅ Wrap Up</button></div>`;
     case 'portal': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="portal">🔁 Transfer Portal</button><button class="btn" data-act="calDone" data-k="portal">✅ Wrap Up</button></div>`;
     case 'seniors': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="seniors">🎓 Senior Send-off</button><button class="btn" data-act="calDone" data-k="seniors">✅ Wrap Up</button></div>`;
     case 'departures': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="departures">🎓 Draft Departures</button><button class="btn" data-act="calDone" data-k="departures">✅ Wrap Up</button></div>`;
@@ -719,7 +723,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -1961,6 +1965,7 @@ screens.player = (args) => {
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
         <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${lvTag(p, 'gold')} · <span class="stars">${potStars(p)}</span></p>
+        ${isAllAmerican(p) ? '<p class="note small gold">⭐ All-American</p>' : ''}
         <p class="note muted small">${archName(p) ? `<b class="arch">${esc(archName(p))}</b>` : ''}${mpg ? `${archName(p) ? ' · ' : ''}${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
         ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
       </div>
@@ -5639,6 +5644,67 @@ screens.seniors = () => {
   });
 };
 actions.seniorsDone = () => { calFlags().seniors = true; goHome(); toast('Next up: Transfer Portal'); };
+
+// College: All-American Showcase. Participants are remembered (per save and
+// season) so the tag follows them into recruiting after the game empties
+// the all-star rosters.
+const aaKey = () => `hlc:aa:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+function aaStore() { try { return JSON.parse(localStorage.getItem(aaKey())) || {}; } catch { return {}; } }
+const isAllAmerican = p => isCollege() && (aaStore().ids || []).includes(p.id);
+function recordShowcase() {
+  if (!isCollege()) return;
+  const L = league();
+  const sc = showcase(L);
+  const prev = aaStore();
+  if (!sc) {
+    // After the game: the showcase players sit in the recruiting pool as the
+    // only high-schoolers with a game played.
+    if (prev.ids?.length) return;
+    const ids = (L.freeAgents || []).filter(p => (p.yrs ?? 0) === 0 && p.gameStats?.GP > 0).map(p => p.id);
+    if (!ids.length) return;
+    const n = (L.season.news || []).find(x => x.category === 1 && x.type === 9);
+    const m = n && (L.freeAgents || []).concat(L.teams.flatMap(t => t.roster)).find(p => p.id === n.pid);
+    try { localStorage.setItem(aaKey(), JSON.stringify({ ids, mvp: m ? playerName(m) : null, mvpId: m?.id ?? null })); } catch { /* ignore */ }
+    return;
+  }
+  const v = { ids: sc.teams.flatMap(x => x.roster.map(r => r.p.id)), mvp: sc.mvp ? playerName(sc.mvp.p) : prev.mvp || null, mvpId: sc.mvp?.p.id ?? prev.mvpId ?? null,
+    teams: sc.teams.map(x => ({ name: `${x.t.city} ${x.t.name}`.trim(), ids: x.roster.map(r => r.p.id) })), score: sc.score ? [sc.score.home.total, sc.score.road.total] : prev.score || null };
+  try { localStorage.setItem(aaKey(), JSON.stringify(v)); } catch { /* ignore */ }
+}
+screens.showcase = () => {
+  const L = league();
+  const sc = showcase(L);
+  const f = (a, b) => `${a}-${b}`;
+  if (!sc) {
+    const a = aaStore();
+    const pool = (L.freeAgents || []).concat(L.teams.flatMap(t => t.roster));
+    const list = (a.ids || []).map(id => pool.find(p => p.id === id)).filter(Boolean);
+    layout({ title: 'All-American Showcase', body: list.length ? `<p class="note small">The showcase is in the books${a.score ? ` (${a.score[0]}-${a.score[1]})` : ''}${a.mvp ? `, MVP ${esc(a.mvp)}` : ''}. The All-Americans are now on the recruiting trail:</p>
+      <div class="stack">${list.map(p => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)} <span class="stars">${stars(p.pot)}</span><br><span class="small muted">${esc(posName(p))} · ${p.age}y</span></span><span class="small gold">⭐ All-American</span></div>`).join('')}</div>`
+      : '<p class="note">The showcase rosters aren\'t in this save. Load a save from before recruiting starts to see the game.</p>' });
+    return;
+  }
+  const team = x => {
+    const tm = x.t;
+    const [c1] = (tm.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
+    return `<fieldset class="frame" ${c1 ? `style="border-color:${c1}"` : ''}><legend>${esc(`${tm.city} ${tm.name}`.trim())}</legend>
+      ${sc.played ? '<div class="box-head small muted"><span class="grow">Player</span><span>MIN</span><span>PTS</span><span>REB</span><span>AST</span><span>FG</span></div>' : ''}
+      <div class="stack">${x.roster.map(r => `<div class="${sc.played ? 'box-row' : 'drill-row'} ${sc.mvp?.p === r.p ? 'mvp' : ''}"><span class="grow"><b>${esc(playerName(r.p))}</b>${sc.mvp?.p === r.p ? ' 🏆' : ''}<br><span class="small muted">${esc(posName(r.p))} · ${r.p.age}y · ${esc(r.p.ctry || '')}</span> <span class="stars">${stars(r.p.pot)}</span></span>
+        ${sc.played ? `<span class="small">${r.box.min}</span><span><b>${r.box.pts}</b></span><span class="small">${r.box.reb}</span><span class="small">${r.box.ast}</span><span class="small muted">${f(r.box.fgm, r.box.fga)}</span>` : ''}</div>`).join('')}</div></fieldset>`;
+  };
+  const s = sc.score;
+  layout({
+    title: 'All-American Showcase',
+    body: `${s ? `<div class="score-card"><div><b>${esc(s.home.t.city)}</b><span class="big-n ${s.home.total > s.road.total ? 'up' : ''}">${s.home.total}</span></div><span class="muted">vs</span><div><b>${esc(s.road.t.city)}</b><span class="big-n ${s.road.total > s.home.total ? 'up' : ''}">${s.road.total}</span></div></div>
+      <p class="note small center">Halves: ${s.home.halves.join('-')} · ${s.road.halves.join('-')}</p>
+      ${sc.mvp ? `<p class="note center">🏆 MVP: <b>${esc(playerName(sc.mvp.p))}</b> (${esc(sc.mvp.t.city)}): ${sc.mvp.p.gameStats?.PTS || 0} pts, ${sc.mvp.p.gameStats?.REB || 0} reb, ${sc.mvp.p.gameStats?.AST || 0} ast</p>` : ''}`
+      : '<p class="note small">The rosters are set. The game hasn\'t been played yet.</p>'}
+      ${sc.teams.map(team).join('')}
+      <p class="note muted small">Every player here carries an All-American tag into recruiting.</p>`,
+    action: isStep('showcase') ? { act: 'showcaseDone', label: 'Wrap Up the Showcase' } : null,
+  });
+};
+actions.showcaseDone = () => { recordShowcase(); calFlags().showcase = true; goHome(); toast('Next up: Recruiting'); };
 
 // College: Transfer Portal.
 screens.portal = (args = {}) => {
