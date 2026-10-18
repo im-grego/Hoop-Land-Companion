@@ -12,7 +12,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
-import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers } from './livedraft.js';
+import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
 import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.48.3';
+const APP_VERSION = '0.49.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -619,7 +619,7 @@ const CALENDAR = [
     done: () => !!optStore().done || phaseRank(league().season) >= 4 },
   { key: 'ext', date: 'Jul 1', title: 'Extension Window', blurb: 'Lock up players heading into their final year before they ever reach free agency.',
     done: () => !!extStore().done || phaseRank(league().season) >= 4 },
-  { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies get their age adjustment, then the young cores head to Las Vegas.',
+  { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies pick their numbers, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'No more collusion: the market opens and the big deals happen today. Draft picks sign their rookie contracts.',
     done: () => faDone(1) },
@@ -1636,7 +1636,7 @@ screens.camp = () => {
   const ageDone = !!state.summer[state.leagueIdx] || summerDone();
   layout({
     title: 'Summer League',
-    body: `${leagueRookies(league()).length ? ageSection() : '<p class="note">No rookies this year.</p>'}${numbersSection(ageDone || !leagueRookies(league()).length)}${tourSection((ageDone || !leagueRookies(league()).length) && numbersReady())}`,
+    body: `${!leagueRookies(league()).length ? '<p class="note">No rookies this year.</p>' : ageDone ? '' : ageSection()}${numbersSection(ageDone || !leagueRookies(league()).length)}${tourSection((ageDone || !leagueRookies(league()).length) && numbersReady())}`,
     action: (ageDone || state.summerTour[state.leagueIdx]) && (state.summerTour[state.leagueIdx]?.stage || 'final') === 'final' ? { act: 'calCampBack', label: 'Wrap Up Summer League' } : null,
   });
 };
@@ -1681,7 +1681,9 @@ function summerEligible() {
     .filter(r => orig[r.p.id]);
 }
 
-actions.runSummer = async () => {
+// Rookies' ratings after the draft dip: older rookies get part of it back.
+// Runs as the draft finishes (or here, for a save drafted in the game).
+function ageAdjust() {
   const bands = state.params.recoveryBands;
   const orig = loadOriginals();
   let players = 0, points = 0;
@@ -1691,8 +1693,12 @@ actions.runSummer = async () => {
     if (n) { players++; points += n; }
   }
   state.summer[state.leagueIdx] = { players, points };
-  state.compCache = {};
   state.dirty = true;
+  return { players, points };
+}
+actions.runSummer = async () => {
+  const { players, points } = ageAdjust();
+  state.compCache = {};
   render();
   toast(`Age adjustment: +${points} points back across ${players} rookies`);
 };
@@ -1743,7 +1749,7 @@ function ageSection() {
       : `<p class="note">The age adjustment needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
     if (eligible.length < total) body += `<label class="btn small">📂 Load Pre-Draft Save<input type="file" id="origInput"></label>`;
   }
-  return `<fieldset class="frame"><legend>1 · Age Adjustment</legend><div class="stack">${body}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>Age Adjustment</legend><div class="stack">${body}</div></fieldset>`;
 }
 
 // Step 2: your rookies pick their numbers, from a wall of every number with
@@ -1811,7 +1817,7 @@ function numbersSection(ready) {
       }).join('')}</div>
       ${locked ? '<p class="note small up">Numbers locked in.</p>' : '<button class="btn focus" data-act="lockNumbers">✅ Lock In Numbers</button>'}`;
   }
-  return `<fieldset class="frame"><legend>2 · Rookie Numbers</legend><div class="stack">${body}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>Rookie Numbers</legend><div class="stack">${body}</div></fieldset>`;
 }
 actions.openWall = d => { state.numPick = state.numPick === +d.id ? null : +d.id; render(); };
 actions.pickNumber = d => {
@@ -2792,7 +2798,7 @@ screens.settings = (args) => {
       `<p class="note muted small">How often a prospect's scouting report reads their potential one step high or low (0% / 15% / 25% / 40%).</p>` +
       options('Private Workouts per Team', 'workoutSlots', [[3, '3'], [6, '6'], [9, '9'], [12, '12']]) +
       `<p class="note muted small">How many prospects each team you run can bring in for a private workout before the draft.</p>` +
-      options('Live Draft: CPU Trade-Ups', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
+      options('Live Draft: CPU Trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]) +
       options('Commissioner Mode (Trades)', 'commissioner', [[false, 'Off'], [true, 'On']]) +
       `<p class="note muted small">On: trade for any team, force trades through, undo draft-day trades and reset the draft. Off: you trade for the teams you control, CPU teams have to accept, and trades are final.</p>` +
       options('2nd-Round Rookie Deals', 'rookieR2Years', [[2, '2 years'], [3, '3 years'], [4, 'Game default (4)']]) +
@@ -3037,10 +3043,9 @@ function gradeOf(p) {
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
 // One prospect in the "make your pick" list.
-const pickRow = (p, { star = false, fills = [] } = {}) => `<button class="pick-row" data-id="${p.id}">
-  <span class="pr-top"><b>${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b>${valueChip(p)}</span>
-  <span class="pr-meta">${esc(posName(p))} · ${p.age}y · ${classYear(p)} · ${heightStr(p.ht)} · Ceiling ${esc(compsFor(p).ceiling[0]?.name || '—')}</span>
-  ${fills.length ? `<span class="pr-fill">Fills ${esc(fills.map(n => n.label).join(', '))}</span>` : ''}
+const pickRow = (p, { star = false, fills = [], n = null } = {}) => `<button class="pick-row" data-id="${p.id}">
+  <span class="pr-top"><b>${n ? `<span class="rank-no">${n}</span>` : ''}${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b><span class="pr-tags">${fills.length ? '<span class="fit-chip">🧩</span>' : ''}${valueChip(p)}</span></span>
+  <span class="pr-meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}</span>
 </button>`;
 const statusTag = st => `<span class="status s-${st}">${STATUS_NAMES[st]}</span>`;
 const needChips = needs => needs.map(n => `<span class="badge need">${esc(n.label)}</span>`).join('');
@@ -3153,7 +3158,7 @@ const DRAFT_TABS = [['live', 'Live'], ['consensus', 'Prospects'], ['warroom', 'M
 // Draft-room tabs open in each calendar step.
 function draftTabsNow(L = league()) {
   const step = phaseRank(L.season) === 0 ? null : currentStep()?.key;
-  if (step === 'draft') return ['live', 'consensus', 'warroom'];
+  if (step === 'draft') return liveReady(L) && clockIndex(liveState(), liveOrder()) < 0 ? ['live'] : ['live', 'consensus', 'warroom'];
   if (step === 'scout' || step === 'workouts') return ['consensus', 'warroom', 'office'];
   if (step === 'preview') return ['consensus', 'warroom'];
   return DRAFT_TABS.map(([k]) => k).filter(k => k !== 'live' || liveReady(L));
@@ -3186,41 +3191,55 @@ screens.draft = (args) => {
   }
   if (isStep('scout') && !preStore().scoutSeen) { preStore().scoutSeen = true; savePre(); }
   const allowed = draftTabsNow(L);
-  const tabs = `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
+  const tabs = allowed.length < 2 ? '' : `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   const preview = isStep('preview');
   layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + tabs + body.html, action: preview ? { act: 'previewDone', label: 'Wrap Up the Preview' } : body.action });
+  if (tab === 'live') centerBoard();
   if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
 
-// Draft picks come in one at a time: "The pick is in…" then the player,
-// the view following along. Lottery picks (top 14) get a longer beat.
+// A pick plays out in the clock card: "The pick is in…" over the team that
+// made it, then the player. Lottery picks get a longer beat. The board
+// fills in without fanfare once the name is out, and nothing else can be
+// tapped until it's done.
 async function revealPicks(overalls) {
-  const rows = overalls.map(ov => $app.querySelector(`.lot-row[data-ov="${ov}"]`)).filter(Boolean);
-  if (!rows.length) return;
-  rows.forEach(r => r.classList.add('pending'));
-  let skipped = false;
-  let skip = null;
-  if (rows.length > 1) {
-    skip = document.createElement('button');
-    skip.className = 'btn small pick-skip';
-    skip.textContent = 'Skip ⏭';
-    skip.addEventListener('click', () => { skipped = true; });
-    document.body.appendChild(skip);
+  const card = $app.querySelector('.clock-card');
+  if (!card) return;
+  const L = league();
+  const live = liveState();
+  const order = liveOrder();
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  for (const ov of overalls) $app.querySelector(`.lot-row[data-ov="${ov}"]`)?.classList.add('pending');
+  state.revealing = true;
+  try {
+    for (const ov of overalls) {
+      const q = order.find(x => x.overall === ov), sel = live.sel[ov];
+      if (!q || !sel || !card.isConnected) continue;
+      const p = prospectById(sel.pid), team = L.teams.find(t => t.id === sel.by) || q.owner;
+      card.setAttribute('style', teamTint(team));
+      card.classList.remove('mine', 'named');
+      card.classList.add('reveal');
+      card.innerHTML = `<span class="pk">#${ov}</span><span class="grow"><b>${esc(teamFull(team))}</b><span class="small muted">R${q.rd}${team.id !== q.orig.id ? ` · via ${esc(q.orig.shortName)}` : ''}</span><span class="pick-in">The pick is in…</span></span>`;
+      await wait(ov <= 14 ? 1500 : 1000);
+      if (!card.isConnected) break;
+      card.classList.add('named');
+      card.querySelector('.pick-in').outerHTML = `<span class="pick-name">${esc(playerName(p))}</span><span class="small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}</span>`;
+      $app.querySelector(`.lot-row[data-ov="${ov}"]`)?.classList.remove('pending');
+      await wait(ov <= 14 ? 1900 : 1300);
+    }
+  } finally {
+    state.revealing = false;
   }
-  const wait = ms => new Promise(r => { const t0 = Date.now(); const tick = () => (skipped || Date.now() - t0 >= ms ? r() : requestAnimationFrame(tick)); tick(); });
-  for (const row of rows) {
-    if (!row.isConnected) break;
-    const ov = +row.dataset.ov;
-    if (!skipped) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    row.classList.add('incoming');
-    await wait(ov <= 14 ? 1100 : 600);
-    row.classList.remove('pending', 'incoming');
-    row.classList.add('picked');
-    await wait(ov <= 14 ? 900 : 450);
-  }
-  skip?.remove();
+  if (card.isConnected) render();
+}
+
+// Keep the team on the clock in view inside the board's own scroll box.
+function centerBoard() {
+  const box = $app.querySelector('.draft-board');
+  const row = box?.querySelector('.lot-row.clock');
+  if (row) box.scrollTop = Math.max(0, row.offsetTop - box.offsetTop - (box.clientHeight - row.offsetHeight) / 2);
 }
 
 actions.draftTab = d => replace('draft', { tab: d.t });
@@ -4324,21 +4343,38 @@ const boardRank = p => boardOrder().indexOf(p) + 1 || 60;
 const prospectById = id => league().draftClass.find(p => p.id === id);
 const liveAvailable = live => league().draftClass.filter(p => !takenIds(live).has(p.id));
 
-// CPU picks, with the odd CPU trade-up in round 1.
+// CPU picks, with the odd CPU trade: a trade-up in round 1, two seconds
+// packaged to move up in round 2, or a team flipping a player it just took.
+// A team makes one CPU trade a draft at most, and user teams aren't touched.
 function liveCpuStep(live, order, idx) {
+  const L = league();
   const o = order[idx];
-  if (o.rd === 1 && live.rng() * 100 < state.params.liveCpuTradeChance) {
-    const [offer] = tradeUpOffers(league(), order, idx, { value: futureValue, slot: slotValue, rng: live.rng, count: 1, eager: 0.6 });
+  const chance = state.params.liveCpuTradeChance;
+  const busy = new Set([...(live.cpuTeams ||= []), ...L.teams.filter(isUserTeam).map(t => t.id)]);
+  const opts = { value: futureValue, slot: slotValue, rng: live.rng, exclude: busy };
+  if (!busy.has(o.owner.id) && live.rng() * 100 < chance) {
+    const offer = o.rd === 1 ? tradeUpOffers(L, order, idx, { ...opts, far: 4, count: 1, eager: 0.6 })[0] : consolidationOffer(L, order, idx, opts);
     if (offer) {
       liveExecute({ team: offer.team, picks: offer.give, players: [], prospects: [] },
         { team: o.owner, picks: [offer.get], players: [], prospects: [] }, 'CPU');
+      live.cpuTeams.push(offer.team.id, o.owner.id);
       order = liveOrder();
     }
   }
   const team = order[idx].owner;
   const p = teamDraftPick(team, liveAvailable(live), live.rng);
-  if (p) makeSelection(live, order, idx, p.id);
-  return !!p;
+  if (!p) return false;
+  makeSelection(live, order, idx, p.id);
+  const ov = order[idx].overall;
+  if (order[idx].rd === 1 && ov >= 4 && !busy.has(team.id) && !live.cpuTeams.includes(team.id) && live.rng() * 100 < chance * 0.6) {
+    const deal = rightsTradeOffer(L, order, ov, { ...opts, exclude: new Set([...busy, ...live.cpuTeams]) });
+    if (deal) {
+      liveExecute({ team: deal.team, picks: deal.give, players: [], prospects: [] },
+        { team, picks: [], players: [], prospects: [ov] }, 'CPU');
+      live.cpuTeams.push(deal.team.id, team.id);
+    }
+  }
+  return true;
 }
 
 function liveSim(mode) {
@@ -4375,7 +4411,7 @@ function draftLive() {
   const teamById = id => L.teams.find(t => t.id === id);
   let offers = [];
   if (user) {
-    live.offers[o.overall] ||= tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng: live.rng })
+    live.offers[o.overall] ||= tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng: live.rng, far: 3, exclude: new Set(live.cpuTeams || []) })
       .map(x => ({ tid: x.team.id, give: x.give, get: x.get }));
     offers = live.offers[o.overall].filter(x => x.give.every(pk => teamById(x.tid).draftPicks.includes(pk)) && o.owner.draftPicks.includes(x.get));
   }
@@ -4386,7 +4422,7 @@ function draftLive() {
       ${done ? draftRecap(live, order) : `
       ${user ? '<div class="you-clock">🚨 You are on the clock</div>' : ''}
       <div class="clock-card ${user ? 'mine' : ''}" ${teamTint(o.owner) ? `style="${teamTint(o.owner)}"` : ''}>
-        <span class="pk">#${o.overall}</span>${logoImg(o.owner)}
+        <span class="pk">#${o.overall}</span>
         <span class="grow"><b>${esc(teamFull(o.owner))}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''}</span>
           <span class="needs-line">${needChips(teamOutlook(o.owner).needs)}</span></span>
       </div>
@@ -4399,8 +4435,7 @@ function draftLive() {
         <button class="btn" data-act="liveTrade">🔁 Trade</button>
         <button class="btn" data-act="liveSim" data-m="all">⏭ Sim All</button>
       </div>`}
-      ${live.trades.length && !done ? tradesBox(live) : ''}
-      ${done ? '' : `<div class="list">
+      ${done ? '' : `<div class="list draft-board">
         ${order.map((q, j) => {
           const sel = live.sel[q.overall];
           const p = sel ? byId.get(sel.pid) : null;
@@ -4409,11 +4444,12 @@ function draftLive() {
           return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''} ${tint ? 'tc' : ''}" data-ov="${q.overall}" ${tint ? `style="${tint}"` : ''}>
             <span class="pk">${q.overall}</span>${logoImg(q.owner)}
             <span class="grow">${esc(q.owner.shortName)}${q.owner.id !== q.orig.id ? ` <span class="muted small">via ${esc(q.orig.shortName)}</span>` : ''}${q.rd > 1 ? ` <span class="muted small">R${q.rd}</span>` : ''}<br>
-              ${p ? `<span class="pl"><span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}</span>` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
+              ${p ? `<span class="pl"><span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}</span>` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
             ${p ? `<span class="pl">${valueChip(p)}</span>` : ''}
           </div>`;
         }).join('')}
-      </div>`}`,
+      </div>`}
+      ${live.trades.length && !done ? tradesBox(live) : ''}`,
     action: state.params.commissioner ? { act: 'liveReset', label: 'Reset Draft' } : null,
   };
 }
@@ -4433,12 +4469,12 @@ function pickCard({ overall, team, p, extra = {}, cls = '', empty = '—', showL
   const now = p && showLv ? levelOf(p) : null, rk = p && showLv ? rookieLevel(p) : null;
   return `<div class="recap-row ${cls}" ${tint ? `style="${tint}"` : ''}>
     <span class="pk">${overall}</span>${logoImg(team)}
-    <span class="grow">${p ? `<b>${extra.star || ''}${esc(playerName(p))}</b><br><span class="small">${esc(team.shortName)}${extra.sub || ''} · ${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span>`
+    <span class="grow">${p ? `<b>${extra.star || ''}${esc(playerName(p))}</b><br><span class="small">${esc(team.shortName)}${extra.sub || ''} · ${esc(posName(p))} · ${p.age}y</span>`
       : `<b>${esc(team.shortName)}</b>${extra.sub || ''}<br><span class="small muted">${empty}</span>`}</span>
     ${right}${p && showLv ? `<span class="lv"><b>${rk}</b><span class="small">Lv${now !== rk ? ` <s>${now}</s>` : ''}</span></span>` : ''}
   </div>`;
 }
-const sortToggle = (key, cur) => `<div class="opts recap-sort"><button class="btn small ${cur === 'pick' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="pick">By Pick</button><button class="btn small ${cur === 'level' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="level">Pro Readiness</button></div>`;
+const sortToggle = (key, cur) => `<div class="opts recap-sort"><button class="btn small ${cur === 'pick' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="pick">By Pick</button><button class="btn small ${cur === 'level' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="level">By Level</button></div>`;
 // Level sort: drafted players by projected level, open picks after in order.
 const byReadiness = rows => rows.sort((a, b) => (b.lv ?? -1) - (a.lv ?? -1) || a.overall - b.overall);
 actions.cardSort = d => { draftState()[d.k] = d.s; render(); };
@@ -4459,22 +4495,25 @@ function draftRecap(live, order) {
     ${live.trades.length ? tradesBox(live) : ''}
     <fieldset class="frame"><legend>Draft Recap</legend>
       ${sortToggle('recapSort', sortBy)}
-      <p class="note muted small" style="margin:6px 0 8px">Level after the draft drop and the age adjustment (older rookies get more of it back): who's most ready to play now.</p>
-      <div class="stack recap">${rows.map(r => pickCard(r)).join('')}</div>
+      <p class="note muted small" style="margin:6px 0 8px">Levels are as rookies: every pick's ratings dip moving up to the pros, and older rookies get some of it back.</p>
+      <div class="stack recap recap-scroll">${rows.map(r => pickCard(r)).join('')}</div>
     </fieldset>`;
 }
 
 // Picks made since `before` get revealed one by one on the next render.
 const newPicks = (live, before) => Object.keys(live.sel).map(Number).filter(ov => !before.has(ov)).sort((a, b) => a - b);
 actions.liveSim = d => {
+  if (state.revealing) return;
   const live = liveState();
   const before = new Set(Object.keys(live.sel).map(Number));
   liveSim(d.m);
-  state.pickReveal = newPicks(live, before);
+  // Only single picks play out in the clock card; simming skips ahead.
+  state.pickReveal = d.m === 'one' ? newPicks(live, before) : null;
   render();
 };
 
 actions.liveChoose = () => {
+  if (state.revealing) return;
   const live = liveState();
   const order = liveOrder();
   const idx = clockIndex(live, order);
@@ -4482,19 +4521,25 @@ actions.liveChoose = () => {
   const watch = new Set(boardStore().board);
   const avail = myBoardOrder().filter(p => !takenIds(live).has(p.id));
   const box = overlay(`
-    <p class="note">${esc(o.owner.shortName)} · Pick #${o.overall} · your board order</p>
-    <div class="pick-list">${avail.map(p => pickRow(p, { star: watch.has(p.id), fills: fillsFor(o.owner, p) })).join('')}</div>
+    <p class="note">${esc(o.owner.shortName)} · Pick #${o.overall}</p>
+    <div class="pick-list">${avail.map((p, i) => pickRow(p, { star: watch.has(p.id), fills: fillsFor(o.owner, p), n: i + 1 })).join('')}</div>
     <button class="btn off" data-close>Cancel</button>`);
-  box.addEventListener('click', e => {
+  box.addEventListener('click', async e => {
     const b = e.target.closest('[data-id],[data-close]');
     if (!b) return;
-    if (b.dataset.id) { makeSelection(live, order, idx, +b.dataset.id); state.pickReveal = [o.overall]; }
+    if (b.dataset.id) {
+      const p = prospectById(+b.dataset.id);
+      if (!(await confirmBox(`Draft <b>${esc(playerName(p))}</b> at #${o.overall}?`, 'Draft'))) return;
+      makeSelection(live, order, idx, p.id);
+      state.pickReveal = [o.overall];
+    }
     box.remove();
     render();
   });
 };
 
 actions.liveOffer = async d => {
+  if (state.revealing) return;
   const live = liveState();
   const L = league();
   const order = liveOrder();
@@ -4560,17 +4605,18 @@ actions.liveFinish = async () => {
   const live = liveState();
   const order = liveOrder();
   if (clockIndex(live, order) >= 0) { toast('Finish every pick first'); return; }
-  if (!(await confirmBox('Advance in the offseason? Rookies join their teams, the rest become free agents, and we move on to Summer League.', 'Finish'))) return;
+  if (!(await confirmBox('Finish the draft and move on?', 'Finish'))) return;
   checkpoint('Draft');
   const res = applyDraft(L, livePicks(live, order), state.leagueIdx);
   for (const r of leagueRookies(L)) state.snaps.set(snapKey(r.p.id), snapshot(r.p));
+  ageAdjust();
   state.compCache = {};
   state.compPools = {};
   draftState().live = null;
   draftState().mock = null;
   state.dirty = true;
   goHome();
-  toast(`Draft complete: ${res.drafted} drafted, ${res.undrafted} to free agency. Next up: Summer League.`);
+  toast(`Draft complete: ${res.drafted} drafted, ${res.undrafted} to free agency.`);
 };
 
 // ---- Live trade builder
@@ -4645,7 +4691,7 @@ screens.liveTrade = (args) => {
     const T = L.teams.find(t => t.id === cur);
     const many = side === 'b' || left.length > 1;
     const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : `<span class="tsel-arrow off" aria-hidden="true"></span>`;
-    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team">${logoImg(T)}<span class="tsel-name"><b>${esc(T.shortName)}</b><span class="${isUserTeam(T) ? 'gold' : 'muted'} small">${isUserTeam(T) ? 'You' : esc(T.name)}</span></span></span>${arrow(1, '▶')}</div>`;
+    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span></span>${arrow(1, '▶')}</div>`;
   };
   layout({
     title: 'Draft-Day Trade',
@@ -4667,7 +4713,7 @@ screens.liveTrade = (args) => {
   slideTradeBar();
 };
 
-actions.liveTrade = () => { tradeBarPos = 50; go('liveTrade', {}); };
+actions.liveTrade = () => { if (state.revealing) return; tradeBarPos = 50; go('liveTrade', {}); };
 
 // Trade balance bar. The middle is where the CPU team says yes (they want
 // a little more back than they give, so "even" already includes that);
@@ -4685,12 +4731,12 @@ function tradeBar(A, B, vA, vB) {
   const lean = empty ? 0 : (a - b) / Math.max(a, b, 1);
   const pos = 50 + Math.max(-1, Math.min(1, lean)) * 46;
   const ok = judge === B ? cpuAccepts(vB, vA) : cpuAccepts(vA, vB);
-  const zone = judge === B ? 'left:50%;right:0' : 'left:0;right:50%';
+
   const word = Math.abs(lean) < 0.06 ? 'Even' : lean > 0 ? `Favors ${B.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}` : `Favors ${A.shortName}${Math.abs(lean) > 0.35 ? ' a lot' : ''}`;
   const from = tradeBarPos;
   tradeBarPos = pos;
   return `<div class="tbar-wrap">
-    <div class="tbar">${cpu ? `<span class="tbar-ok" style="${zone}"></span>` : ''}<span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${from}%" data-to="${pos}"></span></div>
+    <div class="tbar ${cpu ? (judge === B ? 'to-right' : 'to-left') : ''}"><span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${from}%" data-to="${pos}"></span></div>
     <p class="note center small">${empty ? '<span class="muted">Tap players or picks on either side</span>'
       : `<b>${esc(word)}</b>${cpu ? `${ok ? `<span class="up">${esc(judge.shortName)} would accept</span>` : `<span class="down">${esc(judge.shortName)} would decline</span>`}` : ''}`}</p>
   </div>`;

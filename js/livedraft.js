@@ -170,36 +170,102 @@ export function slotPick(league, o) {
 }
 
 // Trade-up offers for the team on the clock: teams picking 3–8 slots later
-// offer their pick plus future picks for this one. `value(pk)` values a
-// future pick, `slot(overall)` a pick in this draft. Returns
-// [{ team, give: [pick objects], get: pick object, worth }].
-export function tradeUpOffers(league, order, idx, { value, slot, rng, min = 3, max = 8, count = 2, eager = 0.5 }) {
+// offer their pick plus future picks for this one. Now and then a team
+// further back (up to `far` more slots) makes a bigger jump, which takes a
+// future first. Future firsts are only ones two or more drafts out: a team
+// moving up expects to be better by then. `value(pk)` values a future pick,
+// `slot(overall)` a pick in this draft; teams in `exclude` sit out.
+// Returns [{ team, give: [pick objects], get: pick object, worth }].
+export function tradeUpOffers(league, order, idx, { value, slot, rng, min = 3, max = 8, far = 0, count = 2, eager = 0.5, exclude = new Set() }) {
   const here = order[idx];
   const target = slotPick(league, here);
   if (!target) return [];
+  const yr = league.season.currentYear;
   const want = slot(here.overall);
   const offers = [];
-  const seen = new Set([here.owner.id]);
-  for (let j = idx + min; j <= Math.min(order.length - 1, idx + max); j++) {
+  const seen = new Set([here.owner.id, ...exclude]);
+  for (let j = idx + min; j <= Math.min(order.length - 1, idx + max + far); j++) {
     const o = order[j];
     if (seen.has(o.owner.id) || o.rd !== here.rd) continue;
     seen.add(o.owner.id);
-    if (rng() > eager) continue;
+    const big = j > idx + max;
+    if (rng() > (big ? eager * 0.5 : eager)) continue;
     const mine = slotPick(league, o);
     if (!mine) continue;
     const give = [mine];
     let total = slot(o.overall);
-    const future = o.owner.draftPicks.filter(pk => pk.yr > league.season.currentYear).sort((a, b) => value(a) - value(b));
+    const future = o.owner.draftPicks.filter(pk => pk.yr > yr && (pk.rd > 1 || pk.yr >= yr + 2)).sort((a, b) => value(a) - value(b));
+    if (big) {
+      const first = future.find(pk => pk.rd === 1);
+      if (!first) continue;
+      give.push(first);
+      total += value(first);
+    }
     for (const pk of future) {
       if (total >= want * 1.05) break;
-      if (pk.rd === 1 && give.some(g => g.rd === 1 && g !== mine)) break;    // at most one future first
+      if (give.includes(pk) || (pk.rd === 1 && give.some(g => g.rd === 1 && g !== mine))) continue;    // at most one future first
+      if (pk.rd > 1 && give.filter(g => g.rd > 1 && g !== mine).length >= 2) continue;               // and two seconds
       give.push(pk);
       total += value(pk);
     }
-    if (total >= want * 1.05 && total <= want * 1.6) offers.push({ team: o.owner, give, get: target, worth: total, from: o.overall });
+    if (total >= want * 1.05 && total <= want * (big ? 1.8 : 1.6)) offers.push({ team: o.owner, give, get: target, worth: total, from: o.overall });
     if (offers.length >= count) break;
   }
   return offers;
+}
+
+// Draft-and-trade: a team picking 2–6 slots after `ov` sends its pick plus
+// a second-rounder for the rights to the player just taken there.
+// Returns { team, give: [pick objects] } or null.
+export function rightsTradeOffer(league, order, ov, { value, slot, rng, exclude = new Set() }) {
+  const at = order.findIndex(o => o.overall === ov);
+  const here = order[at];
+  if (!here) return null;
+  const yr = league.season.currentYear;
+  const want = slot(ov);
+  const seen = new Set([here.owner.id, ...exclude]);
+  for (let j = at + 2; j <= Math.min(order.length - 1, at + 6); j++) {
+    const o = order[j];
+    if (seen.has(o.owner.id) || o.rd !== here.rd) continue;
+    seen.add(o.owner.id);
+    if (rng() > 0.5) continue;
+    const mine = slotPick(league, o);
+    if (!mine) continue;
+    const seconds = o.owner.draftPicks.filter(pk => pk.rd === 2 && pk.yr >= yr && pk !== mine).sort((a, b) => b.yr - a.yr);
+    const give = [mine];
+    let total = slot(o.overall);
+    for (const pk of seconds) {
+      if (total >= want) break;
+      const v = pk.yr === yr ? slot(order.find(q => slotPick(league, q) === pk)?.overall ?? 60) : value(pk);
+      give.push(pk);
+      total += v;
+    }
+    if (total >= want && total <= want * 1.5 && give.length > 1) return { team: o.owner, give };
+  }
+  return null;
+}
+
+// Second-round consolidation: a team holding two or more later picks in
+// this round sends two of them for the pick on the clock.
+// Returns { team, give: [pick objects], get } or null.
+export function consolidationOffer(league, order, idx, { slot, rng, exclude = new Set() }) {
+  const here = order[idx];
+  const target = slotPick(league, here);
+  if (!target || here.rd < 2) return null;
+  const want = slot(here.overall);
+  const later = new Map();
+  for (const o of order.slice(idx + 2)) {
+    if (o.rd !== here.rd || o.owner.id === here.owner.id || exclude.has(o.owner.id)) continue;
+    const pk = slotPick(league, o);
+    if (pk) (later.get(o.owner.id) || later.set(o.owner.id, []).get(o.owner.id)).push({ o, pk });
+  }
+  const teams = [...later.values()].filter(x => x.length >= 2);
+  if (!teams.length) return null;
+  const pick = teams[Math.floor(rng() * teams.length)];
+  const two = pick.slice(0, 2);
+  const total = two.reduce((a, x) => a + slot(x.o.overall), 0);
+  if (total < want) return null;
+  return { team: two[0].o.owner, give: two.map(x => x.pk), get: target };
 }
 
 // ---------------------------------------------------------------------------
