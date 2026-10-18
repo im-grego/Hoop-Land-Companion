@@ -1115,7 +1115,6 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .tbar3 span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--cyan); }
 .tbar3 span.hi { background: var(--up); }
 .tbar3 span.lo { background: var(--down); }
-.tbar3 span.top { background: var(--gold); }
 .trait-ctl { display: flex; gap: 2px; }
 .btn.tiny { min-height: 24px; min-width: 24px; padding: 0 4px; font-size: 13px; }
 .arch { color: var(--cyan); }

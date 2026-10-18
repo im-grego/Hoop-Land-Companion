@@ -5,20 +5,19 @@
 // Real players we know get judged values (REAL, by full name); everyone
 // else is generated from his own data plus a little stable noise.
 
-// Scale: 1-5 the low name, 6-9 Low, 10-14 Solid, 15-17 the high name,
-// 18-20 the top tier.
+// Scale: 0-4 the low name, 5-9 Low, 10-15 Solid, 16-20 the high name.
 export const TRAITS = [
-  { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Durable', top: 'Ironman' },
-  { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Me-first', hi: 'Competitor', top: 'Winner' },
-  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Wants the bag', top: 'Max or bust' },
-  { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Loyal', top: 'One-teamer' },
-  { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'High motor', top: 'Relentless' },
-  { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', top: 'Captain' },
-  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Rises', top: 'Shines' },
+  { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Durable' },
+  { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Me-first', hi: 'Competitor' },
+  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Wants the bag' },
+  { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Loyal' },
+  { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'High motor' },
+  { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader' },
+  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Rises' },
 ];
-export const traitLabel = (t, v) => (v >= 18 ? t.top : v >= 15 ? t.hi : v <= 5 ? t.lo : v <= 9 ? 'Low' : 'Solid');
+export const traitLabel = (t, v) => (v >= 16 ? t.hi : v <= 4 ? t.lo : v <= 9 ? 'Low' : 'Solid');
 export const TRAIT_KEYS = TRAITS.map(t => t.k);
-export const traitWord = v => v >= 18 ? 'Elite' : v >= 15 ? 'High' : v >= 11 ? 'Solid' : v >= 7 ? 'Low' : 'Very low';
+export const traitWord = v => v >= 16 ? 'High' : v >= 10 ? 'Solid' : v >= 5 ? 'Low' : 'Very low';
 export const traitsSet = p => !!p.traits && TRAIT_KEYS.some(k => (p.traits[k] || 0) > 0);
 export const tr = (p, k, d = 10) => (p.traits && p.traits[k] > 0 ? p.traits[k] : d);
 

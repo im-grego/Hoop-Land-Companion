@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.49.0';
+const APP_VERSION = '0.49.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5847,8 +5847,8 @@ function traitsBox(p, prospect = false) {
   return `<fieldset class="frame"><legend>Traits${isReal(p) ? ' <span class="muted small">· real-life read</span>' : ''}</legend><div class="stack">${TRAITS.map(t => {
     const v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
-    return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 18 ? 'top' : v >= 15 ? 'hi' : v <= 5 ? 'lo' : ''}"></span></span>
-      <span class="small"><b>${v}</b> <span class="${v >= 18 ? 'gold' : 'muted'}">${traitLabel(t, v)}</span></span>
+    return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
+      <span class="small"><b>${v}</b> <span class="muted">${traitLabel(t, v)}</span></span>
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
   }).join('')}</div>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
