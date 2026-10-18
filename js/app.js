@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.9';
+const APP_VERSION = '0.47.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -586,6 +586,8 @@ const faDone = day => {
 const CALENDAR = [
   { key: 'office', date: 'May 1', title: 'Front Office', blurb: 'Select the teams you run.',
     done: () => calFlags().office },
+  { key: 'review', date: 'May 2', title: 'Season in Review', blurb: 'How your season ended, the league picture, your team leaders and the awards.',
+    done: () => !!calFlags().review || phaseRank(league().season) >= 2 },
   { key: 'overview', date: 'May 3', title: 'Offseason Overview', blurb: 'Where you stand: the books, real roster needs, your draft position and the league rumor mill.',
     done: () => !!calFlags().overview || phaseRank(league().season) >= 2 },
   { key: 'preview', date: 'May 5', title: 'Draft Preview', blurb: 'Meet the class before the lottery: the board, who projects in your range and who fits your needs.',
@@ -5971,6 +5973,13 @@ actions.extClose = async () => {
 function reviewHeadline(r, t) {
   const st = r.row?.seasonStats || {};
   const W = st.W || 0, Lo = st.L || 0, p = W / Math.max(1, W + Lo);
+  if (r.pro) {
+    if (r.won) return `${t.city} are champions.`;
+    if (r.round >= r.rounds && r.rounds) return `${t.city} made the Finals and came up short.`;
+    if (r.round >= r.rounds - 1 && r.rounds) return `A run to the Conference Finals for ${t.city}.`;
+    if (r.round) return p >= 0.6 ? `A strong season that ended too soon: ${r.finish.toLowerCase()}.` : `${t.city} made the playoffs and went out in ${r.finish.replace('Lost in ', '')}.`;
+    return p >= 0.5 ? `A winning record, but no playoffs for ${t.city}.` : 'A losing season and no playoffs. Rebuilding starts now.';
+  }
   if (r.won) return `${t.city} are national champions.`;
   if (r.round >= r.rounds - 1 && r.rounds) return `A Final Four run for ${t.city}.`;
   if (r.round >= 3) return `${t.city} made a real March run before it ended in ${r.finish.replace('Lost in ', '')}.`;
@@ -5980,7 +5989,7 @@ function reviewHeadline(r, t) {
 screens.review = () => {
   const L = league();
   const t = L.teams.find(isUserTeam);
-  if (!t) { layout({ title: 'Season in Review', body: '<p class="note">Pick your school first.</p>' }); return; }
+  if (!t) { layout({ title: 'Season in Review', body: `<p class="note">Pick your ${isCollege() ? 'school' : 'team'} first.</p>` }); return; }
   const r = seasonReview(state.data, state.leagueIdx, t);
   const st = r.row?.seasonStats || {};
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
@@ -5993,7 +6002,7 @@ screens.review = () => {
     title: 'Season in Review',
     body: `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
         <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b><span class="status s-${r.won ? 'favorites' : r.round ? 'contending' : 'rebuilding'}">${r.yr}</span></div>
-        <p class="note" style="padding:8px 10px 0"><b>${st.W || 0}-${st.L || 0}</b> · ${esc(r.finish)}${r.seed ? ` · No. ${r.seed} overall seed` : ''}</p>
+        <p class="note" style="padding:8px 10px 0"><b>${st.W || 0}-${st.L || 0}</b> · ${esc(r.finish)}${r.seed && !r.pro ? ` · No. ${r.seed} overall seed` : ''}</p>
         <p class="note small" style="padding:4px 10px 10px">${esc(reviewHeadline(r, t))}</p>
       </div>
       ${s ? `<fieldset class="frame"><legend>The Season</legend>
@@ -6001,13 +6010,13 @@ screens.review = () => {
           <div><b>${f1(s.ppg)}</b><span>PPG</span></div><div><b>${f1(s.opp)}</b><span>Opp PPG</span></div><div><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span></div>
           <div><b>${f1(s.fg)}%</b><span>FG</span></div><div><b>${f1(s.tp)}%</b><span>3PT</span></div><div><b>${f1(s.ft)}%</b><span>FT</span></div>
         </div>
-        <p class="note small" style="margin-top:8px">Conference ${wl(s.conf)} · Home ${wl(s.home)} · Road ${wl(s.away)} · vs Top 25 ${wl(s.top25)} · Last 10: ${s.l10}-${10 - s.l10}</p>
+        <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`} · Last 10: ${s.l10}-${10 - s.l10}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
       ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => pRow(w.p, `🏅 ${esc(w.name)}${tag(w)}`)).join('')}</div></fieldset>` : ''}
-      <fieldset class="frame"><legend>National Picture</legend>
-        ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">National champions${r.runnerUp ? `, over ${esc(r.runnerUp.shortName)}` : ''}</span></span><span>🏆</span></div>` : ''}
-        ${r.finalFour.length ? `<p class="note small" style="margin-top:6px">Final Four: ${r.finalFour.map(x => `<b class="${x === t ? 'gold' : ''}">${esc(x.shortName)}</b>`).join(' · ')}</p>` : ''}
+      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
+        ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.shortName)}` : ''}</span></span><span>🏆</span></div>` : ''}
+        ${r.finalFour.length ? `<p class="note small" style="margin-top:6px">${r.pro ? 'Conference Finals' : 'Final Four'}: ${r.finalFour.map(x => `<b class="${x === t ? 'gold' : ''}">${esc(x.shortName)}</b>`).join(' · ')}</p>` : ''}
         <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => `<div class="drill-row tap" data-act="openPlayer" data-id="${w.p.id}"><span class="grow small"><b>${esc(w.name)}</b></span><span class="small">${esc(playerName(w.p))}</span></div>`).join('') || '<p class="note small muted">None recorded.</p>'}</div>
         ${r.allTeams.length ? `<h4 class="ov-h">First Teams</h4><div class="stack">${[...new Set(r.allTeams.map(w => w.name))].map(n => `<p class="note small"><b>${esc(n)}:</b> ${r.allTeams.filter(w => w.name === n).map(w => esc(playerName(w.p))).join(', ')}</p>`).join('')}</div>` : ''}
       </fieldset>

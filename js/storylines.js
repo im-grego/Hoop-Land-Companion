@@ -45,7 +45,7 @@ export function seasonLine(p, leagueIdx, year) {
   const gs = t.PTS + 0.7 * t.REB + 0.7 * t.AST + t.STL + 0.7 * t.BLK - 0.7 * t.TO
     - 0.4 * (t.FGA - t.FGM) - 0.4 * (t.FTA - t.FTM);
   return {
-    gp: t.GP, mpg: pg('MIN'), ppg: pg('PTS'), rpg: pg('REB'), apg: pg('AST'),
+    gp: t.GP, mpg: pg('MIN'), ppg: pg('PTS'), rpg: pg('REB'), apg: pg('AST'), spg: pg('STL'), bpg: pg('BLK'),
     gs: gs / t.GP, tid: rows[rows.length - 1].tid,
   };
 }

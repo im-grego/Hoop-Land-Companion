@@ -63,16 +63,21 @@ export function seasonReview(data, li, team) {
   }
   const round = row?.round || 0;
   const won = champ === team;
-  const finish = won ? '🏆 National Champions' : round ? `Lost in ${roundName(round, rounds || 6)}` : 'Missed the tournament';
+  const pro = L.leagueType !== 1;
+  // Pro playoff rounds by name, counted back from the Finals.
+  const proRound = rd => ['the Finals', 'the Conference Finals', 'the Conference Semifinals', 'the First Round'][(rounds || 4) - rd] || `Round ${rd}`;
+  const finish = pro
+    ? (won ? '🏆 Champions' : round ? `Lost in ${proRound(round)}` : 'Missed the playoffs')
+    : (won ? '🏆 National Champions' : round ? `Lost in ${roundName(round, rounds || 6)}` : 'Missed the tournament');
   // Team leaders (per game), including players who have since left.
   const lines = everyone(data).map(p => ({ p, l: seasonLine(p, li, yr) })).filter(x => x.l && x.l.tid === team.id && x.l.gp >= 5);
   const lead = (k, label) => { const x = [...lines].sort((a, b) => b.l[k] - a.l[k])[0]; return x ? { label, p: x.p, v: x.l[k] } : null; };
-  const leaders = [lead('ppg', 'Points'), lead('rpg', 'Rebounds'), lead('apg', 'Assists')].filter(Boolean);
+  const leaders = [lead('ppg', 'Points'), lead('rpg', 'Rebounds'), lead('apg', 'Assists'), lead('spg', 'Steals'), lead('bpg', 'Blocks')].filter(Boolean);
   // Awards this season (league `li`).
   const AW = L.awards || [];
   const won_ = [];
   for (const p of everyone(data)) for (const a of p.awards || []) {
-    if (a.league === li && (a.yearsWon || []).includes(yr) && AW[a.id]?.enabled !== false) won_.push({ p, id: a.id, name: AW[a.id]?.name || `Award ${a.id}`, team: AW[a.id]?.team ? a.team : null });
+    if (a.league === li && (a.yearsWon || []).includes(yr) && AW[a.id]?.enabled !== false && (AW[a.id]?.name || L.leagueType === 1)) won_.push({ p, id: a.id, name: AW[a.id]?.name || `Award ${a.id}`, team: AW[a.id]?.team ? a.team : null });
   }
   const mineIds = new Set(lines.map(x => x.p));
   const mine = won_.filter(w => mineIds.has(w.p));
@@ -84,7 +89,7 @@ export function seasonReview(data, li, team) {
     const r = rowOf(t, yr)?.seasonStats || {};
     return { t, W: r.W || 0, L: r.L || 0, cW: r.CONF?.[0] || 0, cL: r.CONF?.[1] || 0 };
   }).sort((a, b) => b.W / Math.max(1, b.W + b.L) - a.W / Math.max(1, a.W + a.L) || b.cW - a.cW);
-  return { yr, row, stats, finish, won, round, rounds, seed: row?.seed || 0, champ, runnerUp, finalFour, leaders, mine, national, allTeams,
+  return { pro, yr, row, stats, finish, won, round, rounds, seed: row?.seed || 0, champ, runnerUp, finalFour, leaders, mine, national, allTeams,
     division: divs[team.division] || '', standings, place: standings.findIndex(x => x.t === team) + 1 };
 }
 
