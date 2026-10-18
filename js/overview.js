@@ -235,6 +235,17 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
       if (morale >= 85) heat -= 1;
       if (heat >= 3) out.push({ kind: 'star', p: star, team, heat: Math.min(3, Math.floor(heat / 1.5)), why, level: level(star), mpg, morale });
     }
+    // The tax: an expensive team that isn't winning might blow it up; a
+    // contender over the line has to decide whether to pay.
+    if (FA.capSystemOn()) {
+      const C = FA.capLines(L), pay = FA.teamCommitted(team);
+      if (pay > C.tax) {
+        const bill = FA.taxBill(L, team);
+        const big = [...roster].filter(p => level(p) >= 76).sort((a, b) => (b.contract?.sal || 0) - (a.contract?.sal || 0))[0];
+        if (big && FA.taxStance(L, team) !== 'pay') out.push({ kind: 'blowup', p: big, team, heat: 2, why: [`$${pay - C.tax}M over the tax`, `a $${bill}M tax bill`], level: level(big), morale: big.season?.morale ?? 70, bill });
+        else if (big) out.push({ kind: 'taxpay', p: star, team, heat: 1, why: [`$${pay - C.tax}M over the tax`], level: level(star), morale: star.season?.morale ?? 70, bill });
+      }
+    }
     // Veterans a rebuilding (or sliding) team might move.
     if (st.status === 'rebuilding') {
       for (const p of roster.slice(0, 6)) {

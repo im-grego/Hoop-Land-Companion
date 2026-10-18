@@ -15,7 +15,7 @@ import { jerseyNumber, playerName } from './savefile.js';
 import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
 import { levelOf } from './savefile.js';
-import { teamRecord } from './draft.js';
+import { teamRecord, teamStatus } from './draft.js';
 
 export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRAFTED = 2;
 export const OPT_NONE = 0, OPT_TEAM = 1, OPT_PLAYER = 2;
@@ -99,11 +99,56 @@ export const exceptions = league => {
   const c = capLines(league).cap;
   return { mle: Math.round(c * 0.09), tmle: Math.round(c * 0.036), rmle: Math.round(c * 0.057), bae: Math.round(c * 0.033) };
 };
+// The mid-level exception a team can use today (week 2 on, once per
+// offseason): under the cap with little space, the room MLE; over the cap
+// and under the 1st apron, the non-taxpayer MLE (which hard-caps the team
+// at the 1st apron); between the aprons, the taxpayer MLE; over the 2nd
+// apron, none. { kind, name, sal, yrs, hard } or null.
+export const MLE_NAMES = { mle: 'Non-taxpayer MLE', tmle: 'Taxpayer MLE', rmle: 'Room MLE' };
+export function mleFor(league, team, day, used = {}, o = FA_DEFAULTS) {
+  if (day < 2 || used.mle?.has(team.id)) return null;
+  if (!CAP_ON) return capSpace(league, team) < o.mle ? { kind: 'mle', name: 'MLE', sal: o.mle, yrs: o.mleMaxYears, hard: false } : null;
+  const ex = exceptions(league), tier = capTier(league, team);
+  if (tier === 'under') return capSpace(league, team) < ex.rmle ? { kind: 'rmle', name: MLE_NAMES.rmle, sal: ex.rmle, yrs: 2, hard: false } : null;
+  if (tier === 'over' || tier === 'tax') return { kind: 'mle', name: MLE_NAMES.mle, sal: ex.mle, yrs: 3, hard: true };
+  if (tier === 'apron1') return { kind: 'tmle', name: MLE_NAMES.tmle, sal: ex.tmle, yrs: 2, hard: false };
+  return null;
+}
 export const teamCommitted = team => payroll(team) + deadMoney(team);
 // Where a team sits: 'under' | 'over' | 'tax' | 'apron1' | 'apron2'.
 export function capTier(league, team, extra = 0) {
   const L = capLines(league), pay = teamCommitted(team) + extra;
   return pay < L.cap ? 'under' : pay < L.tax ? 'over' : pay < L.apron1 ? 'tax' : pay < L.apron2 ? 'apron1' : 'apron2';
+}
+// Can these two sides swap players under the cap rules? Sides are
+// { team, players } (players sent out). Over the cap a team can take back
+// up to 125% of what it sends (+$1M); at the 1st apron no more than it
+// sends; nobody ends over the 2nd apron. Returns null or the reason.
+export function tradeCheck(league, A, B) {
+  if (!CAP_ON) return null;
+  const C = capLines(league);
+  const sal = list => (list || []).reduce((a, p) => a + (p.status === STATUS_SIGNED || p.status === STATUS_DRAFTED ? p.contract?.sal || 0 : 0), 0);
+  for (const [me, them] of [[A, B], [B, A]]) {
+    const out = sal(me.players), inn = sal(them.players);
+    if (inn <= out) continue;
+    const after = teamCommitted(me.team) - out + inn;
+    if (after > C.apron2) return `${me.team.shortName} would go over the 2nd apron ($${C.apron2}M)`;
+    if (after <= C.cap) continue;
+    if (after >= C.apron1) return `${me.team.shortName} is at the 1st apron: can't take back more salary than it sends ($${inn}M in, $${out}M out)`;
+    if (inn > Math.floor(out * 1.25) + 1) return `${me.team.shortName} is over the cap: can take back up to $${Math.floor(out * 1.25) + 1}M for $${out}M out`;
+  }
+  return null;
+}
+// How a front office feels about the tax: 'pay' (a contender keeping a
+// winner together, up to the 2nd apron), 'avoid' (stay under the tax line),
+// or 'blowup' (expensive, over the tax and not winning: shed salary).
+export function taxStance(league, team) {
+  if (!CAP_ON) return 'pay';
+  const st = teamStatus(league, team), pct = teamRecord(team).pct ?? 0.5;
+  const over = teamCommitted(team) > capLines(league).tax;
+  if (st === 'contending') return 'pay';
+  if (over && pct < 0.5) return 'blowup';
+  return 'avoid';
 }
 export const TIER_NAMES = { under: 'Under the cap', over: 'Over the cap', tax: 'Taxpayer', apron1: '1st apron', apron2: '2nd apron' };
 // Luxury tax on next season's payroll: $1.50 per $1 for the first $5M over
@@ -262,10 +307,10 @@ export function offerRoom(league, team, p, day, used = {}, o = FA_DEFAULTS) {
   const space = Math.max(0, capSpace(league, team));
   const bird = p.status === STATUS_EXPIRING && p.tid === team.id;
   const full = signedRoster(team).length >= o.rosterMax;
-  const mle = day >= 2 && !used.mle?.has(team.id) && capSpace(league, team) < o.mle;
+  const mle = mleFor(league, team, day, used, o);
   const min = minOk(p);
   let max = bird ? maxSalary(league, p, true) : Math.min(maxSalary(league, p), space);
-  if (mle) max = Math.max(max, o.mle);
+  if (mle) max = Math.max(max, mle.sal);
   if (min) max = Math.max(max, minFor(p, o));
   return { full, bird, space: space > 0, mle, min, vetMin: min && isVet(p, o), max: full ? 0 : max };
 }
@@ -279,13 +324,21 @@ export function checkOffer(league, team, p, offer, day, used = {}, o = FA_DEFAUL
   if (offer.yrs < 1 || offer.yrs > (room.bird ? o.birdMaxYears : o.maxYears)) return `1–${room.bird ? o.birdMaxYears : o.maxYears} years`;
   if (offer.yrs >= 5 && !offer.opt) return 'A 5-year deal needs an option (4 + 1)';
   if (!room.bird && offer.yrs < 2 && isRestricted(league, p)) return 'An offer sheet runs at least 2 years';
+  if (CAP_ON) {
+    // Nobody goes over the 2nd apron (the game's cap), and a team that used
+    // the non-taxpayer MLE is hard-capped at the 1st apron.
+    const C = capLines(league), after = teamCommitted(team) + offer.sal;
+    if (after > C.apron2) return `Would put ${team.shortName} over the 2nd apron ($${C.apron2}M)`;
+    if (used.hard?.has(team.id) && after > C.apron1) return `${team.shortName} is hard-capped at the 1st apron ($${C.apron1}M)`;
+  }
   if (room.bird) return null;
   const space = capSpace(league, team);
   if (offer.sal <= space) return null;
-  if (room.mle && offer.sal <= o.mle && offer.yrs <= o.mleMaxYears) return null;
+  const hardOk = !room.mle?.hard || teamCommitted(team) + offer.sal <= capLines(league).apron1;
+  if (room.mle && offer.sal <= room.mle.sal && offer.yrs <= room.mle.yrs && hardOk) return null;
   if (room.min && offer.sal <= minFor(p, o) && offer.yrs <= minYears(p, o)) return null;
   const tools = [`cap space $${Math.max(0, space)}M`];
-  if (room.mle) tools.push(`MLE up to $${o.mle}M × ${o.mleMaxYears}`);
+  if (room.mle) tools.push(`${room.mle.name} up to $${room.mle.sal}M × ${room.mle.yrs}`);
   if (room.min) tools.push(`${isVet(p, o) ? 'vet min' : 'minimum'} $${minFor(p, o)}M × ${minYears(p, o) > 1 ? `1–${minYears(p, o)}` : 1}`);
   return `Over the cap: ${tools.join(', ')}`;
 }
@@ -295,7 +348,7 @@ export function offerKind(league, team, p, offer, day, used = {}, o = FA_DEFAULT
   const room = offerRoom(league, team, p, day, used, o);
   if (room.bird) return 'bird';
   if (offer.sal <= capSpace(league, team)) return 'space';
-  if (room.mle && offer.sal <= o.mle) return 'mle';
+  if (room.mle && offer.sal <= room.mle.sal) return 'mle';
   return isVet(p, o) ? 'vetMin' : 'min';
 }
 
@@ -321,7 +374,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
     // Best player they can afford first, then the best value for money.
     const cost = m => m.min ?? m.ask;
     const canPay = m => m.from?.id === team.id || cost(m) <= budget * 1.05 ||
-      (day >= 2 && !used.mle?.has(team.id) && cost(m) <= o.mle * 1.1) ||
+      (mleFor(league, team, day, used, o) && cost(m) <= mleFor(league, team, day, used, o).sal * 1.1) ||
       (minOk(m.p) && cost(m) <= minFor(m.p, o) * 1.5);
     // Teams cool on players who already have a crowd of suitors.
     const crowd = m => 1 + 0.15 * (bids.get(m.p.id)?.length || 0);
@@ -344,7 +397,8 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       if (day >= 3 && m.min === o.vetMin && isVet(m.p, o)) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
       else if (!bird && sal > budget) {
         // Fall back to an exception.
-        if (day >= 2 && !used.mle?.has(team.id) && m.ask <= o.mle * 1.1) offer = { ...offer, sal: Math.min(o.mle, Math.max(sal, m.ask)), yrs: Math.min(yrs, o.mleMaxYears), opt: rng() < 0.5 ? OPT_PLAYER : OPT_TEAM };
+        const ml = mleFor(league, team, day, used, o);
+        if (ml && m.ask <= ml.sal * 1.1) offer = { ...offer, sal: Math.min(ml.sal, Math.max(sal, m.ask)), yrs: Math.min(yrs, ml.yrs), opt: rng() < 0.5 ? OPT_PLAYER : OPT_TEAM };
         else if (minOk(m.p) && m.ask <= minFor(m.p, o) * 1.5) offer = { ...offer, sal: minFor(m.p, o), yrs: 1, opt: OPT_NONE };
         else continue;
       }
@@ -352,6 +406,8 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       // Five years only for a team's own player, as 4 + an option.
       if (offer.yrs >= 5) { if (!bird) offer.yrs = o.maxYears; else if (!offer.opt) offer.opt = rng() < 0.6 ? OPT_PLAYER : OPT_TEAM; }
       if (checkOffer(league, team, m.p, offer, day, used, o)) continue;
+      // Only a contender goes into the tax for a free agent.
+      if (CAP_ON && offer.sal > minFor(m.p, o) && taxStance(league, team) !== 'pay' && teamCommitted(team) + offer.sal > capLines(league).tax) continue;
       const list = bids.get(m.p.id) || [];
       if (list.some(b => b.tid === team.id)) continue;
       list.push(offer);
@@ -515,11 +571,15 @@ export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS, { 
     let matched = false;
     if (m.from && best.tid !== m.from.id && isRestricted(league, m.p)) {
       const yes = userTeams.has(m.from.id) ? !!matches.get(m.p.id) : cpuMatches(league, m.from, m.p, best, o);
-      if (yes && signedRoster(m.from).length < o.rosterMax) { best = { ...best, tid: m.from.id, cpu: !userTeams.has(m.from.id) }; matched = true; }
+      const fits = !CAP_ON || teamCommitted(m.from) + best.sal <= capLines(league).apron2;
+      if (yes && fits && signedRoster(m.from).length < o.rosterMax) { best = { ...best, tid: m.from.id, cpu: !userTeams.has(m.from.id) }; matched = true; }
     }
     const team = league.teams.find(t => t.id === best.tid);
     const kind = matched ? 'bird' : offerKind(league, team, m.p, best, day, used, o);
-    if (kind === 'mle') (used.mle ||= new Set()).add(team.id);
+    if (kind === 'mle') {
+      (used.mle ||= new Set()).add(team.id);
+      if (mleFor(league, team, day, {}, o)?.hard) (used.hard ||= new Set()).add(team.id);
+    }
     const rec = signPlayer(league, m.p, team, best, day);
     signings.push({ p: m.p, from: m.from, team, offer: best, motive: m.motive, bidders: list.length, kind, matched,
       why: matched ? `🔒 ${team.shortName} matched the offer sheet` : why(m.motive, best, teamStrength(league, team)), rec });
