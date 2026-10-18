@@ -24,7 +24,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.41.3';
+const APP_VERSION = '0.41.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2544,20 +2544,21 @@ const GRADES = [
   ['Second Round', 'g-r2'], ['UDFA', 'g-udfa'], ['N/A', 'g-na'],
 ];
 const compAvg = list => { const xs = (list || []).slice(0, 3).map(x => x.pot || 0).filter(Boolean); return xs.length ? xs.reduce((a, v, i) => a + v * [0.5, 0.3, 0.2][i], 0) / [0.5, 0.3, 0.2].slice(0, xs.length).reduce((a, b) => a + b, 0) : 0; };
-// Grade score: comp tiers (ceiling counts most) plus how high his projected
-// top ratings run, younger a little better. Thresholds are fixed, so the
-// count of each grade follows the strength of the class.
+// Grade score: potential leads (as scouted: 9 = 4½★ is top-five talent,
+// a 10 is almost always a Lock), then polish (how good his best ratings are
+// right now) and how high they can go, younger a little better. A raw
+// high-ceiling teenager and a polished five-star freshman with the same
+// potential land apart. Thresholds are fixed, so each grade's count
+// follows the strength of the class.
 function gradeScore(p) {
-  const c = compsFor(p), v = draftVecs();
+  const v = draftVecs();
   const top8 = a => { const t = [...a].sort((x, y) => y - x).slice(0, 8); return t.reduce((q, w) => q + w, 0) / (t.length || 1); };
-  const C = compAvg(c.ceiling), F = compAvg(c.floor);
-  if (!C) return null;
-  return C + 0.6 * F + 0.5 * (top8(v.fns.ceilOf(p)) - 13) + (p.age <= 19 ? (19 - p.age) * 0.15 : -(p.age - 19) * 0.2);
+  const age = p.age <= 19 ? (19 - p.age) * 0.15 : -(p.age - 19) * 0.2;
+  return scoutPot(p) + 0.3 * (top8(v.fns.floorOf(p)) - 11.5) + 0.25 * (top8(v.fns.ceilOf(p)) - 13) + age;
 }
 function gradeOf(p) {
   const s = gradeScore(p);
-  if (s == null) return GRADES[6];
-  return GRADES[s >= 15.2 ? 0 : s >= 14 ? 1 : s >= 12.5 ? 2 : s >= 11.4 ? 3 : s >= 9.6 ? 4 : s >= 7.6 ? 5 : 6];
+  return GRADES[s >= 9.9 ? 0 : s >= 9.2 ? 1 : s >= 8.2 ? 2 : s >= 7.5 ? 3 : s >= 6.3 ? 4 : s >= 5.6 ? 5 : 6];
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
 // One prospect in the "make your pick" list.
