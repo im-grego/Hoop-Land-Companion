@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.56.0';
+const APP_VERSION = '0.56.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5371,7 +5371,7 @@ function currentStorylines() {
   const pr = presserStore();
   const podium = [
     ...promiseStories(L, loadPromises()),
-    ...L.teams.filter(isUserTeam).flatMap(t => presserStories(L, t, pr[t.id], li)),
+    ...L.teams.filter(isUserTeam).flatMap(t => presserStories(L, t, pr[t.id], li, pr.frozen?.[t.id])),
   ];
   return { stories: buildStorylines(L, { leagueIdx: li, leagues: state.data.seasonLeagues, params: state.params, dev, mentorships, faSignings }), players, podium };
 }
@@ -5683,18 +5683,23 @@ function savePromises(v) { try { localStorage.setItem(promisesKey(), JSON.string
 // battle. Returns [{ text, apply }].
 function presserEffects(L, t, ans) {
   const out = [];
+  // Each effect carries the question it came from and whether it's good news.
+  let key = 'promise';
+  const push = out.push.bind(out);
+  out.push = (...xs) => push(...xs.map(x => ({ key, good: true, ...x })));
   const find = id => t.roster.find(p => p.id === +id);
-  const mood = (p, n) => ({ text: `${p.fn} morale ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); } });
-  const loyal = (p, n) => ({ text: `${p.fn} loyalty ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.traits) p.traits.loyalty = Math.max(1, Math.min(20, (p.traits.loyalty || 10) + n)); } });
+  const mood = (p, n) => ({ good: n > 0, text: `${p.fn} morale ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); } });
+  const loyal = (p, n) => ({ good: n > 0, text: `${p.fn} loyalty ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.traits) p.traits.loyalty = Math.max(1, Math.min(20, (p.traits.loyalty || 10) + n)); } });
   // Last year's promises: kept, he's happier; broken, the room noticed.
   for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.tid === t.id && x.v === 'commit')) {
     const P = find(pr.pid);
     if (P) out.push({ ...mood(P, 5), text: `Promise kept: ${P.fn} morale +5` });
-    else out.push({ text: 'Promise broken: everyone\'s morale −3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 3); }) });
+    else out.push({ good: false, text: 'Promise broken: everyone\'s morale −3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 3); }) });
   }
-  for (const q of presserQuestions(L, t, state.leagueIdx)) {
+  for (const q of presserQs(L, t)) {
     const a = ans?.[q.key];
     if (!a) continue;
+    key = q.key;
     const P = find(q.pid);
     if (q.key === 'contract' && P) {
       if (a === 'commit') out.push(mood(P, 8), loyal(P, 1));
@@ -5726,36 +5731,56 @@ function presserEffects(L, t, ans) {
   }
   return out;
 }
-const presserStar = (L, t) => { const q = presserQuestions(L, t, state.leagueIdx).find(x => x.key === 'moves'); return q?.pid ? t.roster.find(p => p.id === q.pid) : null; };
+const presserStar = (L, t) => { const q = presserQs(L, t).find(x => x.key === 'moves'); return q?.pid ? t.roster.find(p => p.id === q.pid) : null; };
 function applyPresser() {
   const L = league(), pr = presserStore();
   if (pr.applied) return;
-  for (const t of L.teams.filter(isUserTeam)) for (const e of presserEffects(L, t, pr[t.id])) e.apply();
+  pr.frozen = {}; pr.fx = {};
+  for (const t of L.teams.filter(isUserTeam)) {
+    pr.frozen[t.id] = presserQuestions(L, t, state.leagueIdx);
+    const fx = presserEffects(L, t, pr[t.id]);
+    pr.fx[t.id] = fx.map(({ key, good, text }) => ({ key, good, text }));
+    for (const e of fx) e.apply();
+  }
   pr.applied = true;
   savePresser(pr);
   state.dirty = true;
 }
 
+// The questions as asked: frozen when you finish, since answers can change
+// the lineup the questions are built from.
+const presserQs = (L, t) => presserStore().frozen?.[t.id] || presserQuestions(L, t, state.leagueIdx);
+const fxLine = list => list.length ? `<p class="note small pq-fx">${list.map(e => `<span class="${e.good ? 'up' : 'down'}">${esc(e.text)}</span>`).join(' · ')}</p>` : '';
 function presserCard() {
   const L = league();
   const mine = L.teams.filter(isUserTeam);
   if (!mine.length) return '';
   const pr = presserStore();
   return mine.map(t => {
-    const qs = presserQuestions(L, t, state.leagueIdx);
+    const qs = presserQs(L, t);
     const ans = pr[t.id] || {};
     const tint = teamTint(t);
+    const fx = pr.applied ? (pr.fx?.[t.id] || []) : presserEffects(L, t, ans);
+    const done = qs.every(q => ans[q.key]);
+    const body = pr.applied
+      // On the record: your answers as quotes, with what they did.
+      ? qs.filter(q => ans[q.key]).map(q => `<div class="pq">
+          <p class="note small muted">${esc(q.q)}</p>
+          <p class="note pq-quote">"${esc(q.options.find(o => o.v === ans[q.key])?.label || '')}"</p>
+          ${fxLine(fx.filter(e => e.key === q.key))}</div>`).join('')
+      : qs.map(q => `<div class="pq">
+          <p class="note small"><b>${esc(q.q)}</b></p>
+          <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}">${esc(o.label)}</button>`).join('')}</div>
+          ${fxLine(fx.filter(e => e.key === q.key))}</div>`).join('');
     return `<fieldset class="frame presser"><legend>🎙️ Press Conference</legend>
       <div class="outlook" ${tint ? `style="${tint}"` : ''}><div class="outlook-top ${tint ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b></div>
-      <div class="stack">${qs.map(q => `<div class="pq">
-        <p class="note small"><b>${esc(q.q)}</b></p>
-        <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}">${esc(o.label)}</button>`).join('')}</div>
-      </div>`).join('')}</div></div>
-      ${(() => { const fx = presserEffects(L, t, ans); return fx.length ? `<p class="note small" style="margin-top:6px">${pr.applied ? '✓ ' : ''}${fx.map(e => esc(e.text)).join(' · ')}</p>` : ''; })()}
-      <p class="note muted small" style="margin-top:6px">${pr.applied ? 'Your answers are on the record.' : 'What you say here sticks when Media Day wraps up. Promises get remembered next year.'}</p>
+      ${fxLine(fx.filter(e => e.key === 'promise'))}
+      <div class="stack">${body}</div></div>
+      ${pr.applied ? '' : `<button class="btn focus" data-act="presserFinish" style="margin-top:8px" ${done ? '' : 'disabled'}>🎙️ Finish Press Conference</button>`}
     </fieldset>`;
   }).join('');
 }
+actions.presserFinish = () => { applyPresser(); render(); toast('🎙️ On the record'); };
 actions.presserAnswer = d => {
   const pr = presserStore();
   if (pr.applied) return;

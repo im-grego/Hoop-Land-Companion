@@ -128,10 +128,11 @@ export function presserQuestions(league, team, li = 0) {
 }
 
 // One storyline per answered question: { kind, score, icon, title, text, pid }.
-export function presserStories(league, team, answers, li = 0) {
+// `frozen`: the questions as they were asked (answers can change the roster).
+export function presserStories(league, team, answers, li = 0, frozen = null) {
   const sit = teamSituation(league, team, li);
   const out = [];
-  for (const q of presserQuestions(league, team, li)) {
+  for (const q of frozen || presserQuestions(league, team, li)) {
     const a = answers?.[q.key];
     if (!a) continue;
     const P = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid);

@@ -1243,3 +1243,5 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .cap-bar .cb-pay { background: var(--cyan); }
 .cap-bar .cb-dead { background: var(--down); }
 .cap-legend { display: flex; flex-wrap: wrap; gap: 2px 10px; margin-bottom: 4px; }
+.pq-fx { margin-top: 4px; }
+.pq-quote { font-style: italic; font-weight: 700; margin: 2px 0; }
