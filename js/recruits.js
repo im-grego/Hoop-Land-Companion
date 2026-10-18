@@ -5,6 +5,7 @@
 // ceilings run, polish how much of them he has now.
 
 import { jerseyNumber } from './savefile.js';
+import POOL from './appearance-pool.js';
 
 const SK = ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE', 'DRE', 'STL', 'BLK'];
 // Skill weights by position group (relative ceilings).
@@ -66,6 +67,7 @@ export function generateRecruit(L, li, rng, { stars = 3, id, template }) {
     age, ht, wt, yrs: 0, num: 0, pos, teamPos: Math.min(8, pos - (pos % 2)), posRnk: 0, linePos: -1, rating: p.rating, pri: 11, sec: 0, arc: '',
     pot, regressionAge: 32, attributes: attrs, skills: [], tendencies: tnd, awards: [], records: 0, status: 0,
   });
+  Object.assign(p, randomLook(rng, template));
   if (p.traits) for (const k of Object.keys(p.traits)) p.traits[k] = 0;
   if (p.season) Object.assign(p.season, { xp: [0, 0, 0, 0, 0], ap: [0, 0, 0, 0, 0], morale: 100, onTradeBlock: 0, focus: 0, watch: false, scout: false, progress: 0, gpa: 0, relationship: 0, legacyPoints: 0, legacy: 0 });
   if (p.season?.injury) for (const k of Object.keys(p.season.injury)) p.season.injury[k] = 0;
@@ -109,4 +111,26 @@ export function signToSchool(L, li, team, p, { sal = 1, nil = 0, yr = L.season.c
 export function nextPlayerId(L) {
   L.meta.uPID = (L.meta.uPID || 0) + 1;
   return L.meta.uPID;
+}
+
+// A random look from the active-player pool: skin, eye, brow and hair
+// colors from one player (so they go together), hairstyle and facial hair
+// from others, and sleeves / tattoos / socks / shoes from another player's
+// pattern. A tattoo slot only takes a tattoo color that active players with
+// this exact skin tone wear; with none, the slot stays bare skin.
+export function randomLook(rng, template) {
+  const pick = a => a[Math.floor(rng() * a.length)];
+  const [skin, eye, brow, hairC, fHairC, uni] = pick(POOL.players);
+  const hair = pick(POOL.players)[6], fHair = pick(POOL.players)[7];
+  const appearance = { ...(template?.appearance || {}), skinC: skin, eyeC: eye, unibrow: !!uni, browC: brow, hair, hairC, fHair, fHairC };
+  const palette = POOL.tattoos[skin] || [];
+  const ink = palette.length ? pick(palette) : null;
+  const donor = pick(POOL.players)[8];
+  const accessories = donor.map(si => {
+    const row = POOL.sets[si];
+    const o = {};
+    POOL.keys.forEach((k, i) => { const v = row[i]; o[k] = v === 0 ? skin : v === 1 ? (ink || skin) : v; });
+    return o;
+  });
+  return { appearance, accessories };
 }
