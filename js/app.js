@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.50.0';
+const APP_VERSION = '0.51.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1070,6 +1070,7 @@ function applyBump(seed) {
     ...(isUserTeam(e.team) && devT ? { devMult: CO.devMult(devT), potMult: CO.potMult(devT) } : {}) }));
   applyCulture();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
+  state.potWhy = new Map(awards.why);
   let players = 0, points = 0, mine = 0;
   for (const [pid, n] of awards) {
     if (!n) continue;
@@ -1225,7 +1226,9 @@ function strengthStore() {
 }
 const saveStrength = () => { try { localStorage.setItem(`hlc:str:${seasonKey()}`, JSON.stringify(strengthStore())); } catch { /* ignore */ } };
 const cpuFocus = p => (p.pos >= 6 ? 'STR' : p.pos <= 2 ? 'SPD' : ['SPD', 'STM', 'STR'][p.id % 3]);
-const focusOf = (p, team) => (isUserTeam(team) && strengthStore().focus[p.id]) || cpuFocus(p);
+// Your players start on their best physical rating that still has room.
+const roomFocus = p => [...PHYSICAL].filter(k => p.attributes[k][0] < ATTR_MAX).sort((a, b) => p.attributes[b][0] - p.attributes[a][0])[0] || cpuFocus(p);
+const focusOf = (p, team) => (isUserTeam(team) ? strengthStore().focus[p.id] || roomFocus(p) : cpuFocus(p));
 function pedigree(p) {
   const d = p.history?.draft;
   if (!d?.yr) return 0;
@@ -1236,25 +1239,32 @@ function strengthOdds(p) {
   const youth = Math.max(0, Math.min(1, (STR_MAX_AGE - p.age) / 6));
   return Math.max(0.05, Math.min(0.85, 0.1 + youth * 0.3 + frameRoom(p) * 0.25 + (p.pot - 6) * 0.03 + pedigree(p) * 0.1));
 }
+// Gains for the young (25 and under), plus the odd change of size for
+// anyone: an 18–21-year-old can grow an inch, a veteran can slim down.
 function runStrength() {
   const L = league();
   const rng = mulberry32((saveSalt() ^ 0x57a3) >>> 0);
   const out = [];
   for (const team of L.teams) for (const p of team.roster) {
-    if (p.age > STR_MAX_AGE) continue;
-    const odds = strengthOdds(p);
-    const focus = focusOf(p, team);
     const gains = {};
-    const bump = k => { if (p.attributes[k][0] >= ATTR_MAX) return; p.attributes[k][0]++; if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0]; gains[k] = (gains[k] || 0) + 1; };
-    if (rng() < odds) {
-      bump(focus);
-      if (rng() < odds * 0.15) bump(focus);                       // a big summer: +2
-      else if (rng() < odds * 0.3) bump(PHYSICAL.filter(k => k !== focus)[Math.floor(rng() * 2)]);
+    let lbs = 0, inch = 0;
+    if (p.age <= STR_MAX_AGE) {
+      const odds = strengthOdds(p);
+      const focus = focusOf(p, team);
+      const bump = k => { if (p.attributes[k][0] >= ATTR_MAX) return; p.attributes[k][0]++; if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0]; gains[k] = (gains[k] || 0) + 1; };
+      if (rng() < odds) {
+        bump(focus);
+        if (rng() < odds * 0.15) bump(focus);                       // a big summer: +2
+        else if (rng() < odds * 0.3) bump(PHYSICAL.filter(k => k !== focus)[Math.floor(rng() * 2)]);
+      }
+      if (gains.STR) lbs = Math.round(gains.STR * (4 + rng() * 5));
     }
-    if (!Object.keys(gains).length) continue;
-    const lbs = gains.STR ? Math.round(gains.STR * (4 + rng() * 5)) : 0;
-    if (lbs) p.wt += lbs;
-    out.push({ pid: p.id, tid: team.id, gains, lbs });
+    if (p.age >= 18 && p.age <= 21 && rng() < 0.03) inch = 1;
+    if (!lbs && p.age >= 27 && p.wt >= 200 && rng() < 0.05) lbs = -Math.round(4 + rng() * 7);
+    if (!Object.keys(gains).length && !lbs && !inch) continue;
+    p.wt += lbs;
+    p.ht += inch;
+    out.push({ pid: p.id, tid: team.id, gains, lbs, inch });
   }
   return out;
 }
@@ -1548,7 +1558,7 @@ function strengthCard() {
   return `<fieldset class="frame"><legend>Strength Program</legend><div class="stack">
     ${res ? `<dl class="info"><dt>Players stronger, faster or fitter</dt><dd class="up">${res.length}</dd><dt>Your players</dt><dd class="up">${mine.length}</dd></dl>
       <button class="btn" data-act="nav" data-to="strength">🏋️ Strength Program Results</button>`
-    : `<p class="note small">Physical ratings only move here. Players ${STR_MAX_AGE} and under can add Strength, Speed or Stamina, likelier when they're young, have room on their frame, high potential and a high draft slot. Pick a focus for your young players first.</p>
+    : `<p class="note small">Young players can add Strength, Speed or Stamina this summer.</p>
       <button class="btn" data-act="nav" data-to="strength">🏋️ Set Focus &amp; Run</button>`}
   </div></fieldset>`;
 }
@@ -1558,17 +1568,17 @@ screens.strength = () => {
   const st = strengthStore();
   const youngMine = L.teams.filter(isUserTeam).flatMap(t => t.roster.filter(p => p.age <= STR_MAX_AGE).map(p => ({ p, t })))
     .sort((a, b) => strengthOdds(b.p) - strengthOdds(a.p));
-  const odds = p => { const o = strengthOdds(p); return o >= 0.55 ? ['High', 'up'] : o >= 0.3 ? ['Fair', 'gold'] : ['Low', 'muted']; };
-  const gainText = r => Object.entries(r.gains).map(([k, v]) => `+${v} ${k}`).join(' · ') + (r.lbs ? ` · +${r.lbs} lb` : '');
+  const odds = p => { const o = strengthOdds(p); return o >= 0.55 ? ['High', 'up'] : o >= 0.3 ? ['Fair', 'gold'] : ['Low', 'down']; };
+  const gainText = r => [...Object.entries(r.gains).map(([k, v]) => `+${v} ${k}`), r.lbs ? `${r.lbs > 0 ? '+' : '−'}${Math.abs(r.lbs)} lb` : '', r.inch ? `+${r.inch} in` : ''].filter(Boolean).join(' · ');
   let body;
   if (!st.results) {
-    body = `<p class="note small">Choose what each young player works on this summer. The chance of a gain comes from age, frame, potential and draft slot. CPU players train for their position.</p>
+    body = `<p class="note small">Choose what each young player works on this summer.</p>
       <div class="stack">${youngMine.map(({ p }) => {
         const f = focusOf(p, L.teams.find(t => t.roster.includes(p)));
         const [lbl, cls] = odds(p);
-        return `<div class="workout"><div class="wk-head"><b>${esc(playerName(p))}</b> ${lvTag(p)} <span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb</span></div>
+        return `<div class="workout"><div class="wk-head"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb</span></div>
           <span class="small">Outlook: <b class="${cls}">${lbl}</b> · STR ${p.attributes.STR[0]} · SPD ${p.attributes.SPD[0]} · STM ${p.attributes.STM[0]}</span>
-          <div class="opts">${STR_FOCUS.map(([k, l]) => `<button class="btn small ${f === k ? 'on focus' : 'off'}" data-act="strFocus" data-id="${p.id}" data-k="${k}">${l}</button>`).join('')}</div></div>`;
+          <div class="opts">${STR_FOCUS.map(([k, l]) => `<button class="btn small ${f === k ? 'on focus' : 'off'}" data-act="strFocus" data-id="${p.id}" data-k="${k}" ${p.attributes[k][0] >= ATTR_MAX ? 'disabled' : ''}>${l}</button>`).join('')}</div></div>`;
       }).join('') || '<p class="note muted">None of your players are young enough for the program.</p>'}</div>`;
   } else {
     const rows = st.results.map(r => ({ r, team: L.teams.find(t => t.id === r.tid), p: L.teams.flatMap(t => t.roster).find(x => x.id === r.pid) })).filter(x => x.p);
@@ -1577,13 +1587,12 @@ screens.strength = () => {
     body = `<fieldset class="frame"><legend>Your Players</legend><div class="stack">${mine.map(row).join('') || '<p class="note muted small">No gains for your players this summer.</p>'}</div></fieldset>
       <fieldset class="frame"><legend>Around the League</legend><div class="stack">${rest.map(row).join('') || '<p class="note muted small">None.</p>'}</div></fieldset>`;
   }
-  layout({ title: 'Strength Program', body, action: st.results ? null : { act: 'strRun', label: 'Run the Strength Program' } });
+  layout({ title: 'Strength Program', body, action: st.results ? null : { act: 'strRun', label: 'Run Program' } });
 };
 actions.strFocus = d => { strengthStore().focus[+d.id] = d.k; saveStrength(); render(); };
 actions.strRun = async () => {
   const st = strengthStore();
   if (st.results) return;
-  if (!(await confirmBox('Run the strength program for every team? Gains are written to the save.', 'Run'))) return;
   checkpoint('Strength program');
   st.results = runStrength();
   saveStrength();
@@ -1600,23 +1609,20 @@ screens.offseason = () => {
   layout({
     title: isCollege() ? 'Summer Development' : 'Training Camp',
     body: `
-      <img class="hero" src="icons/hero-camp.jpg" alt="">
-      ${coachCard()}
       ${isCollege() ? '' : mentorCard()}
       <fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
           ${auto ? `
-            <dl class="info">
+            <dl class="info tight">
               <dt>Players improved</dt><dd class="up">${auto.players}</dd>
               <dt>Ratings upgrades</dt><dd class="up">+${auto.points}</dd>
-              <dt>Your teams</dt><dd class="up">+${auto.mine}</dd>
-              <dt>Potential up</dt><dd class="up">${auto.potUps ?? 0}</dd>
-              <dt>Potential down</dt><dd class="down">${auto.potDowns ?? 0}</dd>
-              <dt>Regression age +1</dt><dd class="up">${auto.longevity ?? 0}</dd>
-              <dt>Regression age −1</dt><dd class="down">${auto.regDowns ?? 0}</dd>
+              <dt>Your team</dt><dd class="up">+${auto.mine}</dd>
+              <dt>Potential ↑</dt><dd class="up">${auto.potUps ?? 0}</dd>
+              <dt>Potential ↓</dt><dd class="down">${auto.potDowns ?? 0}</dd>
+              <dt>Regression age ↑</dt><dd class="up">${auto.longevity ?? 0}</dd>
+              <dt>Regression age ↓</dt><dd class="down">${auto.regDowns ?? 0}</dd>
             </dl>
             <button class="btn focus" data-act="nav" data-to="report">📋 Progression Report</button>
-            <button class="btn" data-act="nav" data-to="trainer">🩺 Meet with the Trainer</button>
             ${P.commissioner ? '<button class="btn small" data-act="undoAuto">↺ Undo</button>' : ''}`
           : `
             <p class="note"><b>Development coach:</b> players ${bands[bands.length - 1][0]} and under get ratings upgrades, based on youth and usage.</p>
@@ -1625,6 +1631,10 @@ screens.offseason = () => {
         </div>
       </fieldset>
       ${strengthCard()}
+      ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
+        <p class="note small">Health, potential and size changes for your players.</p>
+        <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
+      ${coachCard()}
       ${contractCard()}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
@@ -1650,6 +1660,7 @@ actions.calDevBack = () => {
 screens.trainer = () => {
   const L = league();
   const yr = lastSeasonYear();
+  const size = new Map((strengthStore().results || []).map(r => [r.pid, r]));
   const body = L.teams.filter(isUserTeam).map(t => {
     const rows = [...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => {
       const snap = snapOf(p);
@@ -1657,9 +1668,11 @@ screens.trainer = () => {
       const h = injuryRisk(p, yr, state.params);
       const status = !h ? ['Healthy', 'up'] : h.cls === 'structural' ? ['Structural', 'down'] : h.cls === 'nagging' ? ['Nagging', 'gold'] : ['Recovered', 'muted'];
       const phys = PHYSICAL.map(k => `${k} ${p.attributes[k][0]}`).join(' · ');
+      const sz = size.get(p.id);
       const changes = [
-        d.potDelta > 0 ? '<span class="badge new">Potential ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">Potential ▼</span>' : '',
-        d.regDelta > 0 ? `<span class="badge lvl">Regression ${p.regressionAge}</span>` : d.regDelta < 0 ? `<span class="badge down-b">Regression ${p.regressionAge}</span>` : '',
+        longevityBadges(p, d, false),
+        sz?.lbs ? `<span class="badge ${sz.lbs > 0 ? 'lvl' : ''}">${sz.lbs > 0 ? 'Bulked up' : 'Slimmed down'} ${sz.lbs > 0 ? '+' : '−'}${Math.abs(sz.lbs)} lb</span>` : '',
+        sz?.inch ? `<span class="badge new">Grew +${sz.inch} in</span>` : '',
       ].join('');
       return `<div class="trainer-row">
         <div class="tr-top"><b>${esc(playerName(p))}</b> ${lvTag(p)}<span class="badge ${status[1] === 'up' ? 'lvl' : status[1] === 'down' ? 'down-b' : ''}">${status[0]}</span></div>
@@ -2149,23 +2162,23 @@ screens.report = (args) => {
   if (state.params.includeFreeAgents && L.freeAgents?.length) groups.push({ team: null, title: 'Free Agents', players: L.freeAgents });
   const gi = ((args.g ?? 0) % groups.length + groups.length) % groups.length;
   const g = groups[gi];
-  const rows = g.players.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => a.p.age - b.p.age);
+  const rows = g.players.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => shownLevel(b.p) - shownLevel(a.p) || a.p.age - b.p.age);
   const improved = rows.filter(r => awardOf(r.p));
   const total = rows.reduce((a, r) => a + awardOf(r.p), 0);
   const count = f => rows.filter(f).length;
   const summary = [
     `${improved.length} improved <span class="up">+${total}</span>`,
-    count(r => r.d.potDelta > 0) && `<span class="up">${count(r => r.d.potDelta > 0)} gained potential</span>`,
-    count(r => r.d.potDelta < 0) && `<span class="down">${count(r => r.d.potDelta < 0)} lost potential</span>`,
-    count(r => r.d.regDelta > 0) && `<span class="up">${count(r => r.d.regDelta > 0)} regression age +1</span>`,
-    count(r => r.d.regDelta < 0) && `<span class="down">${count(r => r.d.regDelta < 0)} regression age −1</span>`,
+    count(r => r.d.potDelta > 0) && `<span class="up">Potential ↑ ${count(r => r.d.potDelta > 0)}</span>`,
+    count(r => r.d.potDelta < 0) && `<span class="down">Potential ↓ ${count(r => r.d.potDelta < 0)}</span>`,
+    count(r => r.d.regDelta > 0) && `<span class="up">Regression age ↑ ${count(r => r.d.regDelta > 0)}</span>`,
+    count(r => r.d.regDelta < 0) && `<span class="down">Regression age ↓ ${count(r => r.d.regDelta < 0)}</span>`,
   ].filter(Boolean).join(' · ');
   layout({
     title: 'Progression Report',
     body: `
       <div class="tsel report-nav">
         <button class="tsel-arrow" data-act="reportNav" data-g="${gi - 1}" aria-label="Previous team">◀</button>
-        <span class="tsel-team ${isUserTeam(g.team) ? 'mine' : ''}">${g.team ? logoImg(g.team) : ''}<span class="tsel-name"><b>${esc(g.team ? g.team.shortName : 'FA')}</b><span class="small muted">${esc(g.title)}</span></span></span>
+        <span class="tsel-team ${isUserTeam(g.team) ? 'mine' : ''}"><span class="tsel-name"><b class="full-name">${esc(g.title)}</b></span></span>
         <button class="tsel-arrow" data-act="reportNav" data-g="${gi + 1}" aria-label="Next team">▶</button>
       </div>
       <p class="note small" style="margin:10px 0">${summary}</p>
@@ -2175,13 +2188,11 @@ screens.report = (args) => {
 
 // One player in the progression report (read-only).
 function reportRow(p, d) {
-  const mpg = lastSeasonMpg(p, state.leagueIdx);
-  const award = awardOf(p);
   const ups = Object.entries(d.attrs).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${k} ${v > 0 ? '+' : ''}${v}</span>`).join(' ');
   return `<div class="prow rrow">
-    <span class="name"><span class="gold">${esc(playerName(p))}</span> ${lvTag(p, 'small')}</span>
-    <span class="right"><span class="stars">${potStars(p)}</span><br>${award ? `<span class="up">+${award}</span>` : '<span class="muted">—</span>'}</span>
-    <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · ${p.yrs ? `${p.yrs} yr${p.yrs > 1 ? 's' : ''} exp` : 'Rookie'} · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'}</span>
+    <span class="name full"><span class="gold">${esc(playerName(p))}</span> ${lvTag(p, 'small')}</span>
+    <span class="stars-line">${potStars(p)}</span>
+    <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · ${p.yrs ? `${p.yrs} yr${p.yrs > 1 ? 's' : ''} exp` : 'Rookie'}</span>
     ${ups || d.potDelta || d.regDelta ? `<span class="chg">${ups}${longevityBadges(p, d)}</span>` : ''}
   </div>`;
 }
@@ -2214,10 +2225,16 @@ function injuryBadge(p) {
   return r ? `<span class="badge down-b">${esc(injuryName(r.worst))} · ${r.cls}</span>` : '';
 }
 
-function longevityBadges(p, d) {
-  return (d.regDelta ? `<span class="badge ${d.regDelta > 0 ? 'lvl' : 'down-b'}">Regress ${p.regressionAge - d.regDelta + 1}→${p.regressionAge + 1}</span>` : '') +
-    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? '<span class="badge down-b">POT ▼</span>' : '') +
-    injuryBadge(p);
+// Regression age (raw, as the trainer shows it); a player who was already
+// regressing and earned a year back has paused it.
+const POT_WHY = { injury: 'injury', production: 'production down', minutes: 'barely played', development: 'slow development' };
+function longevityBadges(p, d, injury = true) {
+  const was = p.regressionAge - d.regDelta;
+  const paused = d.regDelta > 0 && p.age > was;
+  const why = POT_WHY[state.potWhy?.get(p.id)];
+  return (d.regDelta ? `<span class="badge ${d.regDelta > 0 ? 'lvl' : 'down-b'}">${paused ? 'Regression paused' : `Regression age ${was}→${p.regressionAge}`}</span>` : '') +
+    (d.potDelta > 0 ? '<span class="badge new">POT ▲</span>' : d.potDelta < 0 ? `<span class="badge down-b">POT ▼${why ? ` · ${why}` : ''}</span>` : '') +
+    (injury ? injuryBadge(p) : '');
 }
 
 actions.openPlayer = d => go('player', { id: +d.id });

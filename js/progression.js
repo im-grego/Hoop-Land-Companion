@@ -308,6 +308,14 @@ export function earnsNaturalLongevity(p, mpgInfo, ctx, params) {
   return !gameDid && gamesPct >= params.naturalGamesPct && minPct >= params.naturalMinutesPct;
 }
 
+// Did the game itself already add a year (30+, every game at 62.5%+ of
+// minutes)? Then the offseason doesn't add another.
+export function gameRewardedLongevity(p, mpgInfo, ctx, params) {
+  if (!mpgInfo || !ctx?.totalGames) return false;
+  if (p.age - (ctx.rolled ? 1 : 0) < params.naturalMinAge) return false;
+  return mpgInfo.gp / ctx.totalGames * 100 >= params.gameNaturalGamesPct && mpgInfo.mpg / params.gameMinutes * 100 >= params.gameNaturalMinutesPct;
+}
+
 // ---------------------------------------------------------------------------
 // Trainer: production relative to peers
 
@@ -370,11 +378,14 @@ export function maybeRegressionDown(p, injuryClass, z, params, rng) {
 
 // Push regressionAge back a year. Only at the regression age or the year
 // before it (a 33 regression age can be earned at 32 or 33); likeliest at
-// the regression age itself. `injury` is the injury class ('standard' |
-// 'nagging' | 'structural') when the player had a qualifying injury.
-export function maybeLongevity(p, mult, params, rng, injury = null) {
+// the regression age itself. A player already regressing can pause it with
+// a strong season (z = production against his peers). `injury` is the
+// injury class ('standard' | 'nagging' | 'structural') when the player had
+// a qualifying injury.
+export function maybeLongevity(p, mult, params, rng, injury = null, z = null) {
   const year = p.age - p.regressionAge + 1; // 1 = at the regression age, 0 = the year before
-  if (year < 0 || year > 1) return false;
+  if (year < 0) return false;
+  if (year > 1 && !(z != null && z >= 0.5)) return false;
   const pct = injury === 'structural' ? params.structuralLongevityCut : injury ? params.injuryLongevityCut : 0;
   const cut = 1 - pct / 100;
   const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut;
@@ -404,6 +415,8 @@ export function injuryClass(inj, params) {
   if (!inj) return null;
   const part = injuryPart(inj);
   if (inj.majorSeverity > 0 && params.structuralParts.includes(part)) return 'structural';
+  // A break or fracture is structural wherever it is.
+  if (inj.majorSeverity === 1 || inj.majorSeverity === 3) return 'structural';
   if (params.naggingParts.includes(part)) return 'nagging';
   if (MINOR_INJURY[inj.minorSeverity] === 'Sprained' && params.naggingSprainParts.includes(part)) return 'nagging';
   return 'standard';
@@ -463,6 +476,7 @@ export function maybeSkills(p, points, params, profiles, rng) {
 export function runProgression(entries, params, profiles) {
   const rng = mulberry32(params.seed);
   const awards = new Map();
+  awards.why = new Map();  // pid -> why potential dropped
   // Sort by id so results don't depend on roster order.
   const sorted = [...entries].sort((a, b) => a.p.id - b.p.id);
   for (const e of sorted) {
@@ -481,12 +495,16 @@ export function runProgression(entries, params, profiles) {
     // Trainer: regression age up (earned, or a production-scaled roll) or
     // down (injury / poor production), never both.
     if (earnsNaturalLongevity(e.p, mpg, e, params)) e.p.regressionAge++;
+    else if (gameRewardedLongevity(e.p, mpg, e, params)) { /* the game gave his year already */ }
     else if (!maybeRegressionDown(e.p, injured ? risk.cls : null, z, params, rng)) {
       const prod = z == null ? 1 : Math.max(0.2, Math.min(2, 1 + params.prodLongevityPerZ * z));
-      maybeLongevity(e.p, mult * prod, params, rng, injured ? risk.cls : null);
+      maybeLongevity(e.p, mult * prod, params, rng, injured ? risk.cls : null, z);
     }
+    const pot = e.p.pot;
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
     else maybePotential(e.p, mult * (e.potMult || 1), params, rng, z);
+    // Why potential dropped, for the report.
+    if (e.p.pot < pot) awards.why.set(e.p.id, injured ? 'injury' : z != null && z <= params.prodPotDownZ ? 'production' : mpg && mpg.mpg < 12 ? 'minutes' : 'development');
     maybeSkills(e.p, pts, params, profiles, rng);
     if (e.spend) spendHeldPoints(e.p, params, rng);
   }
