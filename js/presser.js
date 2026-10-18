@@ -100,7 +100,7 @@ export function presserQuestions(league, team, li = 0) {
   const c = contractTarget(team, sit);
   if (c) out.push({
     key: 'contract', pid: c.p.id,
-    q: c.kind === 'final' ? `${playerName(c.p)} is heading into the final year of his deal. Are extension talks happening?` : `${playerName(c.p)} is eligible for an extension. Is that on the table?`,
+    q: c.kind === 'final' ? `${playerName(c.p)} is heading into a contract year with no extension. Is he part of the long-term plan?` : `${playerName(c.p)} is eligible for an extension. Is that on the table?`,
     options: [{ v: 'commit', label: 'We want him here long-term' }, { v: 'focus', label: 'Our focus is on the season' }, { v: 'market', label: 'We\'ll see where things land' }],
     ctx: { kind: c.kind },
   });

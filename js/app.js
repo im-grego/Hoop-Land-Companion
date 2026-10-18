@@ -21,13 +21,14 @@ import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
+import { leagueLook } from './recruits.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.56.2';
+const APP_VERSION = '0.57.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2392,7 +2393,7 @@ screens.leaders = (args) => {
     head = ATTRS.map(x => `<button class="btn small ${x === k ? 'on focus' : 'off'} ${RATING_GROUP[x] ? `sk-${RATING_GROUP[x]}` : ''}" data-act="openLeaders" data-m="ratings" data-k="${x}" data-r="1">${x}</button>`).join('');
     note = `${ATTR_NAMES[k]}: every player in the league and free agency. Ties go to the higher level.`;
   }
-  const shown = args.all ? rows : rows.slice(0, 100);
+  const shown = args.all ? rows : rows.slice(0, 25);
   const fmt = v => (mode === 'stats' ? v.toFixed(1) : v);
   layout({
     title: 'League',
@@ -2403,7 +2404,7 @@ screens.leaders = (args) => {
         <span class="ld-n">${i + 1}</span>
         <span class="grow"><b>${esc(playerName(x.e.p))}</b> ${lvTag(x.e.p)}<br><span class="small muted">${esc(tname(x.e))} · ${esc(posName(x.e.p))} · ${x.e.p.age}y</span></span>
         <b class="ld-v ${x.core != null && x.v < x.core ? 'down' : ''}">${fmt(x.v)}</b></button>`).join('')}</div>
-      ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
+      ${!args.all && rows.length > 25 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
   });
 };
 // College leaders: one college league's season (its players plus this
@@ -2426,7 +2427,7 @@ function collegeLeaders(args) {
   const rows = [...ranks].filter(([, r]) => r.qualified).map(([id, r]) => ({ p: pool.get(id), r }))
     .filter(x => x.p).map(x => ({ ...x, v: x.r.pg[k], lv: levelOf(x.p) }))
     .sort((a, b) => b.v - a.v || b.lv - a.lv);
-  const shown = args.all ? rows : rows.slice(0, 100);
+  const shown = args.all ? rows : rows.slice(0, 25);
   layout({
     title: 'College',
     body: `<p class="note small"><b>${esc(CL.leagueName || CL.shortName)}</b> · ${yr} season</p>
@@ -2440,7 +2441,7 @@ function collegeLeaders(args) {
         <span class="grow"><b>${esc(playerName(x.p))}</b>${pro ? ' <span class="badge need">Prospect</span>' : ''}<br><span class="small muted">${esc(teamOf(x.p))} · ${esc(posName(x.p))} · ${x.p.age}y · ${classYear(x.p)}</span></span>
         <b class="ld-v">${x.v.toFixed(1)}</b></${tag}>`;
       }).join('')}</div>
-      ${!args.all && rows.length > 100 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
+      ${!args.all && rows.length > 25 ? `<button class="btn small" data-act="leadersAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`,
   });
 }
 
@@ -3241,7 +3242,7 @@ screens.draft = (args) => {
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   const preview = isStep('preview');
-  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + tabs + body.html, action: preview ? { act: 'previewDone', label: 'Wrap Up the Preview' } : body.action });
+  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + (preview && !isCollege() ? looksCard() : '') + tabs + body.html, action: preview ? { act: 'previewDone', label: 'Wrap Up the Preview' } : body.action });
   if (tab === 'live') centerBoard();
   if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
@@ -3287,6 +3288,37 @@ function centerBoard() {
   const row = box?.querySelector('.lot-row.clock');
   if (row) box.scrollTop = Math.max(0, row.offsetTop - box.offsetTop - (box.clientHeight - row.offsetHeight) / 2);
 }
+
+// The draft class's looks, rebuilt from the league's own players (skin,
+// hair, gear); names, stats and ratings stay. Undo keeps the originals.
+function looksCard() {
+  const done = state.looks?.[seasonKey()];
+  return `<fieldset class="frame"><legend>🎨 Class Looks</legend><div class="row">
+    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players. Names, stats and ratings stay.'}</p>
+    ${done ? '<button class="btn small off" data-act="looksUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="looksMatch">Match My League</button>'}
+  </div></fieldset>`;
+}
+actions.looksMatch = () => {
+  const L = league();
+  const rng = mulberry32((saveSalt() ^ 0x100c) >>> 0);
+  const before = [];
+  for (const p of L.draftClass || []) {
+    const look = leagueLook(L, rng, p);
+    if (!look) break;
+    before.push({ p, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories) });
+    Object.assign(p, look);
+  }
+  if (!before.length) { toast('Not enough players in the league to draw from'); return; }
+  (state.looks ||= {})[seasonKey()] = before;
+  state.dirty = true;
+  render();
+};
+actions.looksUndo = () => {
+  const list = state.looks?.[seasonKey()] || [];
+  for (const x of list) { x.p.appearance = x.appearance; x.p.accessories = x.accessories; }
+  delete state.looks[seasonKey()];
+  render();
+};
 
 actions.draftTab = d => replace('draft', { tab: d.t });
 
@@ -4173,8 +4205,7 @@ function lotteryResultView() {
         return `<div class="lot-row ${isUserTeam(o.owner) ? 'mine' : ''}" data-tid="${o.orig.id}" data-pick="${i + 1}" data-name="${esc(`${o.orig.city} ${o.orig.name}`.trim())}" data-move="${move}"><span class="pk">${i + 1}</span>${logoImg(o.orig)}
           <span class="grow">${esc(o.orig.shortName)} <span class="muted small">${rr ? `${rr.W}-${rr.L}` : ''}</span> ${statusTag(teamStatus(L, o.orig))}${o.owner.id !== o.orig.id ? ` <span class="small gold">→ ${esc(o.owner.shortName)}</span>` : ''}</span>
           <span class="mv ${move > 0 ? 'up' : move < 0 ? 'down' : 'muted'}">${move > 0 ? `▲${move}` : move < 0 ? `▼${-move}` : '—'}</span></div>`;
-      }).join('')}</div>
-      <button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button>`,
+      }).join('')}</div>`,
   });
   if (state.lotteryReveal) { state.lotteryReveal = false; revealLottery(); }
 }
@@ -4996,14 +5027,14 @@ screens.fa = (args = {}) => {
   if (['guards', 'wings', 'bigs'].includes(view)) rows = rows.filter(m => posGroup(m.p) === view);
   if (view === 'vets') rows = rows.filter(m => m.p.age >= 30);
   const total = rows.length;
-  rows = rows.slice(0, args.all ? 400 : 60);
+  rows = rows.slice(0, args.all ? 400 : 25);
   const views = [['top', 'Best'], ['vets', 'Vets'], ['mine', 'Yours'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']];
   const O = FA.FA_DEFAULTS;
   const stageBtn = s.stage === 'open'
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
     : s.stage === 'bidding'
       ? '<button class="btn big focus" data-act="faDecide">✅ Players Decide</button>'
-      : `<button class="btn big focus" data-act="faHome">📅 Back to the Calendar</button>${state.params.commissioner ? '<button class="btn small" data-act="faUndo">↺ Undo Today</button>' : ''}`;
+      : `${state.params.commissioner ? '<button class="btn small" data-act="faUndo">↺ Undo Today</button>' : ''}`;
   const row = m => {
     const list = s.bids.get(m.p.id) || [];
     const best = faBest(s, m);
@@ -6859,7 +6890,7 @@ screens.cuts = () => {
       ${myCards}
       <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b> cut ${esc(x.names.join(', '))}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`,
-    action: done ? { act: 'goHomeCuts', label: 'Back to the Calendar' } : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
+    action: done ? null : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
 };
 // Cuts still to pick (only as many as there are cuttable players).

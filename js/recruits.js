@@ -135,3 +135,18 @@ export function randomLook(rng, template) {
   });
   return { appearance, accessories };
 }
+
+// A look built from the league's own active players (any league): skin,
+// eye, brow and hair colors from one player, hairstyle and facial hair from
+// others, and gear from another player's pattern (his bare-skin slots take
+// the new skin tone). Returns { appearance, accessories } or null.
+export function leagueLook(L, rng, template) {
+  const pool = L.teams.flatMap(t => t.roster).filter(p => p.appearance?.skinC && Array.isArray(p.accessories) && p.accessories.length);
+  if (pool.length < 10) return null;
+  const pick = () => pool[Math.floor(rng() * pool.length)];
+  const base = pick().appearance;
+  const appearance = { ...(template?.appearance || {}), skinC: base.skinC, eyeC: base.eyeC, browC: base.browC, unibrow: !!base.unibrow, hairC: base.hairC, fHairC: base.fHairC, hair: pick().appearance.hair, fHair: pick().appearance.fHair };
+  const donor = pick();
+  const accessories = donor.accessories.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === donor.appearance.skinC ? base.skinC : v])));
+  return { appearance, accessories };
+}
