@@ -6,6 +6,7 @@ import { levelOf, playerName } from './savefile.js';
 import { teamRecord, teamStatus, lotterySetup, lotteryOdds, seedOrder, standings } from './draft.js';
 import { seasonLine } from './storylines.js';
 import { tr, traitsSet } from './traits.js';
+import * as FA from './freeagency.js';
 
 const GROUPS = { guards: 'Guards', wings: 'Wings', bigs: 'Bigs' };
 export const groupOf = p => (p.pos <= 2 ? 'guards' : p.pos <= 5 ? 'wings' : 'bigs');
@@ -118,7 +119,7 @@ export function teamBooks(L, team, { level = levelOf, worth, qoEligible }) {
   const ext = roster.filter(p => p.status === 3 && (p.contract?.yrs || 0) === 1 && p.contract.canExt !== false && !options.some(o => o.p === p))
     .map(p => ({ p, level: level(p), sal: p.contract.sal, worth: worth(p) })).sort((a, b) => b.level - a.level);
   const committed = roster.filter(p => p.status === 3 && (p.contract?.yrs || 0) >= 1).reduce((a, p) => a + (p.contract.sal || 0), 0);
-  const cap = L.season.salaryCap || 200;
+  const cap = FA.capLines(L).cap;
   return { expiring, options, ext, committed, cap, space: cap - committed };
 }
 

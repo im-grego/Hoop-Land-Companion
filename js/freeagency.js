@@ -64,7 +64,66 @@ export const payroll = team => signedRoster(team).reduce((s, p) => s + (p.contra
 let DEAD = new Map();
 export function setDeadMoney(map) { DEAD = new Map(Object.entries(map || {}).map(([k, v]) => [+k, v])); }
 export const deadMoney = team => DEAD.get(team.id) || 0;
-export const capSpace = (league, team) => league.season.salaryCap - payroll(team) - deadMoney(team);
+
+// ---------------------------------------------------------------------------
+// The cap system: the NBA's cap, tax line and two aprons by season (rounded
+// to $5M), growing about 5% a year past the published years. Seasons are
+// named by the year they start (a save at currentYear 2028 is heading into
+// 2027-28). With it off, the save's own cap is the cap and there are no
+// aprons. The save's in-game cap is set to the 2nd apron on export, so the
+// game leaves room for in-season moves without cutting anyone.
+const CAP_SCHEDULE = {
+  2025: [155, 190, 195, 210], 2026: [165, 200, 210, 220], 2027: [175, 215, 225, 235],
+  2028: [185, 225, 235, 250], 2029: [195, 235, 245, 260], 2030: [205, 250, 260, 275],
+};
+const r5 = v => Math.round(v / 5) * 5;
+let CAP_ON = true;
+export function setCapSystem(on) { CAP_ON = !!on; }
+export const capSystemOn = () => CAP_ON;
+export const seasonStart = league => league.season.currentYear - 1;
+export function capLinesFor(year) {
+  const keys = Object.keys(CAP_SCHEDULE).map(Number);
+  const lo = Math.min(...keys), hi = Math.max(...keys);
+  const base = CAP_SCHEDULE[Math.max(lo, Math.min(hi, year))];
+  const f = year > hi ? 1.05 ** (year - hi) : year < lo ? 0.95 ** (lo - year) : 1;
+  const [cap, tax, apron1, apron2] = base.map(v => r5(v * f));
+  return { cap, tax, apron1, apron2 };
+}
+export function capLines(league, ahead = 0) {
+  if (!CAP_ON) { const cap = league.season.salaryCap || 200; return { cap, tax: Infinity, apron1: Infinity, apron2: Infinity, off: true }; }
+  return capLinesFor(seasonStart(league) + ahead);
+}
+// Exceptions, as a share of the cap (non-taxpayer MLE, taxpayer MLE, room
+// MLE, bi-annual), in whole $M.
+export const exceptions = league => {
+  const c = capLines(league).cap;
+  return { mle: Math.round(c * 0.09), tmle: Math.round(c * 0.036), rmle: Math.round(c * 0.057), bae: Math.round(c * 0.033) };
+};
+export const teamCommitted = team => payroll(team) + deadMoney(team);
+// Where a team sits: 'under' | 'over' | 'tax' | 'apron1' | 'apron2'.
+export function capTier(league, team, extra = 0) {
+  const L = capLines(league), pay = teamCommitted(team) + extra;
+  return pay < L.cap ? 'under' : pay < L.tax ? 'over' : pay < L.apron1 ? 'tax' : pay < L.apron2 ? 'apron1' : 'apron2';
+}
+export const TIER_NAMES = { under: 'Under the cap', over: 'Over the cap', tax: 'Taxpayer', apron1: '1st apron', apron2: '2nd apron' };
+// Luxury tax on next season's payroll: $1.50 per $1 for the first $5M over
+// the line, then 1.75, 2.50, 3.25, and +0.50 for each $5M after (repeaters
+// +1 per bracket).
+export function taxBill(league, team, repeater = false) {
+  const over = teamCommitted(team) - capLines(league).tax;
+  if (!(over > 0)) return 0;
+  let left = over, rate = 1.5, bill = 0, step = 0;
+  while (left > 0) {
+    const chunk = Math.min(5, left);
+    bill += chunk * (rate + (repeater ? 1 : 0));
+    left -= chunk;
+    step++;
+    rate = step === 1 ? 1.75 : step === 2 ? 2.5 : step === 3 ? 3.25 : rate + 0.5;
+  }
+  return Math.round(bill);
+}
+
+export const capSpace = (league, team) => capLines(league).cap - payroll(team) - deadMoney(team);
 
 // Max salary by years in the league (the save's maxContract, % of the cap:
 // 0–6 years, 7–9, 10+). Re-signing or extending with his own team, a star
@@ -93,13 +152,14 @@ export function maxCriteria(league, p) {
   return null;
 }
 export function maxPct(league, p, own = false) {
-  const tiers = league.season.maxContract || [25, 30, 35];
+  // With the cap system on, the NBA's 25 / 30 / 35% of the cap.
+  const tiers = CAP_ON ? [25, 30, 35] : league.season.maxContract || [25, 30, 35];
   const yrs = p.yrs || 0;
   const tier = yrs >= 10 ? 2 : yrs >= 7 ? 1 : 0;
   return tiers[own && tier < 2 && maxCriteria(league, p) ? tier + 1 : tier];
 }
 export function maxSalary(league, p, own = false) {
-  return Math.round(league.season.salaryCap * maxPct(league, p, own) / 100);
+  return Math.round(capLines(league).cap * maxPct(league, p, own) / 100);
 }
 // "Supermax" / "Rose rule" when his own team can pay him a tier up.
 export const maxLabel = (league, p) => (maxPct(league, p, true) > maxPct(league, p) ? ((p.yrs || 0) >= 7 ? 'Supermax eligible' : 'Rose rule eligible') : '');

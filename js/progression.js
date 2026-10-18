@@ -123,6 +123,7 @@ export const DEFAULT_PARAMS = {
   lotteryFormat: 'auto',  // auto (from the league's settings) | 321 | top4 | old
   lotteryDraws: 4,        // unused (old setting)
   draftRounds: 2,
+  capSystem: true,          // NBA cap, tax line and aprons by season (the save's cap set to the 2nd apron on export)
   liveCpuTradeChance: 10,  // % chance of a CPU trade around each CPU pick in the live draft
   draftTradeWindow: 8,
   commissioner: false,     // trades: work any team's side and force trades through

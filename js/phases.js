@@ -16,6 +16,7 @@
 
 import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY } from './savefile.js';
 import { seedOrder } from './draft.js';
+import { capLines } from './freeagency.js';
 
 const row = (team, yr) => (team.season || []).find(s => s.yr === yr);
 
@@ -60,7 +61,7 @@ export function applyLottery(league, r1) {
 const SCALE_PCT = [8.94, 8.00, 7.18, 6.48, 5.86, 5.42, 4.97, 4.53, 4.09, 3.89, 3.71, 3.53, 3.36, 3.18, 3.01,
   2.88, 2.75, 2.62, 2.50, 2.37, 2.32, 2.26, 2.21, 2.15, 2.10, 2.04, 1.98, 1.93, 1.87, 1.82];
 export const rookieScale = (league, overall, minSalary = 2) =>
-  Math.max(minSalary, Math.round((SCALE_PCT[Math.min(overall, SCALE_PCT.length) - 1] ?? SCALE_PCT[SCALE_PCT.length - 1]) * (league.season.salaryCap || 200) / 100));
+  Math.max(minSalary, Math.round((SCALE_PCT[Math.min(overall, SCALE_PCT.length) - 1] ?? SCALE_PCT[SCALE_PCT.length - 1]) * capLines(league).cap / 100));
 
 // Sign one of this year's picks: a first-rounder to his 4-year scale deal,
 // a second-rounder at the minimum for `yrs`, both with a team option.

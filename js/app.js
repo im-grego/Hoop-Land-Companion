@@ -28,7 +28,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.59.0';
+const APP_VERSION = '0.60.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -327,7 +327,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
-  if (state.data) { FA.setQualifyingOffers(optStore().qo); if (!isCollege()) syncDead(); }
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(state.params.capSystem !== false && !isCollege()); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -518,6 +518,14 @@ function spendAllPoints(L) {
 function buildExport() {
   state.data.seasonLeagues.forEach((L, li) => { if (state.summer[li]) markSummerDone(L); });
   if (!isCollege() && league().season.phase === BUMP_PHASES[0]) spendAllPoints(league());
+  // The game's cap becomes this season's 2nd apron (room for in-season
+  // moves), with the max contract tiers scaled so a max is still 25 / 30 /
+  // 35% of the real cap.
+  if (!isCollege() && FA.capSystemOn()) {
+    const L = league(), C = FA.capLines(L);
+    L.season.salaryCap = C.apron2;
+    L.season.maxContract = [25, 30, 35].map(t => Math.round(t * C.cap / C.apron2));
+  }
   // College: once Signing Day is written in, the file goes out on the last
   // day of the signing period (like pro free agency), so one more advance
   // in the game starts the new season.
@@ -2853,6 +2861,7 @@ screens.settings = (args) => {
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
       ]) +
       setGroup('Contracts', [
+        options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('2nd-round deals (CPU)', 'rookieR2Years', [[2, '2 yrs'], [3, '3 yrs'], [4, '4 yrs']]),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
       ]);
@@ -5982,7 +5991,7 @@ function overviewTeam(L, t) {
       <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
     </div>
     <fieldset class="frame"><legend>The Books</legend>
-      ${capBarOf(books.committed, deadFor(t.id), books.cap)}
+      ${capBarOf(books.committed, deadFor(t.id))}
       <h4 class="ov-h">Expiring (${books.expiring.length})</h4><div class="stack">${books.expiring.map(x => row(x, x.rfa ? '<span class="badge new">RFA</span>' : '', ` · ${x.p.yrs ?? 0} yrs exp · market value $${x.worth}M`)).join('') || '<p class="note small muted">Nobody.</p>'}</div>
       <h4 class="ov-h">Options (${books.options.length})</h4><div class="stack">${books.options.map(x => row(x, valTag(x.sal, x.worth), `<br>${x.kind === 'team' ? 'Team' : 'Player'} option $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
       <h4 class="ov-h">Extension Eligible (${books.ext.length})</h4><div class="stack">${books.ext.map(x => row(x, '', `<br>Final year $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
@@ -6133,12 +6142,20 @@ function syncDead() {
   FA.setDeadMoney(Object.fromEntries(league().teams.map(t => [t.id, deadFor(t.id)])));
 }
 // Cap bar: payroll, dead money (red) and room under the cap.
-const capBar = t => capBarOf(FA.payroll(t), deadFor(t.id), league().season.salaryCap || 1);
-function capBarOf(pay, dead, cap) {
-  const free = cap - pay - dead;
-  const pct = v => Math.max(0, Math.min(100, v / Math.max(cap, pay + dead) * 100));
-  return `<div class="cap-bar"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span></div>
-    <div class="cap-legend small"><span>Payroll $${pay}M</span>${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="${free >= 0 ? 'up' : 'down'}">${free >= 0 ? `Free $${free}M` : `Over $${-free}M`}</span><span class="muted">Cap $${cap}M</span></div>`;
+const capBar = t => capBarOf(FA.payroll(t), deadFor(t.id));
+// Cap bar: payroll, dead money (red) and room, with ticks at the cap, the
+// tax line and both aprons; the tier and any tax bill underneath.
+function capBarOf(pay, dead) {
+  const C = FA.capLines(league());
+  const lines = C.off ? [['Cap', C.cap]] : [['Cap', C.cap], ['Tax', C.tax], ['1st', C.apron1], ['2nd', C.apron2]];
+  const top = Math.max(C.off ? C.cap : C.apron2 * 1.04, pay + dead);
+  const pct = v => Math.max(0, Math.min(100, v / top * 100));
+  const total = pay + dead, free = C.cap - total;
+  const tier = C.off ? (free >= 0 ? 'under' : 'over') : total < C.cap ? 'under' : total < C.tax ? 'over' : total < C.apron1 ? 'tax' : total < C.apron2 ? 'apron1' : 'apron2';
+  const next = lines.find(([, v]) => v > total);
+  const zones = C.off ? '' : `background:linear-gradient(90deg, #2f6b4a 0 ${pct(C.cap)}%, #24507a ${pct(C.cap)}% ${pct(C.tax)}%, #6b5a1e ${pct(C.tax)}% ${pct(C.apron1)}%, #7a4a1e ${pct(C.apron1)}% ${pct(C.apron2)}%, #7a2430 ${pct(C.apron2)}%)`;
+  return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}</div>
+    <div class="cap-legend small"><span>Payroll $${pay}M</span>${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${free >= 0 ? `<span class="up">$${free}M space</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
 }
 
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;
