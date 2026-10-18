@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.2';
+const APP_VERSION = '0.46.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -331,7 +331,13 @@ function render() {
   const y = window.scrollY;
   $app.dataset.screen = top.name;
   screens[top.name](top.args);
-  window.scrollTo(0, view === lastView ? y : top.y ?? 0);
+  const target = view === lastView ? y : top.y ?? 0;
+  window.scrollTo(0, target);
+  // iOS can drop a scroll made while it's still finishing a tap; put it
+  // back once the redraw has settled.
+  const keep = () => { if (Math.abs(window.scrollY - target) > 2) window.scrollTo(0, target); };
+  requestAnimationFrame(keep);
+  setTimeout(keep, 80);
   top.y = null;
   lastView = view;
 }
