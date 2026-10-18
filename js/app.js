@@ -24,11 +24,11 @@ import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
-import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
+import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.61.0';
+const APP_VERSION = '0.62.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -914,7 +914,10 @@ actions.advLottery = async (opts = {}) => {
   const order = preLotteryOrder(L);
   const drawn = drawLottery(order.slice(0, setup.lotteryTeams.length), setup.odds, setup.draws, mulberry32(Math.floor(Math.random() * 1e9)), setup.floor);
   const r1 = drawn.map(r => r.team);
-  applyLottery(L, [...r1, ...order.filter(t => !r1.includes(t))]);
+  const full = [...r1, ...order.filter(t => !r1.includes(t))];
+  // 2nd apron, 3 of 5 seasons: that first goes to the end of the round.
+  const pen = new Set(apronStore().pen.filter(x => x.yr === L.season.currentYear).map(x => x.otid));
+  applyLottery(L, [...full.filter(t => !pen.has(t.id)), ...full.filter(t => pen.has(t.id))]);
   draftState().lottery = null;
   draftState().mock = null;
   state.compCache = {};
@@ -3959,7 +3962,7 @@ function frontOfficeOffers(team) {
   const order = actualDraftOrder(L) || [];
   order.forEach((o, idx) => {
     if (o.owner.id !== team.id) return;
-    for (const x of tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng, count: 1, eager: 0.7 })) {
+    for (const x of tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng, count: 1, eager: 0.7, frozen: frozenFn })) {
       out.push({ team: x.team, kind: 'up',
         give: x.give.map(pk => ({ pick: pk, key: pk.yr === L.season.currentYear ? `c:${order.find(q => slotPick(L, q) === pk)?.overall}` : `f:${pk.yr}:${pk.rd}:${pk.otid}`, text: pk.yr === L.season.currentYear ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk) })),
         get: [{ pick: x.get, key: `c:${o.overall}`, text: `#${o.overall}` }] });
@@ -4444,6 +4447,7 @@ function liveState() {
 const liveOrder = () => actualDraftOrder(league());
 const lastYear = () => Math.max(...league().teams.map(t => teamRecord(t).yr || 0));
 const futureValue = pk => pickValue(league(), pk);
+const frozenFn = (t, pk) => FA.pickFrozen(league(), t, pk);
 const boardRank = p => boardOrder().indexOf(p) + 1 || 60;
 const prospectById = id => league().draftClass.find(p => p.id === id);
 const liveAvailable = live => league().draftClass.filter(p => !takenIds(live).has(p.id));
@@ -4456,7 +4460,7 @@ function liveCpuStep(live, order, idx) {
   const o = order[idx];
   const chance = state.params.liveCpuTradeChance;
   const busy = new Set([...(live.cpuTeams ||= []), ...L.teams.filter(isUserTeam).map(t => t.id)]);
-  const opts = { value: futureValue, slot: slotValue, rng: live.rng, exclude: busy };
+  const opts = { value: futureValue, slot: slotValue, rng: live.rng, exclude: busy, frozen: frozenFn };
   if (!busy.has(o.owner.id) && live.rng() * 100 < chance) {
     const offer = o.rd === 1 ? tradeUpOffers(L, order, idx, { ...opts, far: 4, count: 1, eager: 0.6 })[0] : consolidationOffer(L, order, idx, opts);
     if (offer) {
@@ -4516,7 +4520,7 @@ function draftLive() {
   const teamById = id => L.teams.find(t => t.id === id);
   let offers = [];
   if (user) {
-    live.offers[o.overall] ||= tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng: live.rng, far: 3, exclude: new Set(live.cpuTeams || []) })
+    live.offers[o.overall] ||= tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng: live.rng, far: 3, exclude: new Set(live.cpuTeams || []), frozen: frozenFn })
       .map(x => ({ tid: x.team.id, give: x.give, get: x.get }));
     offers = live.offers[o.overall].filter(x => x.give.every(pk => teamById(x.tid).draftPicks.includes(pk)) && o.owner.draftPicks.includes(x.get));
   }
@@ -4752,7 +4756,8 @@ function liveAssets(team) {
     if (pk) out.push({ key: `c:${o.overall}`, label: `#${o.overall} (R${o.rd}${o.orig.id !== team.id ? `, via ${o.orig.shortName}` : ''})`, value: slotValue(o.overall), pick: pk });
   }
   for (const pk of [...team.draftPicks].filter(x => x.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
-    out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: pickLabel(pk), value: futureValue(pk), pick: pk });
+    const frozen = FA.pickFrozen(L, team, pk);
+    out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: `${esc(pickLabel(pk))}${frozen ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}`, html: true, locked: frozen, value: futureValue(pk), pick: pk });
   }
   for (const s of tradeableProspects(live, order, team.id, Infinity)) {
     const p = prospectById(s.pid);
@@ -4915,9 +4920,9 @@ function draftTrades(args) {
   const picks = (T, sel, side) => [...T.draftPicks]
     .filter(pk => pk.yr >= L.season.currentYear)
     .sort((x, y) => x.yr - y.yr || x.rd - y.rd)
-    .map(pk => `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''}" data-act="togglePick" data-side="${side}" data-k="${key(pk)}">
-      <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}</span>
-      <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`).join('') || '<p class="note muted">No picks.</p>';
+    .map(pk => { const fz = FA.pickFrozen(L, T, pk); return `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''} ${fz ? 'locked' : ''}" ${fz ? 'disabled' : `data-act="togglePick" data-side="${side}" data-k="${key(pk)}"`}>
+      <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}${fz ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}</span>
+      <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`; }).join('') || '<p class="note muted">No picks.</p>';
   const valueOf = (T, sel) => T.draftPicks.filter(pk => sel.has(key(pk))).reduce((a, pk) => a + pickValue(L, pk), 0);
   const vA = valueOf(A, selA), vB = valueOf(B, selB);
   const teamSelect = (side, cur, other) => `<select class="sel-team" data-change="tradeTeam" data-side="${side}">
@@ -4965,6 +4970,7 @@ actions.makeTrade = async () => {
   const fromA = A.draftPicks.filter(pk => (a.selA || []).includes(key(pk)));
   const fromB = B.draftPicks.filter(pk => (a.selB || []).includes(key(pk)));
   if (!fromA.length && !fromB.length) { toast('Tap picks on either side first'); return; }
+  if ([[A, fromA], [B, fromB]].some(([T, l]) => l.some(pk => FA.pickFrozen(L, T, pk)))) { toast('Trade not allowed', 'A team over the 2nd apron can\'t trade its furthest-out first', 3200, true); return; }
   const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const desc = list => list.map(pk => `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
   const text = `${A.shortName} send ${desc(fromA)} · ${B.shortName} send ${desc(fromB)}`;
@@ -5338,7 +5344,7 @@ function sntPackage(L, m, partner, deal, lean, s) {
   const fresh = new Set(s.signings.map(x => x.p.id));
   const players = FA.signedRoster(partner).filter(p => !fresh.has(p.id) && p.status === FA.STATUS_SIGNED)
     .map(p => ({ p, v: faValue(p), label: `${playerName(p)} (Lv ${shownLevel(p)}, $${p.contract.sal}M × ${p.contract.yrs})` }));
-  const picks = partner.draftPicks.filter(pk => pk.yr > yr).map(pk => ({ pk, v: pickValue(L, pk), label: pickLabel(pk, L) }));
+  const picks = partner.draftPicks.filter(pk => pk.yr > yr && !FA.pickFrozen(L, partner, pk)).map(pk => ({ pk, v: pickValue(L, pk), label: pickLabel(pk, L) }));
   const pool = (lean === 'picks' ? [...picks, ...players] : [...players, ...picks]);
   const mine = L.teams.find(t => t.id === m.from.id);
   const room = FA.FA_DEFAULTS.rosterMax - FA.signedRoster(mine).length;  // offseason limit
@@ -6183,7 +6189,71 @@ const capBar = t => capBarOf(FA.payroll(t), deadFor(t.id)) + ownerLine(t);
 function ownerLine(t) {
   if (!FA.capSystemOn() || !isUserTeam(t)) return '';
   const C = FA.capLines(league()), st = FA.taxStance(league(), t);
-  return `<p class="note small owner-line">🏛️ ${st === 'pay' ? `Ownership will pay the tax to keep a winner together (up to the 2nd apron, $${C.apron2}M).` : st === 'blowup' ? 'Ownership won\'t pay the tax for a losing team. Shed salary.' : `Ownership wants to stay under the tax line ($${C.tax}M).`}</p>`;
+  const fz = FA.frozenPick(league(), t), yrs = apronYears(t.id);
+  return `<p class="note small owner-line">🏛️ ${st === 'pay' ? `Ownership will pay the tax to keep a winner together (up to the 2nd apron, $${C.apron2}M).` : st === 'blowup' ? 'Ownership won\'t pay the tax for a losing team. Shed salary.' : `Ownership wants to stay under the tax line ($${C.tax}M).`}</p>
+    ${fz || yrs ? `<p class="note small owner-line">🔒 ${fz ? `${esc(pickLabel(fz))} frozen (over the 2nd apron). ` : ''}${yrs ? `Over the 2nd apron ${yrs} of the last 5 seasons${yrs >= 2 ? ': 3 sends a first to the end of the round' : ''}.` : ''}</p>` : ''}`;
+}
+
+// 2nd apron, 3 of 5 seasons: the team's furthest-out first moves to the
+// end of the 1st round when that draft comes. History is by season start,
+// recorded at final cuts: { hist: { [yr]: [tids] }, pen: [{ otid, yr }] }.
+const apronKey = () => `hlc:apron2:${league().shortName}:${league().meta?.saveName || ''}`;
+function apronStore() { try { return JSON.parse(localStorage.getItem(apronKey())) || { hist: {}, pen: [] }; } catch { return { hist: {}, pen: [] }; } }
+function saveApron(v) { try { localStorage.setItem(apronKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+function apronYears(tid) {
+  const h = apronStore().hist, yr = FA.seasonStart(league());
+  return [0, 1, 2, 3, 4].filter(i => (h[yr - i] || []).includes(tid)).length;
+}
+const pickPenalized = pk => pk.rd === 1 && apronStore().pen.some(x => x.otid === pk.otid && x.yr === pk.yr);
+const pickPenTag = pk => pickPenalized(pk) ? ' <span class="badge lock" title="Over the 2nd apron 3 of 5 seasons: moves to the end of the 1st round">⬇ End of R1</span>' : '';
+// Returns the teams newly penalized.
+function recordApron() {
+  if (!FA.capSystemOn()) return [];
+  const L = league(), st = apronStore(), yr = FA.seasonStart(L);
+  st.hist[yr] = L.teams.filter(t => FA.capTier(L, t) === 'apron2').map(t => t.id);
+  const hit = [];
+  for (const tid of st.hist[yr]) {
+    if ([0, 1, 2, 3, 4].filter(i => (st.hist[yr - i] || []).includes(tid)).length < 3) continue;
+    const far = Math.max(...L.teams.flatMap(t => t.draftPicks.filter(pk => pk.rd === 1 && pk.otid === tid).map(pk => pk.yr)));
+    if (!isFinite(far) || st.pen.some(x => x.otid === tid && x.yr === far)) continue;
+    st.pen.push({ otid: tid, yr: far });
+    hit.push(L.teams.find(t => t.id === tid));
+  }
+  saveApron(st);
+  return hit;
+}
+
+// How the locker room takes the money moves (applied at final cuts):
+// paying the tax to keep a winner together lifts the core; letting a good
+// player go to duck the tax or a teardown sours stars and win-now vets;
+// money-minded players in a contract year doubt they'll get paid.
+// [{ p, n, why: [] }]
+function taxMood(L, t) {
+  if (!FA.capSystemOn()) return [];
+  const C = FA.capLines(L), st = FA.taxStance(L, t), pay = FA.teamCommitted(t);
+  const roster = FA.signedRoster(t);
+  const core = [...roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3);
+  const out = [];
+  const add = (p, n, why) => { const e = out.find(x => x.p === p); if (e) { e.n += n; e.why.push(why); } else out.push({ p, n, why: [why] }); };
+  const winner = p => tr(p, 'winning') >= 15;
+  if (st === 'pay' && pay > C.tax) {
+    for (const p of core) add(p, 4, 'ownership paid the tax to keep the group together');
+    for (const p of roster.filter(winner)) add(p, 2, 'loves a contender going all in');
+  }
+  if (st !== 'pay' && pay <= C.tax) {
+    const onTeams = new Set(L.teams.flatMap(x => x.roster));
+    const gone = teamSituation(L, t, state.leagueIdx).departures
+      .filter(p => onTeams.has(p) && shownLevel(p) >= 78 && pay + (p.contract?.sal || 0) > C.tax)
+      .sort((a, b) => shownLevel(b) - shownLevel(a))[0];
+    if (gone) {
+      const why = `${gone.ln || playerName(gone)} let go to stay under the tax`;
+      for (const p of core) add(p, -6, why);
+      for (const p of roster.filter(winner)) add(p, -3, why);
+    }
+  }
+  if (st === 'blowup') for (const p of roster.filter(p => p.age >= 28 && tr(p, 'winning') >= 13)) add(p, -5, 'stuck in a teardown');
+  if (st !== 'pay') for (const p of roster.filter(p => tr(p, 'money') >= 15 && p.contract?.yrs === 1 && shownLevel(p) >= 75)) add(p, -3, 'doubts the team will pay him next summer');
+  return out.filter(x => x.n);
 }
 // Cap bar: payroll, dead money (red) and room, with ticks at the cap, the
 // tax line and both aprons; the tier and any tax bill underneath.
@@ -6993,7 +7063,9 @@ screens.cuts = () => {
     const ranked = cutRank(t);
     const n = FA.signedRoster(t).length, need = Math.min(ranked.length, Math.max(0, n - O.seasonMax));
     const picked = ranked.filter(x => sel[x.p.id]).length;
-    if (done) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>${capBar(t)}<p class="note small up">✓ Roster is set.</p></fieldset>`;
+    const mood = (calFlags().taxMood || {})[t.id] || [];
+    if (done) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>${capBar(t)}<p class="note small up">✓ Roster is set.</p>
+      ${mood.length ? `<p class="note small" style="margin-top:6px"><b>Locker room</b></p>${mood.map(x => `<p class="note small"><span class="${x.n > 0 ? 'up' : 'down'}">${esc(x.name)} morale ${x.n > 0 ? '+' : ''}${x.n}</span> <span class="muted">· ${esc(x.why)}</span></p>`).join('')}` : ''}</fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
       ${capBar(t)}
       <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} Cutting a player with years left leaves his salary on your books as dead money.</p>
@@ -7110,6 +7182,15 @@ actions.cutsFinish = async () => {
     list.push({ team: t.shortName, names: go.map(x => playerName(x.p)) });
   }
   calFlags().cutLog = { n, mine: mineN, list };
+  const moods = {};
+  for (const t of L.teams) {
+    const m = taxMood(L, t);
+    for (const x of m) if (x.p.season) x.p.season.morale = Math.max(0, Math.min(100, (x.p.season.morale ?? 60) + x.n));
+    if (isUserTeam(t) && m.length) moods[t.id] = m.map(x => ({ name: playerName(x.p), n: x.n, why: x.why.join('; ') }));
+  }
+  calFlags().taxMood = moods;
+  const pen = recordApron();
+  if (pen.some(isUserTeam)) toast('2nd apron penalty', 'Over it 3 of the last 5 seasons: your furthest-out first moves to the end of the 1st round', 4200, true);
   calFlags().cuts = true;
   state.cutSel = {};
   state.cutSeeded = false;

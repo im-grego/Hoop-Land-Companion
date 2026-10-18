@@ -150,6 +150,14 @@ export function taxStance(league, team) {
   if (over && pct < 0.5) return 'blowup';
   return 'avoid';
 }
+// Over the 2nd apron a team's first-round pick furthest out is frozen: it
+// can't be traded (the NBA freezes the one seven years out).
+export function frozenPick(league, team) {
+  if (!CAP_ON || capTier(league, team) !== 'apron2') return null;
+  const own = team.draftPicks.filter(pk => pk.rd === 1 && pk.otid === team.id && pk.yr > league.season.currentYear);
+  return own.sort((a, b) => b.yr - a.yr)[0] || null;
+}
+export const pickFrozen = (league, team, pk) => !!pk && frozenPick(league, team) === pk;
 export const TIER_NAMES = { under: 'Under the cap', over: 'Over the cap', tax: 'Taxpayer', apron1: '1st apron', apron2: '2nd apron' };
 // Luxury tax on next season's payroll: $1.50 per $1 for the first $5M over
 // the line, then 1.75, 2.50, 3.25, and +0.50 for each $5M after (repeaters

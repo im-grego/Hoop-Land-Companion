@@ -176,7 +176,7 @@ export function slotPick(league, o) {
 // moving up expects to be better by then. `value(pk)` values a future pick,
 // `slot(overall)` a pick in this draft; teams in `exclude` sit out.
 // Returns [{ team, give: [pick objects], get: pick object, worth }].
-export function tradeUpOffers(league, order, idx, { value, slot, rng, min = 3, max = 8, far = 0, count = 2, eager = 0.5, exclude = new Set() }) {
+export function tradeUpOffers(league, order, idx, { value, slot, rng, min = 3, max = 8, far = 0, count = 2, eager = 0.5, exclude = new Set(), frozen = () => false }) {
   const here = order[idx];
   const target = slotPick(league, here);
   if (!target) return [];
@@ -194,7 +194,7 @@ export function tradeUpOffers(league, order, idx, { value, slot, rng, min = 3, m
     if (!mine) continue;
     const give = [mine];
     let total = slot(o.overall);
-    const future = o.owner.draftPicks.filter(pk => pk.yr > yr && (pk.rd > 1 || pk.yr >= yr + 2)).sort((a, b) => value(a) - value(b));
+    const future = o.owner.draftPicks.filter(pk => pk.yr > yr && (pk.rd > 1 || pk.yr >= yr + 2) && !frozen(o.owner, pk)).sort((a, b) => value(a) - value(b));
     if (big) {
       const first = future.find(pk => pk.rd === 1);
       if (!first) continue;
