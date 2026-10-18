@@ -67,8 +67,9 @@ export function runSummerLeague(league, leagues, seed) {
   const fin = game(semis[0].w, semis[1].w);
   const winner = fin.w.team, loser = fin.l.team;
   const strip = g => ({ teams: g.teams, quarters: g.quarters, winner: g.winner });
-  // MVP: the champion's (or, now and then, the runner-up's) standout.
-  const pool = [winner, winner, loser][Math.floor(rng() * 3)];
+  // MVP: the champion's most pro-ready young player (now and then the
+  // runner-up's), with some variance.
+  const pool = rng() < 0.85 ? winner : loser;
   const core = youngCore(league, pool);
   const mvp = core.map(p => ({ p, v: standout(p, leagues, yr) + noise() / 2 })).sort((a, b) => b.v - a.v)[0]?.p || null;
   const line = p => {

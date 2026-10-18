@@ -81,7 +81,8 @@ export function baseAsk(league, p, o = FA_DEFAULTS) {
 export function askFor(league, p, day, o = FA_DEFAULTS) {
   let a = baseAsk(league, p, o) * o.askDrop[Math.min(2, day - 1)];
   if (day >= 3 && isVet(p, o)) a *= o.vetAskDrop;
-  return Math.max(o.minSalary, Math.round(a));
+  // Veterans still open above the veterans' minimum; they can be talked down.
+  return Math.max(isVet(p, o) ? o.vetMin + 1 : o.minSalary, Math.round(a));
 }
 
 // What a player wants most (stable per player and season).

@@ -1198,3 +1198,12 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .recap-row .grow b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .recap-row .grow > br { display: none; }
 .recap-row .grow > .small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overlay .box { max-height: calc(100dvh - 40px); overflow-y: auto; }
+.tot { color: #9fb6dc; font-weight: 600; opacity: .85; }
+.fa-tabs.fa-tabs6 { grid-template-columns: repeat(3, 1fr); }
+.team-stack { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; min-width: 44px; text-align: center; }
+.team-stack img { width: 28px; height: 28px; object-fit: contain; }
+.prod-boxes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.prod-boxes span { display: flex; flex-direction: column; align-items: center; padding: 4px 0; background: var(--btn-shadow); border: 2px solid var(--btn-edge); }
+.prod-boxes b { font-size: 16px; }
+.prod-boxes small { font-size: 10px; color: var(--dim); font-weight: 700; }

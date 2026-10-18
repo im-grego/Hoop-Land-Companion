@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.49.2';
+const APP_VERSION = '0.50.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -621,11 +621,11 @@ const CALENDAR = [
     done: () => !!extStore().done || phaseRank(league().season) >= 4 },
   { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies pick their numbers, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
-  { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Day 1', blurb: 'No more collusion: the market opens and the big deals happen today. Draft picks sign their rookie contracts.',
+  { key: 'fa1', date: 'Week 1', title: 'Free Agency · Week 1', blurb: 'No more collusion: the market opens and the big deals happen.',
     done: () => faDone(1) },
-  { key: 'fa2', date: 'Jul 7', title: 'Free Agency · Day 2', blurb: 'Teams over the cap can use the mid-level exception.',
+  { key: 'fa2', date: 'Week 2', title: 'Free Agency · Week 2', blurb: 'Teams over the cap can use the mid-level exception.',
     done: () => faDone(2) },
-  { key: 'fa3', date: 'Jul 8', title: 'Free Agency · Day 3', blurb: 'Last call: veteran minimums, asking prices drop, and anyone left unsigned leaves their old team.',
+  { key: 'fa3', date: 'Week 3', title: 'Free Agency · Week 3', blurb: 'Last call: asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
   { key: 'dev', date: 'Sep 21', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
@@ -742,10 +742,10 @@ function stepSummary(key) {
     return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
   }
   if (key === 'options') { const g = optStore().log || {}; return `${g.exercised || 0} options picked up, ${g.out || 0} heading to free agency.`; }
-  if (key === 'camp') { const s = state.summer[state.leagueIdx]; return s ? `${s.players} rookies won back +${s.points} in summer league.` : 'Done in the game.'; }
+  if (key === 'camp') { const r = state.summerTour[state.leagueIdx]?.result; return r?.mvp ? `Summer League MVP: ${mvpName(L, r.mvp)} (${L.teams.find(t => t.id === r.mvp.tid)?.shortName || '?'}).` : 'Summer League is a wrap.'; }
   if (key.startsWith('fa')) {
     const log = calFlags().faLog?.[+key[2]];
-    return log ? `${log.n} signings${log.wars ? `, ${log.wars} bidding war${log.wars > 1 ? 's' : ''}` : ''}${log.top ? `. Biggest: ${log.top}` : ''}.` : 'Done in the game.';
+    return log ? (log.best || log.big ? [log.best && `⭐ ${log.best}`, log.big && log.big !== log.best && `💰 ${log.big}`].filter(Boolean).join('\n') : `${log.n} signings.`) : 'Done in the game.';
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
@@ -766,7 +766,7 @@ function stepSummary(key) {
   if (key === 'seniors') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = seniorSendoff(state.data, state.leagueIdx, t); return `${r.mineGrads.length} graduate${r.mineGrads.length === 1 ? '' : 's'} sent off; ${r.rising.length} senior${r.rising.length === 1 ? '' : 's'} back for a last season.`; }
   if (key === 'departures') { const d = draftDepartures(state.data, state.leagueIdx); const t = league().teams.find(isUserTeam); const m = d.filter(x => x.school === t).length; return `${d.length} players left for the pros${m ? `, ${m} of them yours` : ''}.`; }
   if (key === 'review') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = seasonReview(state.data, state.leagueIdx, t); return `${r.row?.seasonStats?.W ?? 0}-${r.row?.seasonStats?.L ?? 0} · ${r.finish.replace('🏆 ', '')}.`; }
-  if (key === 'ext') { const g = extStore().log || {}; return `${g.mine || 0} of yours and ${g.cpu || 0} around the league signed extensions.`; }
+  if (key === 'ext') { const g = extStore().log || {}; return `Extensions: ${g.mine || 0} for you, ${g.cpu || 0} around the league.`; }
   if (key === 'overview') { const t = league().teams.find(isUserTeam); return t ? `${TIER_NAMES[teamStanding(league(), t).tier]}. ${rosterNeeds(league(), t, { level: shownLevel }).filter(n => n.sev >= 2).length} big needs flagged.` : 'Done.'; }
   if (key === 'preview') return `${boardStore().board.length} prospects on your board.`;
   if (key === 'cuts') { const c = calFlags().cutLog; return c ? `${c.n} players cut across the league${c.mine ? `, ${c.mine} of yours` : ''}.` : 'Every roster is set.'; }
@@ -836,7 +836,7 @@ function calendarCard() {
         <span class="cal-date">${esc(st.date)}</span>
         <div class="cal-body">
           <b>${state_ === 'done' ? '✓ ' : state_ === 'locked' ? '🔒 ' : ''}${esc(st.title)}</b>
-          <p class="note small">${esc(state_ === 'done' ? stepSummary(st.key) : st.blurb)}</p>
+          <p class="note small">${esc(state_ === 'done' ? stepSummary(st.key) : st.blurb).replace(/\n/g, '<br>')}</p>
           ${state_ === 'now' ? stepActions(st.key) : ''}
         </div>
       </li>`;
@@ -1848,11 +1848,10 @@ function boxScore(L, g, reveal = false) {
 function tourSection(ready) {
   const L = league();
   const t = state.summerTour[state.leagueIdx];
-  const step = myRookies().length ? 3 : 2;
   let body;
   if (!t) {
     body = ready
-      ? `<p class="note">Every team's rookies and second-year players head to Las Vegas. Reach the championship and a couple of your young players pick up a rating point; win it and three of them get two.</p>
+      ? `<p class="note">Every team's rookies and young core head to Las Vegas. Reach the championship and your young players earn XP; win it all for even more.</p>
         <button class="btn big focus" data-act="runTour">🏀 Sim Summer League</button>`
       : `<p class="note muted">${myRookies().length ? 'Lock in your rookies\' numbers first.' : 'Run the age adjustment first.'}</p>`;
   } else {
@@ -1873,7 +1872,7 @@ function tourSection(ready) {
         <div class="mvp-card">${logoImg(mvpTeam)}<span class="grow"><b>${esc(mvpName(L, r.mvp))}</b> <span class="muted small">${esc(mvpTeam.shortName)}</span><br><span class="small">${r.mvp.ppg} PPG · ${r.mvp.rpg} RPG · ${r.mvp.apg} APG</span></span></div></div>` : ''}
       ${t.reward.length ? `<p class="note small up sl-reward ${anim ? 'pending' : ''}">${t.reward.map(x => `${esc(playerName(x.p))} ${Object.keys(x.gains).map(k => `${k} +1`).join(', ')}`).join(' · ')}</p>` : ''}`;
   }
-  return `<fieldset class="frame"><legend>${step} · Summer League</legend><div class="stack">${body}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>Summer League</legend><div class="stack">${body}</div></fieldset>`;
 }
 
 // Made-up pool-play scores for the sim animation (fixed per season).
@@ -1940,7 +1939,7 @@ actions.runTour = () => {
   const L = league();
   const li = state.leagueIdx;
   if (state.summerTour[li]) return;
-  const result = runSummerLeague(L, state.data.seasonLeagues, (state.params.seed ^ (L.season.currentYear * 7919)) >>> 0);
+  const result = runSummerLeague(L, state.data.seasonLeagues, Math.floor(Math.random() * 1e9) >>> 0);
   const mine = result.final.teams.map(id => L.teams.find(x => x.id === id)).find(isUserTeam);
   const reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
   state.summerTour[li] = { result, stage: 'final', reward };
@@ -4886,9 +4885,9 @@ actions.undoTrade = d => {
 // Free agency
 
 const FA_DAY_RULES = {
-  1: 'No more collusion: the market is open. Teams bid with cap space, a player\'s old team can go over the cap to keep him, restricted free agents (those given a qualifying offer) can be matched, and your own free agents can be signed and traded to a team that wants them. Deals run up to 5 years.',
-  2: `Adds the mid-level exception: one per team over the cap, up to $${FA.FA_DEFAULTS.mle}M for 1–${FA.FA_DEFAULTS.mleMaxYears} years with an option.`,
-  3: `Finalize free agency. Veterans (${FA.FA_DEFAULTS.vetYears}+ years) who aren't chasing money will take the veterans' minimum ($${FA.FA_DEFAULTS.vetMin}M) rather than sit out the season.`,
+  1: 'No more collusion: the market is open. A player\'s old team can go over the cap to keep him, and restricted free agents can be matched.',
+  2: `Adds the mid-level exception: up to $${FA.FA_DEFAULTS.mle}M for teams over the cap.`,
+  3: 'Players\' expectations have shifted: they\'ll take less now.',
 };
 const mleKey = () => `hlc:mle:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
 function loadMle() { try { return new Set(JSON.parse(localStorage.getItem(mleKey())) || []); } catch { return new Set(); } }
@@ -4936,12 +4935,11 @@ screens.fa = (args = {}) => {
   let rows = [...s.market].sort((a, b) => shownLevel(b.p) - shownLevel(a.p) || faValue(b.p) - faValue(a.p));
   if (view === 'mine') rows = rows.filter(m => isUserTeam(m.from) || (s.bids.get(m.p.id) || []).some(b => isUserTeam({ id: b.tid })));
   else rows = rows.filter(m => !isUserTeam(m.from));
-  if (view === 'bids') rows = rows.filter(m => s.bids.get(m.p.id)?.length);
   if (['guards', 'wings', 'bigs'].includes(view)) rows = rows.filter(m => posGroup(m.p) === view);
   if (view === 'vets') rows = rows.filter(m => m.p.age >= 30);
   const total = rows.length;
   rows = rows.slice(0, args.all ? 400 : 60);
-  const views = [['top', 'Best'], ['vets', 'Vets 30+'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs'], ['bids', 'Bidding'], ['mine', 'Yours']];
+  const views = [['top', 'Best'], ['vets', 'Vets'], ['mine', 'Yours'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']];
   const O = FA.FA_DEFAULTS;
   const stageBtn = s.stage === 'open'
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
@@ -4958,56 +4956,52 @@ screens.fa = (args = {}) => {
     const rfa = FA.isRestricted(L, m.p);
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
       <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
-      <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span>${s.day >= 3 && FA.isVet(m.p) && m.min === O.vetMin && m.ask > m.min ? '<br><span class="small up">Takes the min</span>' : ''}<br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
+      <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
       : list.length ? `<span class="chg">${list.length} team${list.length > 1 ? 's' : ''} interested · best ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
     </button>`;
   };
   layout({
-    title: `Free Agency · Day ${s.day}`,
+    title: `Free Agency · Week ${s.day}`,
     body: `
-      <img class="hero tall" src="icons/hero-fa.jpg" alt="">
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${expiringSection(s)}
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const space = FA.capSpace(L, t);
         const mleOpen = s.day >= 2 && space < O.mle && !s.used.mle.has(t.id);
         const tools = space > 0 ? `<span class="up">$${space}M cap space</span>` : `<span class="down">$${-space}M over the cap</span>`;
-        const extra = [
-          s.day >= 2 ? (space >= O.mle ? '<span class="muted">Under the cap: offer anyone up to your space</span>' : mleOpen ? `<span class="gold">MLE open · up to $${O.mle}M × ${O.mleMaxYears}</span>` : '<span class="muted">MLE used</span>') : '',
-          `<span class="muted">Minimum deals any day, over the cap: $${O.minSalary}M, or $${O.vetMin}M for ${O.vetYears}+ years (1–2 yrs)</span>`,
-        ].filter(Boolean).join('<br>');
-        return `<div class="books-row">${logoImg(t)}<span class="grow"><b>${esc(t.shortName)}</b> · ${tools}<br><span class="small">${extra || '<span class="muted">Re-sign your own players over the cap (Bird rights)</span>'}</span></span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
+        const extra = s.day >= 2 && space < O.mle ? (mleOpen ? '<span class="gold">Mid-level exception available</span>' : '<span class="muted">MLE used</span>') : '';
+        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${tools}${extra ? `<br><span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${s.stage === 'done' ? faResults(s) : ''}
       <div class="stack">${stageBtn}</div>
       ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
-      <div class="tabs fa-tabs fa-tabs7">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="tabs fa-tabs fa-tabs6">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(row).join('')}</div>
       ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`,
   });
 };
 
-// Your expiring deals, first thing on the screen: offer (re-sign) or let him
-// walk. Walking renounces him: he leaves your roster for the open market and
-// drops off this list.
+// Your expiring deals, first thing on the screen, biggest asks first. Tap
+// one to re-sign him (or let him walk) from the offer pop-up.
 function expiringSection(s) {
   const L = league();
   const signed = new Set(s.signings.map(x => x.p.id));
   const rows = s.market.filter(m => m.from && isUserTeam(m.from) && m.p.status === FA.STATUS_EXPIRING && !signed.has(m.p.id))
-    .sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
+    .sort((a, b) => b.ask - a.ask || shownLevel(b.p) - shownLevel(a.p));
   if (!rows.length) return '';
   const locked = s.stage === 'done';
-  return `<fieldset class="frame exp-deals"><legend>Your Expiring Deals (${rows.length})</legend><div class="stack">${rows.map(m => {
+  return `<fieldset class="frame exp-deals"><legend>Your Expiring Deals (${rows.length})</legend><div class="list">${rows.map(m => {
     const list = s.bids.get(m.p.id) || [];
     const mineBid = list.find(b => isUserTeam({ id: b.tid }));
     const others = list.filter(b => !isUserTeam({ id: b.tid })).length;
-    return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(m.p))}</b> ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
-      <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · ${m.p.yrs ?? 0} yrs exp · asks $${m.ask}M × ${askYears(m)}</span>
-      ${mineBid ? `<br><span class="small up">Your offer: ${offerText(mineBid)}</span>` : ''}${others ? `<br><span class="small gold">${others} other team${others > 1 ? 's' : ''} interested</span>` : ''}</span>
-      <span class="opt-btns"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>${mineBid ? 'Edit Offer' : 'Offer'}</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Let Walk</button></span></div>`;
+    return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>
+      <span class="name">${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
+      <span class="right small">Asks $${m.ask}M × ${askYears(m)}</span>
+      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${mineBid ? ` · <span class="up">your offer ${offerText(mineBid)}</span>` : ''}${others ? ` · <span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>
+    </button>`;
   }).join('')}</div></fieldset>`;
 }
 
@@ -5029,13 +5023,11 @@ actions.faWalk = async d => {
 
 function faResults(s) {
   if (!s.signings.length) return '<p class="note">No one signed today.</p>';
-  const wars = s.signings.filter(x => x.bidders >= 3).length;
   const list = [...s.signings].sort((a, b) => b.offer.sal - a.offer.sal || b.offer.yrs - a.offer.yrs);
   return `<fieldset class="frame"><legend>Day ${s.day} Signings (${s.signings.length})</legend>
-    ${wars ? `<p class="note small gold">${wars} bidding war${wars > 1 ? 's' : ''}</p>` : ''}
     <div class="stack">${list.map(x => `<div class="drill-row tap ${isUserTeam(x.team) ? 'r1' : ''}" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br>
       <span class="small">${offerText(x.offer)} <span class="muted">($${x.offer.sal * x.offer.yrs}M)</span>${x.kind === 'mle' ? ' <span class="badge new">MLE</span>' : x.kind === 'vetMin' ? ' <span class="badge">Vet min</span>' : x.kind === 'min' ? ' <span class="badge">Min</span>' : x.kind === 'snt' ? ' <span class="badge new">S&amp;T</span>' : ''}</span><br>
-      <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${x.bidders > 1 ? ` · ${x.bidders} offers` : ''} · ${esc(String(x.why).replace(/\s*\(\$[\d.]+M\)\s*$/, ''))}</span></span><span class="small">${logoImg(x.team)} ${esc(x.team.shortName)}</span></div>`).join('')}
+      <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${x.bidders > 1 ? ` · ${x.bidders} offers` : ''} <span title="${esc(String(x.why))}">${esc(String(x.why).trim().split(' ')[0])}</span></span></span><span class="team-stack small">${logoImg(x.team)}${esc(x.team.shortName)}</span></div>`).join('')}
     </div>${s.released?.qo?.length ? `<p class="note small" style="margin-top:8px">Took the qualifying offer (1 year, unrestricted next summer): ${s.released.qo.map(q => `<b class="${isUserTeam(q.team) ? 'gold' : ''}">${esc(playerName(q.p))}</b> (${esc(q.team.shortName)}, $${q.sal}M)`).join(', ')}.</p>` : ''}${s.released?.length ? `<p class="note muted small" style="margin-top:8px">${s.released.length} players without a deal were released to free agency.</p>` : ''}</fieldset>`;
 }
 
@@ -5068,9 +5060,11 @@ actions.faDecide = async () => {
   s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
   // Last day: anyone still without a deal leaves their old team.
   if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L, { qoFor: qoAmount, day: s.day });
+  // The calendar shows the best player signed and the biggest contract.
   const top = [...s.signings].sort((x, y) => y.offer.sal * y.offer.yrs - x.offer.sal * x.offer.yrs)[0];
-  (calFlags().faLog ||= {})[s.day] = { n: s.signings.length, wars: s.signings.filter(x => x.bidders >= 3).length,
-    top: top && `${playerName(top.p)} to ${top.team.shortName} ($${top.offer.sal * top.offer.yrs}M)` };
+  const best = [...s.signings].sort((x, y) => shownLevel(y.p) - shownLevel(x.p))[0];
+  const line = x => x && `${playerName(x.p)} to ${x.team.shortName} ($${x.offer.sal * x.offer.yrs}M)`;
+  (calFlags().faLog ||= {})[s.day] = { n: s.signings.length, best: line(best), big: line(top) };
   state.undo = null;
   saveMle(s.used.mle);
   if (state.params.faClearCpuOffers) {
@@ -5102,6 +5096,14 @@ actions.faUndo = async () => {
   render();
 };
 
+// Last season's production as small stat boxes.
+function prodBoxes(p) {
+  const l = seasonLine(p, state.leagueIdx, lastYear());
+  if (!l) return '';
+  const cells = [['PTS', l.ppg], ['REB', l.rpg], ['AST', l.apg], ['STL', l.spg], ['BLK', l.bpg]];
+  return `<div class="prod-boxes">${cells.map(([k, v]) => `<span><b>${(v ?? 0).toFixed(1)}</b><small>${k}</small></span>`).join('')}</div>
+    <p class="note small muted center">${l.gp} games${l.mpg != null ? ` · ${l.mpg.toFixed(1)} MPG` : ''}</p>`;
+}
 actions.faOffer = d => {
   const s = faState();
   const L = league();
@@ -5114,10 +5116,12 @@ actions.faOffer = d => {
   const box = overlay('');
   const M = FA.MOTIVES[m.motive];
   const O = FA.FA_DEFAULTS;
+  const ownExpiring = m.from && isUserTeam(m.from) && m.p.status === FA.STATUS_EXPIRING;
   // One-tap offers: the mid-level exception (Day 2+, teams over the cap) and
   // the veterans' minimum (Day 3, ages 30+).
   const minSal = FA.minFor(m.p), minLabel = FA.isVet(m.p) ? 'Vet Min' : 'Minimum';
-  const vetMinOk = team => FA.minOk(m.p) && !FA.checkOffer(L, team, m.p, { sal: minSal, yrs: 1, opt: 0 }, s.day, s.used);
+  // No minimum offers to good players in the first week.
+  const vetMinOk = team => FA.minOk(m.p) && !(s.day === 1 && shownLevel(m.p) >= 76) && !FA.checkOffer(L, team, m.p, { sal: minSal, yrs: 1, opt: 0 }, s.day, s.used);
   const mleOk = team => FA.offerRoom(L, team, m.p, s.day, s.used).mle;
   const quick = team => {
     const btns = [];
@@ -5137,20 +5141,22 @@ actions.faOffer = d => {
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span> · ${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)}${FA.isRestricted(L, m.p) ? ' · <span class="badge new">RFA</span>' : ''}</p>
-      ${rankLine(m.p)}
+      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
+        <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asking $${m.ask}M × ${askYears(m)}</span></p>
+      ${prodBoxes(m.p)}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${quick(team)}
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
-      <div class="tabs">${[[0, 'No option'], [1, 'Team opt'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       <p class="note small">Total $${draft.sal * draft.yrs}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
-      <div class="grid2">
+      <div class="${ownExpiring ? 'grid3' : 'grid2'}">
         <button class="btn off" data-k="close">${existing ? 'Withdraw' : 'Cancel'}</button>
         <button class="btn focus" data-k="submit" ${err ? 'disabled' : ''}>${existing ? 'Update Offer' : 'Make Offer'}</button>
+        ${ownExpiring ? '<button class="btn off" data-k="walk">Let Walk</button>' : ''}
       </div>`;
   };
   box.addEventListener('click', e => {
@@ -5162,6 +5168,7 @@ actions.faOffer = d => {
     else if (k === 'opt') draft.opt = +b.dataset.v;
     else if (k === 'mle') { draft.sal = O.mle; draft.yrs = O.mleMaxYears; }
     else if (k === 'snt') { box.remove(); sntBox(m, s).then(done => { if (done) render(); }); return; }
+    else if (k === 'walk') { box.remove(); actions.faWalk({ id: m.p.id }); return; }
     else if (k === 'vetmin') {
       const rest = list().filter(x => x !== existing && x.tid !== draft.tid);
       s.bids.set(m.p.id, [...rest, { tid: draft.tid, sal: minSal, yrs: 1, opt: 0, cpu: false }]);
@@ -5908,8 +5915,9 @@ function extAsk(p, team) {
   const morale = p.season?.morale ?? 70;
   const rookie = FA.isRookieScale(p);
   const greed = 1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015;
-  let sal = Math.round(base * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
-  sal = Math.max(FA.minFor(p), Math.min(FA.maxSalary(league(), p), sal));
+  // He opens high (and always above the minimum) and can be talked down.
+  let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
+  sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p), sal));
   const yrs = p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
   const loyal = tr(p, 'loyalty') >= 16, mercenary = tr(p, 'loyalty') <= 5;
   const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
@@ -5919,10 +5927,14 @@ function extAsk(p, team) {
 function extAnswer(p, team, offer) {
   const a = extAsk(p, team);
   const off = offer.yrs < a.yrs[0] ? a.yrs[0] - offer.yrs : offer.yrs > a.yrs[1] ? offer.yrs - a.yrs[1] : 0;
-  const need = Math.round(a.sal * (1 + 0.06 * off) * (a.mood === 'market' ? 1.25 : a.mood === 'eager' ? 0.95 : 1));
+  // What he'll actually take: under his ask, more with a team option, less
+  // with a player option.
+  const mood = a.mood === 'market' ? 1.15 : a.mood === 'eager' ? 0.84 : 0.9;
+  const opt = offer.opt === FA.OPT_TEAM ? 1.06 : offer.opt === FA.OPT_PLAYER ? 0.96 : 1;
+  const need = Math.max(FA.minFor(p), Math.round(a.sal * (1 + 0.06 * off) * mood * opt));
   if (offer.sal >= need) return { ok: true, text: 'Deal.' };
   const yrs = Math.min(Math.max(offer.yrs, a.yrs[0]), a.yrs[1]);
-  return { ok: false, counter: { sal: Math.round(a.sal * (a.mood === 'market' ? 1.25 : a.mood === 'eager' ? 0.95 : 1)), yrs },
+  return { ok: false, counter: { sal: Math.max(need, Math.round(a.sal * (a.mood === 'market' ? 1.2 : 0.95))), yrs },
     text: a.mood === 'market' ? 'His camp wants to see what free agency brings. It would take an overpay.' : offer.sal < need * 0.8 ? 'Not close. His agent walked out of the room.' : 'Close, but not there yet.' };
 }
 function signExtension(L, t, p, deal, cpu = false) {
@@ -5960,39 +5972,70 @@ screens.extensions = () => {
   const L = league(), st = extStore();
   const done = !!st.done;
   const mine = L.teams.filter(isUserTeam);
-  const card = (t, p) => {
+  const total = x => `<span class="tot">$${x.sal * x.yrs}M</span>`;
+  const optTag = o => (o === FA.OPT_PLAYER ? ' · PO' : o === FA.OPT_TEAM ? ' · TO' : '');
+  const row = (t, p) => {
     const a = extAsk(p, t);
-    const talk = (st.talks[p.id] ||= { sal: a.sal, yrs: Math.min(a.yrs[1], Math.max(a.yrs[0], 3)), tries: 0, last: null, signed: null });
-    const moodTxt = { eager: '<span class="up">Wants to stay</span>', open: '<span class="gold">Open to talks</span>', market: '<span class="down">Eyeing free agency</span>' }[a.mood];
-    if (talk.signed) return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small up">✍️ Extended: $${talk.signed.sal}M × ${talk.signed.yrs} (starts next season)</span></span></div>`;
-    const over = talk.tries >= 3;
-    return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br>
-      <span class="small muted">${esc(posName(p))} · ${p.age}y · now $${p.contract.sal}M (final year) · projects Lv ${a.proj} · morale ${p.season?.morale ?? '?'}</span><br>
-      <span class="small">${moodTxt} · looking for ~$${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}${FA.isRookieScale(p) ? ' · rookie extension' : ''}</span></span>
-      ${done || over ? `<p class="note small full ${over ? 'down' : 'muted'}">${over ? 'Talks broke off. He\'ll play out the year.' : 'Window closed.'}</p>` : `<div class="full">
-        <div class="pts-row"><span class="grow small">Salary</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="sal" data-d="-1">−</button><span class="pts-val">$${talk.sal}M</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="sal" data-d="1">+</button></div>
-        <div class="pts-row"><span class="grow small">Years</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="yrs" data-d="-1">−</button><span class="pts-val">${talk.yrs}</span><button class="btn square" data-act="extAdj" data-id="${p.id}" data-k="yrs" data-d="1">+</button></div>
-        ${talk.last ? `<p class="note small ${talk.last.ok ? 'up' : 'down'}">${esc(talk.last.text)}${talk.last.counter ? ` Counter: $${talk.last.counter.sal}M × ${talk.last.counter.yrs}.` : ''}</p>` : ''}
-        <button class="btn small focus" data-act="extOffer" data-id="${p.id}">Make Offer (${3 - talk.tries} left)</button></div>`}
-    </div>`;
+    const talk = st.talks[p.id];
+    const lv = shownLevel(p);
+    const proj = a.proj !== lv ? ` <span class="small ${a.proj > lv ? 'up' : 'down'}">→ ${a.proj}</span>` : '';
+    const over = talk?.tries >= 3;
+    const status = talk?.signed ? `<span class="up">✍️ $${talk.signed.sal}M × ${talk.signed.yrs}${optTag(talk.signed.opt)}</span> ${total(talk.signed)}`
+      : over ? '<span class="down">Talks broke off</span>'
+      : talk?.last ? `<span class="down">${esc(talk.last.text)}</span>` : '';
+    return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done ? 'disabled' : ''}>
+      <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
+      <span class="right small">$${p.contract.sal}M<br><span class="muted">final year</span></span>
+      <span class="meta">${esc(posName(p))} · ${p.age}y · morale ${p.season?.morale ?? '?'} · asks $${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
+      ${status ? `<span class="chg">${status}</span>` : ''}
+    </button>`;
   };
   const log = st.log;
   layout({
     title: 'Extension Window',
-    body: `<p class="note small">Players heading into the last year of their deal. An extension starts when the current deal ends; a player who doesn't sign plays out the year and hits free agency next summer. Three offers each.</p>
-      ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)}</legend><div class="stack">${extEligible(L, t).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => card(t, p)).join('') || (Object.values(st.talks).some(x => x.signed) ? '' : '<p class="note small muted">Nobody heading into a final year.</p>')}
-        ${L.teams.length ? t.roster.filter(p => st.talks[p.id]?.signed && !extEligible(L, t).includes(p)).map(p => `<div class="drill-row"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small up">✍️ Extended: $${st.talks[p.id].signed.sal}M × ${st.talks[p.id].signed.yrs}</span></span></div>`).join('') : ''}</div></fieldset>`).join('')}
-      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${(log.list || []).map(x => `<p class="note small"><b>${esc(x.name)}</b> (${esc(x.team)}) · $${x.sal}M × ${x.yrs}</p>`).join('') || '<p class="note small muted">Nobody else extended.</p>'}</div>` : '<p class="note small muted">CPU teams make their calls when the window closes.</p>'}</fieldset>`,
+    body: `<p class="note small">Players heading into the last year of their deal.</p>
+      ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)}</legend><div class="list">${extEligible(L, t).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => row(t, p)).join('')
+        || (Object.values(st.talks).some(x => x.signed) ? '' : '<p class="note small muted">Nobody heading into a final year.</p>')}
+        ${t.roster.filter(p => st.talks[p.id]?.signed && !extEligible(L, t).includes(p)).map(p => `<div class="prow"><span class="name">${esc(playerName(p))} ${lvTag(p)}</span><span class="meta up">✍️ $${st.talks[p.id].signed.sal}M × ${st.talks[p.id].signed.yrs}${optTag(st.talks[p.id].signed.opt)} ${total(st.talks[p.id].signed)}</span></div>`).join('')}</div></fieldset>`).join('')}
+      ${done && log ? `<fieldset class="frame"><legend>Around the League</legend><div class="stack">${(log.list || []).map(x => `<p class="note small"><b>${esc(x.name)}</b> (${esc(x.team)}) · $${x.sal}M × ${x.yrs}${optTag(x.opt)} ${total(x)}</p>`).join('') || '<p class="note small muted">Nobody else extended.</p>'}</div></fieldset>` : ''}`,
     action: done ? null : { act: 'extClose', label: 'Close the Window' },
   });
 };
-actions.extAdj = d => {
-  const L = league(), p = L.teams.flatMap(t => t.roster).find(x => x.id === +d.id);
-  const talk = extStore().talks[+d.id];
-  if (!p || !talk) return;
-  if (d.k === 'sal') talk.sal = Math.max(FA.minFor(p), Math.min(FA.maxSalary(L, p), talk.sal + +d.d));
-  else talk.yrs = Math.max(1, Math.min(5, talk.yrs + +d.d));
-  saveExtStore(); render();
+// The offer pop-up: salary, years, option (team | none | player).
+actions.extOpen = d => {
+  const L = league(), st = extStore();
+  const t = L.teams.find(tt => tt.roster.some(x => x.id === +d.id));
+  const p = t?.roster.find(x => x.id === +d.id);
+  if (!p || st.done) return;
+  const a = extAsk(p, t);
+  const talk = (st.talks[p.id] ||= { sal: a.sal, yrs: Math.min(a.yrs[1], Math.max(a.yrs[0], 3)), opt: 0, tries: 0, last: null, signed: null });
+  talk.opt ||= 0;
+  if (talk.signed || talk.tries >= 3) return;
+  const box = overlay('');
+  const paint = () => {
+    box.querySelector('.box').innerHTML = `
+      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · asks $${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}</span></p>
+      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${talk.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
+      <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${talk.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
+      <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      <p class="note small">Total <span class="tot">$${talk.sal * talk.yrs}M</span> · ${3 - talk.tries} offer${3 - talk.tries === 1 ? '' : 's'} left${talk.last ? `<br><span class="down">${esc(talk.last.text)}</span>` : ''}</p>
+      <div class="grid2"><button class="btn off" data-k="close">Cancel</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
+  };
+  box.addEventListener('click', e => {
+    const b = e.target.closest('[data-k]');
+    if (!b) return;
+    const k = b.dataset.k;
+    if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p), talk.sal + +b.dataset.d));
+    else if (k === 'yrs') talk.yrs = Math.max(1, Math.min(5, talk.yrs + +b.dataset.d));
+    else if (k === 'opt') talk.opt = +b.dataset.v;
+    else if (k === 'close') { saveExtStore(); box.remove(); render(); return; }
+    else if (k === 'submit') {
+      actions.extOffer({ id: p.id });
+      if (talk.signed || talk.tries >= 3) { box.remove(); return; }
+    }
+    paint();
+  });
+  paint();
 };
 actions.extOffer = d => {
   const L = league(), st = extStore();
@@ -6006,15 +6049,16 @@ actions.extOffer = d => {
   if (r.ok) {
     checkpoint(`Extend ${playerName(p)}`);
     signExtension(L, t, p, talk);
-    talk.signed = { sal: talk.sal, yrs: talk.yrs };
+    talk.signed = { sal: talk.sal, yrs: talk.yrs, opt: talk.opt || 0 };
     state.dirty = true;
     toast(`✍️ ${playerName(p)} extended`, `$${talk.sal}M × ${talk.yrs}, starting next season`);
   }
-  saveExtStore(); render();
+  saveExtStore();
+  if (talk.signed || talk.tries >= 3) render();
 };
 actions.extClose = async () => {
   const L = league(), st = extStore();
-  if (!(await confirmBox('Close the extension window? CPU teams make their calls, and anyone unsigned plays out his final year.', 'Close'))) return;
+  if (!(await confirmBox('Close the extension window?', 'Close'))) return;
   const rng = mulberry32((saveSalt() ^ 0xe7e1) >>> 0);
   const list = [];
   for (const t of L.teams.filter(tt => !isUserTeam(tt))) {
@@ -6028,9 +6072,16 @@ actions.extClose = async () => {
       if (status === 'contending' && lv >= 80) odds += 0.15;
       if (p.age >= 32) odds *= 0.5;
       if (rng() < odds) {
-        const deal = { sal: a.sal, yrs: a.yrs[0] + Math.floor(rng() * (a.yrs[1] - a.yrs[0] + 1)) };
+        // Around market value, and a young player on the rise doesn't take
+        // a pay cut. Veterans and rising young players often get a player
+        // option on the last year.
+        const sal = Math.max(Math.round(a.sal / 1.1), p.age <= 29 ? Math.round(p.contract.sal * 0.95) : 0);
+        const yrs = a.yrs[0] + Math.floor(rng() * (a.yrs[1] - a.yrs[0] + 1));
+        const rising = p.age <= 25 && a.proj > lv;
+        const opt = yrs > 1 && rng() < (p.age >= 30 ? 0.55 : rising ? 0.6 : 0.2) ? FA.OPT_PLAYER : 0;
+        const deal = { sal: Math.min(FA.maxSalary(L, p), sal), yrs, opt };
         signExtension(L, t, p, deal, true);
-        list.push({ name: playerName(p), team: t.shortName, sal: deal.sal, yrs: deal.yrs, lv });
+        list.push({ name: playerName(p), team: t.shortName, sal: deal.sal, yrs: deal.yrs, opt, lv });
       }
     }
   }
