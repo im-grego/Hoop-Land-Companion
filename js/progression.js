@@ -470,6 +470,8 @@ export function runProgression(entries, params, profiles) {
     const risk = e.injuryYear != null ? injuryRisk(e.p, e.injuryYear, params) : null;
     let pts = pointsFor(e.p, mpg, params, rng);
     if (risk?.cls === 'nagging') pts = Math.round(pts * params.naggingPointsMult);
+    // The coaching tree's Player Development branch (your teams only).
+    if (e.devMult) pts = Math.round(pts * e.devMult);
     awards.set(e.p.id, params.bumpMode === 'train' ? trainPoints(e.p, pts, params, rng) : awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
     // Seriously injured players are less likely to delay regression, risk
@@ -484,7 +486,7 @@ export function runProgression(entries, params, profiles) {
       maybeLongevity(e.p, mult * prod, params, rng, injured ? risk.cls : null);
     }
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
-    else maybePotential(e.p, mult, params, rng, z);
+    else maybePotential(e.p, mult * (e.potMult || 1), params, rng, z);
     maybeSkills(e.p, pts, params, profiles, rng);
     if (e.spend) spendHeldPoints(e.p, params, rng);
   }

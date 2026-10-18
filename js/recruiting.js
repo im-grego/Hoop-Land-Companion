@@ -296,7 +296,7 @@ function userWeek(M, cls, S) {
       const s = S.byId.get(+tid);
       if (!s) continue;
       const offered = M.offers[rid]?.[s.id] !== undefined;
-      const k = offered ? 1 : 0.5;
+      const k = (offered ? 1 : 0.5) * (M.culture?.[s.id] || 1);
       if (act.call) addInt(M, x.id, s.id, 4 * k * pitchMult(x, s, M, act.call));
       if (act.home) addInt(M, x.id, s.id, 9 * k * pitchMult(x, s, M, act.home));
       if (act.official) addInt(M, x.id, s.id, 14 * k * pitchMult(x, s, M, act.official));

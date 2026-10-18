@@ -21,12 +21,13 @@ import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
+import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.9';
+const APP_VERSION = '0.46.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -849,8 +850,8 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -1056,7 +1057,10 @@ function applyBump(seed) {
   // Start from the original file each time so re-rolls don't stack.
   for (const p of vetPlayers()) restore(p, snapOf(p));
   reapplyMentorship();
-  const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team) }));
+  const devT = tierNow('dev');
+  const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team),
+    ...(isUserTeam(e.team) && devT ? { devMult: CO.devMult(devT), potMult: CO.potMult(devT) } : {}) }));
+  applyCulture();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   let players = 0, points = 0, mine = 0;
   for (const [pid, n] of awards) {
@@ -1247,6 +1251,172 @@ function runStrength() {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Coaching tree and tendencies (Training Camp / Summer Development)
+
+const coachKey = () => `hlc:coach:${league().shortName}:${league().meta?.saveName || state.fileName}`;
+function treeStore() {
+  const c = (state.coachTree ||= {});
+  const key = coachKey();
+  if (!c[key]) { let v = {}; try { v = JSON.parse(localStorage.getItem(key)) || {}; } catch { v = {}; } c[key] = { bought: {}, spent: 0, earned: {}, culture: {}, ...v }; }
+  return c[key];
+}
+const saveTree = () => { try { localStorage.setItem(coachKey(), JSON.stringify(treeStore())); } catch { /* ignore */ } };
+const myCoach = () => CO.headCoach((myTeam() || null));
+const tierNow = k => CO.tierOf(treeStore(), myCoach(), k);
+// This offseason's points (once per season), plus 2 to start a new tree.
+function earnCoachPoints() {
+  const tree = treeStore(), t = (myTeam() || null);
+  if (!t) return;
+  const yr = league().season.currentYear;
+  if (!tree.earned.start) tree.earned.start = { pts: 2, why: ['A new staff'] };
+  if (!tree.earned[yr]) tree.earned[yr] = CO.seasonPoints(t, isCollege());
+  saveTree();
+}
+const coachPoints = () => { const tr = treeStore(); return Object.values(tr.earned).reduce((a, e) => a + e.pts, 0) - tr.spent; };
+
+function coachCard() {
+  const t = (myTeam() || null);
+  if (!t) return '';
+  earnCoachPoints();
+  const c = myCoach(), yr = league().season.currentYear, e = treeStore().earned[yr];
+  const r = k => c?.attributes?.[k]?.[0] ?? '—';
+  return `<fieldset class="frame"><legend>Coaching Staff</legend><div class="stack">
+    <p class="note"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b> <span class="muted small">Development ${r('development')} · Motivation ${r('motivation')} · Leadership ${r('leadership')}</span></p>
+    <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${coachPoints()}</b> to spend</p>
+    <p class="note small muted">${CO.BRANCHES.map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
+    <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
+  </div></fieldset>`;
+}
+
+screens.coachtree = () => {
+  earnCoachPoints();
+  const tree = treeStore(), c = myCoach(), free = CO.coachTiers(c), pts = coachPoints();
+  layout({
+    title: 'Coaching Tree',
+    body: `<fieldset class="frame"><legend>${c ? esc(`${c.fn} ${c.ln}`) : 'Your Staff'}</legend>
+        <p class="note">Points come from each season: one for the job, more for a winning record, the ${isCollege() ? 'tournament' : 'playoffs'}, a deep run and a title. Your coach's own ratings start some tiers unlocked (13+ is tier 1, 17+ tier 2).</p>
+        <p class="note"><b class="gold">${pts}</b> point${pts === 1 ? '' : 's'} to spend</p>
+        <div class="stack small">${Object.entries(tree.earned).map(([k, e]) => `<span class="muted">${k === 'start' ? 'Start' : k}: +${e.pts} · ${esc(e.why.join(', '))}</span>`).join('')}</div></fieldset>
+      ${CO.BRANCHES.map(b => {
+        const cur = tierNow(b.k);
+        return `<fieldset class="frame"><legend>${b.icon} ${b.label}</legend><div class="stack">${b.tiers.map((txt, i) => {
+          const lv = i + 1, have = cur >= lv, next = lv === cur + 1, cost = CO.TIER_COST[i];
+          return `<div class="tree-row ${have ? 'have' : next ? 'next' : 'locked'}"><span class="tree-lv">${lv}</span><span class="grow small">${esc(txt)}${have && free[b.k] >= lv ? ' <span class="muted">· from your coach</span>' : ''}</span>
+            ${have ? '<span class="up">✓</span>' : next ? `<button class="btn small ${pts >= cost ? 'focus' : ''}" data-act="buyTier" data-k="${b.k}" ${pts >= cost ? '' : 'disabled'}>${cost} pt${cost > 1 ? 's' : ''}</button>` : `<span class="muted small">${cost} pts</span>`}</div>`;
+        }).join('')}</div></fieldset>`;
+      }).join('')}`,
+  });
+};
+actions.buyTier = d => {
+  const tree = treeStore(), cur = tierNow(d.k);
+  if (cur >= CO.MAX_TIER) return;
+  const cost = CO.TIER_COST[cur];
+  if (coachPoints() < cost) { toast('Not enough points', '', 2400, true); return; }
+  tree.bought[d.k] = cur + 1;
+  tree.spent += cost;
+  saveTree();
+  if (d.k === 'culture' && state.auto[state.leagueIdx]) applyCulture();
+  render();
+};
+
+// Tendencies: each of your players takes a few nudges this offseason
+// (Scheme tier, youth, motor). Changes go straight into the save; the
+// offseason's starting values are kept to reset to.
+const tendKey = () => `hlc:tend:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
+function tendStore() {
+  const c = (state.tendS ||= {});
+  const key = tendKey();
+  if (!c[key]) { let v = {}; try { v = JSON.parse(localStorage.getItem(key)) || {}; } catch { v = {}; } c[key] = { orig: {}, ...v }; }
+  return c[key];
+}
+const saveTend = () => { try { localStorage.setItem(tendKey(), JSON.stringify(tendStore())); } catch { /* ignore */ } };
+const tendPlayers = () => league().teams.filter(isUserTeam).flatMap(t => t.roster.map(p => ({ p, team: t }))).filter(e => e.p.tendencies);
+const origTend = p => tendStore().orig[p.id] || p.tendencies;
+const nudgesUsed = p => Object.keys(TEND_LABELS).reduce((a, k) => a + Math.abs((p.tendencies[k] || 0) - (origTend(p)[k] || 0)), 0);
+
+screens.tendencies = () => {
+  const sch = tierNow('scheme');
+  const list = tendPlayers().sort((a, b) => levelOf(b.p) - levelOf(a.p));
+  state.tendNav = list.map(e => e.p.id);
+  layout({
+    title: 'Tendencies',
+    body: `<p class="note small">Scheme tier ${sch}: every player takes ${1 + sch} nudge${sch ? 's' : ''}, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(sch)} from where the offseason started.</p>
+      <div class="list">${list.map(({ p, team }) => {
+        const n = CO.nudgesFor(p, sch), used = nudgesUsed(p);
+        return `<button class="prow" data-act="openTend" data-id="${p.id}"><span class="name">${esc(playerName(p))}</span>
+          <span class="meta">${esc(posName(p))} · ${p.age}y · Lv ${levelOf(p)}${state.userTeams.size > 1 ? ` · ${esc(team.shortName)}` : ''}</span>
+          <span class="chg ${used ? 'up' : 'muted'}">${used}/${n}</span></button>`;
+      }).join('') || '<p class="note muted">No players.</p>'}</div>`,
+  });
+};
+actions.openTend = d => go('tendplayer', { id: +d.id });
+actions.stepTend = d => replace('tendplayer', { id: +d.id });
+screens.tendplayer = ({ id }) => {
+  const e = tendPlayers().find(x => x.p.id === id);
+  if (!e) { back(); return; }
+  const p = e.p, sch = tierNow('scheme'), n = CO.nudgesFor(p, sch), used = nudgesUsed(p), o = origTend(p), lim = CO.maxShift(sch);
+  const ids = state.tendNav || [], at = ids.indexOf(id);
+  const nav = (rid, dir) => rid == null ? '' : `<button class="nav-btn" data-act="stepTend" data-id="${rid}" aria-label="${dir < 0 ? 'Previous' : 'Next'} player">${dir < 0 ? '◀' : '▶'}</button>`;
+  const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
+  layout({
+    title: playerName(p),
+    left: nav(at > 0 ? ids[at - 1] : null, -1),
+    right: nav(at >= 0 && at < ids.length - 1 ? ids[at + 1] : null, 1),
+    body: `<fieldset class="frame"><legend>Nudges · ${used}/${n} used</legend>
+        <p class="note small">${esc(posName(p))} · ${p.age}y · Motor ${p.traits?.motor || '—'}. ${esc(styleLine(p))}</p>
+        ${used ? '<button class="btn small" data-act="resetTend" data-id="' + p.id + '">↺ Reset his tendencies</button>' : ''}</fieldset>
+      ${TEND_GROUPS.map(([g, ks]) => `<fieldset class="frame"><legend>${g}</legend><div class="stack">${ks.map(k => {
+        const v = p.tendencies[k] || 0, d = v - (o[k] || 0);
+        const canUp = v < 5 && d < lim && (d < 0 || used < n), canDn = v > -5 && d > -lim && (d > 0 || used < n);
+        return `<div class="tend-row tend-edit"><span class="small">${TEND_LABELS[k]}${d ? ` <span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '+' : ''}${d}</span>` : ''}</span>${bar(v)}
+          <span class="trait-ctl"><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="-1" ${canDn ? '' : 'disabled'} aria-label="Less ${TEND_LABELS[k]}">−</button><b class="small">${v > 0 ? '+' : ''}${v}</b><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="1" ${canUp ? '' : 'disabled'} aria-label="More ${TEND_LABELS[k]}">+</button></span></div>`;
+      }).join('')}</div></fieldset>`).join('')}`,
+  });
+};
+actions.tendAdj = d => {
+  const e = tendPlayers().find(x => x.p.id === +d.id);
+  if (!e) return;
+  const p = e.p, st = tendStore();
+  if (!st.orig[p.id]) st.orig[p.id] = { ...p.tendencies };
+  const sch = tierNow('scheme'), o = st.orig[p.id], k = d.k, step = +d.d;
+  const v = (p.tendencies[k] || 0) + step, dv = v - (o[k] || 0);
+  if (v > 5 || v < -5 || Math.abs(dv) > CO.maxShift(sch)) return;
+  const growing = Math.abs(dv) > Math.abs((p.tendencies[k] || 0) - (o[k] || 0));
+  if (growing && nudgesUsed(p) >= CO.nudgesFor(p, sch)) { toast('No nudges left for him', '', 2400, true); return; }
+  p.tendencies[k] = v;
+  saveTend();
+  state.dirty = true;
+  render();
+};
+actions.resetTend = d => {
+  const e = tendPlayers().find(x => x.p.id === +d.id);
+  const o = e && tendStore().orig[e.p.id];
+  if (!o) return;
+  Object.assign(e.p.tendencies, o);
+  saveTend();
+  render();
+};
+
+// Culture: once per offseason, your players' Locker Room and Loyalty come up
+// toward the tier's cap. Recorded so it never stacks.
+function applyCulture() {
+  const tree = treeStore(), yr = `${league().season.currentYear}:${state.leagueIdx}`, t = tierNow('culture');
+  const prev = tree.culture[yr]?.tier || 0;
+  if (t <= prev) return;
+  const cap = CO.cultureCap(t);
+  for (const { p } of tendPlayers()) {
+    if (!p.traits) continue;
+    for (const k of ['lockerRoom', 'loyalty']) {
+      const v = p.traits[k] || 10;
+      p.traits[k] = Math.max(v, Math.min(cap, v + t - prev));
+    }
+  }
+  tree.culture[yr] = { tier: t };
+  saveTree();
+  state.dirty = true;
+}
+
 function strengthCard() {
   const st = strengthStore();
   const res = st.results;
@@ -1307,6 +1477,7 @@ screens.offseason = () => {
     title: isCollege() ? 'Summer Development' : 'Training Camp',
     body: `
       <img class="hero" src="icons/hero-camp.jpg" alt="">
+      ${coachCard()}
       ${isCollege() ? '' : mentorCard()}
       <fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
@@ -6048,6 +6219,7 @@ actions.recruitEndWeek = async () => {
   if (w === RC.WEEKS && !(await confirmBox('Signing Day: every recruit still out there picks a school today, and every class is written into your save.', 'Sign Them'))) return;
   const o = overlay('<div class="spinner"></div><p class="note">Recruits are deciding…</p>');
   await nextFrame();
+  M.culture = Object.fromEntries(league().teams.filter(isUserTeam).map(x => [x.id, CO.recruitMult(tierNow('culture'))]));
   RC.advanceWeek(league(), state.leagueIdx, M, rclass(), new Set(league().teams.filter(isUserTeam).map(x => x.id)));
   const n = applyRecruiting();
   saveMarket();
