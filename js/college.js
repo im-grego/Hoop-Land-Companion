@@ -296,3 +296,43 @@ export function preseason(data, li, team, level) {
   const foy = players.filter(x => (x.p.yrs ?? 0) === 0).sort((a, b) => (b.p.pot - a.p.pot) || (level(b.p) - level(a.p))).slice(0, 6);
   return { top25: ranked.slice(0, 25), mine, division, poy, foy, divName: (C.divisions || [])[team.division] || 'Division' };
 }
+
+// Roster Lock (August): the final roster against the 15-man limit, position
+// balance, class-year mix and the eligibility clock.
+export function rosterLock(team, level, li) {
+  const needs = rosterNeedsCollege(team, 15);
+  const players = team.roster.map(p => ({ p, lv: level(p), cls: classOf(p.yrs ?? 0), last: (p.yrs ?? 0) >= 3, fresh: (p.yrs ?? 0) === 0, group: GROUP(p) }))
+    .sort((a, b) => b.lv - a.lv);
+  const mix = CLASSES.map(c => [c, players.filter(x => x.cls === c).length]);
+  const warn = [];
+  for (const n of needs.short) if (n.short) warn.push(`Short ${n.short} at ${n.g.toLowerCase()} (${n.have} of ${n.want})`);
+  const sr = players.filter(x => x.last).length, fr = players.filter(x => x.fresh).length;
+  if (sr >= 5) warn.push(`${sr} seniors: a big turnover coming next spring`);
+  if (fr >= 5) warn.push(`${fr} freshmen: a young team`);
+  if (!sr && players.length) warn.push('No seniors to lead the locker room');
+  return { players, needs, mix, warn, size: players.length };
+}
+
+// Practice Begins (September): projected starters (two guards, two wings or
+// forwards, a big when the roster allows), the rotation, position battles,
+// captains (upperclassmen with the best locker-room trait) and freshmen
+// pushing for minutes.
+export function practicePlan(team, level, trait = () => 10) {
+  const ps = team.roster.map(p => ({ p, lv: level(p), group: GROUP(p) })).sort((a, b) => b.lv - a.lv);
+  const starters = [];
+  const take = (g, n) => { for (const x of ps.filter(y => y.group === g && !starters.includes(y)).slice(0, n)) starters.push(x); };
+  take('Guards', 2); take('Wings', 2); take('Bigs', 1);
+  for (const x of ps) if (starters.length < 5 && !starters.includes(x)) starters.push(x);
+  const bench = ps.filter(x => !starters.includes(x));
+  const rotation = bench.slice(0, 4);
+  const battles = [];
+  for (const s of starters) {
+    const rival = bench.find(b => b.group === s.group && s.lv - b.lv <= 2);
+    if (rival && !battles.some(x => x.b === rival)) battles.push({ a: s, b: rival });
+  }
+  const captains = ps.filter(x => (x.p.yrs ?? 0) >= 2).sort((a, b) => trait(b.p) - trait(a.p) || (b.p.yrs - a.p.yrs) || b.lv - a.lv).slice(0, 2);
+  const fifth = starters[starters.length - 1]?.lv ?? 0;
+  const pushing = ps.filter(x => (x.p.yrs ?? 0) === 0 && (x.lv >= fifth - 3 || (x.p.pot || 0) >= 8) && !starters.includes(x));
+  const freshStarters = starters.filter(x => (x.p.yrs ?? 0) === 0);
+  return { starters, rotation, rest: bench.slice(4), battles, captains, pushing, freshStarters };
+}

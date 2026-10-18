@@ -19,13 +19,13 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
-import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason } from './college.js';
+import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.43.1';
+const APP_VERSION = '0.44.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -320,6 +320,7 @@ function replace(name, args = {}) {
 let lastView = '';
 function render() {
   if (state.data) FA.setQualifyingOffers(optStore().qo);
+  if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -370,9 +371,10 @@ async function loadFile(file) {
     state.dirty = false;
     const held = holdCpuOffers();
     recordSalaries();
+    if (isCollege()) { try { state.cal = JSON.parse(localStorage.getItem(collegeCalKey())) || {}; } catch { state.cal = {}; } }
     const kicked = applyExtensions();
     recordShowcase();
-    const filled = fillTraits(data.seasonLeagues[0]);
+    const filled = fillTraits(data.seasonLeagues[0]) + (state.leagueIdx ? fillTraits(data.seasonLeagues[state.leagueIdx]) : 0);
     if (filled) state.dirty = true;
     o.remove();
     toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, [held ? `${held} CPU contract offers held until the options deadline.` : '', kicked ? `${kicked} extension${kicked > 1 ? 's' : ''} signed last summer kicked in.` : '', filled ? `Traits set for ${filled} players.` : ''].filter(Boolean).join(' '));
@@ -580,27 +582,35 @@ const CALENDAR = [
 // College franchise offseason. The game runs the showcase (phase 5) and three
 // days of recruiting (6); the app adds everything around them.
 const COLLEGE_CAL = [
-  { key: 'review', date: 'Apr 8', title: 'Season in Review', blurb: 'How your season ended, the national picture, your leaders and the awards.',
+  { key: 'review', date: 'Apr 7', title: 'Season in Review', blurb: 'How your season ended, the national picture, your leaders and the awards.',
     done: () => !!calFlags().review },
-  { key: 'departures', date: 'Apr 26', title: 'Draft Departures', blurb: 'Who left for the pros, where they were drafted and how they project.',
-    done: () => !!calFlags().departures },
+  { key: 'portal', date: 'Apr 8', title: 'Transfer Portal', blurb: 'Who entered, from where, their stats and eligibility, and who fits your needs.',
+    done: () => !!calFlags().portal },
+  { key: 'showcase', date: 'Apr 12', title: 'All-American Showcase', blurb: 'East vs West: the top of next year\'s class. Every player leaves with an All-American tag.',
+    done: () => !!calFlags().showcase },
+  { key: 'recruit', date: 'Apr 15', title: 'Spring Signing Period', blurb: 'Recruiting, three days to land your class: every offer, who each recruit leans toward, and where you stand.',
+    done: () => !!calFlags().recruit },
   { key: 'seniors', date: 'May 10', title: 'Senior Send-off', blurb: 'The graduating class, your seniors\' last season ahead and the records your players hold.',
     done: () => !!calFlags().seniors },
-  { key: 'portal', date: 'May 15', title: 'Transfer Portal', blurb: 'Who entered, from where, their stats and eligibility, and who fits your needs.',
-    done: () => !!calFlags().portal },
-  { key: 'showcase', date: 'Jun 1', title: 'All-American Showcase', blurb: 'East vs West: the top of next year\'s class. Every player leaves with an All-American tag.',
-    done: () => !!calFlags().showcase },
-  { key: 'recruit', date: 'Jun 3', title: 'Recruiting', blurb: 'Three days to land your class: every offer, who each recruit leans toward, and where you stand.',
-    done: () => !!calFlags().recruit },
-  { key: 'signing', date: 'Jun 20', title: 'Signing Class Grades', blurb: 'Every school\'s class graded, yours in detail, and the needs still open.',
+  { key: 'departures', date: 'May 28', title: 'Draft Decisions', blurb: 'The withdrawal deadline: who stayed in the draft, where they went and how they project.',
+    done: () => !!calFlags().departures },
+  { key: 'signing', date: 'Jun 5', title: 'Signing Class Grades', blurb: 'Every school\'s class graded, yours in detail, and the needs still open.',
     done: () => !!calFlags().signing },
-  { key: 'summer', date: 'Jul 15', title: 'Summer Development', blurb: 'Off-season progression, a check-in with the trainer, mentorship and the strength program.',
+  { key: 'summer', date: 'Jun 20', title: 'Summer Workouts', blurb: 'Off-season progression, a check-in with the trainer, mentorship and the strength program.',
     done: () => !!calFlags().summer },
-  { key: 'preseason', date: 'Oct 15', title: 'Preseason', blurb: 'The projected Top 25, your division picks, and the Player and Freshman of the Year watch lists.',
+  { key: 'rosterlock', date: 'Aug 15', title: 'Roster Lock', blurb: 'The quiet period: your final 15, position balance, class-year mix and who is in his last year.',
+    done: () => !!calFlags().rosterlock },
+  { key: 'practice', date: 'Sep 15', title: 'Practice Begins', blurb: 'Starters and rotation, position battles, captains and the freshmen pushing for minutes.',
+    done: () => !!calFlags().practice },
+  { key: 'preseason', date: 'Oct 24', title: 'Exhibitions & Preseason Polls', blurb: 'The projected Top 25, your division picks, and the Player and Freshman of the Year watch lists.',
     done: () => !!calFlags().preseason },
   { key: 'export', date: 'Nov 4', title: 'Tip-Off', blurb: 'Export the season file and load it in Hoop Land.', done: () => false },
 ];
 const isCollege = () => state.mode?.kind === 'college';
+// College steps are remembered per save and season, since the offseason
+// spans several game phases (and reloads) for the showcase and recruiting.
+const collegeCalKey = () => `hlc:ccal:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.title}`); };
 const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR);
 const currentStep = () => activeCal().find(st => !st.done());
 const isStep = key => currentStep()?.key === key;
@@ -635,6 +645,8 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'rosterlock') { const t = league().teams.find(isUserTeam); return t ? `${t.roster.length} of 15 scholarships filled.` : 'Done.'; }
+  if (key === 'practice') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = practicePlan(t, shownLevel, p => tr(p, 'lockerRoom')); return `Captains: ${r.captains.map(x => playerName(x.p)).join(' and ') || 'none named'}.`; }
   if (key === 'preseason') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const r = preseason(state.data, state.leagueIdx, t, shownLevel); return `Projected No. ${r.mine.rank}. On to tip-off.`; }
   if (key === 'summer') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'signing') { const t = league().teams.find(isUserTeam); const c = t && signingClasses(state.data, state.leagueIdx, new Set(aaStore().ids || []), shownLevel).byTeam.get(t.id); return c ? `Your class: ${c.grade}, No. ${c.rank} (${c.players.length} signee${c.players.length > 1 ? 's' : ''}).` : 'No class this year.'; }
@@ -659,6 +671,8 @@ function stepActions(key) {
   const st = activeCal().find(x => x.key === key);
   if (st?.soon) return '<p class="note small muted">Coming soon.</p>';
   switch (key) {
+    case 'rosterlock': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="rosterlock">🔒 Roster Lock</button><button class="btn" data-act="calDone" data-k="rosterlock">✅ Wrap Up</button></div>`;
+    case 'practice': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="practice">🏀 Practice Begins</button><button class="btn" data-act="calDone" data-k="practice">✅ Wrap Up</button></div>`;
     case 'preseason': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="preseason">📰 Preseason Preview</button><button class="btn" data-act="calDone" data-k="preseason">✅ Wrap Up</button></div>`;
     case 'summer': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Summer Workouts</button><button class="btn" data-act="calDone" data-k="summer" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'signing': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="signing">🖊️ Signing Classes</button><button class="btn" data-act="calDone" data-k="signing">✅ Wrap Up</button></div>`;
@@ -736,7 +750,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'], recruit: ['recruit'], signing: ['signing'], preseason: ['preseason'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'], recruit: ['recruit'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -1227,7 +1241,7 @@ screens.camp = () => {
 };
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
 actions.calDevBack = () => {
-  if (isCollege()) { calFlags().summer = true; state.undo = null; goHome(); toast('Summer development done. Next up: Preseason.'); return; }
+  if (isCollege()) { calFlags().summer = true; state.undo = null; goHome(); nextUp(); return; }
   calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.');
 };
 
@@ -5604,7 +5618,7 @@ screens.review = () => {
     action: isStep('review') ? { act: 'reviewDone', label: 'Wrap Up the Season' } : null,
   });
 };
-actions.reviewDone = () => { calFlags().review = true; goHome(); toast('Next up: Draft Departures'); };
+actions.reviewDone = () => { calFlags().review = true; goHome(); nextUp(); };
 
 // College: Draft Departures.
 screens.departures = () => {
@@ -5623,7 +5637,7 @@ screens.departures = () => {
     <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${x.cls} · ${esc(x.school?.shortName || '?')}${x.line ? ` · ${f1(x.line.ppg)}/${f1(x.line.rpg)}/${f1(x.line.apg)}` : ''}</span></span>
     <span class="small" style="text-align:right">${x.pro ? `${logoImg(x.pro)}<br>${esc(x.pro.shortName)}` : '<span class="muted">Unsigned</span>'}</span></div>`;
   layout({
-    title: 'Draft Departures',
+    title: 'Draft Decisions',
     body: `<p class="note small"><b>${all.length}</b> players left the ${esc(L.shortName || 'college')} for the pros: <b>${drafted.length}</b> drafted (${r1} in the first round)${undrafted.length ? ` and ${undrafted.length} undrafted` : ''}: ${byCls.map(([c, n]) => `${n} ${c === 'Freshman' ? (n > 1 ? 'freshmen' : 'freshman') : c.toLowerCase() + (n > 1 ? 's' : '')}`).join(', ')}.</p>
       <fieldset class="frame"><legend>${esc(t ? t.shortName : 'Your School')}</legend>${mine.length ? `<div class="stack">${mine.map(row).join('')}</div>` : `<p class="note small muted">Nobody left ${esc(t?.city || 'your school')} for the pros this year.</p>`}
         ${myRank ? `<p class="note small" style="margin-top:6px">${myRank === 1 ? 'The most' : `No. ${myRank} in`} players sent to the pros this year.</p>` : ''}</fieldset>
@@ -5633,7 +5647,7 @@ screens.departures = () => {
     action: isStep('departures') ? { act: 'departuresDone', label: 'Wrap Up Departures' } : null,
   });
 };
-actions.departuresDone = () => { calFlags().departures = true; goHome(); toast('Next up: Senior Send-off'); };
+actions.departuresDone = () => { calFlags().departures = true; goHome(); nextUp(); };
 
 // College: Senior Send-off.
 screens.seniors = () => {
@@ -5659,7 +5673,7 @@ screens.seniors = () => {
     action: isStep('seniors') ? { act: 'seniorsDone', label: 'Wrap Up the Send-off' } : null,
   });
 };
-actions.seniorsDone = () => { calFlags().seniors = true; goHome(); toast('Next up: Transfer Portal'); };
+actions.seniorsDone = () => { calFlags().seniors = true; goHome(); nextUp(); };
 
 // College: All-American Showcase. Participants are remembered (per save and
 // season) so the tag follows them into recruiting after the game empties
@@ -5722,7 +5736,7 @@ screens.showcase = () => {
     action: isStep('showcase') ? { act: 'showcaseDone', label: 'Wrap Up the Showcase' } : null,
   });
 };
-actions.showcaseDone = () => { recordShowcase(); calFlags().showcase = true; goHome(); toast('Next up: Recruiting'); };
+actions.showcaseDone = () => { recordShowcase(); calFlags().showcase = true; goHome(); nextUp(); };
 
 // College: Recruiting Board.
 screens.recruit = (args = {}) => {
@@ -5768,7 +5782,7 @@ screens.recruit = (args = {}) => {
   });
 };
 actions.recruitView = d => replace('recruit', { view: d.v });
-actions.recruitDone = () => { calFlags().recruit = true; goHome(); toast('Next up: Signing Class Grades'); };
+actions.recruitDone = () => { calFlags().recruit = true; goHome(); nextUp(); };
 
 // College: Signing Class Grades.
 screens.signing = () => {
@@ -5801,7 +5815,7 @@ screens.signing = () => {
     action: isStep('signing') ? { act: 'signingDone', label: 'Wrap Up Signing' } : null,
   });
 };
-actions.signingDone = () => { calFlags().signing = true; goHome(); toast('Next up: Summer Development'); };
+actions.signingDone = () => { calFlags().signing = true; goHome(); nextUp(); };
 
 // College: Preseason.
 screens.preseason = () => {
@@ -5826,7 +5840,51 @@ screens.preseason = () => {
     action: isStep('preseason') ? { act: 'preseasonDone', label: 'Tip Off the Season' } : null,
   });
 };
-actions.preseasonDone = () => { calFlags().preseason = true; goHome(); toast('Next up: Tip-Off. Export your file.'); };
+actions.preseasonDone = () => { calFlags().preseason = true; goHome(); nextUp(); };
+
+// College: Roster Lock.
+screens.rosterlock = () => {
+  const L = league();
+  const t = L.teams.find(isUserTeam);
+  if (!t) { layout({ title: 'Roster Lock', body: '<p class="note">Pick your school first.</p>' }); return; }
+  const r = rosterLock(t, shownLevel, state.leagueIdx);
+  const groups = ['Guards', 'Wings', 'Bigs'];
+  const pRow = x => `<div class="drill-row tap ${x.last ? 'r1' : ''}" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} <span class="stars">${stars(x.p.pot)}</span>${isAllAmerican(x.p) ? ' <span class="small gold">⭐ AA</span>' : ''}<br>
+    <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${x.cls}${x.last ? ' · <span class="gold">final year</span>' : x.fresh ? ' · <span class="up">new</span>' : ''}</span></span></div>`;
+  layout({
+    title: 'Roster Lock',
+    body: `<div class="score-card"><div><b>Scholarships</b><span class="big-n ${r.size > 15 ? 'down' : ''}">${r.size}/15</span></div><div><b>Open</b><span class="big-n">${Math.max(0, 15 - r.size)}</span></div></div>
+      <fieldset class="frame"><legend>Class Mix</legend><div class="stat-grid">${r.mix.map(([c, n]) => `<div><b>${n}</b><span>${c}</span></div>`).join('')}</div></fieldset>
+      ${r.warn.length ? `<fieldset class="frame"><legend>Watch</legend><div class="stack">${r.warn.map(w => `<p class="note small">⚠️ ${esc(w)}</p>`).join('')}</div></fieldset>` : ''}
+      ${groups.map(g => { const list = r.players.filter(x => x.group === g); const n = r.needs.short.find(x => x.g === g); return `<fieldset class="frame"><legend>${g} · ${list.length} of ${n.want}</legend><div class="stack">${list.map(pRow).join('') || '<p class="note small down">Nobody.</p>'}</div></fieldset>`; }).join('')}
+      <p class="note muted small">Gold border = in his final year of eligibility.</p>`,
+    action: isStep('rosterlock') ? { act: 'rosterlockDone', label: 'Lock the Roster' } : null,
+  });
+};
+actions.rosterlockDone = () => { calFlags().rosterlock = true; goHome(); nextUp(); };
+
+// College: Practice Begins.
+screens.practice = () => {
+  const L = league();
+  const t = L.teams.find(isUserTeam);
+  if (!t) { layout({ title: 'Practice Begins', body: '<p class="note">Pick your school first.</p>' }); return; }
+  const r = practicePlan(t, shownLevel, p => tr(p, 'lockerRoom'));
+  const pRow = (x, right = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} <span class="stars">${stars(x.p.pot)}</span><br>
+    <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${classOf(x.p.yrs ?? 0)}</span></span>${right ? `<span class="small" style="text-align:right">${right}</span>` : ''}</div>`;
+  layout({
+    title: 'Practice Begins',
+    body: `<fieldset class="frame"><legend>Projected Starters</legend><div class="stack">${r.starters.map(x => pRow(x, (r.captains.includes(x) ? '🅲 Captain' : '') + ((x.p.yrs ?? 0) === 0 ? '<br><span class="up">Freshman starter</span>' : ''))).join('')}</div></fieldset>
+      <fieldset class="frame"><legend>Rotation</legend><div class="stack">${r.rotation.map(x => pRow(x, r.captains.includes(x) ? '🅲 Captain' : '')).join('') || '<p class="note small muted">Short bench.</p>'}</div>
+        ${r.rest.length ? `<p class="note small muted" style="margin-top:6px">End of the bench: ${r.rest.map(x => esc(playerName(x.p))).join(', ')}</p>` : ''}</fieldset>
+      ${r.battles.length ? `<fieldset class="frame"><legend>Position Battles</legend><div class="stack">${r.battles.map(b => `<p class="note small">⚔️ <b>${esc(playerName(b.a.p))}</b> (Lv ${b.a.lv}) vs <b>${esc(playerName(b.b.p))}</b> (Lv ${b.b.lv}) at ${esc(posName(b.a.p))}</p>`).join('')}</div></fieldset>` : ''}
+      <fieldset class="frame"><legend>Captains</legend>${r.captains.length ? `<div class="stack">${r.captains.map(x => pRow(x, `Locker room ${tr(x.p, 'lockerRoom')}`)).join('')}</div>` : '<p class="note small muted">No upperclassmen to name.</p>'}
+        <p class="note muted small" style="margin-top:6px">Juniors and seniors with the best locker-room trait.</p></fieldset>
+      ${r.pushing.length ? `<fieldset class="frame"><legend>Freshmen Pushing for Minutes</legend><div class="stack">${r.pushing.map(x => pRow(x)).join('')}</div></fieldset>` : ''}
+      <p class="note muted small">Set your lineup in the game; this is how camp shakes out by the ratings.</p>`,
+    action: isStep('practice') ? { act: 'practiceDone', label: 'Wrap Up Practice' } : null,
+  });
+};
+actions.practiceDone = () => { calFlags().practice = true; goHome(); nextUp(); };
 
 // College: Transfer Portal.
 screens.portal = (args = {}) => {
@@ -5863,7 +5921,7 @@ screens.portal = (args = {}) => {
   });
 };
 actions.portalView = d => replace('portal', { view: d.v });
-actions.portalDone = () => { calFlags().portal = true; goHome(); toast('Next up: the All-American Showcase'); };
+actions.portalDone = () => { calFlags().portal = true; goHome(); nextUp(); };
 
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
