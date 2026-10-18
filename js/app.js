@@ -19,13 +19,13 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
-import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard } from './college.js';
+import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege } from './college.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.42.6';
+const APP_VERSION = '0.42.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -592,7 +592,8 @@ const COLLEGE_CAL = [
     done: () => !!calFlags().showcase },
   { key: 'recruit', date: 'Jun 3', title: 'Recruiting', blurb: 'Three days to land your class: every offer, who each recruit leans toward, and where you stand.',
     done: () => !!calFlags().recruit },
-  { key: 'signing', date: 'Jun 20', title: 'Signing Class Grades', blurb: 'Every school\'s class, graded.', done: () => false, soon: true },
+  { key: 'signing', date: 'Jun 20', title: 'Signing Class Grades', blurb: 'Every school\'s class graded, yours in detail, and the needs still open.',
+    done: () => !!calFlags().signing },
   { key: 'summer', date: 'Jul 15', title: 'Summer Development', blurb: 'Workouts, progression and the strength program.', done: () => false, soon: true },
   { key: 'preseason', date: 'Oct 15', title: 'Preseason', blurb: 'Top 25, conference picks and Media Day.', done: () => false, soon: true },
 ];
@@ -631,6 +632,7 @@ function stepSummary(key) {
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
+  if (key === 'signing') { const t = league().teams.find(isUserTeam); const c = t && signingClasses(state.data, state.leagueIdx, new Set(aaStore().ids || []), shownLevel).byTeam.get(t.id); return c ? `Your class: ${c.grade}, No. ${c.rank} (${c.players.length} signee${c.players.length > 1 ? 's' : ''}).` : 'No class this year.'; }
   if (key === 'recruit') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const b = recruitBoard(state.data, state.leagueIdx, t); return `${b.mineClass.n} commit${b.mineClass.n === 1 ? '' : 's'}${b.rank ? `, class ranked No. ${b.rank}` : ''}.`; }
   if (key === 'showcase') { const a = aaStore(); return a.ids?.length ? `${a.ids.length} All-Americans${a.mvp ? `, MVP ${a.mvp}` : ''}.` : 'Done.'; }
   if (key === 'portal') { const t = league().teams.find(isUserTeam); if (!t) return 'Done.'; const b = portalBoard(state.data, state.leagueIdx, t); return `${b.all.length} in the portal${b.lost.length ? `, ${b.lost.length} from your school` : ''}.`; }
@@ -652,6 +654,7 @@ function stepActions(key) {
   const st = activeCal().find(x => x.key === key);
   if (st?.soon) return '<p class="note small muted">Coming soon.</p>';
   switch (key) {
+    case 'signing': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="signing">🖊️ Signing Classes</button><button class="btn" data-act="calDone" data-k="signing">✅ Wrap Up</button></div>`;
     case 'recruit': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="recruit">📋 Recruiting Board</button><button class="btn" data-act="calDone" data-k="recruit">✅ Wrap Up</button></div>`;
     case 'showcase': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="showcase">⭐ All-American Showcase</button><button class="btn" data-act="calDone" data-k="showcase">✅ Wrap Up</button></div>`;
     case 'portal': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="portal">🔁 Transfer Portal</button><button class="btn" data-act="calDone" data-k="portal">✅ Wrap Up</button></div>`;
@@ -726,7 +729,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'], recruit: ['recruit'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase'], recruit: ['recruit'], signing: ['signing'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
@@ -5756,6 +5759,39 @@ screens.recruit = (args = {}) => {
 };
 actions.recruitView = d => replace('recruit', { view: d.v });
 actions.recruitDone = () => { calFlags().recruit = true; goHome(); toast('Next up: Signing Class Grades'); };
+
+// College: Signing Class Grades.
+screens.signing = () => {
+  const L = league();
+  const t = L.teams.find(isUserTeam);
+  if (!t) { layout({ title: 'Signing Classes', body: '<p class="note">Pick your school first.</p>' }); return; }
+  const r = signingClasses(state.data, state.leagueIdx, new Set(aaStore().ids || []), shownLevel);
+  const mine = r.byTeam.get(t.id);
+  const needs = rosterNeedsCollege(t, 15);
+  const gradeCls = g => (g[0] === 'A' ? 'up' : g[0] === 'B' ? 'gold' : g[0] === 'C' ? '' : 'down');
+  const pRow = x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} <span class="stars">${stars(x.p.pot)}</span>${x.aa ? ' <span class="small gold">⭐ AA</span>' : ''}<br>
+    <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${x.transfer ? `Transfer · ${4 - (x.p.yrs ?? 0)} yrs left` : 'Freshman'} · $${x.p.contract?.sal || 0}M</span></span></div>`;
+  const best = r.list[0];
+  const steal = [...r.list].filter(c => c.team && c.players.length).sort((a, b) => (b.score / Math.max(1, b.team.prestigePoints + 20)) - (a.score / Math.max(1, a.team.prestigePoints + 20)))[0];
+  layout({
+    title: 'Signing Classes',
+    body: `<fieldset class="frame"><legend>Your Class</legend>
+        ${mine ? `<div class="grade-hero"><span class="grade-big ${gradeCls(mine.grade)}">${mine.grade}</span><span class="small">No. ${mine.rank} of ${r.list.length} · ${mine.players.length} signee${mine.players.length > 1 ? 's' : ''} · ${(mine.stars / 2).toFixed(1)}★ total</span></div>
+          <div class="stack">${mine.players.map(pRow).join('')}</div>` : `<p class="note small muted">${esc(t.city)} didn't sign anyone this year.</p>`}
+        <h4 class="ov-h">Still Open</h4>
+        <p class="note small">${t.roster.length} on the roster · ${needs.open} open scholarship${needs.open === 1 ? '' : 's'}${needs.short.some(n => n.short) ? ` · short at ${needs.short.filter(n => n.short).map(n => `${n.g.toLowerCase()} (${n.short})`).join(', ')}` : ' · every position covered'}</p>
+      </fieldset>
+      ${best ? `<fieldset class="frame"><legend>Headlines</legend>
+        <p class="note small">🏆 <b>Top class:</b> ${esc(best.team?.city || best.team?.shortName || '?')} (${best.grade}): ${best.players.slice(0, 3).map(x => esc(playerName(x.p))).join(', ')}${best.players.length > 3 ? ` and ${best.players.length - 3} more` : ''}.</p>
+        ${steal && steal !== best ? `<p class="note small">💎 <b>Overachiever:</b> ${esc(steal.team.city || steal.team.shortName)} (prestige ${steal.team.prestigePoints}) signed ${/^[AF]/.test(steal.grade) ? 'an' : 'a'} ${steal.grade} class.</p>` : ''}
+        ${r.noClass.length ? `<p class="note small muted">${r.noClass.length} school${r.noClass.length > 1 ? 's' : ''} signed nobody.</p>` : ''}
+      </fieldset>` : ''}
+      <fieldset class="frame"><legend>Class Rankings</legend><div class="stack">${r.list.map(c => `<div class="stand-row ${c.team === t ? 'mine' : ''}"><span class="small muted">${c.rank}</span>${c.team ? logoImg(c.team) : ''}<span class="grow small"><b>${esc(c.team?.shortName || '?')}</b> <span class="muted">${c.players.length} · ${(c.stars / 2).toFixed(1)}★</span></span><b class="${gradeCls(c.grade)}">${c.grade}</b></div>`).join('') || '<p class="note small muted">No classes yet. Load a save from after recruiting.</p>'}</div>
+        <p class="note muted small" style="margin-top:6px">Graded on potential, All-American signees and how much transfers help now, against this year's classes.</p></fieldset>`,
+    action: isStep('signing') ? { act: 'signingDone', label: 'Wrap Up Signing' } : null,
+  });
+};
+actions.signingDone = () => { calFlags().signing = true; goHome(); toast('Next up: Summer Development'); };
 
 // College: Transfer Portal.
 screens.portal = (args = {}) => {

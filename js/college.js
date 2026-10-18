@@ -238,3 +238,33 @@ export function recruitBoard(data, li, team) {
   const ranking = [...classes.values()].sort((a, b) => b.stars - a.stars || b.n - a.n);
   return { pool, needs, commits, ranking, mineClass: classes.get(team.id) || { n: 0, stars: 0, players: [] }, rank: ranking.findIndex(x => x.team === team) + 1, day: C.season.phase === 6 ? C.season.currentDay || 1 : 0, phase: C.season.phase };
 }
+
+// Signing class grades (after recruiting). Each signee's value: potential
+// above a 2★ baseline, a bump for All-Americans, and for transfers how much
+// they can help now. Letter grades are by rank among schools that signed
+// anyone, so a grade means "compared with this year's classes".
+const LETTERS = [[0.95, 'A+'], [0.85, 'A'], [0.75, 'A-'], [0.65, 'B+'], [0.55, 'B'], [0.45, 'B-'], [0.35, 'C+'], [0.25, 'C'], [0.15, 'C-'], [0.05, 'D'], [0, 'F']];
+export function signingClasses(data, li, aaIds = new Set(), levelOf = p => 50) {
+  const C = data.seasonLeagues[li];
+  const T = new Map(C.teams.map(t => [t.id, t]));
+  const transfers = new Set((C.season.news || []).filter(n => n.type === 34).map(n => n.pid));
+  const where = new Map(C.teams.flatMap(t => t.roster.map(p => [p.id, { t, p }])));
+  const value = p => Math.max(0, (p.pot || 0) - 4) + (aaIds.has(p.id) ? 0.75 : 0) + (transfers.has(p.id) ? Math.max(0, (levelOf(p) - 40) / 15) : 0);
+  const classes = new Map();
+  for (const n of (C.season.news || []).filter(x => x.type === 14)) {
+    const w = where.get(n.pid);
+    if (!w) continue;
+    const c = classes.get(n.tid) || { team: T.get(n.tid), players: [], score: 0, stars: 0 };
+    c.players.push({ p: w.p, transfer: transfers.has(w.p.id), aa: aaIds.has(w.p.id), v: value(w.p) });
+    c.score += value(w.p); c.stars += w.p.pot || 0;
+    classes.set(n.tid, c);
+  }
+  const list = [...classes.values()].sort((a, b) => b.score - a.score);
+  list.forEach((c, i) => {
+    const pct = list.length > 1 ? 1 - i / (list.length - 1) : 1;
+    c.rank = i + 1;
+    c.grade = LETTERS.find(([cut]) => pct >= cut)[1];
+    c.players.sort((a, b) => b.v - a.v);
+  });
+  return { list, byTeam: classes, noClass: C.teams.filter(t => !classes.has(t.id)) };
+}

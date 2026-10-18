@@ -1139,3 +1139,5 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .box-row { padding: 4px 6px; background: var(--btn); border: 2px solid var(--btn-edge); }
 .box-row.mvp { border-color: var(--gold); }
 .box-row > span:not(.grow), .box-head > span:not(.grow) { text-align: center; }
+.grade-hero { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.grade-big { font-size: 40px; font-weight: 900; min-width: 56px; text-align: center; border: 3px solid currentColor; padding: 2px 6px; }
