@@ -1120,3 +1120,6 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .btn.tiny { min-height: 24px; min-width: 24px; padding: 0 4px; font-size: 13px; }
 .arch { color: var(--cyan); }
 @media (max-width: 420px) { .trait-row { grid-template-columns: 96px 1fr 90px auto; } }
+.status.s-favorites { color: var(--gold); border-color: var(--gold); box-shadow: 0 0 6px rgba(255, 180, 58, .5); }
+.status.s-contending { color: var(--up); }
+.status.s-selling { color: var(--dim); }

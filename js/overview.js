@@ -84,7 +84,25 @@ export function teamStanding(L, team) {
   const finish = champ ? '🏆 Won the title' : round === 4 ? 'Lost in the Finals' : round === 3 ? 'Lost in the conference finals'
     : round === 2 ? 'Lost in the second round' : round === 1 ? 'Lost in the first round' : 'Missed the playoffs';
   const trend = rows.map(s => ({ yr: s.yr, W: s.seasonStats.W, L: s.seasonStats.L, pct: s.seasonStats.W / Math.max(1, s.seasonStats.W + s.seasonStats.L) }));
-  return { ...r, status: teamStatus(L, team), finish, champ, round, trend };
+  const status = teamStatus(L, team);
+  return { ...r, status, tier: teamTier(L, team, status, r.pct, round), finish, champ, round, trend };
+}
+
+// Five tiers, best to worst: Favorites, Contending, Developing, Selling,
+// Rebuilding. The middle splits by age: a young core on the way up is
+// Developing; an aging core that's slipping is Selling.
+export const TIER_NAMES = { favorites: 'Favorites', contending: 'Contending', developing: 'Developing', selling: 'Selling', rebuilding: 'Rebuilding' };
+const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
+const projOf = t => [...t.roster].map(p => levelOf(p) * (p.status === 4 ? 0.9 : 1)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0);
+function teamTier(L, team, status, pct, round) {
+  const mine = projOf(team);
+  const rank = 1 + L.teams.filter(t => t !== team && projOf(t) > mine).length;
+  if (rank <= 3 && (pct >= 0.6 || round >= 3)) return 'favorites';
+  if (status === 'contending') return 'contending';
+  if (status === 'rebuilding') return 'rebuilding';
+  const top5 = [...team.roster].filter(p => p.status !== 4).sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 5);
+  const age = top5.reduce((a, p) => a + p.age, 0) / (top5.length || 1);
+  return age >= 28 ? 'selling' : 'developing';
 }
 
 // ---------------------------------------------------------------------------
@@ -205,7 +223,7 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
       if (losing >= 2) { heat += 2; why.push(`${losing} losing seasons in a row`); } else if (losing === 1) { heat += 1; why.push('a losing season'); }
       if (st.round >= 1 && st.round <= 1 && !st.champ && st.status !== 'rebuilding' && st.trend.length >= 2 && st.trend.every(s => s.pct >= 0.5)) { heat += 1; why.push('another early playoff exit'); }
       if (!second || level(second) < level(star) - 8) { heat += 1.5; why.push('no co-star'); }
-      if (st.status === 'rebuilding') { heat += 1; why.push('a team heading into a rebuild'); }
+      if (st.tier === 'rebuilding' || st.tier === 'selling') { heat += 1; why.push('a team heading into a rebuild'); }
       if (morale < 40) { heat += 2; why.push(`morale at ${morale}`); } else if (morale < 60) { heat += 1; why.push(`morale slipping (${morale})`); }
       if (traitsSet(star)) {
         if (losing && tr(star, 'winning') >= 15) { heat += 1; why.push('wants to win now'); }
@@ -220,7 +238,7 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
     if (st.status === 'rebuilding') {
       for (const p of roster.slice(0, 6)) {
         if (p === star && out.some(x => x.p === p)) continue;
-        if (level(p) >= 74 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a rebuilding team`], level: level(p), morale: p.season?.morale ?? 70 });
+        if (level(p) >= 74 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a ${st.tier} team`], level: level(p), morale: p.season?.morale ?? 70 });
       }
     }
   }

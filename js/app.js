@@ -19,12 +19,12 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
-import { setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
+import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.41.1';
+const APP_VERSION = '0.41.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -607,7 +607,7 @@ function stepSummary(key) {
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
   if (key === 'ext') { const g = extStore().log || {}; return `${g.mine || 0} of yours and ${g.cpu || 0} around the league signed extensions.`; }
-  if (key === 'overview') { const t = league().teams.find(isUserTeam); return t ? `${STATUS_NAMES[teamStanding(league(), t).status]}. ${rosterNeeds(league(), t, { level: shownLevel }).filter(n => n.sev >= 2).length} big needs flagged.` : 'Done.'; }
+  if (key === 'overview') { const t = league().teams.find(isUserTeam); return t ? `${TIER_NAMES[teamStanding(league(), t).tier]}. ${rosterNeeds(league(), t, { level: shownLevel }).filter(n => n.sev >= 2).length} big needs flagged.` : 'Done.'; }
   if (key === 'preview') return `${boardStore().board.length} prospects on your board.`;
   if (key === 'cuts') { const c = calFlags().cutLog; return c ? `${c.n} players cut across the league${c.mine ? `, ${c.mine} of yours` : ''}.` : 'Every roster is set.'; }
   if (key === 'survey') { const q = surveyNow().questions[0]?.results[0]; return q ? `${q.name}: the GMs' pick to win it all (${q.pct}%).` : 'Survey published.'; }
@@ -5216,7 +5216,7 @@ function overviewTeam(L, t) {
   const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span><span class="small" style="text-align:right">${right}</span></div>`;
   const valTag = (sal, worth) => worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
-      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(st.status)}</div>
+      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${teamTag(st.tier)}</div>
       <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
     </div>
     <fieldset class="frame"><legend>Where to Focus</legend><div class="stack">${calls.map(c => `<p class="note small">${esc(c)}</p>`).join('') || '<p class="note small muted">No glaring holes. Best player available.</p>'}</div></fieldset>
@@ -5232,14 +5232,15 @@ function overviewTeam(L, t) {
       <p class="note muted small" style="margin-top:6px">From the rotation's tendencies.</p></fieldset>
     <fieldset class="frame"><legend>Draft Position</legend><div class="stack">${picks.map(x => `<p class="note small">${pickLine(x)}</p>`).join('') || '<p class="note small muted">No picks this year.</p>'}</div></fieldset>`;
 }
+const teamTag = k => `<span class="status s-${k}">${TIER_NAMES[k]}</span>`;
 function overviewRumors(L) {
   const all = L.teams.map(t => ({ t, st: teamStanding(L, t) }));
-  const col = k => all.filter(x => x.st.status === k).sort((a, b) => b.st.pct - a.st.pct);
+  const col = k => all.filter(x => x.st.tier === k).sort((a, b) => b.st.pct - a.st.pct);
   const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
   const heat = n => '🔥'.repeat(Math.max(1, n));
   const kind = { star: 'Disgruntled?', vet: 'Could be moved' };
   return `<fieldset class="frame"><legend>Team Directions</legend>
-      ${['contending', 'developing', 'rebuilding'].map(k => `<h4 class="ov-h">${statusTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></span>`).join('')}</div>`).join('')}
+      ${Object.keys(TIER_NAMES).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></span>`).join('')}</div>`).join('')}
     </fieldset>
     <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 14).map(r => `<div class="drill-row tap" data-act="openPlayer" data-id="${r.p.id}"><span class="grow"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br>
         <span class="small muted">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y${r.mpg ? ` · ${r.mpg.toFixed(0)} mpg` : ''} · morale ${r.morale}</span><br><span class="small">${esc(r.why.join(', '))}</span></span>
