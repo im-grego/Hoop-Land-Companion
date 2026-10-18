@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.47.4';
+const APP_VERSION = '0.48.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -306,7 +306,7 @@ function go(name, args = {}) {
 // The league's logo: the NBA mark for NBA leagues, else Hoop Land's.
 function leagueBadge(L) {
   const nba = L.leagueType === 0 && /NBA|National Basketball/i.test(`${L.shortName} ${L.leagueName}`);
-  return `<img class="league-logo" src="icons/${nba ? 'nba.png' : L.leagueType !== 0 ? 'league-ball.png' : 'hoopland-logo.png'}" alt="">`;
+  return `<img class="league-logo ${nba ? 'px' : ''}" src="icons/${nba ? 'nba-px.png' : L.leagueType !== 0 ? 'league-ball.png' : 'hoopland-logo.png'}" alt="">`;
 }
 
 function goHome() {
@@ -338,8 +338,15 @@ function render() {
   // iOS can drop a scroll made while it's still finishing a tap; put it
   // back once the redraw has settled.
   const keep = () => { if (Math.abs(window.scrollY - target) > 2) window.scrollTo(0, target); };
-  requestAnimationFrame(keep);
-  setTimeout(keep, 80);
+  // The calendar keeps the current step in the middle of the screen.
+  const now = top.name === 'main' && $app.querySelector('.cal.now');
+  if (now) {
+    const center = () => window.scrollTo(0, Math.max(0, now.getBoundingClientRect().top + window.scrollY - (window.innerHeight - now.offsetHeight) / 2));
+    center(); requestAnimationFrame(center); setTimeout(center, 80);
+  } else {
+    requestAnimationFrame(keep);
+    setTimeout(keep, 80);
+  }
   top.y = null;
   lastView = view;
 }
@@ -347,7 +354,7 @@ function render() {
 // The app keeps its own scroll positions per screen.
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 window.addEventListener('popstate', () => {
-  if (state.stack.length > 1) { state.stack.pop(); state.backHome = state.stack.length === 1; if (state.backHome) state.stack[0].y = 0; render(); }
+  if (state.stack.length > 1) { state.stack.pop(); render(); }
 });
 
 window.addEventListener('beforeunload', e => {
@@ -409,7 +416,7 @@ async function loadFile(file) {
     state.undo = null;
     state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null;
     installData(data);
-    if (isCollege()) freshCollegeCheck();
+    freshSaveCheck();
     state.dirty = false;
     const held = holdCpuOffers();
     recordSalaries();
@@ -503,7 +510,7 @@ function buildExport() {
     const s = league().season;
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
-  if (isCollege()) rememberExport();
+  rememberExport();
   const text = serializeSave(state.data);
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
@@ -668,13 +675,13 @@ const isCollege = () => state.mode?.kind === 'college';
 // College steps are remembered per save and season, since the offseason
 // spans several game phases (and reloads) for the showcase and recruiting.
 const collegeCalKey = () => `hlc:ccal:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
-// College progress is remembered per save and year, but only for the file
+// Progress (college and pro) is remembered per save and year, but only for the file
 // it started from (reloaded) or a file the app exported from it. Any other
 // save of that year (say, the original simmed again to the same spot)
 // starts the offseason fresh.
 const saveFingerprint = (L = league()) => [L.season.phase, L.season.currentDay || 0, (L.season.news || []).length, L.meta?.uPID || 0, L.teams.reduce((n, t) => n + t.roster.length, 0)].join(':');
 const fpKey = () => `hlc:cfp:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
-function freshCollegeCheck() {
+function freshSaveCheck() {
   const fp = saveFingerprint();
   let known = null;
   try { known = JSON.parse(localStorage.getItem(fpKey())); } catch { known = null; }
@@ -693,7 +700,7 @@ function freshCollegeCheck() {
       drop.forEach(k => localStorage.removeItem(k));
     } catch { /* ignore */ }
     state.rm = null;
-    for (const k of ['strength', 'opts', 'pre', 'extS']) state[k] = {};
+    for (const k of ['strength', 'opts', 'pre', 'extS', 'tendS', 'survey']) state[k] = {};
   }
   try { localStorage.setItem(fpKey(), JSON.stringify({ base: fp, exports: [] })); } catch { /* ignore */ }
 }
@@ -816,24 +823,13 @@ function stepActions(key) {
   }
 }
 
-// Back on the calendar from a step's screens: the current step, ready to
-// advance, right at the top.
-function backHomeCard() {
-  const back = state.backHome;
-  state.backHome = false;
-  const cur = back && phaseRank(league().season) !== 0 || back && isCollege() ? currentStep() : null;
-  if (!cur) return '';
-  const acts = stepActions(cur.key);
-  if (!acts) return '';
-  return `<fieldset class="frame now-card"><legend>Up Now · ${esc(cur.date)}</legend><b>${esc(cur.title)}</b>${acts}</fieldset>`;
-}
 function calendarCard() {
   const s = league().season;
   if (phaseRank(s) === 0 && !isCollege()) {
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
-  return `<fieldset class="frame"><legend>${s.currentYear} Offseason</legend>
+  return `<fieldset class="frame"><legend>${dispYr(s.currentYear)} Offseason</legend>
     <ol class="calendar">${activeCal().map(st => {
       const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
       return `<li class="cal ${state_}">
@@ -973,10 +969,9 @@ screens.main = () => {
     body: `
       <div class="league-card">
         ${leagueBadge(L)}
-        <div class="grow"><b>${esc(L.meta?.saveName || state.fileName)}</b>
-          <span class="note small">${esc(L.leagueName || L.shortName)} · ${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() ? 'school' : 'teams'}: ${esc(yourTeams)}</span></div>
+        <div class="grow"><b>${esc(L.leagueName || L.shortName)}</b>
+          <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}</span></div>
       </div>
-      ${backHomeCard()}
       ${calendarCard()}
       <div class="grid2">
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
@@ -4355,9 +4350,13 @@ function liveSim(mode) {
   }
 }
 
+// Pro leagues are labelled by the year a season starts in the user's
+// setup (a 2027 file's first offseason is the 2027 offseason and its draft
+// the 2027 draft), one less than the save's own year.
+const dispYr = y => (isCollege() ? y : y - 1);
 const pickLabel = (pk, L = league()) => {
   const t = L.teams.find(x => x.id === pk.otid);
-  return `${pk.yr} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}`;
+  return `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}`;
 };
 
 function draftLive() {
@@ -4760,7 +4759,7 @@ function draftTrades(args) {
     .filter(pk => pk.yr >= L.season.currentYear)
     .sort((x, y) => x.yr - y.yr || x.rd - y.rd)
     .map(pk => `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''}" data-act="togglePick" data-side="${side}" data-k="${key(pk)}">
-      <span class="check"></span><span class="grow">${pk.yr} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}</span>
+      <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}</span>
       <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`).join('') || '<p class="note muted">No picks.</p>';
   const valueOf = (T, sel) => T.draftPicks.filter(pk => sel.has(key(pk))).reduce((a, pk) => a + pickValue(L, pk), 0);
   const vA = valueOf(A, selA), vB = valueOf(B, selB);
@@ -4810,7 +4809,7 @@ actions.makeTrade = async () => {
   const fromB = B.draftPicks.filter(pk => (a.selB || []).includes(key(pk)));
   if (!fromA.length && !fromB.length) { toast('Tap picks on either side first'); return; }
   const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
-  const desc = list => list.map(pk => `${pk.yr} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
+  const desc = list => list.map(pk => `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
   const text = `${A.shortName} send ${desc(fromA)} · ${B.shortName} send ${desc(fromB)}`;
   if (!(await confirmBox(esc(text), 'Trade'))) return;
   tradePicks(A, B, fromA, fromB);

@@ -1185,3 +1185,4 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .race-row.mine .race-bar i { background: var(--cyan); }
 .race-bar i.full { background: var(--up); }
 .fa-tabs.fa-tabs7 { grid-template-columns: repeat(4, 1fr); }
+.league-logo.px { width: 24px; height: 54px; image-rendering: pixelated; margin: 5px 10px; }
