@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.48.1';
+const APP_VERSION = '0.48.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2222,7 +2222,11 @@ actions.openPlayer = d => go('player', { id: +d.id });
 
 screens.roster = (args) => {
   const L = league();
-  const mine = L.teams.filter(isUserTeam);
+  const mine0 = L.teams.filter(isUserTeam);
+  // Opening another team's page browses the whole league (◀ ▶ through every
+  // team); your own steps through your teams.
+  const others = args.arg != null && !mine0.some(t => t.id === +args.arg);
+  const mine = others ? L.teams : mine0;
   if (!mine.length) { replace('teams'); return; }
   let idx = mine.findIndex(t => t.id === +args.arg);
   if (idx < 0) idx = 0;
@@ -2233,12 +2237,12 @@ screens.roster = (args) => {
   const prevT = mine[(idx - 1 + mine.length) % mine.length];
   const nextT = mine[(idx + 1) % mine.length];
   layout({
-    title: 'My Team',
+    title: others ? t.shortName : 'My Team',
     left: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">${logoImg(prevT)}◀</button>` : '',
     right: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶${logoImg(nextT)}</button>` : '',
     body: `
       <h2 class="team-title">${logoImg(t)}${esc(t.city)} ${esc(t.name)}</h2>
-      <p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>
+      ${others ? '' : `<p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>`}
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
 };
@@ -5691,29 +5695,22 @@ function overviewTeam(L, t) {
   const st = teamStanding(L, t);
   const books = teamBooks(L, t, { level: shownLevel, worth: worthOf, qoEligible: FA.qoEligible });
   const needs = rosterNeeds(L, t, { level: shownLevel, li: state.leagueIdx });
-  const ident = teamIdentity(t, shownLevel).filter(x => x.n >= 2).slice(0, 3);
-  const picks = draftPosition(L, t, state.params.lotteryFormat);
-  const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
-  const calls = focusCalls(L, t, st, books, needs, rumors);
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
-  const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span><span class="small" style="text-align:right">${right}</span></div>`;
+  const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span>${right ? `<span class="small" style="text-align:right">${right}</span>` : ''}</div>`;
   const valTag = (sal, worth) => worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
       <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${teamTag(st.tier)}</div>
       <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
     </div>
-    <fieldset class="frame"><legend>Where to Focus</legend><div class="stack">${calls.map(c => `<p class="note small">${esc(c)}</p>`).join('') || '<p class="note small muted">No glaring holes. Best player available.</p>'}</div></fieldset>
     <fieldset class="frame"><legend>The Books</legend>
-      <p class="note small">Committed next season: <b>$${books.committed}M</b> of a $${books.cap}M cap · ${books.space >= 0 ? `<span class="up">~$${books.space}M space</span>` : `<span class="down">$${-books.space}M over</span>`}</p>
-      <h4 class="ov-h">Expiring (${books.expiring.length})</h4><div class="stack">${books.expiring.map(x => row(x, `worth ~$${x.worth}M${x.rfa ? '<br><span class="badge new">RFA</span>' : ''}`, ` · ${x.p.yrs ?? 0} yrs exp`)).join('') || '<p class="note small muted">Nobody.</p>'}</div>
-      <h4 class="ov-h">Options Due Jun 29 (${books.options.length})</h4><div class="stack">${books.options.map(x => row(x, `${x.kind === 'team' ? 'Team' : 'Player'} option $${x.sal}M<br>worth ~$${x.worth}M ${valTag(x.sal, x.worth)}`)).join('') || '<p class="note small muted">None.</p>'}</div>
-      <h4 class="ov-h">Extension Eligible (${books.ext.length})</h4><div class="stack">${books.ext.map(x => row(x, `$${x.sal}M, final year<br>worth ~$${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
+      <p class="note small">Committed next season: <b>$${books.committed}M</b> of a $${books.cap}M cap · ${books.space >= 0 ? `<span class="up">$${books.space}M space</span>` : `<span class="down">$${-books.space}M over</span>`}</p>
+      <h4 class="ov-h">Expiring (${books.expiring.length})</h4><div class="stack">${books.expiring.map(x => row(x, x.rfa ? '<span class="badge new">RFA</span>' : '', ` · ${x.p.yrs ?? 0} yrs exp · market value $${x.worth}M`)).join('') || '<p class="note small muted">Nobody.</p>'}</div>
+      <h4 class="ov-h">Options (${books.options.length})</h4><div class="stack">${books.options.map(x => row(x, valTag(x.sal, x.worth), `<br>${x.kind === 'team' ? 'Team' : 'Player'} option $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
+      <h4 class="ov-h">Extension Eligible (${books.ext.length})</h4><div class="stack">${books.ext.map(x => row(x, '', `<br>Final year $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
     </fieldset>
     <fieldset class="frame"><legend>Roster Needs</legend><div class="stack">${needs.map(n => `<div class="need-row">${sevDot(n.sev)}<span class="badge need">${esc(n.group === 'style' ? 'Style' : `${n.group[0].toUpperCase()}${n.group.slice(1)} · ${n.kind}`)}</span><span class="small grow">${esc(n.text)}</span></div>`).join('') || '<p class="note small muted">No real holes.</p>'}</div>
-      <p class="note muted small" style="margin-top:6px">Next season's roster (players under contract, options assumed picked up). Rotation and starter lines come from the whole league.</p></fieldset>
-    <fieldset class="frame"><legend>How You Play</legend>${ident.length ? `<div class="stack">${ident.map(x => `<p class="note small">${x.icon} <b>${esc(x.label)}</b> · ${x.n} rotation player${x.n > 1 ? 's' : ''} ${esc(x.text.replace(/^lives/, 'live').replace(/^gets/, 'get').replace(/^pulls/, 'pull').replace(/^wants/, 'want').replace(/^creates his/, 'create their').replace(/^looks/, 'look').replace(/^throws and catches/, 'throw and catch').replace(/^crashes/, 'crash').replace(/^goes/, 'go').replace(/^jumps/, 'jump').replace(/^stands his/, 'stand their').replace(/pokes/, 'poke'))}</p>`).join('')}</div>` : '<p class="note small muted">No clear identity.</p>'}
-      <p class="note muted small" style="margin-top:6px">From the rotation's tendencies.</p></fieldset>
-    <fieldset class="frame"><legend>Draft Position</legend><div class="stack">${picks.map(x => `<p class="note small">${pickLine(x)}</p>`).join('') || '<p class="note small muted">No picks this year.</p>'}</div></fieldset>`;
+</fieldset>
+`;
 }
 const teamTag = k => `<span class="status s-${k}">${TIER_NAMES[k]}</span>`;
 function overviewRumors(L) {
@@ -5723,12 +5720,37 @@ function overviewRumors(L) {
   const heat = n => '🔥'.repeat(Math.max(1, n));
   const kind = { star: 'Disgruntled?', vet: 'Could be moved' };
   return `<fieldset class="frame"><legend>Team Directions</legend>
-      ${Object.keys(TIER_NAMES).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></span>`).join('')}</div>`).join('')}
+      ${Object.keys(TIER_NAMES).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTag(k)}</h4><div class="dir-row">${col(k).map(x => `<button class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}" data-act="nav" data-to="roster" data-arg="${x.t.id}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></button>`).join('')}</div>`).join('')}
     </fieldset>
-    <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 14).map(r => `<div class="drill-row tap" data-act="openPlayer" data-id="${r.p.id}"><span class="grow"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br>
-        <span class="small muted">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y${r.mpg ? ` · ${r.mpg.toFixed(0)} mpg` : ''} · morale ${r.morale}</span><br><span class="small">${esc(r.why.join(', '))}</span></span>
-        <span class="small" style="text-align:right">${heat(r.heat)}<br><span class="gold">${kind[r.kind]}</span></span></div>`).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div>
-      <p class="note muted small" style="margin-top:6px">Built from losing seasons, early exits, a missing co-star and morale. Stars playing big minutes are slower to sour.</p></fieldset>`;
+    <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 12).map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div></fieldset>`;
+}
+// A rumor as a Hoop Gram post: the wording varies by player so a list of
+// them never reads the same twice.
+function rumorPost(r) {
+  const p = r.p, t = r.team, nm = playerName(p), first = p.fn || nm, city = t.city;
+  const why = r.why.length ? r.why.join(', ') : '';
+  const seed = (p.id * 7 + t.id * 13) >>> 0;
+  const pick = a => a[seed % a.length];
+  const star = [
+    `Sources: ${nm} has grown frustrated in ${city}${why ? ` after ${why}` : ''}. Teams are monitoring.`,
+    `${first}'s camp is quietly gauging the market. ${why ? `${why[0].toUpperCase()}${why.slice(1)} will do that.` : ''}`,
+    `Don't be surprised if ${nm} wants out of ${city} this summer${why ? `: ${why}` : ''}.`,
+    `League executives believe ${nm} could become available. ${city} has a decision to make.`,
+  ];
+  const vet = [
+    `${nm} is ${p.age} on a team heading the other way. Contenders are already calling ${city}.`,
+    `Is ${first} part of ${city}'s timeline? At ${p.age}, a move to a contender makes sense for both sides.`,
+    `${city} would listen on ${nm}. A ${p.age}-year-old ${posName(p)} doesn't fit a rebuild.`,
+    `Keep an eye on ${nm}. Rival teams see a ${p.age}-year-old who could swing a playoff series.`,
+  ];
+  const handle = pick(['@HoopInsider', '@LeagueWhispers', '@CapSpaceGuy', '@TradeMachine', '@CourtsideSources']);
+  const likes = 800 + (seed % 9000) + r.heat * 4000;
+  return `<div class="hg-post">
+    <div class="hg-head"><span class="hg-avatar">HG</span><b>${handle}</b><span class="hg-tag">${r.kind === 'star' ? 'Disgruntled?' : 'Could be moved'} ${'🔥'.repeat(Math.max(1, r.heat))}</span></div>
+    <p class="hg-text">${esc((r.kind === 'star' ? pick(star) : pick(vet)).trim())}</p>
+    <div class="hg-foot"><span>❤️ ${likes.toLocaleString()}</span><button class="btn small" data-act="openPlayer" data-id="${p.id}">${esc(nm)} ${lvTag(p)}</button></div>
+    <p class="note small muted" style="margin-top:4px">${esc(t.shortName)} · ${esc(posName(p))} · ${p.age}y · morale ${r.morale}</p>
+  </div>`;
 }
 screens.overview = (args = {}) => {
   const L = league();

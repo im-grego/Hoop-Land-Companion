@@ -144,9 +144,9 @@ export function rosterNeeds(L, team, { level = levelOf, li = 0 } = {}) {
     const name = GROUPS[g];
     const want = g === 'wings' ? 3 : 2;
     if (rot.length < want) out.push({ group: g, kind: 'Depth', sev: rot.length === 0 ? 3 : want - rot.length >= 2 ? 3 : 2,
-      text: `${rot.length || 'No'} rotation-level ${name.toLowerCase()} under contract${ps.length ? ` (${ps.length} on the roster)` : ''}` });
+      text: `Only ${rot.length || 'no'} rotation-quality ${name.toLowerCase()} signed for next season` });
     if (!best || level(best) < cuts.starter) out.push({ group: g, kind: 'Starter', sev: !best || level(best) < cuts.rotation ? 3 : 2,
-      text: best ? `Best of the ${name.toLowerCase()} is ${playerName(best)} (Lv ${level(best)}), below a starter` : `No ${name.toLowerCase()} at all` });
+      text: best ? `No starting-caliber ${name.toLowerCase().slice(0, -1)}: ${playerName(best)} (Lv ${level(best)}) is your best` : `No ${name.toLowerCase()} on the roster` });
     if (!young.length) out.push({ group: g, kind: 'Upside', sev: 1, text: `No ${name.toLowerCase().slice(0, -1)} 24 or younger with 3½★+ potential` });
     if (old.length && old.length >= Math.max(1, rot.length - 1)) out.push({ group: g, kind: 'Age', sev: old.length >= 2 ? 2 : 1,
       text: `${old.map(p => `${playerName(p)} (${p.age})`).join(', ')} ${old.length > 1 ? 'are' : 'is'} at the end of ${old.length > 1 ? 'their primes' : 'his prime'}` });
@@ -238,7 +238,7 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
     if (st.status === 'rebuilding') {
       for (const p of roster.slice(0, 6)) {
         if (p === star && out.some(x => x.p === p)) continue;
-        if (level(p) >= 74 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a ${st.tier} team`], level: level(p), morale: p.season?.morale ?? 70 });
+        if (level(p) >= 79 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a ${st.tier} team`], level: level(p), morale: p.season?.morale ?? 70 });
       }
     }
   }
