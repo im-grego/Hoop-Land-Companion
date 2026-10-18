@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.47.3';
+const APP_VERSION = '0.47.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2041,7 +2041,7 @@ screens.mentor = () => {
   }).join('') : '<p class="note">Pick your teams first.</p><button class="btn" data-act="nav" data-to="teams">👥 Pick Your Teams</button>';
   layout({
     title: 'Mentorship',
-    body: `<p class="note muted small">Tap a skill to have the veteran teach it. Skills are listed best fit first for the young player.</p>${body}`,
+    body: `<img class="hero" src="icons/hero-mentor.jpg" alt=""><p class="note muted small">Tap a skill to have the veteran teach it. Skills are listed best fit first for the young player.</p>${body}`,
   });
 };
 
