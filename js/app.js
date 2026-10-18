@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.55.0';
+const APP_VERSION = '0.56.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5678,6 +5678,64 @@ const promisesKey = () => `hlc:promises:${league().shortName}:${league().meta?.s
 function loadPromises() { try { return JSON.parse(localStorage.getItem(promisesKey())) || []; } catch { return []; } }
 function savePromises(v) { try { localStorage.setItem(promisesKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 
+// What your answers do (applied when Media Day wraps up): morale and
+// loyalty for the players involved, and the starting job for the position
+// battle. Returns [{ text, apply }].
+function presserEffects(L, t, ans) {
+  const out = [];
+  const find = id => t.roster.find(p => p.id === +id);
+  const mood = (p, n) => ({ text: `${p.fn} morale ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); } });
+  const loyal = (p, n) => ({ text: `${p.fn} loyalty ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.traits) p.traits.loyalty = Math.max(1, Math.min(20, (p.traits.loyalty || 10) + n)); } });
+  // Last year's promises: kept, he's happier; broken, the room noticed.
+  for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.tid === t.id && x.v === 'commit')) {
+    const P = find(pr.pid);
+    if (P) out.push({ ...mood(P, 5), text: `Promise kept: ${P.fn} morale +5` });
+    else out.push({ text: 'Promise broken: everyone\'s morale −3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 3); }) });
+  }
+  for (const q of presserQuestions(L, t, state.leagueIdx)) {
+    const a = ans?.[q.key];
+    if (!a) continue;
+    const P = find(q.pid);
+    if (q.key === 'contract' && P) {
+      if (a === 'commit') out.push(mood(P, 8), loyal(P, 1));
+      if (a === 'focus' && q.ctx.kind === 'final') out.push(mood(P, -2));
+      if (a === 'market') out.push(mood(P, -10), loyal(P, -2));
+    }
+    if (q.key === 'battle') {
+      const A = find(q.pid), B = find(q.pid2);
+      if (!A || !B) continue;
+      if (a === 'open') { out.push(mood(A, 2), mood(B, 2)); continue; }
+      const [w, l] = a === 'b' ? [B, A] : [A, B];
+      out.push(mood(w, 6), mood(l, -6));
+      if ((w.linePos ?? 99) >= 5 && (l.linePos ?? 99) < 5) out.push({ text: `${w.fn} moves into the starting five`, apply: () => {
+        const sl = t.startingLineup || [];
+        const ew = sl.find(x => x.pid === w.id), el = sl.find(x => x.pid === l.id);
+        if (ew && el) { ew.pid = l.id; el.pid = w.id; }
+        [w.linePos, l.linePos] = [l.linePos, w.linePos];
+      } });
+    }
+    if (q.key === 'moves') {
+      const star = presserStar(L, t);
+      if (a === 'believe') out.push({ text: 'Everyone\'s morale +3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 3); }) });
+      if (a === 'notdone' && star) out.push(mood(star, 4));
+      if (a === 'longterm') {
+        out.push({ text: 'Young players\' morale +4', apply: () => t.roster.filter(p => p.age <= 24).forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 4); }) });
+        if (star && q.ctx.mood !== 'quiet') out.push(mood(star, -6));
+      }
+    }
+  }
+  return out;
+}
+const presserStar = (L, t) => { const q = presserQuestions(L, t, state.leagueIdx).find(x => x.key === 'moves'); return q?.pid ? t.roster.find(p => p.id === q.pid) : null; };
+function applyPresser() {
+  const L = league(), pr = presserStore();
+  if (pr.applied) return;
+  for (const t of L.teams.filter(isUserTeam)) for (const e of presserEffects(L, t, pr[t.id])) e.apply();
+  pr.applied = true;
+  savePresser(pr);
+  state.dirty = true;
+}
+
 function presserCard() {
   const L = league();
   const mine = L.teams.filter(isUserTeam);
@@ -5693,12 +5751,14 @@ function presserCard() {
         <p class="note small"><b>${esc(q.q)}</b></p>
         <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}">${esc(o.label)}</button>`).join('')}</div>
       </div>`).join('')}</div></div>
-      <p class="note muted small" style="margin-top:6px">Your answers run under From the Podium. Promises get remembered next Media Day.</p>
+      ${(() => { const fx = presserEffects(L, t, ans); return fx.length ? `<p class="note small" style="margin-top:6px">${pr.applied ? '✓ ' : ''}${fx.map(e => esc(e.text)).join(' · ')}</p>` : ''; })()}
+      <p class="note muted small" style="margin-top:6px">${pr.applied ? 'Your answers are on the record.' : 'What you say here sticks when Media Day wraps up. Promises get remembered next year.'}</p>
     </fieldset>`;
   }).join('');
 }
 actions.presserAnswer = d => {
   const pr = presserStore();
+  if (pr.applied) return;
   (pr[d.tid] ||= {})[d.k] = d.v;
   savePresser(pr);
   if (d.k === 'contract' && d.pid) {
@@ -5747,7 +5807,7 @@ screens.storylines = () => {
   });
 };
 
-actions.mediaDone = () => { calFlags().media = true; goHome(); toast('Next up: Opening Night'); };
+actions.mediaDone = () => { applyPresser(); calFlags().media = true; goHome(); toast('Next up: Opening Night'); };
 
 actions.copyStories = async () => {
   const text = storylinesText(currentStorylines().stories, currentStorylines().podium);
