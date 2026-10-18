@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.47.1';
+const APP_VERSION = '0.47.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1656,7 +1656,7 @@ screens.trainer = () => {
   const L = league();
   const yr = lastSeasonYear();
   const body = L.teams.filter(isUserTeam).map(t => {
-    const rows = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).map(p => {
+    const rows = [...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => {
       const snap = snapOf(p);
       const d = diffPlayer(p, snap);
       const h = injuryRisk(p, yr, state.params);
@@ -4883,7 +4883,8 @@ screens.fa = (args = {}) => {
   const teamName = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const signedIds = new Set(s.signings.map(x => x.p.id));
   // Your own players with expiring deals live under Your Books.
-  let rows = [...s.market].sort((a, b) => levelOf(b.p) - levelOf(a.p) || faValue(b.p) - faValue(a.p));
+  // By the level he plays at now (a declining veteran sorts by his regressed level).
+  let rows = [...s.market].sort((a, b) => shownLevel(b.p) - shownLevel(a.p) || faValue(b.p) - faValue(a.p));
   if (view === 'mine') rows = rows.filter(m => isUserTeam(m.from) || (s.bids.get(m.p.id) || []).some(b => isUserTeam({ id: b.tid })));
   else rows = rows.filter(m => !isUserTeam(m.from));
   if (view === 'bids') rows = rows.filter(m => s.bids.get(m.p.id)?.length);
