@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.1';
+const APP_VERSION = '0.46.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -850,10 +850,10 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'], survey: ['survey'], media: ['storylines'], cuts: ['cuts'], export: ['export'],
+  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
+const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'gameplan', 'playbook'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1286,7 +1286,7 @@ function coachCard() {
     <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${coachPoints()}</b> to spend</p>
     <p class="note small muted">${CO.BRANCHES.map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
-    <button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button>
+    <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
   </div></fieldset>`;
 }
 
@@ -1435,6 +1435,84 @@ actions.resetPlan = () => {
   state.dirty = true;
   render();
 };
+
+// Playbook: the team's quick plays (4 per position, by the game's play
+// number) and scoring options (up to 3 players with usage and focus).
+// Playbooks are saved on this device by name and can be installed on your
+// team in any file. Scheme 1 installs playbooks; Scheme 2 edits scoring
+// options.
+const POS5 = ['PG', 'SG', 'SF', 'PF', 'C'];
+const pbKey = 'hlc:playbooks';
+const loadBooks = () => { try { return JSON.parse(localStorage.getItem(pbKey)) || []; } catch { return []; } };
+const saveBooks = b => { try { localStorage.setItem(pbKey, JSON.stringify(b)); } catch { /* ignore */ } };
+const hasPlays = t => (t.quickPlays?.positions || []).some(x => x.plays?.length);
+const playsGrid = qp => `<div class="pb-grid">${POS5.map((pos, i) => `<span class="pb-pos">${pos}</span>${(qp?.positions?.[i]?.plays || []).map(n => `<span class="pb-play">#${n}</span>`).join('') || '<span class="muted small">—</span>'}`).join('')}</div>`;
+
+screens.playbook = () => {
+  const t = myTeam();
+  if (!t) { layout({ title: 'Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
+  const sch = tierNow('scheme'), books = loadBooks();
+  const so = (t.scoringOptions || []);
+  const rosterIds = new Set(t.roster.map(p => p.id));
+  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${levelOf(p)}</option>`;
+  layout({
+    title: 'Playbook',
+    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Quick Plays</legend>
+        ${hasPlays(t) ? playsGrid(t.quickPlays) : '<p class="note small muted">No quick plays set for this team in this file.</p>'}
+        <p class="note small muted" style="margin-top:6px">Plays show by the game's play number.</p>
+        ${hasPlays(t) ? '<button class="btn small" data-act="savePlaybook">💾 Save as a playbook</button>' : ''}</fieldset>
+      <fieldset class="frame"><legend>Saved Playbooks</legend><div class="stack">
+        ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b>${playsGrid(b.quickPlays)}
+          <div class="grid2"><button class="btn small ${sch >= 1 ? 'focus' : ''}" data-act="installPlaybook" data-i="${i}" ${sch >= 1 ? '' : 'disabled'}>${sch >= 1 ? '📥 Install' : '🔒 Scheme 1'}</button><button class="btn small off" data-act="deletePlaybook" data-i="${i}">Delete</button></div></div>`).join('') || '<p class="note small muted">None yet. Load a file where your team has quick plays set and save them here.</p>'}
+      </div></fieldset>
+      <fieldset class="frame ${sch >= 2 ? '' : 'plan-locked'}"><legend>Scoring Options${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</legend><div class="stack">
+        ${so.map((o, i) => `<div class="so-row">
+          <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
+          <div class="so-ctl"><span class="small">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > 5 ? '' : 'disabled'}>−</button><b>${o.usageRate}%</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < 40 ? '' : 'disabled'}>+</button>
+            <span class="small">Focus</span>${[1, 2, 3, 4].map(f => `<button class="btn tiny ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${f}</button>`).join('')}
+            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
+        ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option</button>` : ''}
+      </div></fieldset>`,
+  });
+};
+actions.savePlaybook = () => {
+  const t = myTeam();
+  if (!t || !hasPlays(t)) return;
+  const books = loadBooks();
+  const name = `${t.city} ${t.name} · ${league().season.currentYear}`;
+  const i = books.findIndex(b => b.name === name);
+  const book = { name, quickPlays: JSON.parse(JSON.stringify(t.quickPlays)) };
+  if (i >= 0) books[i] = book; else books.push(book);
+  saveBooks(books);
+  render();
+};
+actions.installPlaybook = d => {
+  const t = myTeam(), b = loadBooks()[+d.i];
+  if (!t || !b || tierNow('scheme') < 1) return;
+  t.quickPlays = JSON.parse(JSON.stringify(b.quickPlays));
+  state.dirty = true;
+  render();
+};
+actions.deletePlaybook = async d => {
+  const books = loadBooks();
+  if (!books[+d.i] || !(await confirmBox(`Delete the playbook "${esc(books[+d.i].name)}"?`, 'Delete'))) return;
+  books.splice(+d.i, 1);
+  saveBooks(books);
+  render();
+};
+const soEdit = fn => { const t = myTeam(); if (!t || tierNow('scheme') < 2) return; fn(t.scoringOptions ||= []); state.dirty = true; render(); };
+actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (o) o[d.k] = Math.max(5, Math.min(40, o[d.k] + +d.d)); });
+actions.soFocus = d => soEdit(so => { const o = so[+d.i]; if (o) o.focus = +d.v; });
+actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
+actions.soAdd = () => soEdit(so => {
+  const t = myTeam(), used = new Set(so.map(o => o.pid));
+  const p = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).find(x => !used.has(x.id));
+  if (p && so.length < 3) so.push({ pid: p.id, usageRate: [30, 20, 15][so.length], focus: 1, playSelection: 1 });
+});
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'soPlayer') return;
+  soEdit(so => { const o = so[+e.target.dataset.i]; if (o) o.pid = +e.target.value; });
+});
 
 // Culture: once per offseason, your players' Locker Room and Loyalty come up
 // toward the tier's cap. Recorded so it never stacks.

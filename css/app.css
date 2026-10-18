@@ -1165,3 +1165,13 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .plan-opts { display: flex; flex-wrap: wrap; gap: 4px; }
 .plan-opts .btn.tiny { padding: 4px 8px; }
 .plan-locked { opacity: .55; }
+
+/* Playbook */
+.pb-grid { display: grid; grid-template-columns: 34px repeat(4, 1fr); gap: 4px; align-items: center; }
+.pb-pos { font-weight: 800; color: var(--gold); font-size: 13px; }
+.pb-play { text-align: center; padding: 3px 0; font-size: 13px; font-weight: 700; background: var(--bg-dark); border: 2px solid var(--btn-edge); }
+.pb-book { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.so-row { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.so-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.so-ctl b { min-width: 38px; text-align: center; }
+.so-row select { width: 100%; }
