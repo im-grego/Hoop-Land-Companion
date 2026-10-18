@@ -27,14 +27,15 @@ const rowOf = (team, yr) => (team.season || []).find(s => s.yr === yr);
 const lastDone = L => Math.max(...L.teams.map(t => Math.max(0, ...(t.season || []).filter(s => s.seasonStats?.GP > 0).map(s => s.yr))));
 
 // Everyone who could have played in this league last season (still on a
-// college roster, in the college pool, or gone to the pros).
+// college roster, in the college pool, or gone to the pros). Player ids are
+// per league, so the same id in two leagues is two different players.
 function everyone(data) {
-  const out = new Map();
+  const out = [];
   for (const L of data.seasonLeagues) {
-    for (const t of L.teams) for (const p of t.roster) out.set(p.id, p);
-    for (const p of L.freeAgents || []) if (!out.has(p.id)) out.set(p.id, p);
+    for (const t of L.teams) for (const p of t.roster) out.push(p);
+    for (const p of L.freeAgents || []) out.push(p);
   }
-  return [...out.values()];
+  return out;
 }
 
 export function seasonReview(data, li, team) {
@@ -73,8 +74,8 @@ export function seasonReview(data, li, team) {
   for (const p of everyone(data)) for (const a of p.awards || []) {
     if (a.league === li && (a.yearsWon || []).includes(yr) && AW[a.id]?.enabled !== false) won_.push({ p, id: a.id, name: AW[a.id]?.name || `Award ${a.id}`, team: AW[a.id]?.team ? a.team : null });
   }
-  const mineIds = new Set(lines.map(x => x.p.id));
-  const mine = won_.filter(w => mineIds.has(w.p.id));
+  const mineIds = new Set(lines.map(x => x.p));
+  const mine = won_.filter(w => mineIds.has(w.p));
   const national = won_.filter(w => !AW[w.id]?.team && w.id !== 0);
   const allTeams = won_.filter(w => AW[w.id]?.team && w.team === 0);
   // Division standings.
@@ -89,3 +90,27 @@ export function seasonReview(data, li, team) {
 
 const C_PHASES = { 15: 'Season Complete', 8: 'Offseason', 5: 'All-American Showcase', 6: 'Recruiting', 9: 'New Season' };
 export const collegePhaseName = s => (s.phase === 6 ? `Recruiting · Day ${s.currentDay || 1}` : C_PHASES[s.phase] || `Phase ${s.phase}`);
+
+// Draft departures: players who left this college league for the pros. A
+// drafted player keeps his college past in history: coll = the college
+// league's index, id = his college id, tid = his school, yearDeclared.
+export function draftDepartures(data, li) {
+  const C = data.seasonLeagues[li];
+  const yr = C.season.currentYear;
+  const schools = new Map(C.teams.map(t => [t.id, t]));
+  const out = [];
+  data.seasonLeagues.forEach((L, pi) => {
+    if (pi === li) return;
+    const add = (p, team) => {
+      const h = p.history || {};
+      if (h.coll !== li || h.yearDeclared !== yr) return;
+      const seasons = (p.stats || []).filter(x => x.league === li && (x.season || []).some(r => r.GP > 0)).length;
+      const line = seasonLine(p, li, yr - 1);
+      out.push({ p, pro: team, school: schools.get(h.tid) || null, pick: h.draft?.rd ? { rd: h.draft.rd, pk: h.draft.pk } : null,
+        seasons, line, li: pi });
+    };
+    for (const t of L.teams) for (const p of t.roster) add(p, t);
+    for (const p of L.freeAgents || []) add(p, null);
+  });
+  return out.sort((a, b) => (a.pick ? a.pick.pk : 999) - (b.pick ? b.pick.pk : 999));
+}
