@@ -136,7 +136,10 @@ export function buildClass(C, li, M) {
     const city = pickW(r, CITIES, c => c[4]);
     p.fn = FIRST[Math.floor(r() * FIRST.length)];
     p.ln = LAST[Math.floor(r() * LAST.length)];
+    // Stored like the game's own players: "City, ST" with country US, or
+    // "City, CC" (country code) abroad, e.g. "Toronto, CA" with country CA.
     p.ctry = city[1] === 'ON' ? 'CA' : 'US';
+    p.home = `${city[0]}, ${p.ctry === 'US' ? city[1] : p.ctry}`;
     p.loc = { x: Math.round(city[2] * 100 + gauss(r) * 25), y: Math.round(city[3] * 100 + gauss(r) * 25) };
     const arch = archPool[p.pos]?.length ? archPool[p.pos][Math.floor(r() * archPool[p.pos].length)] : [p.pri, p.sec];
     [p.pri, p.sec] = arch;
