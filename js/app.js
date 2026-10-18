@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.46.8';
+const APP_VERSION = '0.46.9';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6104,7 +6104,10 @@ function rclass() {
   return state.rm.cls;
 }
 const userSchool = () => league().teams.find(isUserTeam);
-const rStars = n => `<span class="gold">${'★'.repeat(n)}</span>`;
+// Recruit stars; with his level, gold fills to where he is now and white
+// is the rest of his star rating still to reach (always 5 slots wide, so
+// whatever follows lines up).
+const rStars = (n, lv) => lv == null ? `<span class="gold">${'★'.repeat(n)}</span>` : `<span class="stars">${stars(n * 2, Math.min(n, levelStarsOf(lv) / 2))}</span>`;
 const ordinal = n => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th'}`;
 const MOTIVE = { nil: 'NIL money', win: 'Winning', home: 'Staying close to home', pt: 'Playing time' };
 const PITCH_ICON = Object.fromEntries(RC.PITCHES.map(p => [p.k, p.icon]));
@@ -6152,7 +6155,7 @@ screens.showcase = () => {
     ${sc ? '<div class="box-head small muted"><span class="grow">Player</span><span>MIN</span><span>PTS</span><span>REB</span><span>AST</span><span>FG</span></div>' : ''}
     <div class="stack">${list.map(id => cls.byId.get(id)).filter(Boolean).sort((a, b) => (sc ? sc.box[b.id].pts - sc.box[a.id].pts : a.rank - b.rank)).map(x => {
       const b = sc?.box[x.id];
-      return `<div class="${sc ? 'box-row' : 'drill-row'} tap ${sc?.mvp === x.id ? 'mvp' : ''}" data-act="openRecruit" data-id="${x.id}"><span class="grow"><b>${esc(playerName(x.p))}</b>${sc?.mvp === x.id ? ' 🏆' : ''}<br><span class="small muted">No. ${x.rank} · ${esc(posName(x.p))} · ${esc(x.city)}, ${x.st}</span> ${rStars(x.stars)}</span>
+      return `<div class="${sc ? 'box-row' : 'drill-row'} tap ${sc?.mvp === x.id ? 'mvp' : ''}" data-act="openRecruit" data-id="${x.id}"><span class="grow"><b>${esc(playerName(x.p))}</b>${sc?.mvp === x.id ? ' 🏆' : ''}<br><span class="small muted">No. ${x.rank} · ${esc(posName(x.p))} · ${esc(x.city)}, ${x.st}</span> ${rStars(x.stars, x.lv)}</span>
         ${b ? `<span class="small">${b.min}</span><span><b>${b.pts}</b></span><span class="small">${b.reb}</span><span class="small">${b.ast}</span><span class="small muted">${b.fgm}-${b.fga}</span>` : ''}</div>`;
     }).join('')}</div></fieldset>`;
   const mvp = sc && cls.byId.get(sc.mvp);
@@ -6193,7 +6196,7 @@ screens.recruit = (args = {}) => {
   const u = RC.usedThisWeek(M, t.id);
   const done = M.week > RC.WEEKS;
   const mineIds = new Set([...Object.entries(M.offers).filter(([, o]) => o[t.id] !== undefined).map(([id]) => +id), ...Object.entries(M.commit).filter(([, v]) => v === t.id).map(([id]) => +id), ...Object.keys(M.acts).map(Number)]);
-  const row = x => `<div class="drill-row tap ${M.offers[x.id]?.[t.id] !== undefined || M.commit[x.id] === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${x.id}"><span class="grow"><span class="rank-no">${x.transfer ? 'T-' : ''}${x.rank}</span><b>${esc(playerName(x.p))}</b> ${rStars(x.stars)}${isAllAmerican(x.p) ? ' <span class="small gold">⭐ AA</span>' : ''}<br>
+  const row = x => `<div class="drill-row tap ${M.offers[x.id]?.[t.id] !== undefined || M.commit[x.id] === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${x.id}"><span class="grow"><span class="rank-no">${x.transfer ? 'T-' : ''}${x.rank}</span><b>${esc(playerName(x.p))}</b> ${rStars(x.stars, x.lv)}${isAllAmerican(x.p) ? ' <span class="small gold">⭐ AA</span>' : ''}<br>
       <span class="small muted">${esc(posName(x.p))} · ${heightStr(x.p.ht)} · Lv ${x.lv} · ${x.transfer ? `${classOf(x.p.yrs ?? 0)} transfer` : `${esc(x.city)}, ${x.st}`} · ${Math.round(RC.miles(x.p.loc, t.location))} mi</span></span>
     <span class="small" style="text-align:right;max-width:40%">${recruitStatus(x, c)}</span></div>`;
   let body = '';
@@ -6209,7 +6212,7 @@ screens.recruit = (args = {}) => {
       <div class="stack">${list.slice(0, lim).map(row).join('') || `<p class="note small muted">${view === 'mine' ? 'Nobody yet. Open a recruit to offer, call or visit.' : 'Nobody here.'}</p>`}</div>
       ${list.length > lim ? `<button class="btn small" data-act="recruitMore" style="margin-top:6px">Show more (${list.length - lim} left)</button>` : ''}`;
   } else if (view === 'news') {
-    const nm = id => { const x = cls.byId.get(id); return x ? `<b>${esc(playerName(x.p))}</b> ${rStars(x.stars)} <span class="muted">${x.transfer ? 'transfer' : `No. ${x.rank}`}</span>` : '?'; };
+    const nm = id => { const x = cls.byId.get(id); return x ? `<b>${esc(playerName(x.p))}</b> ${rStars(x.stars, x.lv)} <span class="muted">${x.transfer ? 'transfer' : `No. ${x.rank}`}</span>` : '?'; };
     const sch = tid => S.byId.get(tid)?.t;
     body = [...M.log].reverse().map(e => {
       const items = [...e.commits, ...e.signed].sort((a, b) => cls.byId.get(a.id).rank - cls.byId.get(b.id).rank);
@@ -6287,7 +6290,7 @@ screens.recruitee = ({ id }) => {
     left: navBtn(prevId, -1),
     right: navBtn(nextId, 1),
     body: `<fieldset class="frame"><legend>${x.transfer ? `Transfer · No. ${x.rank}` : `Class of ${league().season.currentYear + 0} · No. ${x.rank}`}</legend>
-        <p class="note"><b>${esc(playerName(p))}</b> ${rStars(x.stars)}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
+        <p class="note"><b>${esc(playerName(p))}</b> ${rStars(x.stars, x.lv)}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         <p class="note small">${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lbs · ${p.age}y · ${x.transfer ? `${classOf(p.yrs ?? 0)}, ${Math.max(1, 4 - (p.yrs ?? 0))} yr${4 - (p.yrs ?? 0) > 1 ? 's' : ''} left` : `${esc(x.city)}, ${x.st}`} · ${Math.round(RC.miles(p.loc, t.location))} mi from campus</p>
         <p class="note small">Lv ${x.lv} now · Potential ${scouted ? `<span class="stars">${stars(p.pot)}</span>` : '<span class="muted">? (a visit scouts him)</span>'}</p>
         <p class="note small muted">${line}</p>
@@ -6357,7 +6360,7 @@ screens.recruitweek = ({ w }) => {
   // Rank (T- for transfers) in the gold box, level next to the name, stars
   // on their own line (every row the same height), then position, height
   // and weight.
-  const rowOf = (i, extra = '') => { const x = cls.byId.get(i.id); return `<div class="drill-row tap ${i.to === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${i.id}"><span class="grow"><span class="rank-no">${x.transfer ? 'T-' : ''}${x.rank}</span><b>${esc(playerName(x.p))}</b> <span class="gold small nowrap">Lv ${x.lv}</span><br>${rStars(x.stars)}<br><span class="small muted">${esc(posName(x.p))} · ${heightStr(x.p.ht)} · ${x.p.wt} lbs${extra}</span></span><span class="small">${logoImg(sch(i.to))} ${esc(sch(i.to)?.shortName || '')}</span></div>`; };
+  const rowOf = (i, extra = '') => { const x = cls.byId.get(i.id); return `<div class="drill-row tap ${i.to === t.id ? 'r1' : ''}" data-act="openRecruit" data-id="${i.id}"><span class="grow"><span class="rank-no">${x.transfer ? 'T-' : ''}${x.rank}</span><b>${esc(playerName(x.p))}</b><br>${rStars(x.stars, x.lv)} <span class="gold small nowrap">Lv ${x.lv}</span><br><span class="small muted">${esc(posName(x.p))} · ${heightStr(x.p.ht)} · ${x.p.wt} lbs${extra}</span></span><span class="small">${logoImg(sch(i.to))} ${esc(sch(i.to)?.shortName || '')}</span></div>`; };
 
 
   const all = [...e.commits, ...e.signed].sort((a, b) => cls.byId.get(a.id).rank - cls.byId.get(b.id).rank);

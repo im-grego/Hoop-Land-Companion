@@ -1068,7 +1068,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .st { position: relative; display: inline-block; width: 15px; height: 15px; overflow: hidden; flex: none; }
 .st svg { position: absolute; top: 0; left: 0; width: 15px; height: 15px; }
 .st-gold path { fill: var(--gold); }
-.st-faint path { fill: none; stroke: color-mix(in srgb, var(--gold) 55%, transparent); stroke-width: 1.6; stroke-linejoin: round; }
+.st-faint path { fill: #fff; }
 .st-lost path { fill: #8e2233; stroke: #ff5a6a; stroke-width: 1.6; stroke-linejoin: round; }
 
 /* Add Skill menu */
