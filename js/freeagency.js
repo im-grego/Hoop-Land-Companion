@@ -10,6 +10,7 @@
 //
 // Contract options: opt 1 = team option, opt 2 = player option.
 
+import { tr, traitsSet } from './traits.js';
 import { jerseyNumber, playerName } from './savefile.js';
 import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
@@ -86,6 +87,19 @@ export function askFor(league, p, day, o = FA_DEFAULTS) {
 // What a player wants most (stable per player and season).
 export function motiveOf(league, p) {
   const r = hash(p.id, league.season.currentYear);
+  // With traits: the strongest pull wins (money → greed and control,
+  // winning → contender, motor and youth → role, injury worry → security).
+  if (traitsSet(p)) {
+    const w = {
+      greed: tr(p, 'money') * 1.1,
+      contender: tr(p, 'winning') * (p.age >= 30 ? 1.2 : 0.9),
+      role: tr(p, 'motor') * 0.6 + (p.age <= 27 ? 4 : 0),
+      security: (21 - tr(p, 'durability')) * 0.5 + (p.age >= 31 ? 4 : 0) + 3,
+      control: tr(p, 'money') * 0.5 + (p.age <= 29 ? 3 : 0),
+    };
+    for (const k of Object.keys(w)) w[k] += hash(p.id * 7 + k.length, league.season.currentYear) * 4;
+    return Object.entries(w).sort((a, b) => b[1] - a[1])[0][0];
+  }
   const l = seasonLine(p, 0, lastYear(league));
   const star = l && l.gs >= 20;
   const table = p.age >= 31 ? [['contender', 0.5], ['security', 0.2], ['greed', 0.15], ['role', 0.15]]
@@ -129,7 +143,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
-    w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 : 0);
+    w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0);
 }
 
 export function why(motive, offer, strength = 1) {
@@ -494,7 +508,13 @@ export function buildMarket(league, day, o = FA_DEFAULTS) {
 // Final cuts (end of the offseason): every team down to `seasonMax`. Who
 // goes first: the lowest level, with young players' potential and real
 // money (a guaranteed salary teams would rather not eat) keeping them around.
-export function cutScore(p, level) {
+export function cutScore(p, level, year = 0) {
+  // This year's picks: teams don't cut a first-rounder they just drafted.
+  const d = p.history?.draft;
+  const pick = d && d.yr === year ? (d.rd === 1 ? 40 : 6) : 0;
+  return cutScoreBase(p, level) + pick;
+}
+function cutScoreBase(p, level) {
   const young = p.age <= 24 ? Math.max(0, (p.pot || 0) - 6) * (25 - p.age) * 0.8 : 0;  // pot: half stars (10 = 5★)
   return level + young + Math.min(10, (p.contract?.sal || 0) * 0.3);
 }

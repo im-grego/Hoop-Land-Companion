@@ -18,12 +18,13 @@ import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
-import { setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
+import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
+import { teamTags, TIERS, STANCES, contractTag, CONTRACT_TAGS, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.40.0';
+const APP_VERSION = '0.41.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -369,8 +370,10 @@ async function loadFile(file) {
     const held = holdCpuOffers();
     recordSalaries();
     const kicked = applyExtensions();
+    const filled = fillTraits(data.seasonLeagues[0]);
+    if (filled) state.dirty = true;
     o.remove();
-    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, [held ? `${held} CPU contract offers held until the options deadline.` : '', kicked ? `${kicked} extension${kicked > 1 ? 's' : ''} signed last summer kicked in.` : ''].filter(Boolean).join(' '));
+    toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, [held ? `${held} CPU contract offers held until the options deadline.` : '', kicked ? `${kicked} extension${kicked > 1 ? 's' : ''} signed last summer kicked in.` : '', filled ? `Traits set for ${filled} players.` : ''].filter(Boolean).join(' '));
     render();
   } catch (err) {
     o.remove();
@@ -1924,7 +1927,8 @@ screens.player = (args) => {
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
         <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${lvTag(p, 'gold')} · <span class="stars">${potStars(p)}</span></p>
-        <p class="note muted small">${esc(p.arc || '')}${mpg ? ` · ${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
+        <p class="note muted small">${archName(p) ? `<b class="arch">${esc(archName(p))}</b>` : ''}${mpg ? `${archName(p) ? ' · ' : ''}${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
+        ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
       </div>
       ${rankBox(p)}
       ${p.season?.ap ? `<fieldset class="frame"><legend>Upgrade Points</legend>
@@ -1960,6 +1964,7 @@ screens.player = (args) => {
         <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
       </div>
       ${playStyleBox(p)}
+      ${traitsBox(p)}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
@@ -2779,7 +2784,7 @@ const prospectRow = (p, extra = '', { mine = false } = {}) => {
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
   return `<button class="prow cprow ${star ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
   <span class="name">${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
-  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} ${valueChip(p)}</span>
+  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
 };
@@ -3458,6 +3463,7 @@ screens.prospect = (args) => {
       <button class="btn small ${onBoard(p.id) ? 'on focus' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On Your Board' : '+ Add to Your Board'}</button>
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       ${playStyleBox(p)}
+      ${traitsBox(p, true)}
       ${workoutBox(p)}${combineBox(p)}
       ${collegeBox(p)}
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
@@ -4092,9 +4098,12 @@ function contractText(p) {
   return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}`;
 }
 function contractBadge(p) {
-  const { tag } = contractValue(p);
-  return tag ? ` <span class="badge ${tag === 'Overpaid' ? 'down-b' : tag === 'Bargain' ? 'lvl' : 'new'}">${tag}</span>` : '';
+  const { tag, chips } = contractTag(p, fairSalary(shownLevel(p)), FA.maxSalary(league(), p));
+  const T = tag && CONTRACT_TAGS[tag];
+  return (T ? ` <span class="badge ${T.cls}">${T.icon ? `${T.icon} ` : ''}${T.label}</span>` : '') + chips.map(c => ` <span class="badge chip-c">${esc(c)}</span>`).join('');
 }
+// Archetype: a custom name from the save (built-in names wait on the game's list).
+const archName = p => (p.arc && !/^custom( archetype)?$/i.test(p.arc.trim()) ? p.arc.trim() : '');
 
 function liveAssets(team) {
   const L = league();
@@ -4417,7 +4426,7 @@ screens.fa = (args = {}) => {
     const signed = s.signings.find(x => x.p === m.p);
     const rfa = FA.isRestricted(L, m.p);
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
-      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}</span>
+      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span>${s.day >= 3 && FA.isVet(m.p) && m.min === O.vetMin && m.ask > m.min ? '<br><span class="small up">Takes the min</span>' : ''}<br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
@@ -4937,8 +4946,8 @@ function optionCall(L, p, team) {
     const keep = worth >= sal * 0.75;
     return { kind: 'team', choice: keep ? 'ex' : 'dec', worth, sal, why: keep ? 'Picked up' : `Declined: not worth $${sal}M` };
   }
-  const under = worth >= sal * 1.4 && worth - sal >= 5 && p.age < 33;
-  const low = moraleLow(p, team);
+  const under = worth >= sal * (1.4 - (tr(p, 'money') - 10) * 0.025 + Math.max(0, tr(p, 'loyalty') - 12) * 0.03) && worth - sal >= 5 && p.age < 33;
+  const low = moraleLow(p, team) && tr(p, 'loyalty') < 16;
   const out = under || (low && worth >= sal * 0.9);
   const reason = under ? 'money' : out ? 'unhappy' : null;
   const pitch = isUserTeam(team) ? optStore().pitch?.[p.id] : null;
@@ -4972,7 +4981,7 @@ screens.options = () => {
   const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
   const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
   const mine = x => isUserTeam(x.team);
-  const tag = c => c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const tag = c => c.worth >= c.sal * 1.5 && c.worth - c.sal >= 5 ? '<span class="badge new">💎 Steal</span>' : c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option · worth ~$${x.c.worth}M</span> ${tag(x.c)}</span>`;
   const done = !!st.done;
   const myTeamOpts = list.filter(x => mine(x) && x.c.kind === 'team');
@@ -5206,10 +5215,11 @@ function overviewTeam(L, t) {
   const calls = focusCalls(L, t, st, books, needs, rumors);
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
   const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span><span class="small" style="text-align:right">${right}</span></div>`;
-  const valTag = (sal, worth) => worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const valTag = (sal, worth) => worth >= sal * 1.5 && worth - sal >= 5 ? '<span class="badge new">💎 Steal</span>' : worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const tags = teamTags(L, shownLevel).get(t.id);
   return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
-      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(st.status)}</div>
-      <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
+      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${teamTierTag(tags.tier)}</div>
+      <p class="note small" style="padding:8px 10px 0">${stanceTag(tags.stance)} · ${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
     </div>
     <fieldset class="frame"><legend>Where to Focus</legend><div class="stack">${calls.map(c => `<p class="note small">${esc(c)}</p>`).join('') || '<p class="note small muted">No glaring holes. Best player available.</p>'}</div></fieldset>
     <fieldset class="frame"><legend>The Books</legend>
@@ -5224,14 +5234,18 @@ function overviewTeam(L, t) {
       <p class="note muted small" style="margin-top:6px">From the rotation's tendencies.</p></fieldset>
     <fieldset class="frame"><legend>Draft Position</legend><div class="stack">${picks.map(x => `<p class="note small">${pickLine(x)}</p>`).join('') || '<p class="note small muted">No picks this year.</p>'}</div></fieldset>`;
 }
+const teamTierTag = k => `<span class="status tier-${k}">${TIERS[k].icon} ${TIERS[k].label}</span>`;
+const stanceTag = k => `<span class="badge stance-${k}">${STANCES[k].icon} ${STANCES[k].label}</span>`;
 function overviewRumors(L) {
-  const all = L.teams.map(t => ({ t, st: teamStanding(L, t) }));
-  const col = k => all.filter(x => x.st.status === k).sort((a, b) => b.st.pct - a.st.pct);
+  const tags = teamTags(L, shownLevel);
+  const all = L.teams.map(t => ({ t, st: tags.get(t.id) }));
+  const col = k => all.filter(x => x.st.tier === k).sort((a, b) => a.st.rank - b.st.rank);
   const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
   const heat = n => '🔥'.repeat(Math.max(1, n));
   const kind = { star: 'Disgruntled?', vet: 'Could be moved' };
   return `<fieldset class="frame"><legend>Team Directions</legend>
-      ${['contending', 'developing', 'rebuilding'].map(k => `<h4 class="ov-h">${statusTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></span>`).join('')}</div>`).join('')}
+      ${Object.keys(TIERS).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTierTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span> ${STANCES[x.st.stance].icon}</span></span>`).join('')}</div>`).join('')}
+      <p class="note muted small" style="margin-top:6px">${Object.values(STANCES).map(x => `${x.icon} ${x.label}`).join(' · ')}</p>
     </fieldset>
     <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 14).map(r => `<div class="drill-row tap" data-act="openPlayer" data-id="${r.p.id}"><span class="grow"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br>
         <span class="small muted">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y${r.mpg ? ` · ${r.mpg.toFixed(0)} mpg` : ''} · morale ${r.morale}</span><br><span class="small">${esc(r.why.join(', '))}</span></span>
@@ -5277,6 +5291,29 @@ function rangeCard() {
     }).join('')}</div>
     <p class="note muted small" style="margin-top:6px">By today's consensus board. Scouting, the combine and workouts will move it.</p></fieldset>`;
 }
+
+// Personality traits (1–20, kept in the save's unused trait fields).
+// Prospects show what scouts can see (durability, motor) until a private
+// workout; the rest read "?". Tap − / + to adjust.
+function traitsBox(p, prospect = false) {
+  if (!p.traits || !traitsSet(p)) return '';
+  const seen = k => !prospect || k === 'durability' || k === 'motor' || workoutDone(p.id);
+  return `<fieldset class="frame"><legend>Traits${isReal(p) ? ' <span class="muted small">· real-life read</span>' : ''}</legend><div class="stack">${TRAITS.map(t => {
+    const v = p.traits[t.k] || 0;
+    if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
+    return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 15 ? 'hi' : v <= 6 ? 'lo' : ''}"></span></span>
+      <span class="small"><b>${v}</b> <span class="muted">${v >= 15 ? t.hi : v <= 6 ? t.lo : traitWord(v)}</span></span>
+      <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
+  }).join('')}</div>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
+}
+actions.traitAdj = d => {
+  const L = league();
+  const p = [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])].find(x => x.id === +d.id);
+  if (!p?.traits) return;
+  p.traits[d.k] = Math.max(1, Math.min(20, (p.traits[d.k] || 10) + +d.d));
+  state.dirty = true;
+  render();
+};
 
 // Play style from the save's tendencies (players and prospects).
 function playStyleBox(p) {
@@ -5324,10 +5361,12 @@ function extAsk(p, team) {
   const base = fairSalary(proj);
   const morale = p.season?.morale ?? 70;
   const rookie = FA.isRookieScale(p);
-  let sal = Math.round(base * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
+  const greed = 1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015;
+  let sal = Math.round(base * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
   sal = Math.max(FA.minFor(p), Math.min(FA.maxSalary(league(), p), sal));
   const yrs = p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
-  const mood = morale < 40 ? 'market' : morale >= 75 || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
+  const loyal = tr(p, 'loyalty') >= 16, mercenary = tr(p, 'loyalty') <= 5;
+  const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
   return { sal, yrs, mood, proj };
 }
 // His answer to an offer: { ok, counter, text }.
@@ -5461,7 +5500,7 @@ actions.extClose = async () => {
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
 const cutSel = () => (state.cutSel ||= {});
-const cutRank = t => FA.signedRoster(t).map(p => ({ p, score: FA.cutScore(p, shownLevel(p)) })).sort((a, b) => a.score - b.score);
+const cutRank = t => FA.signedRoster(t).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
 screens.cuts = () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const done = !!calFlags().cuts;
