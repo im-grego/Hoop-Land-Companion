@@ -1212,3 +1212,15 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .report-nav .tsel-name .full-name { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .info.tight { gap: 2px 14px; font-size: 14px; }
 .prow .opt-btns.full { grid-column: 1 / -1; margin-top: 4px; }
+.ap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ap-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--btn-shadow); border: 2px solid var(--bc, var(--btn-edge)); }
+.ap-row .grow { font-size: 13px; font-weight: 700; color: var(--bc, #fff); }
+.ap-row b { min-width: 22px; text-align: center; }
+.ap-row .mvbtn { width: 28px; height: 28px; min-height: 0; font-size: 15px; }
+.ap-fin { --bc: #5cc8ff; } .ap-sho { --bc: #4fe08a; } .ap-pla { --bc: #ffb43a; } .ap-def { --bc: #ff5a5a; }
+.as-count b { font-size: 14px; }
+.as-count span { text-transform: none; letter-spacing: 0; color: #9fb6dc; }
+.ap-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ap-row { min-width: 0; gap: 4px; padding: 4px; }
+.ap-row .grow { min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-row .mvbtn { width: 26px; height: 26px; flex: none; }

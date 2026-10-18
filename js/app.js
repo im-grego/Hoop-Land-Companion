@@ -1,8 +1,8 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
+  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores } from './progression.js';
+import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.52.0';
+const APP_VERSION = '0.53.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -506,8 +506,17 @@ async function loadReference(file) {
   }
 }
 
+// The new season starts with no held upgrade points: everyone's go into
+// their ratings (the same weighting the CPU uses).
+function spendAllPoints(L) {
+  const rng = mulberry32((saveSalt() ^ 0xa9) >>> 0);
+  let n = 0;
+  for (const p of [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || [])]) n += spendHeldPoints(p, state.params, rng);
+  return n;
+}
 function buildExport() {
   state.data.seasonLeagues.forEach((L, li) => { if (state.summer[li]) markSummerDone(L); });
+  if (!isCollege() && league().season.phase === BUMP_PHASES[0]) spendAllPoints(league());
   // College: once Signing Day is written in, the file goes out on the last
   // day of the signing period (like pro free agency), so one more advance
   // in the game starts the new season.
@@ -2242,16 +2251,15 @@ function apSummary(d) {
 
 function playerRow(p, d) {
   const pos = POSITIONS[p.pos] ?? p.pos;
-  const mpg = lastSeasonMpg(p, state.leagueIdx);
   const award = awardOf(p);
   const detail = [apSummary(d), d.points ? changeSummary(d) : ''].filter(Boolean).join(' · ');
   return `<button class="prow" data-act="openPlayer" data-id="${p.id}">
-    <span class="name">${esc(playerName(p))}</span>
+    <span class="name">${esc(playerName(p))} ${lvTag(p, 'small')}</span>
     <span class="right">
       <span class="stars">${potStars(p)}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
-    <span class="meta">${esc(pos)} · ${p.age}y · ${mpg ? `${mpg.mpg.toFixed(1)} MPG` : 'DNP'} · ${lvTag(p, 'small')}</span>
+    <span class="meta">${esc(pos)} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb</span>
     ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
   </button>`;
 }
@@ -2342,19 +2350,19 @@ function rankLine(p) {
   const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
   return `<p class="note small">${RANK_STATS.map(([k]) => `${k} ${r.pg[k].toFixed(1)}${r.rank[k] ? ` <span class="${r.rank[k] <= 10 ? 'gold' : 'muted'}">(${ord(r.rank[k])})</span>` : ''}`).join(' · ')}</p>`;
 }
-function rankBox(p) {
+function rankBox(p, mpg = null) {
   const yr = lastSeasonYear();
-  const { ranks, of, minGp, maxGp } = seasonRanks(yr);
+  const { ranks, of } = seasonRanks(yr);
   const r = ranks.get(p.id);
-  const rule = `Qualified: at least ${minGp} games played, half of the league high (${maxGp}).`;
   if (!r) return '';
   const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
   return `<fieldset class="frame"><legend>${yr} Season</legend>
+    ${mpg ? `<p class="note small muted center" style="margin-bottom:6px">${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games</p>` : ''}
     <div class="statline rank-line">${RANK_STATS.map(([k, name]) => {
       const n = r.rank[k];
       return `<button class="stat-cell" data-act="openLeaders" data-m="stats" data-k="${k}" aria-label="${name} leaders"><span class="muted small">${k}</span><b>${r.pg[k].toFixed(1)}</b><span class="small ${n && n <= 10 ? 'gold' : n && n <= 30 ? 'up' : 'muted'}">${n ? ord(n) : '—'}</span></button>`;
     }).join('')}</div>
-    <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} qualified players.` : `${r.gp} games: not enough to be ranked.`} ${rule}</p>
+    <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} qualified players.` : `${r.gp} games: not enough to be ranked.`}</p>
   </fieldset>`;
 }
 
@@ -2452,28 +2460,28 @@ screens.player = (args) => {
   const mpg = lastSeasonMpg(p, state.leagueIdx);
   const ownedOrig = new Set(snap.skills.filter(s => s.level >= 1).map(s => s.id));
   const pos = POSITIONS[p.pos] ?? p.pos;
+  // Upgrade points: compact rows in the rating colors (no physicals: the
+  // game doesn't take points there).
+  const apCard = p.season?.ap ? `<fieldset class="frame"><legend>Upgrade Points</legend>
+        <div class="ap-grid">
+          ${CATEGORIES.filter(c => c.key !== 'PHY').map(c => { const i = CATEGORIES.indexOf(c); return `<div class="ap-row ap-${SKILL_GROUP[c.name] || ''}">
+            <span class="grow" title="${esc(c.name)}">${esc(c.name.slice(0, 3).toUpperCase())}</span>
+            <button class="mvbtn" data-act="ap" data-i="${i}" data-dir="-1" aria-label="Fewer ${esc(c.name)} points">−</button>
+            <b>${p.season.ap[i]}${d.apDelta[i] ? `<span class="small ${d.apDelta[i] > 0 ? 'up' : 'down'}"> ${d.apDelta[i] > 0 ? '+' : ''}${d.apDelta[i]}</span>` : ''}</b>
+            <button class="mvbtn" data-act="ap" data-i="${i}" data-dir="1" aria-label="More ${esc(c.name)} points">+</button>
+          </div>`; }).join('')}
+        </div>
+      </fieldset>` : '';
   layout({
-    title: 'Player Development',
+    title: 'Player Profile',
     body: `
       <div>
-        <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${lvTag(p, 'gold')} · <span class="stars">${potStars(p)}</span></p>
-        ${isAllAmerican(p) ? '<p class="note small gold">⭐ All-American</p>' : ''}
-        <p class="note muted small">${archName(p) ? `<b class="arch">${esc(archName(p))}</b>` : ''}${mpg ? `${archName(p) ? ' · ' : ''}${mpg.yr}: ${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games` : ''}</p>
+        <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
+        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
+        <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
       </div>
-      ${rankBox(p)}
-      ${p.season?.ap ? `<fieldset class="frame"><legend>Upgrade Points</legend>
-        <div class="stack">
-          ${CATEGORIES.map((c, i) => `<div class="pts-row">
-            <span class="grow">${esc(c.name)} <span class="muted small">${c.attrs.join(' · ')}</span></span>
-            <button class="btn square" data-act="ap" data-i="${i}" data-dir="-1" aria-label="Fewer ${esc(c.name)} points">−</button>
-            <span class="pts-val ${p.season.ap[i] ? 'gold' : 'muted'}">${p.season.ap[i]}${d.apDelta[i] ? `<span class="small ${d.apDelta[i] > 0 ? 'up' : 'down'}"> ${d.apDelta[i] > 0 ? '+' : ''}${d.apDelta[i]}</span>` : ''}</span>
-            <button class="btn square" data-act="ap" data-i="${i}" data-dir="1" aria-label="More ${esc(c.name)} points">+</button>
-          </div>`).join('')}
-        </div>
-        <p class="note muted small" style="margin-top:8px">Spent in-game. Green = added this offseason${awardOf(p) ? ` (bump gave +${awardOf(p)})` : ''}.</p>
-      </fieldset>` : ''}
+      ${rankBox(p, mpg)}
       <fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
           ${productionText(p)}
@@ -2491,13 +2499,13 @@ screens.player = (args) => {
           </div>
         </div>
       </fieldset>
-      <div class="row">
-        <p class="note grow">Rating changes: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
-        <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
-      </div>
       ${playStyleBox(p)}
       ${traitsBox(p)}
       <fieldset class="frame"><legend>Ratings</legend>
+        <div class="row">
+          <p class="note grow">Rating changes: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
+          <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
+        </div>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
@@ -2509,7 +2517,7 @@ screens.player = (args) => {
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
               <div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">Lv ${s.level}</span>` : ''}</div>
               <div class="ctrls">
-                ${isLeveled(s.id) ? `<button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down">−</button><button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up">+</button>` : ''}
+                ${isLeveled(s.id) ? `<button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down" ${s.level <= 1 ? 'disabled' : ''}>−</button><button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up" ${s.level >= SKILL_MAX_LEVEL ? 'disabled' : ''}>+</button>` : ''}
                 <button class="btn" data-act="skillDel" data-i="${i}" aria-label="Remove skill">✕</button>
               </div>
             </div>`).join('')}
@@ -2517,6 +2525,7 @@ screens.player = (args) => {
           <button class="btn" data-act="addSkill">＋ Add Skill</button>
         </div>
       </fieldset>
+      ${apCard}
       <div class="grid2">
         <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
         <button class="btn" data-act="revertOne">↺ Revert</button>
@@ -2608,7 +2617,7 @@ function productionText(p) {
   const word = z >= 1.5 ? 'standout' : z >= 0.5 ? 'above average' : z > -0.5 ? 'average' : z > -1.5 ? 'below average' : 'poor';
   const ages = r => r == null ? 'of all ages' : `aged ${p.age - r}–${p.age + r}`;
   const group = p.pos <= 2 ? 'guards' : p.pos <= 5 ? 'wings' : 'bigs';
-  return `<p class="note small">Last season's production vs ${group} ${ages(prod.ranges?.get(p.id))}: <b class="${z >= 0.5 ? 'up' : z <= -0.5 ? 'down' : ''}">${word}</b> (${z >= 0 ? '+' : ''}${z.toFixed(1)} σ)</p>`;
+  return `<p class="note small">Last season's production vs ${group} ${ages(prod.ranges?.get(p.id))}: <b class="${z >= 0.5 ? 'up' : z <= -0.5 ? 'down' : ''}">${word}</b></p>`;
 }
 
 function regressionText(p) {
@@ -2621,7 +2630,7 @@ function regressionText(p) {
 
 function regressionStatus(p) {
   const y = regressionYear(p);
-  if (y < 1) return `Declines after age ${p.regressionAge} (${-y + 1} season${-y + 1 === 1 ? '' : 's'} away)`;
+  if (y < 1) return `${-y + 1} season${-y + 1 === 1 ? '' : 's'} away`;
   return y === 1 ? `First season of decline (age ${p.age})` : `Season ${y} of decline (age ${p.age})`;
 }
 
@@ -2678,14 +2687,14 @@ function lockedXp(p, id) {
 
 actions.addSkill = () => {
   const p = currentPlayer();
-  const ranked = rankSkillsFor(p, state.profiles[state.leagueIdx]);
+  const order = SKILL_CATEGORIES.flatMap(c => c.skills);
+  const ranked = rankSkillsFor(p, state.profiles[state.leagueIdx]).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const o = overlay(`
-    <p class="note">Add a skill to ${esc(playerName(p))}<br><span class="muted small">Best fits for his game first</span></p>
+    <p class="note">Add a skill to ${esc(playerName(p))}</p>
     <div class="add-skill">
       ${ranked.map(s => `<button class="as-row" data-id="${esc(s.id)}">
         <span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>
-        ${lockedXp(p, s.id) ? `<span class="muted small">${lockedXp(p, s.id)} xp</span>` : ''}
-        <span class="as-count"><b>${state.profiles[state.leagueIdx]?.[s.id]?.count ?? 0}</b><span>have it</span></span>
+        <span class="as-count"><b>${state.profiles[state.leagueIdx]?.[s.id]?.count ?? 0} players</b><span>with this skill</span></span>
       </button>`).join('') || '<p class="note">Already has every skill.</p>'}
     </div>
     <button class="btn off" data-close>Cancel</button>`);
@@ -6716,24 +6725,25 @@ actions.portalDone = () => { calFlags().portal = true; goHome(); nextUp(); };
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
 const cutSel = () => (state.cutSel ||= {});
-const cutRank = t => FA.signedRoster(t).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
+// Only players in the last year of their deal can be cut (no dead money).
+const cutRank = t => FA.signedRoster(t).filter(p => (p.contract?.yrs || 0) <= 1).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
 screens.cuts = () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const done = !!calFlags().cuts;
   const mine = L.teams.filter(isUserTeam);
   // First visit: the likeliest cuts start picked; tap to change.
   if (!done && !state.cutSeeded) {
-    for (const t of mine) { const r = cutRank(t); for (const x of r.slice(0, Math.max(0, r.length - O.seasonMax))) sel[x.p.id] = true; }
+    for (const t of mine) { const r = cutRank(t); for (const x of r.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax))) sel[x.p.id] = true; }
     state.cutSeeded = true;
   }
   const over = L.teams.filter(t => !isUserTeam(t) && FA.signedRoster(t).length > O.seasonMax);
   const myCards = mine.map(t => {
     const ranked = cutRank(t);
-    const n = ranked.length, need = Math.max(0, n - O.seasonMax);
+    const n = FA.signedRoster(t).length, need = Math.min(ranked.length, Math.max(0, n - O.seasonMax));
     const picked = ranked.filter(x => sel[x.p.id]).length;
     if (done || !need) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend><p class="note small up">✓ Roster is set.</p></fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
-      <p class="note small">Cut <b>${need}</b> (${picked} picked). Lowest first: level, young players' potential and salary.</p>
+      <p class="note small">Cut <b>${need}</b> (${picked} picked). Only players in the final year of their deal can be cut.</p>
       <div class="stack">${ranked.map((x, i) => `<div class="drill-row tap ${sel[x.p.id] ? 'r1' : ''}" data-act="cutToggle" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} ${potStars(x.p)}<br>
         <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${i < need ? ' · <span class="gold">likely cut</span>' : ''}</span></span>
         <b class="small ${sel[x.p.id] ? 'down' : 'muted'}">${sel[x.p.id] ? '✂️ Cut' : 'Keep'}</b></div>`).join('')}</div></fieldset>`;
@@ -6745,23 +6755,25 @@ screens.cuts = () => {
       ${myCards}
       <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b> cut ${esc(x.names.join(', '))}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`,
-    action: done ? { act: 'goHomeCuts', label: 'Back to the Calendar' } : { act: 'cutsFinish', label: mine.some(t => FA.signedRoster(t).length - cutRank(t).filter(x => sel[x.p.id]).length > O.seasonMax) ? 'Pick your cuts first' : 'Make the Cuts' },
+    action: done ? { act: 'goHomeCuts', label: 'Back to the Calendar' } : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
 };
+// Cuts still to pick (only as many as there are cuttable players).
+const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
 actions.goHomeCuts = () => goHome();
 actions.cutToggle = d => { if (calFlags().cuts) return; const sel = cutSel(); sel[+d.id] = !sel[+d.id]; render(); };
 actions.cutsFinish = async () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const mine = L.teams.filter(isUserTeam);
-  const short = mine.find(t => FA.signedRoster(t).length - cutRank(t).filter(x => sel[x.p.id]).length > O.seasonMax);
-  if (short) { toast(`${short.shortName}: pick ${FA.signedRoster(short).length - O.seasonMax - cutRank(short).filter(x => sel[x.p.id]).length} more to cut`); return; }
+  const short = mine.find(t => cutsShort(t, sel) > 0);
+  if (short) { toast(`${short.shortName}: pick ${cutsShort(short, sel)} more to cut`); return; }
   if (!(await confirmBox('Make the cuts? Cut players are released to free agency.', 'Make the Cuts'))) return;
   checkpoint('Final cuts');
   const list = [];
   let n = 0, mineN = 0;
   for (const t of L.teams) {
     const ranked = cutRank(t);
-    const go = isUserTeam(t) ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, ranked.length - O.seasonMax));
+    const go = isUserTeam(t) ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax));
     if (!go.length) continue;
     for (const x of go) FA.cutPlayer(L, t, x.p);
     n += go.length;
