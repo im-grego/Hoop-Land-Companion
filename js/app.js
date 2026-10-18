@@ -28,7 +28,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.57.0';
+const APP_VERSION = '0.57.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5367,7 +5367,7 @@ function sntBox(m, s) {
       else if (k === 'go') {
         const partner = box._partner, pkg = box._pkg;
         const mine = L.teams.find(t => t.id === m.from.id);
-        const rec = FA.signPlayer(L, m.p, mine, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0 }, s.day);
+        const rec = FA.signPlayer(L, m.p, mine, { yrs: deal.yrs, sal: deal.sal, opt: deal.yrs >= 5 && !deal.opt ? FA.OPT_PLAYER : deal.opt || 0 }, s.day);
         const trade = executeTrade({ team: mine, players: [m.p], picks: [] }, { team: partner, players: pkg.items.filter(a => a.p).map(a => a.p), picks: pkg.items.filter(a => a.pk).map(a => a.pk) }, L.season.currentYear);
         s.bids.delete(m.p.id);
         const back = pkg.items.map(a => a.p ? playerName(a.p) : pickLabel(a.pk, L)).join(', ');
@@ -6234,6 +6234,7 @@ actions.extOffer = d => {
   const p = t?.roster.find(x => x.id === +d.id);
   const talk = st.talks[+d.id];
   if (!p || !talk || talk.tries >= 3 || st.done) return;
+  if (talk.yrs >= 5 && !talk.opt) { toast('A 5-year deal needs an option (4 + 1)', '', 2400, true); return; }
   const r = extAnswer(p, t, talk);
   talk.tries++;
   talk.last = r;
@@ -6269,7 +6270,7 @@ actions.extClose = async () => {
         const sal = Math.max(Math.round(a.sal / 1.1), p.age <= 29 ? Math.round(p.contract.sal * 0.95) : 0);
         const yrs = a.yrs[0] + Math.floor(rng() * (a.yrs[1] - a.yrs[0] + 1));
         const rising = p.age <= 25 && a.proj > lv;
-        const opt = yrs > 1 && rng() < (p.age >= 30 ? 0.55 : rising ? 0.6 : 0.2) ? FA.OPT_PLAYER : 0;
+        const opt = yrs >= 5 ? (rng() < 0.6 ? FA.OPT_PLAYER : FA.OPT_TEAM) : yrs > 1 && rng() < (p.age >= 30 ? 0.55 : rising ? 0.6 : 0.2) ? FA.OPT_PLAYER : 0;
         const deal = { sal: Math.min(FA.maxSalary(L, p), sal), yrs, opt };
         signExtension(L, t, p, deal, true);
         list.push({ name: playerName(p), team: t.shortName, sal: deal.sal, yrs: deal.yrs, opt, lv });

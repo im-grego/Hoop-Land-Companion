@@ -27,7 +27,7 @@ export const FA_DEFAULTS = {
   mle: 15, mleMaxYears: 2,
   vetMin: 3, vetMinAge: 30, vetYears: 10,
   minSalary: 2,
-  maxYears: 5, birdMaxYears: 5,
+  maxYears: 4, birdMaxYears: 5,   // 5 years only to re-sign your own player, and only as 4 + an option
   askDrop: [1, 0.9, 0.75],          // asking price by day
   vetAskDrop: 0.85,                  // extra on day 3 for 30+
   acceptPct: [0.92, 0.85, 0.75],     // lowest offer (vs ask) a player takes, by day
@@ -185,6 +185,7 @@ export function checkOffer(league, team, p, offer, day, used = {}, o = FA_DEFAUL
   if (room.full) return `${team.shortName} roster is full (${o.rosterMax})`;
   if (offer.sal > maxSalary(league, p)) return `Max for ${playerName(p)} is $${maxSalary(league, p)}M`;
   if (offer.yrs < 1 || offer.yrs > (room.bird ? o.birdMaxYears : o.maxYears)) return `1–${room.bird ? o.birdMaxYears : o.maxYears} years`;
+  if (offer.yrs >= 5 && !offer.opt) return 'A 5-year deal needs an option (4 + 1)';
   if (!room.bird && offer.yrs < 2 && isRestricted(league, p)) return 'An offer sheet runs at least 2 years';
   if (room.bird) return null;
   const space = capSpace(league, team);
@@ -256,6 +257,8 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
         else continue;
       }
       if (!bird && isRestricted(league, m.p)) offer.yrs = Math.max(2, offer.yrs);
+      // Five years only for a team's own player, as 4 + an option.
+      if (offer.yrs >= 5) { if (!bird) offer.yrs = o.maxYears; else if (!offer.opt) offer.opt = rng() < 0.6 ? OPT_PLAYER : OPT_TEAM; }
       if (checkOffer(league, team, m.p, offer, day, used, o)) continue;
       const list = bids.get(m.p.id) || [];
       if (list.some(b => b.tid === team.id)) continue;
@@ -282,7 +285,8 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
       const team = league.teams.find(t => t.id === b.tid);
       const cap = Math.round(m.ask * o.cpuMaxOverAsk);
       const sal = Math.min(cap, maxSalary(league, m.p), Math.round(b.sal * (1 + o.cpuRaise * (0.5 + rng() / 2))) + 1);
-      const next = { ...b, sal, yrs: m.motive === 'security' ? Math.min(o.maxYears, b.yrs + 1) : b.yrs, opt: m.motive === 'control' ? OPT_PLAYER : b.opt };
+      const next = { ...b, sal, yrs: m.motive === 'security' ? Math.min(b.tid === m.from?.id ? o.birdMaxYears : o.maxYears, b.yrs + 1) : b.yrs, opt: m.motive === 'control' ? OPT_PLAYER : b.opt };
+      if (next.yrs >= 5 && !next.opt) next.opt = OPT_PLAYER;
       if (sal <= b.sal || checkOffer(league, team, m.p, next, day, used, o)) continue;
       Object.assign(b, next, { raised: (b.raised || 0) + 1 });
       raises++;
