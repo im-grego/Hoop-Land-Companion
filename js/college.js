@@ -197,3 +197,44 @@ export function showcase(C) {
   const box = p => { const s = p.gameStats || {}; return { pts: s.PTS || 0, reb: s.REB || 0, ast: s.AST || 0, stl: s.STL || 0, blk: s.BLK || 0, fgm: s.FGM || 0, fga: s.FGA || 0, tpm: s.TPM || 0, tpa: s.TPA || 0, min: Math.round((s.MIN?.[0] || 0) / 60) }; };
   return { played, score, mvp, teams: teams.map(t => ({ t, roster: t.roster.map(p => ({ p, box: box(p) })).sort((a, b) => b.box.pts - a.box.pts || b.p.pot - a.p.pot) })) };
 }
+
+// Recruiting (phase 6, 3 days). Offers sit in the college league's
+// contractOffers (sal = money in millions, opt 2 = home visit, 0 = phone
+// call). Each night, recruits sign with one of their highest-money offers;
+// among tied offers a home visit and being close to home help (in the
+// saves: visits won 14 of 22 mixed ties, the closest school 29 of 60 vs
+// ~22 by chance); prestige barely matters. Commitments are news type 14.
+export function recruitOdds(C, p, offers) {
+  if (!offers.length) return [];
+  const top = Math.max(...offers.map(o => o.sal));
+  const tied = offers.filter(o => o.sal === top);
+  const T = new Map(C.teams.map(t => [t.id, t]));
+  const byDist = [...tied].sort((a, b) => dist(T.get(a.tid)?.location, p.loc) - dist(T.get(b.tid)?.location, p.loc));
+  const w = o => (o.opt === 2 ? 1.6 : 1) * (1 / (1 + 0.45 * byDist.indexOf(o)));
+  const sum = tied.reduce((a, o) => a + w(o), 0);
+  return offers.map(o => ({ o, team: T.get(o.tid), pct: o.sal === top ? (w(o) / sum) * 100 : 0, top: o.sal === top })).sort((a, b) => b.pct - a.pct || b.o.sal - a.o.sal);
+}
+export function recruitBoard(data, li, team) {
+  const C = data.seasonLeagues[li];
+  const transfers = new Set((C.season.news || []).filter(n => n.type === 34).map(n => n.pid));
+  const offers = new Map();
+  for (const o of C.contractOffers || []) (offers.get(o.pid) || offers.set(o.pid, []).get(o.pid)).push(o);
+  const T = new Map(C.teams.map(t => [t.id, t]));
+  const needs = rosterNeedsCollege(team, 15);
+  const pool = (C.freeAgents || []).map(p => {
+    const offs = offers.get(p.id) || [];
+    const odds = recruitOdds(C, p, offs);
+    const mine = odds.find(x => x.o.tid === team.id) || null;
+    const near = [...C.teams].sort((a, b) => dist(a.location, p.loc) - dist(b.location, p.loc)).indexOf(team) + 1;
+    const top = offs.length ? Math.max(...offs.map(o => o.sal)) : 0;
+    return { p, transfer: transfers.has(p.id), offs, odds, mine, near, top, leader: odds[0] || null, group: GROUP(p), fit: needs.short.some(s => s.short > 0 && s.g === GROUP(p)),
+      watched: !!(p.season?.watch || p.season?.scout) };
+  });
+  // Commitments so far this offseason.
+  const where = new Map(C.teams.flatMap(t => t.roster.map(p => [p.id, { t, p }])));
+  const commits = (C.season.news || []).filter(n => n.type === 14).map(n => ({ ...(where.get(n.pid) || {}), tid: n.tid })).filter(x => x.p);
+  const classes = new Map();
+  for (const c of commits) { const k = c.tid; const v = classes.get(k) || { team: T.get(k), n: 0, stars: 0, players: [] }; v.n++; v.stars += c.p.pot || 0; v.players.push(c.p); classes.set(k, v); }
+  const ranking = [...classes.values()].sort((a, b) => b.stars - a.stars || b.n - a.n);
+  return { pool, needs, commits, ranking, mineClass: classes.get(team.id) || { n: 0, stars: 0, players: [] }, rank: ranking.findIndex(x => x.team === team) + 1, day: C.season.phase === 6 ? C.season.currentDay || 1 : 0, phase: C.season.phase };
+}
