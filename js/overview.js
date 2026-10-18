@@ -187,7 +187,6 @@ export function draftPosition(L, team, format = 'auto') {
 export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {}) {
   const yr = lastYr(L);
   const out = [];
-  const tags = teamTags(L, level);
   for (const team of L.teams) {
     if (skip(team)) continue;
     const st = teamStanding(L, team);
@@ -218,7 +217,7 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
       if (heat >= 3) out.push({ kind: 'star', p: star, team, heat: Math.min(3, Math.floor(heat / 1.5)), why, level: level(star), mpg, morale });
     }
     // Veterans a rebuilding (or sliding) team might move.
-    if (st.status === 'rebuilding' || tags.get(team.id)?.stance === 'seller') {
+    if (st.status === 'rebuilding') {
       for (const p of roster.slice(0, 6)) {
         if (p === star && out.some(x => x.p === p)) continue;
         if (level(p) >= 74 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a rebuilding team`], level: level(p), morale: p.season?.morale ?? 70 });
@@ -228,73 +227,3 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
   return out.sort((a, b) => b.heat - a.heat || b.level - a.level);
 }
 export const statusOfAll = L => L.teams.map(t => ({ team: t, ...teamStanding(L, t) }));
-
-// ---------------------------------------------------------------------------
-// Team tags: tier (where they are) and stance (what they're doing).
-export const TIERS = {
-  favorite: { label: 'Title Favorite', icon: '🏆' }, contender: { label: 'Contender', icon: '⚔️' },
-  playoff: { label: 'Playoff Team', icon: '🎟️' }, rising: { label: 'Rising', icon: '📈' },
-  treadmill: { label: 'Treadmill', icon: '😐' }, rebuilding: { label: 'Rebuilding', icon: '🧱' },
-};
-export const STANCES = { buyer: { label: 'Buyer', icon: '🛒' }, seller: { label: 'Seller', icon: '🏷️' }, holding: { label: 'Holding', icon: '⏸️' } };
-const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
-export function teamTags(L, level = levelOf) {
-  // Projected strength: the top 9 (players whose deals are up count a bit
-  // less: some won't be back).
-  const proj = new Map(L.teams.map(t => [t.id, [...t.roster].map(p => level(p) * (p.status === 4 ? 0.9 : 1)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0)]));
-  const rank = new Map([...L.teams].sort((a, b) => proj.get(b.id) - proj.get(a.id)).map((t, i) => [t.id, i + 1]));
-  const out = new Map();
-  for (const t of L.teams) {
-    const st = teamStanding(L, t);
-    const r = rank.get(t.id);
-    const top5 = [...t.roster].filter(p => p.status !== 4).sort((a, b) => level(b) - level(a)).slice(0, 5);
-    const youngCore = top5.filter(p => p.age <= 24 && (p.pot || 0) >= 8).length;
-    const avgAge = top5.reduce((a, p) => a + p.age, 0) / (top5.length || 1);
-    const prev = st.trend.length >= 2 ? st.trend[st.trend.length - 2].pct : null;
-    const climbing = prev != null && st.pct - prev >= 0.08;
-    const middling = st.trend.length >= 2 && st.trend.slice(-2).every(x => x.pct >= 0.4 && x.pct <= 0.58);
-    let tier;
-    if (r <= 3 && (st.pct >= 0.6 || st.round >= 3)) tier = 'favorite';
-    else if ((r <= 12 && st.pct >= 0.58) || (r <= 6 && st.pct >= 0.5) || (st.round >= 3 && r <= 12)) tier = 'contender';
-    else if ((avgAge <= 25.5 || youngCore >= 2) && (climbing || r <= 16) && st.pct < 0.6) tier = 'rising';
-    else if (st.pct < 0.4 || (r >= 24 && st.pct < 0.5)) tier = 'rebuilding';
-    else if (middling && !youngCore && r >= 9) tier = 'treadmill';
-    else tier = r <= 16 || st.pct >= 0.5 ? 'playoff' : 'treadmill';
-    const vets = top5.filter(p => p.age >= 29 && level(p) >= 74).length;
-    const lostEarly = st.round >= 1 && st.round <= 2 && !st.champ;
-    const stance = tier === 'favorite' || tier === 'contender' || (tier === 'playoff' && lostEarly) ? 'buyer'
-      : (tier === 'rebuilding' && vets) || (tier === 'treadmill' && avgAge >= 28) ? 'seller' : 'holding';
-    out.set(t.id, { tier, stance, rank: r, ...st });
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
-// Contract tags: value over the rest of the deal (years and age count), plus
-// status chips. `worth` = fair salary today, `maxSal` = his max.
-export const CONTRACT_TAGS = {
-  steal: { label: 'Steal', icon: '💎', cls: 'new' }, bargain: { label: 'Bargain', icon: '', cls: 'new' }, fair: { label: 'Fair', icon: '', cls: '' },
-  overpaid: { label: 'Overpaid', icon: '', cls: 'down-b' }, albatross: { label: 'Albatross', icon: '⚓', cls: 'down-b' },
-};
-export function contractTag(p, worth, maxSal = 50) {
-  const c = p.contract || {};
-  const sal = c.sal || 0, yrs = c.yrs || 0;
-  const chips = [];
-  if (p.status === 4) chips.push('Expiring');
-  if (!sal || !yrs) return { tag: null, chips };
-  if (yrs === 1) chips.push('Expiring');
-  if (p.history?.draft?.rd === 1 && (p.yrs ?? 9) <= 4 && sal <= 12) chips.push('Rookie Deal');
-  if (sal >= maxSal * 0.95) chips.push('Max');
-  if (c.opt === 1) chips.push('TO'); else if (c.opt === 2) chips.push('PO');
-  if (c.ext?.yrs > 0) chips.push('Extended');
-  // Worth over the deal: a player past his decline age loses value each year.
-  const decline = p.age >= (p.regressionAge || 32) - 1 ? 0.88 : p.age <= 24 ? 1.06 : 1;
-  let w = 0;
-  for (let i = 0; i < yrs; i++) w += worth * decline ** i;
-  const ratio = (w / yrs) / Math.max(1, sal);
-  const gap = w / yrs - sal;
-  let tag = ratio >= 1.15 ? 'bargain' : ratio < 0.85 ? 'overpaid' : 'fair';
-  if (ratio >= 1.5 && gap >= 5 && yrs >= 2) tag = 'steal';
-  if ((ratio < 0.7 && yrs >= 3) || (ratio < 0.85 && yrs >= 3 && p.age + yrs >= 34 && sal >= 20)) tag = 'albatross';
-  return { tag, chips: [...new Set(chips)] };
-}

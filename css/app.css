@@ -1110,7 +1110,7 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .tb-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--dim); }
 .tb-fill { position: absolute; top: 0; bottom: 0; background: var(--up); }
 .tb-fill.neg { background: var(--down); }
-/* Traits, team tiers, contract chips */
+/* Traits */
 .trait-row { display: grid; grid-template-columns: 118px 1fr 112px auto; align-items: center; gap: 8px; }
 .tbar3 { position: relative; height: 10px; background: var(--bg-dark); border: 1px solid var(--btn-edge); }
 .tbar3 span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--cyan); }
@@ -1118,11 +1118,5 @@ html, body, button, a, input, select, label { touch-action: manipulation; }
 .tbar3 span.lo { background: var(--down); }
 .trait-ctl { display: flex; gap: 2px; }
 .btn.tiny { min-height: 24px; min-width: 24px; padding: 0 4px; font-size: 13px; }
-.badge.chip-c { background: transparent; border-color: var(--dim); color: var(--dim); }
 .arch { color: var(--cyan); }
-.status.tier-favorite { color: var(--gold); border-color: var(--gold); }
-.status.tier-contender { color: var(--up); border-color: var(--up); }
-.status.tier-rising { color: var(--cyan); border-color: var(--cyan); }
-.status.tier-treadmill { color: var(--dim); border-color: var(--dim); }
-.status.tier-rebuilding { color: var(--down); border-color: var(--down); }
 @media (max-width: 420px) { .trait-row { grid-template-columns: 96px 1fr 90px auto; } }

@@ -19,12 +19,12 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitsSet, tr, fillTraits, isReal } from './traits.js';
-import { teamTags, TIERS, STANCES, contractTag, CONTRACT_TAGS, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
+import { setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.41.0';
+const APP_VERSION = '0.41.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4098,9 +4098,8 @@ function contractText(p) {
   return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}`;
 }
 function contractBadge(p) {
-  const { tag, chips } = contractTag(p, fairSalary(shownLevel(p)), FA.maxSalary(league(), p));
-  const T = tag && CONTRACT_TAGS[tag];
-  return (T ? ` <span class="badge ${T.cls}">${T.icon ? `${T.icon} ` : ''}${T.label}</span>` : '') + chips.map(c => ` <span class="badge chip-c">${esc(c)}</span>`).join('');
+  const { tag } = contractValue(p);
+  return tag ? ` <span class="badge ${tag === 'Overpaid' ? 'down-b' : tag === 'Bargain' ? 'lvl' : 'new'}">${tag}</span>` : '';
 }
 // Archetype: a custom name from the save (built-in names wait on the game's list).
 const archName = p => (p.arc && !/^custom( archetype)?$/i.test(p.arc.trim()) ? p.arc.trim() : '');
@@ -4981,7 +4980,7 @@ screens.options = () => {
   const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
   const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
   const mine = x => isUserTeam(x.team);
-  const tag = c => c.worth >= c.sal * 1.5 && c.worth - c.sal >= 5 ? '<span class="badge new">💎 Steal</span>' : c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const tag = c => c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option · worth ~$${x.c.worth}M</span> ${tag(x.c)}</span>`;
   const done = !!st.done;
   const myTeamOpts = list.filter(x => mine(x) && x.c.kind === 'team');
@@ -5215,11 +5214,10 @@ function overviewTeam(L, t) {
   const calls = focusCalls(L, t, st, books, needs, rumors);
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
   const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span><span class="small" style="text-align:right">${right}</span></div>`;
-  const valTag = (sal, worth) => worth >= sal * 1.5 && worth - sal >= 5 ? '<span class="badge new">💎 Steal</span>' : worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
-  const tags = teamTags(L, shownLevel).get(t.id);
+  const valTag = (sal, worth) => worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
-      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${teamTierTag(tags.tier)}</div>
-      <p class="note small" style="padding:8px 10px 0">${stanceTag(tags.stance)} · ${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
+      <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${statusTag(st.status)}</div>
+      <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
     </div>
     <fieldset class="frame"><legend>Where to Focus</legend><div class="stack">${calls.map(c => `<p class="note small">${esc(c)}</p>`).join('') || '<p class="note small muted">No glaring holes. Best player available.</p>'}</div></fieldset>
     <fieldset class="frame"><legend>The Books</legend>
@@ -5234,18 +5232,14 @@ function overviewTeam(L, t) {
       <p class="note muted small" style="margin-top:6px">From the rotation's tendencies.</p></fieldset>
     <fieldset class="frame"><legend>Draft Position</legend><div class="stack">${picks.map(x => `<p class="note small">${pickLine(x)}</p>`).join('') || '<p class="note small muted">No picks this year.</p>'}</div></fieldset>`;
 }
-const teamTierTag = k => `<span class="status tier-${k}">${TIERS[k].icon} ${TIERS[k].label}</span>`;
-const stanceTag = k => `<span class="badge stance-${k}">${STANCES[k].icon} ${STANCES[k].label}</span>`;
 function overviewRumors(L) {
-  const tags = teamTags(L, shownLevel);
-  const all = L.teams.map(t => ({ t, st: tags.get(t.id) }));
-  const col = k => all.filter(x => x.st.tier === k).sort((a, b) => a.st.rank - b.st.rank);
+  const all = L.teams.map(t => ({ t, st: teamStanding(L, t) }));
+  const col = k => all.filter(x => x.st.status === k).sort((a, b) => b.st.pct - a.st.pct);
   const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
   const heat = n => '🔥'.repeat(Math.max(1, n));
   const kind = { star: 'Disgruntled?', vet: 'Could be moved' };
   return `<fieldset class="frame"><legend>Team Directions</legend>
-      ${Object.keys(TIERS).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTierTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span> ${STANCES[x.st.stance].icon}</span></span>`).join('')}</div>`).join('')}
-      <p class="note muted small" style="margin-top:6px">${Object.values(STANCES).map(x => `${x.icon} ${x.label}`).join(' · ')}</p>
+      ${['contending', 'developing', 'rebuilding'].map(k => `<h4 class="ov-h">${statusTag(k)}</h4><div class="dir-row">${col(k).map(x => `<span class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></span>`).join('')}</div>`).join('')}
     </fieldset>
     <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 14).map(r => `<div class="drill-row tap" data-act="openPlayer" data-id="${r.p.id}"><span class="grow"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br>
         <span class="small muted">${esc(r.team.shortName)} · ${esc(posName(r.p))} · ${r.p.age}y${r.mpg ? ` · ${r.mpg.toFixed(0)} mpg` : ''} · morale ${r.morale}</span><br><span class="small">${esc(r.why.join(', '))}</span></span>
