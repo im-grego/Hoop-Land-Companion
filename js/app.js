@@ -25,7 +25,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.43.0';
+const APP_VERSION = '0.43.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -598,6 +598,7 @@ const COLLEGE_CAL = [
     done: () => !!calFlags().summer },
   { key: 'preseason', date: 'Oct 15', title: 'Preseason', blurb: 'The projected Top 25, your division picks, and the Player and Freshman of the Year watch lists.',
     done: () => !!calFlags().preseason },
+  { key: 'export', date: 'Nov 4', title: 'Tip-Off', blurb: 'Export the season file and load it in Hoop Land.', done: () => false },
 ];
 const isCollege = () => state.mode?.kind === 'college';
 const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR);
@@ -5825,7 +5826,7 @@ screens.preseason = () => {
     action: isStep('preseason') ? { act: 'preseasonDone', label: 'Tip Off the Season' } : null,
   });
 };
-actions.preseasonDone = () => { calFlags().preseason = true; goHome(); toast('The offseason is done. Export and play your first game.'); };
+actions.preseasonDone = () => { calFlags().preseason = true; goHome(); toast('Next up: Tip-Off. Export your file.'); };
 
 // College: Transfer Portal.
 screens.portal = (args = {}) => {
