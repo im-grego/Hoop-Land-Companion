@@ -26,7 +26,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.45.5';
+const APP_VERSION = '0.45.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -839,7 +839,12 @@ const STEP_SCREENS = {
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
-  if (isCollege()) { const cur = currentStep(); return !cur || (STEP_SCREENS[cur.key] || []).includes(name) || name === 'review'; }
+  if (isCollege()) {
+    const cur = currentStep();
+    // Recruiting stays open to look back at once the weeks are done.
+    if (['recruit', 'recruitee', 'recruitweek'].includes(name) && market()) return true;
+    return !cur || (STEP_SCREENS[cur.key] || []).includes(name) || name === 'review';
+  }
   if (phaseRank(league().season) === 0) return true;
   const cur = currentStep();
   return !!cur && (STEP_SCREENS[cur.key] || []).includes(name);
