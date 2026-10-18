@@ -268,3 +268,31 @@ export function signingClasses(data, li, aaIds = new Set(), levelOf = p => 50) {
   });
   return { list, byTeam: classes, noClass: C.teams.filter(t => !classes.has(t.id)) };
 }
+
+// Preseason: a projected Top 25 from roster strength (top 9 by level,
+// weighted toward the top) blended with last season's record, division picks, Player and Freshman of the
+// Year watch lists.
+const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
+export function preseason(data, li, team, level) {
+  const C = data.seasonLeagues[li];
+  const lastYr = C.season.currentYear - 1;
+  const strength = t => [...t.roster].map(level).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0) + (t.prestigePoints || 0) * 0.02;
+  const ranked = C.teams.map(t => {
+    const row = rowOf(t, lastYr);
+    return { t, s: strength(t), W: row?.seasonStats?.W || 0, L: row?.seasonStats?.L || 0, lastRank: row?.rank || 0 };
+  });
+  // Blend roster strength with last season's record so one offseason
+  // doesn't flip the whole league.
+  const z = (xs, f) => { const v = xs.map(f), m = v.reduce((a, b) => a + b, 0) / v.length, sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / v.length) || 1; return x => (f(x) - m) / sd; };
+  const zs = z(ranked, x => x.s), zp = z(ranked, x => (x.W + x.L ? x.W / (x.W + x.L) : 0.5));
+  ranked.forEach(x => { x.score = 0.65 * zs(x) + 0.35 * zp(x); });
+  ranked.sort((a, b) => b.score - a.score);
+  ranked.forEach((x, i) => { x.rank = i + 1; });
+  const mine = ranked.find(x => x.t === team);
+  const division = ranked.filter(x => x.t.division === team.division);
+  const players = C.teams.flatMap(t => t.roster.map(p => ({ p, t, line: seasonLine(p, li, lastYr) })));
+  const poy = players.filter(x => (x.p.yrs ?? 0) >= 1).map(x => ({ ...x, score: level(x.p) + (x.line ? x.line.ppg * 0.6 + x.line.rpg * 0.3 + x.line.apg * 0.4 : 0) }))
+    .sort((a, b) => b.score - a.score).slice(0, 10);
+  const foy = players.filter(x => (x.p.yrs ?? 0) === 0).sort((a, b) => (b.p.pot - a.p.pot) || (level(b.p) - level(a.p))).slice(0, 6);
+  return { top25: ranked.slice(0, 25), mine, division, poy, foy, divName: (C.divisions || [])[team.division] || 'Division' };
+}
