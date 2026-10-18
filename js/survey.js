@@ -238,19 +238,23 @@ export function runSurvey(L, li = 0, salt = 1) {
   // ---- Rookies
   const rk = leagueRookies(L).filter(r => r.team);
   const R = (r, score) => P(r.p, r.team, score, { pick: r.pick });
-  out.push(ask('roty', 'Rookies', 'Who will win Rookie of the Year?', rk.map(r => R(r, levelOf(r.p) + (6 - Math.min(6, roleRank(r.p, r.team) / 2)) * 1.5))));
-  out.push(ask('rookie5', 'Rookies', 'Which rookie will be the best player in five years?', rk.map(r => R(r, (r.p.pot || 6) * 4 + room(r.p) * 0.15 + levelOf(r.p) * 0.3 - Math.max(0, r.p.age - 20) * 1.5))));
+  // Rookie of the Year: pedigree and opportunity first (a top pick who'll
+  // start on a bad team), then how good he already is.
+  const pedigreeOf = r => (r.pick <= 3 ? 6 : r.pick <= 10 ? 3.5 : r.pick <= 20 ? 1.5 : 0);
+  const chance = r => { const k = roleRank(r.p, r.team); return (k <= 2 ? 4 : k <= 3 ? 2.5 : k <= 5 ? 1 : 0) + (pct(r.team) < 0.4 ? 1.5 : 0); };
+  out.push(ask('roty', 'Offseason', 'Who will win Rookie of the Year?', rk.map(r => R(r, levelOf(r.p) * 0.5 + pedigreeOf(r) + chance(r) + (r.p.pot || 6) * 0.6))));
+  out.push(ask('rookie5', 'Offseason', 'Which rookie will be the best player in five years?', rk.map(r => R(r, (r.p.pot || 6) * 4 + room(r.p) * 0.15 + levelOf(r.p) * 0.3 - Math.max(0, r.p.age - 20) * 1.5))));
   const valueRank = new Map([...rk].sort((a, b) => ((b.p.pot || 6) * 4 + levelOf(b.p)) - ((a.p.pot || 6) * 4 + levelOf(a.p))).map((r, i) => [r.p.id, i + 1]));
-  out.push(ask('steal', 'Rookies', 'Which rookie was the biggest steal in the draft?', rk.filter(r => r.pick > 5).map(r => R(r, r.pick - valueRank.get(r.p.id)))));
+  out.push(ask('steal', 'Offseason', 'Which rookie was the biggest steal in the draft?', rk.filter(r => r.pick > 5).map(r => R(r, r.pick - valueRank.get(r.p.id)))));
 
   // ---- International: any country other than the league's home country.
   const ci = countryInfo([...all.map(x => x.p), ...(L.freeAgents || [])]);
   const intl = ci ? vets.filter(({ p }) => ci.intl(p)) : [];
   const ctry = p => { const v = ci?.of(p); return typeof v === 'string' ? v : undefined; };
   if (intl.length) {
-    out.push(ask('intl', 'International', 'Who is the best international player in the league?', intl.filter(({ p }) => L_(p)).map(({ p, t }) => P(p, t, levelOf(p) + gs(p) * 0.4, { country: ctry(p) }))));
+    out.push(ask('intl', 'Players', 'Who is the best international player in the league?', intl.filter(({ p }) => L_(p)).map(({ p, t }) => P(p, t, levelOf(p) + gs(p) * 0.4, { country: ctry(p) }))));
     const fa = (L.freeAgents || []).filter(p => ci.intl(p));
-    if (fa.length) out.push(ask('intlFA', 'International', 'Who is the best international player not in the league?',
+    if (fa.length) out.push(ask('intlFA', 'Players', 'Who is the best international player not in the league?',
       fa.map(p => ({ key: `p${p.id}`, kind: 'player', pid: p.id, name: playerName(p), tid: -1, team: 'FA', score: levelOf(p) + (p.pot || 6), country: ctry(p) }))));
   }
 
@@ -307,37 +311,36 @@ export function runSurvey(L, li = 0, salt = 1) {
     teams.map(t => T(t, mean([...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 8).map(defZ))))));
 
   // ---- Miscellaneous: teams
-  out.push(ask('fun', 'Miscellaneous', 'Which team is the most fun to watch?',
+  out.push(ask('fun', 'Other', 'Which team is the most fun to watch?',
     teams.map(t => { const top = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 8);
       return T(t, top.filter(p => A(p, 'DNK') >= 16).length * 1.2 + top.filter(p => A(p, 'TPT') >= 16).length + top.filter(p => p.age <= 24 && levelOf(p) >= 75).length * 1.5 + mean(top.map(p => L_(p)?.ppg || 0)) * 0.2); })));
-  out.push(ask('home', 'Miscellaneous', 'Which team has the best home-court advantage?',
-    teams.map(t => T(t, pct(t) * 6 + (ALTITUDE.test(`${t.city} ${t.name}`) ? 2.5 : 0)))));
+  out.push(ask('home', 'Other', 'Which team has the best home-court advantage?',
+    teams.map(t => T(t, (t.frontOffice?.fans ?? 3) * 1.4 + pct(t) * 5 + (t.championships?.yearsWon || []).filter(y => y >= yr - 5).length * 0.8 + (ALTITUDE.test(`${t.city} ${t.name}`) ? 0.6 : 0)))));
   const winRank = new Map([...teams].sort((a, b) => pct(b) - pct(a)).map((t, i) => [t.id, i]));
   const strRank = new Map([...teams].sort((a, b) => now.get(b.id) - now.get(a.id)).map((t, i) => [t.id, i]));
-  out.push(ask('unpredictable', 'Miscellaneous', 'Which team\'s level of success is the toughest to predict?',
+  out.push(ask('unpredictable', 'Other', 'Which team\'s level of success is the toughest to predict?',
     teams.map(t => T(t, Math.abs(winRank.get(t.id) - strRank.get(t.id)) * 0.4 + arrivals(t).length * 0.8 +
       t.roster.filter(p => { const h = injuryHistory(p, yr); return h && h.games >= 20; }).length * 1.2 + t.roster.filter(p => p.age >= 33 && levelOf(p) >= 75).length))));
-  out.push(ask('youngCore', 'Miscellaneous', 'Which team has the most promising young core?',
+  out.push(ask('youngCore', 'Other', 'Which team has the most promising young core?',
     teams.map(t => T(t, t.roster.filter(p => p.age <= 23).map(p => levelOf(p) * 0.6 + (p.pot || 6) * 4).sort((a, b) => b - a).slice(0, 3).reduce((a, b) => a + b, 0)))));
   // ---- Miscellaneous: players
-  out.push(ask('athletic', 'Miscellaneous', 'Which player is the most athletic?', ppl(p => A(p, 'DNK') * 0.4 + A(p, 'SPD') * 0.35 + A(p, 'STR') * 0.25 + skillLv(p, 'DUN'))));
-  out.push(ask('shooter', 'Miscellaneous', 'Who is the best pure shooter?',
+  out.push(ask('athletic', 'Other', 'Which player is the most athletic?', ppl(p => A(p, 'DNK') * 0.4 + A(p, 'SPD') * 0.35 + A(p, 'STR') * 0.25 + skillLv(p, 'DUN'))));
+  out.push(ask('shooter', 'Other', 'Who is the best pure shooter?',
     ppl(p => { const l = L_(p); return A(p, 'TPT') * 0.5 + A(p, 'MID') * 0.2 + A(p, 'FTS') * 0.3 + (l.tpa >= 3 ? (l.tp - 0.35) * 40 : 0) + skillLv(p, 'LIM'); })));
-  out.push(ask('fastest', 'Miscellaneous', 'Which player is the fastest with the ball?', ppl(p => A(p, 'SPD') * 0.6 + A(p, 'DRB') * 0.4 + skillLv(p, 'STE'))));
-  out.push(ask('offBall', 'Miscellaneous', 'Who is the best at moving without the ball?',
-    ppl(p => { const l = L_(p); return skillLv(p, 'SPO') * 2.5 + (l.tpa >= 2 ? (l.tp - 0.34) * 30 + l.tpa * 0.4 : 0) + A(p, 'LAY') * 0.15 + A(p, 'ORE') * 0.1 + (l.fg - 0.45) * 15 - Math.max(0, A(p, 'DRB') - 14) * 0.2; })));
-  out.push(ask('passer', 'Miscellaneous', 'Who is the best passer?', ppl(p => A(p, 'PAS') * 0.6 + L_(p).apg * 1.1 + skillLv(p, 'DIM') + skillLv(p, 'HOT'))));
-  out.push(ask('leader', 'Miscellaneous', 'Who is the best leader?',
+  out.push(ask('fastest', 'Other', 'Which player is the fastest with the ball?', ppl(p => A(p, 'SPD') * 0.6 + A(p, 'DRB') * 0.4 + skillLv(p, 'STE'))));
+  out.push(ask('passer', 'Other', 'Who is the best passer?', ppl(p => A(p, 'PAS') * 0.6 + L_(p).apg * 1.1 + skillLv(p, 'DIM') + skillLv(p, 'HOT'))));
+  out.push(ask('leader', 'Other', 'Who is the best leader?',
     ppl((p, t) => (p.age >= 27 ? 3 : 0) + Math.min(p.yrs || 0, 12) * 0.3 + levelOf(p) * 0.08 + pct(t) * 6 + (roleRank(p, t) <= 3 ? 2 : 0))));
-  out.push(ask('versatile', 'Miscellaneous', 'Who is the most versatile player in the league?',
+  out.push(ask('versatile', 'Other', 'Who is the most versatile player in the league?',
     ppl(p => { const g = [mean(['LAY', 'MID', 'TPT'].map(k => A(p, k))), mean(['DRB', 'PAS'].map(k => A(p, k))), mean(['ORE', 'DRE'].map(k => A(p, k))), mean(['STL', 'BLK'].map(k => A(p, k)))];
       const m = mean(g); return m - Math.sqrt(mean(g.map(x => (x - m) ** 2))) * 1.2; })));
-  out.push(ask('iq', 'Miscellaneous', 'Who has the best basketball IQ?',
+  out.push(ask('iq', 'Other', 'Who has the best basketball IQ?',
     ppl(p => { const l = L_(p); const use = l.fga + 0.44 * l.fta + l.apg; return (l.apg + 1) / (l.tov + 1) * 1.5 + (l.ts - 0.52) * 25 + A(p, 'PAS') * 0.15 + Math.min(p.yrs || 0, 10) * 0.15 + use * 0.08; })));
-  out.push(ask('lastShot', 'Miscellaneous', 'Which player would you want taking the last shot?',
+  out.push(ask('lastShot', 'Other', 'Which player would you want taking the last shot?',
     ppl(p => skillLv(p, 'CLU') * 3 + L_(p).ppg * 0.3 + A(p, 'MID') * 0.2 + A(p, 'FTS') * 0.15 + skillLv(p, 'UNF') * 1.5)));
-  out.push(ask('coach', 'Miscellaneous', 'Which active player will make the best head coach one day?',
-    ppl(p => { const l = L_(p); return (p.age >= 29 ? 2 : -3) + Math.min(p.yrs || 0, 14) * 0.25 + A(p, 'PAS') * 0.2 + (l.apg + 1) / (l.tov + 1) - Math.max(0, levelOf(p) - 85) * 0.1; })));
+  out.push(ask('coach', 'Other', 'Which active player will make the best head coach one day?',
+    // Older veterans, guards most often, who see the floor: not the stars.
+    ppl(p => { const l = L_(p); return (p.age >= 32 ? 4 : p.age >= 29 ? 2 : -3) + Math.min(p.yrs || 0, 15) * 0.3 + (p.pos <= 2 ? 2 : p.pos <= 3 ? 1 : 0) + A(p, 'PAS') * 0.2 + (l.apg + 1) / (l.tov + 1) - Math.max(0, levelOf(p) - 78) * 0.3; })));
 
   // Top vote-getters across the player questions.
   const tally = new Map();

@@ -16,7 +16,7 @@ import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieCont
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
 import * as FA from './freeagency.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
-import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale } from './phases.js';
+import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.51.0';
+const APP_VERSION = '0.52.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -354,7 +354,12 @@ function render() {
 // The app keeps its own scroll positions per screen.
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 window.addEventListener('popstate', () => {
-  if (state.stack.length > 1) { state.stack.pop(); render(); }
+  if (state.stack.length < 2) return;
+  // Backing out of the GM survey wraps it up.
+  const leaving = state.stack[state.stack.length - 1].name;
+  if (leaving === 'survey' && isStep('survey')) { saveSurveyHist(surveyNow()); calFlags().survey = true; toast('Next up: Media Day'); }
+  state.stack.pop();
+  render();
 });
 
 window.addEventListener('beforeunload', e => {
@@ -1640,13 +1645,44 @@ screens.offseason = () => {
   });
 };
 
-// Summer League step: rookies win back draft-drop ratings by age, then the
-// rookie bump.
+// Your draft picks sign first: first-rounders take their scale deal,
+// second-rounders get 2 or 4 years at the minimum (team option either way).
+function rookieDealsCard() {
+  const L = league();
+  if (L.season.phase !== PHASE_POST_DRAFT) return '';
+  const yr = L.season.currentYear;
+  const mine = L.teams.filter(isUserTeam).flatMap(t => t.roster.filter(p => p.history?.draft?.yr === yr && p.history.draft.rd > 0).map(p => ({ p, t })))
+    .sort((a, b) => a.p.history.draft.pk - b.p.history.draft.pk);
+  if (!mine.length) return '';
+  const min = FA.FA_DEFAULTS.minSalary;
+  return `<fieldset class="frame"><legend>Rookie Contracts</legend><div class="list">${mine.map(({ p }) => {
+    const d = p.history.draft;
+    const signed = p.status === 3;
+    return `<div class="prow"><span class="name">${esc(playerName(p))} ${lvTag(p)}</span>
+      <span class="right small">R${d.rd} · #${d.pk}</span>
+      <span class="meta">${signed ? `<span class="up">✍️ $${p.contract.sal}M × ${p.contract.yrs} · TO</span>` : d.rd === 1 ? `Scale deal: $${rookieScale(L, d.pk)}M × 4 · TO` : `$${min}M · TO`}</span>
+      ${signed ? '' : `<span class="opt-btns full">${d.rd === 1
+        ? `<button class="btn small focus" data-act="rookieSign" data-id="${p.id}" data-y="4">Sign</button>`
+        : `<button class="btn small focus" data-act="rookieSign" data-id="${p.id}" data-y="2">2 Years</button><button class="btn small focus" data-act="rookieSign" data-id="${p.id}" data-y="4">4 Years</button>`}</span>`}
+    </div>`;
+  }).join('')}</div></fieldset>`;
+}
+actions.rookieSign = d => {
+  const L = league();
+  const t = L.teams.find(x => x.roster.some(p => p.id === +d.id));
+  const p = t?.roster.find(x => x.id === +d.id);
+  if (!p || p.status === 3) return;
+  signRookie(L, t, p, +d.y, FA.FA_DEFAULTS.minSalary);
+  state.dirty = true;
+  render();
+};
+
+// Summer League step: rookie deals, numbers, then the tournament.
 screens.camp = () => {
   const ageDone = !!state.summer[state.leagueIdx] || summerDone();
   layout({
     title: 'Summer League',
-    body: `${!leagueRookies(league()).length ? '<p class="note">No rookies this year.</p>' : ageDone ? '' : ageSection()}${numbersSection(ageDone || !leagueRookies(league()).length)}${tourSection((ageDone || !leagueRookies(league()).length) && numbersReady())}`,
+    body: `${rookieDealsCard()}${!leagueRookies(league()).length ? '<p class="note">No rookies this year.</p>' : ageDone ? '' : ageSection()}${numbersSection(ageDone || !leagueRookies(league()).length)}${tourSection((ageDone || !leagueRookies(league()).length) && numbersReady())}`,
     action: (ageDone || state.summerTour[state.leagueIdx]) && (state.summerTour[state.leagueIdx]?.stage || 'final') === 'final' ? { act: 'calCampBack', label: 'Wrap Up Summer League' } : null,
   });
 };
@@ -2227,7 +2263,7 @@ function injuryBadge(p) {
 
 // Regression age (raw, as the trainer shows it); a player who was already
 // regressing and earned a year back has paused it.
-const POT_WHY = { injury: 'injury', production: 'production down', minutes: 'barely played', development: 'slow development' };
+const POT_WHY = { injury: 'injury', production: 'production down', minutes: 'barely played', development: 'low usage' };
 function longevityBadges(p, d, injury = true) {
   const was = p.regressionAge - d.regDelta;
   const paused = d.regDelta > 0 && p.age > was;
@@ -5358,8 +5394,8 @@ function saveSurveyHist(S) {
   h[S.year] = Object.fromEntries(S.questions.filter(q => q.results[0]).map(q => [q.id, { name: q.results[0].name, team: q.results[0].team, pct: q.results[0].pct }]));
   try { localStorage.setItem(surveyHistKey(), JSON.stringify(h)); } catch { /* ignore */ }
 }
-const SURVEY_TABS = ['Predictions', 'Players', 'Offseason', 'Rookies', 'Defense', 'Coaches', 'Miscellaneous'];
-const SURVEY_LABEL = { Predictions: 'Predictions', Players: 'Players', Offseason: 'Offseason', Rookies: 'Rookies', International: 'Intl', Defense: 'Defense', Coaches: 'Coaches', Miscellaneous: 'Misc' };
+const SURVEY_TABS = ['Predictions', 'Players', 'Offseason', 'Defense', 'Coaches', 'Other'];
+const SURVEY_LABEL = { Predictions: 'Predictions', Players: 'Players', Offseason: 'Offseason', Defense: 'Defense', Coaches: 'Coaches', Other: 'Other' };
 
 function surveyRows(results, n = 5) {
   return `<div class="sv-rows">${results.slice(0, n).map((r, i) => {
@@ -5393,8 +5429,6 @@ screens.survey = (args) => {
   if (tab === 'Players') {
     body += `<fieldset class="frame sv-q"><legend>Most Votes Overall</legend>
       <p class="note small muted">Share of every vote cast in the player questions.</p>${surveyRows(S.topVoted)}</fieldset>`;
-    // International questions close out the Players tab.
-    body += S.questions.filter(q => q.section === 'International' && q.results.length).map(card).join('');
   }
   if (tab === 'Coaches' && S.coachesFound < S.gms) body = `<p class="note small muted">${S.gms - S.coachesFound} team${S.gms - S.coachesFound === 1 ? ' has' : 's have'} an open head coaching job and ${S.gms - S.coachesFound === 1 ? 'isn\'t' : 'aren\'t'} on the ballot.</p>` + body;
   if (tab === tabs[tabs.length - 1]) body += '<p class="note muted small center" style="margin:10px 0">That\'s all from this year\'s survey.</p>';
@@ -5403,7 +5437,7 @@ screens.survey = (args) => {
     body: `<p class="note small">All ${S.gms} general managers answered. GMs can't vote for their own team or players.</p>
       <div class="sv-tabs">${tabs.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="surveyTab" data-t="${t}">${SURVEY_LABEL[t]}</button>`).join('')}</div>
       ${body}`,
-    action: isStep('survey') ? { act: 'surveyDone', label: 'Wrap Up the Survey' } : null,
+    action: null,
   });
 };
 actions.surveyTab = d => replace('survey', { tab: d.t });
@@ -5687,7 +5721,6 @@ screens.storylines = () => {
   layout({
     title: 'Media Day',
     body: `
-      <img class="hero" src="icons/hero-media.jpg" alt="">
       ${jerseyCard()}
       ${presserCard()}
       ${podium.length ? `<h2 class="team-title">From the Podium</h2><ol class="stories">${podium.map(s => `
@@ -5703,7 +5736,6 @@ screens.storylines = () => {
         </li>`).join('')}</ol>` : '<p class="note">Nothing to report yet.</p>'}
       ${leagueGramCard()}
       <div class="stack" style="margin-top:12px">
-        <button class="btn" data-act="copyStories">📋 Copy as Text</button>
         ${isStep('media') ? '<button class="btn big focus" data-act="mediaDone">✅ Wrap Up Media Day</button>' : ''}
       </div>`,
   });

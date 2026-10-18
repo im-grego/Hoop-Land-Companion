@@ -1081,7 +1081,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .as-count span { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--dim); }
 .ld-row.static { cursor: default; }
 .ld-keys:has(> :nth-child(5):last-child) { grid-template-columns: repeat(5, 1fr); }
-.sv-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+.sv-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
 .sv-tabs .btn { min-width: 0; min-height: 40px; padding: 6px 1px; font-size: 13px; letter-spacing: -.2px; white-space: nowrap; }
 .logo-sm { flex: none; display: inline-block; }
 .logo-ph { visibility: hidden; }
@@ -1211,3 +1211,4 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .prow.rrow .stars-line { line-height: 1; }
 .report-nav .tsel-name .full-name { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .info.tight { gap: 2px 14px; font-size: 14px; }
+.prow .opt-btns.full { grid-column: 1 / -1; margin-top: 4px; }

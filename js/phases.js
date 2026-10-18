@@ -59,6 +59,18 @@ const SCALE = [10, 10, 9, 9, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 6, 6, 6, 5, 5, 5, 5, 
 export const rookieScale = (league, overall) =>
   Math.max(2, Math.round((SCALE[Math.min(overall, SCALE.length) - 1] ?? 2) * (league.season.salaryCap || 200) / 200));
 
+// Sign one of this year's picks: a first-rounder to his 4-year scale deal,
+// a second-rounder at the minimum for `yrs`, both with a team option.
+export function signRookie(league, team, p, yrs, minSalary = 2) {
+  const d = p.history.draft;
+  const sal = d.rd === 1 ? rookieScale(league, d.pk) : minSalary;
+  Object.assign(p.contract, { tid: team.id, pid: p.id, sal, yrs: d.rd === 1 ? 4 : yrs, opt: 1, canExt: false });
+  p.status = 3;
+  const s = (p.stats || []).filter(x => x.yr === league.season.currentYear && x.league === 0).pop();
+  if (s) s.sal = sal;
+  return { p, team, sal, yrs: p.contract.yrs };
+}
+
 // Open free agency: sign this year's draft picks and move to Day 1.
 // Returns the signings [{ p, team, sal, yrs }].
 export function startFreeAgency(league, { r2Years = 2, rosterMax = 18, minSalary = 2 } = {}) {
@@ -72,13 +84,7 @@ export function startFreeAgency(league, { r2Years = 2, rosterMax = 18, minSalary
     for (const p of rookies) {
       const d = p.history.draft;
       if (d.rd !== 1 && signed() >= rosterMax) continue;
-      const sal = d.rd === 1 ? rookieScale(league, d.pk) : minSalary;
-      const yrs = d.rd === 1 ? 4 : r2Years;
-      Object.assign(p.contract, { tid: team.id, pid: p.id, sal, yrs, opt: 1, canExt: false });
-      p.status = 3;
-      const s = (p.stats || []).filter(x => x.yr === yr && x.league === 0).pop();
-      if (s) s.sal = sal;
-      out.push({ p, team, sal, yrs });
+      out.push(signRookie(league, team, p, d.rd === 1 ? 4 : r2Years, minSalary));
     }
   }
   league.season.phase = PHASE_FREE_AGENCY;

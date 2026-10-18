@@ -55,13 +55,15 @@ export function teamSituation(league, team, li = 0) {
   // still projected near the top without adding anyone.
   const thinCast = ctx.support.get(team.id) < ctx.supportMedian - 1 && ctx.projRank.get(team.id) > 8;
   let mood = 'normal';
-  if (arrivals.length >= 2 || tradedFirsts >= 2) mood = 'allin';
+  // All-in takes real talent coming in (Lv 79+, three stars or better).
+  if (arrivals.filter(p => levelOf(p) >= 79).length >= 2 || tradedFirsts >= 2) mood = 'allin';
   else if (!arrivals.length && lostBadly && status !== 'rebuilding') mood = 'passive';
   else if (star && !arrivals.length && thinCast && status !== 'rebuilding') mood = 'unsupported';
   else if (status === 'rebuilding' && !arrivals.length) mood = 'quiet';
   return { star, arrivals, departures, tradedFirsts, status, mood, gs, round, seriesWins, lostBadly };
 }
 
+const andList = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0] || '');
 const yrsLeft = p => p.contract?.yrs ?? 0;
 
 // Contract question target: best player in his final year, else the best
@@ -74,15 +76,19 @@ function contractTarget(team, sit) {
   return ext ? { p: ext, kind: 'ext' } : null;
 }
 
-// Two rotation players at the same position with close ratings.
+// The lineup slot a player fills (teamPos: 0 PG, 2 SG, 4 SF, 6 PF, 8 C).
+const SLOT_NAMES = { 0: 'point guard', 2: 'shooting guard', 4: 'small forward', 6: 'power forward', 8: 'center' };
+const slotOf = p => SLOT_NAMES[p.teamPos] ? p.teamPos : [0, 2, 4, 6, 8].reduce((a, b) => (Math.abs(b - p.pos) < Math.abs(a - p.pos) ? b : a));
+// A starter and a rotation player behind him in the same lineup slot with
+// close ratings: who starts there?
 function positionBattle(team) {
   const top = [...team.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 9);
+  const starters = top.filter(p => (p.linePos ?? 99) < 5);
   let best = null;
-  for (let i = 0; i < top.length; i++) for (let j = i + 1; j < top.length; j++) {
-    const a = top[i], b = top[j];
-    if (a.pos !== b.pos || Math.abs(levelOf(a) - levelOf(b)) > 2) continue;
+  for (const a of starters) for (const b of top) {
+    if (b === a || (b.linePos ?? 99) < 5 || slotOf(a) !== slotOf(b) || Math.abs(levelOf(a) - levelOf(b)) > 2) continue;
     const sc = levelOf(a) + levelOf(b);
-    if (!best || sc > best.sc) best = { a, b, sc };
+    if (!best || sc > best.sc) best = { a, b, sc, slot: SLOT_NAMES[slotOf(a)] };
   }
   return best;
 }
@@ -101,7 +107,8 @@ export function presserQuestions(league, team, li = 0) {
   const bt = positionBattle(team);
   if (bt) out.push({
     key: 'battle', pid: bt.a.id, pid2: bt.b.id,
-    q: `${playerName(bt.a)} and ${playerName(bt.b)} both play ${POSITIONS[bt.a.pos]}. Who starts?`,
+    q: `${playerName(bt.a)} and ${playerName(bt.b)} can both play ${bt.slot}. Who starts?`,
+    ctx: { slot: bt.slot },
     options: [{ v: 'a', label: playerName(bt.a) }, { v: 'b', label: playerName(bt.b) }, { v: 'open', label: 'It\'s an open competition' }],
   });
   const s = sit.star ? playerName(sit.star) : null;
@@ -141,7 +148,7 @@ export function presserStories(league, team, answers, li = 0) {
     if (q.key === 'battle') {
       const A = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid), B = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid2);
       if (!A || !B) continue;
-      const pos = POSITIONS[A.pos];
+      const pos = q.ctx?.slot || POSITIONS[A.pos];
       const [w, l] = a === 'b' ? [B, A] : [A, B];
       out.push(a === 'open'
         ? { kind: 'presser-battle', score: 52, icon: '🎙️', title: `Open competition at ${pos} in ${place(team)}`, text: `${playerName(A)} vs ${playerName(B)}: the front office wouldn't name a starter. Camp decides it.`, pid: A.id }
@@ -167,7 +174,7 @@ export function presserStories(league, team, answers, li = 0) {
         },
         quiet: {
           believe: [`${Place(team)} trusts its kids`, `"We believe in this group." Patience is the plan, and the young core gets the minutes.`],
-          notdone: [`${Place(team)} has cap space and plans`, `"We're not done." A quiet summer might not stay quiet.`],
+          notdone: [`${Place(team)} isn't finished building`, `"We're not done." The front office says there's more coming before the season tips off.`],
           longterm: [`The long game in ${place(team)}`, `"It's about the long term." Fans will be watching the lottery odds.`],
         },
         normal: {
@@ -217,13 +224,13 @@ export function leagueGram(league, skip, li = 0) {
     if (sit.mood === 'unsupported' && s) add(team, 8 + sit.gs(s) / 3, '😬 No Help', `${playerName(s)} put up big numbers and ${place(team)} added... nobody. How long until he asks out?`, s.id);
     if (sit.mood === 'allin') add(team, 7 + sit.arrivals.length + sit.tradedFirsts, '🎰 All In', sit.tradedFirsts >= 2
       ? `${Place(team)} traded ${sit.tradedFirsts} future firsts. Title or bust, no in-between.`
-      : `${Place(team)} brought in ${sit.arrivals.slice(0, 3).map(playerName).join(', ')}. Desperate or smart?`, sit.arrivals[0]?.id);
+      : `${Place(team)} brought in ${andList(sit.arrivals.slice(0, 3).map(p => p.ln))} for $${sit.arrivals.slice(0, 3).reduce((a, p) => a + (p.contract?.sal || 0), 0)}M a year. Desperate or smart?`, sit.arrivals[0]?.id);
     if (sit.mood === 'passive') add(team, 6 + (s ? sit.gs(s) / 5 : 0), '🤔 Passive?', `${Place(team)} ${sit.seriesWins === 0 ? 'got swept' : 'went out quietly'} in the playoffs and didn't make a single move. Is development enough?`, s?.id);
     if (sit.mood === 'quiet') add(team, 3, '💤 Quiet', `Not a single real move in ${place(team)} this summer. Tank watch starts now.`);
     const c = contractTarget(team, sit);
     if (c?.kind === 'final' && sit.gs(c.p) >= 15) add(team, 6 + sit.gs(c.p) / 4, '⏳ Contract Year', `${playerName(c.p)} is entering a contract year in ${place(team)}. Every team with cap space next summer is watching.`, c.p.id);
     const gone = sit.departures.sort((a, b) => sit.gs(b) - sit.gs(a))[0];
-    if (gone && sit.gs(gone) >= 15 && !sit.arrivals.length) add(team, 5 + sit.gs(gone) / 4, '🚪 Lost', `${Place(team)} lost ${playerName(gone)} and got nothing back. Rough summer.`, gone.id);
+    if (gone && levelOf(gone) >= 86 && !sit.arrivals.length) add(team, 5 + sit.gs(gone) / 4, '🚪 Lost', `${Place(team)} lost ${playerName(gone)} and got nothing back. Rough summer.`, gone.id);
   }
   const seenT = new Set(), seenTag = new Map();
   return posts.sort((a, b) => b.score - a.score).filter(x => {
