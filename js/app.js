@@ -27,7 +27,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.56.1';
+const APP_VERSION = '0.56.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3339,7 +3339,7 @@ const prospectRow = (p, extra = '', { mine = false } = {}) => {
 function draftConsensus() {
   const rows = boardOrder();
   return {
-    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts: All-Star-or-better floor and ceiling comps first, then projected ceiling, then floor, and younger is better. + adds a prospect to My Board. 🧩 fits a need on your team.</p>
+    html: `<p class="note muted small">${rows.length} prospects ranked by our scouts. + adds a prospect to My Board; 🧩 fits a need on your team. Ratings are pre-draft: every rookie dips a little moving up to the pros, and older rookies get some of it back.</p>
       <div class="list">${rows.map((p, i) => `<div class="board-row">${prospectRow(p).replace('<span class="name">', `<span class="name"><span class="rank-no">${i + 1}</span>`)}
         <div class="mv2"><button class="mvbtn ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button></div></div>`).join('')}</div>`,
   };
@@ -6895,7 +6895,7 @@ actions.cutsFinish = async () => {
   state.cutSeeded = false;
   state.dirty = true;
   render();
-  toast(`✂️ ${n} players cut`, mineN ? `${mineN} from your roster` : '');
+  toast(`✂️ ${n} player${n === 1 ? '' : 's'} cut`, mineN ? `${mineN} from your roster` : '');
 };
 
 screens.export = () => {
