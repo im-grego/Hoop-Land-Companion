@@ -15,6 +15,7 @@ import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
 import * as FA from './freeagency.js';
+import * as TR from './traderules.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
@@ -28,7 +29,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.62.0';
+const APP_VERSION = '0.63.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -428,6 +429,7 @@ async function loadFile(file) {
     recordSalaries();
     if (isCollege()) { try { state.cal = JSON.parse(localStorage.getItem(collegeCalKey())) || {}; } catch { state.cal = {}; } }
     const kicked = applyExtensions();
+    if (!isCollege() && lotteryDone(league())) settleProt(league());
     const filled = fillTraits(data.seasonLeagues[0]) + (state.leagueIdx ? fillTraits(data.seasonLeagues[state.leagueIdx]) : 0);
     if (filled) state.dirty = true;
     const signedIn = isCollege() ? applyRecruiting() : 0;
@@ -838,12 +840,13 @@ function stepActions(key) {
       const day = +key[2];
       if (s.phase === 5) return `<button class="btn big focus" data-act="advFreeAgency">✍️ Open Free Agency</button>`;
       if (s.currentDay < day) return `<button class="btn big focus" data-act="advDay">▶ Start Day ${day}</button>`;
-      return `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
+      // Trades open after the July moratorium (week 1).
+      return day >= 2 ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
     case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
-    case 'latefa': return `<button class="btn big focus" data-act="nav" data-to="latefa">📞 Late Free Agency</button>`;
+    case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Late Free Agency</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>`;
     case 'cuts': return `<button class="btn big focus" data-act="nav" data-to="cuts">✂️ Final Cuts</button>`;
     case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
     default: return '';
@@ -885,8 +888,8 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
-  camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa'], fa3: ['fa'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'], survey: ['survey'], media: ['storylines'], latefa: ['latefa'], cuts: ['cuts'], export: ['export'],
+  camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
 const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'gameplan', 'playbook'];
@@ -918,6 +921,7 @@ actions.advLottery = async (opts = {}) => {
   // 2nd apron, 3 of 5 seasons: that first goes to the end of the round.
   const pen = new Set(apronStore().pen.filter(x => x.yr === L.season.currentYear).map(x => x.otid));
   applyLottery(L, [...full.filter(t => !pen.has(t.id)), ...full.filter(t => pen.has(t.id))]);
+  settleProt(L);
   draftState().lottery = null;
   draftState().mock = null;
   state.compCache = {};
@@ -3970,7 +3974,7 @@ function frontOfficeOffers(team) {
   });
   // Only deals that work under the cap rules.
   const side = (t, items) => ({ team: t, players: items.filter(x => x.player).map(x => x.player) });
-  return out.filter(o => !FA.tradeCheck(league(), side(team, o.get), side(o.team, o.give)));
+  return out.filter(o => { const a = side(team, o.get), b = side(o.team, o.give); a.picks = o.get.filter(x => x.pick).map(x => x.pick); b.picks = o.give.filter(x => x.pick).map(x => x.pick); return !tradeRulesErr(L, a, b) && !ntcRefusal(L, a, b); });
 }
 
 actions.officeTeam = d => { const ds = draftState(); ds.officeTeam = +d.id; ds.offers = null; render(); };
@@ -3999,9 +4003,11 @@ actions.officeAccept = async d => {
   const team = L.teams.find(t => t.id === (ds.officeTeam ?? mine[0].id)) || mine[0];
   if (!(await confirmBox(`Send ${esc(o.get.map(x => x.text).join(' + '))} to ${esc(o.team.shortName)} for ${esc(o.give.map(x => x.text).join(' + '))}?`, 'Accept'))) return;
   const side = (t, items) => ({ team: t, picks: items.filter(x => x.pick).map(x => x.pick), players: items.filter(x => x.player).map(x => x.player), prospects: [] });
-  const capErr = FA.tradeCheck(L, side(team, o.get), side(o.team, o.give));
+  const sa = side(team, o.get), sb = side(o.team, o.give);
+  const capErr = tradeRulesErr(L, sa, sb) || ntcRefusal(L, sa, sb);
   if (capErr) { toast('Trade not allowed', capErr, 3200, true); return; }
-  liveExecute(side(team, o.get), side(o.team, o.give));
+  if (!(await physicals(L, sa, sb))) return;
+  liveExecute(sa, sb);
   for (const x of o.get) ds.block?.delete(x.key);
   ds.offers = null;
   render();
@@ -4444,9 +4450,9 @@ function liveState() {
   ds.live.offers ||= {};
   return ds.live;
 }
-const liveOrder = () => actualDraftOrder(league());
+const liveOrder = () => actualDraftOrder(league()) || [];
 const lastYear = () => Math.max(...league().teams.map(t => teamRecord(t).yr || 0));
-const futureValue = pk => pickValue(league(), pk);
+const futureValue = pk => pickValue(league(), pk) * TR.protFactor(protOf(pk)?.top || 0);
 const frozenFn = (t, pk) => FA.pickFrozen(league(), t, pk);
 const boardRank = p => boardOrder().indexOf(p) + 1 || 60;
 const prospectById = id => league().draftClass.find(p => p.id === id);
@@ -4463,7 +4469,7 @@ function liveCpuStep(live, order, idx) {
   const opts = { value: futureValue, slot: slotValue, rng: live.rng, exclude: busy, frozen: frozenFn };
   if (!busy.has(o.owner.id) && live.rng() * 100 < chance) {
     const offer = o.rd === 1 ? tradeUpOffers(L, order, idx, { ...opts, far: 4, count: 1, eager: 0.6 })[0] : consolidationOffer(L, order, idx, opts);
-    if (offer) {
+    if (offer && !TR.stepienErr(L, { team: offer.team, picks: offer.give }, { team: o.owner, picks: [offer.get] }, isProt)) {
       liveExecute({ team: offer.team, picks: offer.give, players: [], prospects: [] },
         { team: o.owner, picks: [offer.get], players: [], prospects: [] }, 'CPU');
       live.cpuTeams.push(offer.team.id, o.owner.id);
@@ -4505,8 +4511,94 @@ function liveSim(mode) {
 const dispYr = y => (isCollege() ? y : y - 1);
 const pickLabel = (pk, L = league()) => {
   const t = L.teams.find(x => x.id === pk.otid);
-  return `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}`;
+  const pr = protOf(pk);
+  return `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}${pr ? ` · top-${pr.top} prot.` : ''}`;
 };
+
+// ---- Trade rules (CBA)
+
+// Pick protections, per save, until the pick's draft settles them:
+// [{ otid, yr, top, from }] (from = the team it goes back to).
+const protKey = () => `hlc:prot:${league().shortName}:${league().meta?.saveName || ''}`;
+function protLedger() { try { return JSON.parse(localStorage.getItem(protKey())) || []; } catch { return []; } }
+function saveProt(v) { try { localStorage.setItem(protKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+const protOf = pk => (pk.rd === 1 ? protLedger().find(x => !x.done && x.otid === pk.otid && x.yr === pk.yr) : null);
+const isProt = pk => !!protOf(pk);
+// This offseason's ledgers: signings that can't be traded yet
+// ({ [pid]: { why, tid } }) and players each team traded away ({ [tid]: [pid] }).
+const offKey = name => `hlc:${name}:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
+function offGet(name) { try { return JSON.parse(localStorage.getItem(offKey(name))) || {}; } catch { return {}; } }
+function offSet(name, v) { try { localStorage.setItem(offKey(name), JSON.stringify(v)); } catch { /* ignore */ } }
+function lockSigning(p, why) { const m = offGet('signed'); m[p.id] = { why, tid: p.tid }; offSet('signed', m); }
+// Why an FA signing can't be traded yet.
+const signingLock = x => x.matched ? 'Matched offer sheet: 1 year'
+  : x.kind === 'snt' ? 'Sign-and-trade: Dec 15'
+  : x.from?.id === x.team.id && x.offer.sal > (x.rec?.contract?.sal || 0) * 1.2 && x.offer.sal > FA.minFor(x.p) ? 'Re-signed with a raise: Jan 15'
+  : 'Signed this offseason: Dec 15';
+const stepPast = key => { const cal = activeCal(), cur = cal.indexOf(currentStep()); return cur < 0 || cur >= cal.findIndex(st => st.key === key); };
+function tradeLock(p) {
+  if (p.status !== FA.STATUS_SIGNED) return null;
+  // A signed rookie waits 30 days (draft rights trade any time).
+  if (p.history?.draft?.yr === league().season.currentYear && !stepPast('latefa')) return 'Rookie deal: 30 days';
+  const x = offGet('signed')[p.id];
+  return x && x.tid === p.tid ? x.why : null;
+}
+// Lottery picks are off the table from the day before the lottery.
+const lotteryLocked = pk => league().season.phase === 2 && pk.rd === 1 && pk.yr === league().season.currentYear;
+// Everything a trade has to clear besides value. Sides: { team, players, picks }.
+function tradeRulesErr(L, A, B) {
+  const away = offGet('away');
+  for (const [me, them] of [[A, B], [B, A]]) {
+    const back = (them.players || []).find(p => (away[me.team.id] || []).includes(p.id));
+    if (back) return `${me.team.shortName} traded ${playerName(back)} away this offseason and can't get him back`;
+    const lock = (me.players || []).find(p => tradeLock(p));
+    if (lock) return `${playerName(lock)} can't be traded yet (${tradeLock(lock)})`;
+    const pk = (me.picks || []).find(x => FA.pickFrozen(L, me.team, x) || lotteryLocked(x));
+    if (pk) return lotteryLocked(pk) ? 'Lottery picks can\'t be traded until the lottery is drawn' : `${pickLabel(pk)} is frozen (2nd apron)`;
+  }
+  return FA.tradeCheck(L, A, B) || TR.rosterErr(A, B) || TR.stepienErr(L, A, B, isProt);
+}
+// No-trade clauses: he waives it for a contender he's happy to join, or
+// when he's miserable where he is.
+function ntcRefusal(L, A, B) {
+  for (const [me, them] of [[A, B], [B, A]]) for (const p of me.players || []) {
+    if (!p.contract?.noTrd) continue;
+    const morale = p.season?.morale ?? 60;
+    if (morale < 35 || (teamStatus(L, them.team) === 'contending' && morale >= 45 && tr(p, 'loyalty') < 16)) continue;
+    return `${playerName(p)} won't waive his no-trade clause for ${them.team.shortName}`;
+  }
+  return null;
+}
+// Physicals: a player with a bad injury history headed to a CPU team can
+// fail it (deal off) or cost a 2nd-round sweetener; one coming to you
+// comes with a warning. Adds the sweetener to the side's picks. → bool.
+async function physicals(L, A, B) {
+  const yr = lastSeasonYear();
+  for (const [me, them] of [[A, B], [B, A]]) for (const p of me.players || []) {
+    const r = injuryRisk(p, yr, state.params);
+    if (!r || !(r.chance >= 10 || (r.cls === 'structural' && r.games >= 20))) continue;
+    const what = `${injuryName(r.worst)}, ${r.games} games out${r.chance ? `, ${Math.round(r.chance)}% risk` : ''}`;
+    if (isUserTeam(me.team) && !isUserTeam(them.team)) {
+      const second = me.team.draftPicks.filter(pk => pk.rd === 2 && pk.yr > L.season.currentYear && !(me.picks || []).includes(pk)).sort((a, b) => b.yr - a.yr)[0];
+      if (r.chance >= 25 || !second) { toast('Trade off', `${playerName(p)} failed his physical with ${them.team.shortName}`, 3600, true); return false; }
+      if (!(await confirmBox(`${esc(playerName(p))}'s physical raised flags (${esc(what)}). ${esc(them.team.shortName)} want ${esc(pickLabel(second))} added.`, 'Add It'))) return false;
+      (me.picks ||= []).push(second);
+    } else if (isUserTeam(them.team) && !isUserTeam(me.team)) {
+      if (!(await confirmBox(`${esc(playerName(p))}'s physical raised flags (${esc(what)}). Go through with it?`, 'Complete Trade'))) return false;
+    }
+  }
+  return true;
+}
+// Lottery night: protected picks that land in their protection go back.
+function settleProt(L) {
+  const led = protLedger();
+  if (!led.some(x => !x.done && x.yr === L.season.currentYear)) return;
+  const res = TR.settleProtections(L, led);
+  saveProt(led);
+  for (const r of res) if (isUserTeam(r.holder) || (r.from && isUserTeam(r.from))) {
+    toast(r.kept ? '🛡️ Protection kicked in' : '🎟️ Protected pick conveys', `${r.from?.shortName}'s pick landed #${r.slot}${r.kept ? `: it stays with ${r.from.shortName}${r.back ? `, ${r.holder.shortName} get their 2nd` : ''}` : `, outside the top ${r.entry.top}: it goes to ${r.holder.shortName}`}`, 4200);
+  }
+}
 
 function draftLive() {
   const L = league();
@@ -4522,7 +4614,8 @@ function draftLive() {
   if (user) {
     live.offers[o.overall] ||= tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng: live.rng, far: 3, exclude: new Set(live.cpuTeams || []), frozen: frozenFn })
       .map(x => ({ tid: x.team.id, give: x.give, get: x.get }));
-    offers = live.offers[o.overall].filter(x => x.give.every(pk => teamById(x.tid).draftPicks.includes(pk)) && o.owner.draftPicks.includes(x.get));
+    offers = live.offers[o.overall].filter(x => x.give.every(pk => teamById(x.tid).draftPicks.includes(pk)) && o.owner.draftPicks.includes(x.get)
+      && !TR.stepienErr(L, { team: teamById(x.tid), picks: x.give }, { team: o.owner, picks: [x.get] }, isProt));
   }
   const done = idx < 0;
   return {
@@ -4674,6 +4767,9 @@ function liveExecute(A, B, cpu = false) {
   const live = liveState();
   const L = league();
   const rec = executeTrade(A, B, L.season.currentYear);
+  const away = offGet('away');
+  for (const m of rec.moved) (away[m.from.id] ||= []).push(m.p.id);
+  offSet('away', away);
   const moves = [];
   for (const [from, to] of [[A, B], [B, A]]) {
     for (const ov of from.prospects || []) { moves.push({ ov, from: from.team.id, to: to.team.id }); live.sel[ov].to = to.team.id; }
@@ -4770,8 +4866,9 @@ function liveAssets(team) {
   for (const p of roster) {
     const l = seasonLine(p, state.leagueIdx, ly);
     const ct = contractText(p);
-    const locked = pending(p);
-    out.push({ key: `p:${p.id}`, locked, label: `${esc(playerName(p))} ${lvTag(p)}${locked ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : contractBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
+    const lock = tradeLock(p);
+    const locked = pending(p) || !!lock;
+    out.push({ key: `p:${p.id}`, locked, label: `${esc(playerName(p))} ${lvTag(p)}${pending(p) ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : lock ? ` <span class="badge lock">🔒 ${esc(lock)}</span>` : contractBadge(p)}${p.contract?.noTrd ? ' <span class="badge new" title="No-trade clause: he has to agree">NTC</span>' : ''}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
   }
   return out;
 }
@@ -4793,8 +4890,15 @@ screens.liveTrade = (args) => {
   const A = L.teams.find(t => t.id === aId), B = L.teams.find(t => t.id === bId);
   const selA = new Set(args.selA || []), selB = new Set(args.selB || []);
   const aa = liveAssets(A), bb = liveAssets(B);
-  const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + x.value, 0);
+  const prot = args.prot || {};
+  const pv = x => x.value * (x.pick && !protOf(x.pick) ? TR.protFactor(prot[x.key] || 0) : 1);
+  const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + pv(x), 0);
   const vA = sum(aa, selA), vB = sum(bb, selB);
+  // Future firsts being sent can carry a protection.
+  const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
+  const protRows = firsts.map(x => protOf(x.pick)
+    ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><span class="small muted">already protected</span></div>`
+    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
   const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
       <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
   const select = (side, cur) => {
@@ -4804,7 +4908,7 @@ screens.liveTrade = (args) => {
     return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span></span>${arrow(1, '▶')}</div>`;
   };
   layout({
-    title: 'Draft-Day Trade',
+    title: order.length ? 'Draft-Day Trade' : 'Trade',
     body: `
       <div class="grid2 trade">
         <div class="stack">${select('a', aId)}</div>
@@ -4815,6 +4919,7 @@ screens.liveTrade = (args) => {
         <div class="list">${list(aa, selA, 'a')}</div>
         <div class="list">${list(bb, selB, 'b')}</div>
       </div>
+      ${protRows ? `<fieldset class="frame"><legend>Protections</legend><p class="note small muted">Lands in the protection: it goes back and they get that year's 2nd.</p>${protRows}</fieldset>` : ''}
       ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
         <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
@@ -4876,6 +4981,7 @@ actions.liveCycle = d => {
   replace('liveTrade', upd);
 };
 
+actions.liveProt = d => { const a = tradeArgs(); replace('liveTrade', { ...a, prot: { ...(a.prot || {}), [d.k]: +d.v } }); };
 actions.liveToggle = d => {
   const a = tradeArgs();
   const k = d.side === 'a' ? 'selA' : 'selB';
@@ -4894,13 +5000,21 @@ actions.liveTradeGo = async d => {
   };
   const sa = pickSide(A, a.selA || []), sb = pickSide(B, a.selB || []);
   if (!sa.items.length && !sb.items.length) { toast('Tap something on either side first'); return; }
-  const vA = sa.items.reduce((s, x) => s + x.value, 0), vB = sb.items.reduce((s, x) => s + x.value, 0);
+  const pv = x => x.value * (x.pick && !protOf(x.pick) ? TR.protFactor((a.prot || {})[x.key] || 0) : 1);
+  const vA = sa.items.reduce((s, x) => s + pv(x), 0), vB = sb.items.reduce((s, x) => s + pv(x), 0);
   if (d.force !== '1' || !state.params.commissioner) {
     const no = [[A, vA, vB], [B, vB, vA]].find(([t, give, get]) => !isUserTeam(t) && !cpuAccepts(give, get));
     if (no) { toast(`${no[0].shortName} decline: they want more back`); return; }
   }
-  const capErr = FA.tradeCheck(L, sa, sb);
-  if (capErr && !(d.force === '1' && state.params.commissioner)) { toast('Trade not allowed', capErr, 3200, true); return; }
+  const force = d.force === '1' && state.params.commissioner;
+  const capErr = tradeRulesErr(L, sa, sb) || ntcRefusal(L, sa, sb);
+  if (capErr && !force) { toast('Trade not allowed', capErr, 3200, true); return; }
+  if (!force && !(await physicals(L, sa, sb))) return;
+  // New protections ride with the picks.
+  const prot = a.prot || {};
+  const led = protLedger();
+  for (const sd of [sa, sb]) for (const x of sd.items) if (x.pick && prot[x.key] && !protOf(x.pick)) led.push({ otid: x.pick.otid, yr: x.pick.yr, top: prot[x.key], from: sd.team.id });
+  saveProt(led);
   liveExecute(sa, sb);
   back();
 };
@@ -4920,7 +5034,7 @@ function draftTrades(args) {
   const picks = (T, sel, side) => [...T.draftPicks]
     .filter(pk => pk.yr >= L.season.currentYear)
     .sort((x, y) => x.yr - y.yr || x.rd - y.rd)
-    .map(pk => { const fz = FA.pickFrozen(L, T, pk); return `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''} ${fz ? 'locked' : ''}" ${fz ? 'disabled' : `data-act="togglePick" data-side="${side}" data-k="${key(pk)}"`}>
+    .map(pk => { const fz = FA.pickFrozen(L, T, pk) || lotteryLocked(pk); return `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''} ${fz ? 'locked' : ''}" ${fz ? 'disabled' : `data-act="togglePick" data-side="${side}" data-k="${key(pk)}"`}>
       <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}${fz ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}</span>
       <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`; }).join('') || '<p class="note muted">No picks.</p>';
   const valueOf = (T, sel) => T.draftPicks.filter(pk => sel.has(key(pk))).reduce((a, pk) => a + pickValue(L, pk), 0);
@@ -4970,7 +5084,8 @@ actions.makeTrade = async () => {
   const fromA = A.draftPicks.filter(pk => (a.selA || []).includes(key(pk)));
   const fromB = B.draftPicks.filter(pk => (a.selB || []).includes(key(pk)));
   if (!fromA.length && !fromB.length) { toast('Tap picks on either side first'); return; }
-  if ([[A, fromA], [B, fromB]].some(([T, l]) => l.some(pk => FA.pickFrozen(L, T, pk)))) { toast('Trade not allowed', 'A team over the 2nd apron can\'t trade its furthest-out first', 3200, true); return; }
+  const pErr = tradeRulesErr(L, { team: A, picks: fromA }, { team: B, picks: fromB });
+  if (pErr) { toast('Trade not allowed', pErr, 3200, true); return; }
   const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const desc = list => list.map(pk => `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
   const text = `${A.shortName} send ${desc(fromA)} · ${B.shortName} send ${desc(fromB)}`;
@@ -5174,6 +5289,7 @@ actions.faDecide = async () => {
     matches.set(m.p.id, pick === 'match');
   }
   s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
+  for (const x of s.signings) if (x.kind !== 'snt') lockSigning(x.p, signingLock(x));
   // Last day: anyone still without a deal leaves their old team.
   if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L, { qoFor: qoAmount, day: s.day });
   // The calendar shows the best player signed and the biggest contract.
@@ -5268,6 +5384,7 @@ actions.faOffer = d => {
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
       <p class="note small">Total $${draft.sal * draft.yrs}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
@@ -5284,6 +5401,7 @@ actions.faOffer = d => {
     if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p, draft.tid === m.from?.id), draft.sal + +b.dataset.d));
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
+    else if (k === 'ntc') draft.ntc = !!+b.dataset.v;
     else if (k === 'mle') { const ml = mleOk(L.teams.find(t => t.id === draft.tid)); if (ml) { draft.sal = ml.sal; draft.yrs = ml.yrs; } }
     else if (k === 'snt') { box.remove(); sntBox(m, s).then(done => { if (done) render(); }); return; }
     else if (k === 'walk') { box.remove(); actions.faWalk({ id: m.p.id }); return; }
@@ -5401,6 +5519,11 @@ function sntBox(m, s) {
         const rec = FA.signPlayer(L, m.p, mine, { yrs: deal.yrs, sal: deal.sal, opt: deal.yrs >= 5 && !deal.opt ? FA.OPT_PLAYER : deal.opt || 0 }, s.day);
         const trade = executeTrade({ team: mine, players: [m.p], picks: [] }, { team: partner, players: pkg.items.filter(a => a.p).map(a => a.p), picks: pkg.items.filter(a => a.pk).map(a => a.pk) }, L.season.currentYear);
         s.bids.delete(m.p.id);
+        lockSigning(m.p, 'Sign-and-trade: Dec 15');
+        const away = offGet('away');
+        (away[mine.id] ||= []).push(m.p.id);
+        for (const a of pkg.items) if (a.p) (away[partner.id] ||= []).push(a.p.id);
+        offSet('away', away);
         const back = pkg.items.map(a => a.p ? playerName(a.p) : pickLabel(a.pk, L)).join(', ');
         s.signings.push({ p: m.p, from: m.from, team: partner, offer: { ...deal }, motive: m.motive, bidders: suitors.length, kind: 'snt', matched: false,
           why: `🔁 Sign-and-trade: ${mine.shortName} get ${back}`, rec, trade });
@@ -6298,7 +6421,7 @@ function extAsk(p, team) {
   const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
   // The one length he asks for (the range is how far he'll bend).
   const pref = Math.round((yrs[0] + yrs[1]) / 2 + 0.01);
-  return { sal, yrs, pref, mood, proj };
+  return { sal, yrs, pref, mood, proj, ntc: FA.wantsNtc(league(), p, team), ntcOk: FA.ntcEligible(league(), p, team) };
 }
 // His answer to an offer: { ok, counter, text }.
 function extAnswer(p, team, offer) {
@@ -6308,17 +6431,22 @@ function extAnswer(p, team, offer) {
   // with a player option.
   const mood = a.mood === 'market' ? 1.15 : a.mood === 'eager' ? 0.84 : 0.9;
   const opt = offer.opt === FA.OPT_TEAM ? 1.06 : offer.opt === FA.OPT_PLAYER ? 0.96 : 1;
-  const need = Math.max(FA.minFor(p), Math.round(a.sal * (1 + 0.06 * off) * mood * opt));
+  // A no-trade clause is worth a little to him; one he asked for and didn't get costs.
+  const ntc = offer.ntc && a.ntcOk ? 0.95 : a.ntc ? 1.05 : 1;
+  const need = Math.max(FA.minFor(p), Math.round(a.sal * (1 + 0.06 * off) * mood * opt * ntc));
   if (offer.sal >= need) return { ok: true, text: 'Deal.' };
   const yrs = Math.min(Math.max(offer.yrs, a.yrs[0]), a.yrs[1]);
   return { ok: false, counter: { sal: Math.max(need, Math.round(a.sal * (a.mood === 'market' ? 1.2 : 0.95))), yrs },
     text: a.mood === 'market' ? 'His camp wants to see what free agency brings. It would take an overpay.' : offer.sal < need * 0.8 ? 'Not close. His agent walked out of the room.' : 'Close, but not there yet.' };
 }
 function signExtension(L, t, p, deal, cpu = false) {
-  p.contract.ext = { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, noTrd: 0 };
+  const ntc = deal.ntc && FA.ntcEligible(L, p, t) ? 1 : 0;
+  // Over 4 seasons in all, or a raise over 120%: six months before a trade.
+  if (deal.yrs + 1 > 4 || deal.sal > (p.contract.sal || 0) * 1.2) lockSigning(p, 'Extended: 6 months');
+  p.contract.ext = { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, noTrd: ntc };
   p.contract.canExt = false;
   const led = extLedger().filter(x => x.pid !== p.id);
-  led.push({ pid: p.id, tid: t.id, yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, yr: L.season.currentYear, cpu });
+  led.push({ pid: p.id, tid: t.id, yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, ntc, yr: L.season.currentYear, cpu });
   saveExtLedger(led);
 }
 // On load: last summer's extensions for players whose deal is now up.
@@ -6334,7 +6462,7 @@ function applyExtensions() {
     if (x.yr >= L.season.currentYear || !p) { if (x.yr >= L.season.currentYear) keep.push(x); continue; }
     if (p.status === FA.STATUS_EXPIRING) {
       p.status = FA.STATUS_SIGNED;
-      Object.assign(p.contract, { tid: t.id, pid: p.id, yrs: x.yrs, sal: x.sal, opt: x.opt || 0, canExt: false, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } });
+      Object.assign(p.contract, { tid: t.id, pid: p.id, yrs: x.yrs, sal: x.sal, opt: x.opt || 0, noTrd: x.ntc || 0, canExt: false, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } });
       const row = (p.stats || []).filter(s => s.yr === L.season.currentYear && s.league === 0).pop();
       if (row) row.sal = x.sal;
       n++;
@@ -6395,6 +6523,7 @@ actions.extOpen = d => {
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${talk.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${talk.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      ${a.ntcOk ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!talk.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${a.ntc ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
       <p class="note small">Total <span class="tot">$${talk.sal * talk.yrs}M</span> · ${3 - talk.tries} offer${3 - talk.tries === 1 ? '' : 's'} left${talk.last ? `<br><span class="down">${esc(talk.last.text)}</span>` : ''}</p>
       <div class="grid2"><button class="btn off" data-k="close">Cancel</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
   };
@@ -6405,6 +6534,7 @@ actions.extOpen = d => {
     if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p, true), talk.sal + +b.dataset.d));
     else if (k === 'yrs') talk.yrs = Math.max(1, Math.min(5, talk.yrs + +b.dataset.d));
     else if (k === 'opt') talk.opt = +b.dataset.v;
+    else if (k === 'ntc') talk.ntc = !!+b.dataset.v;
     else if (k === 'close') { saveExtStore(); box.remove(); render(); return; }
     else if (k === 'submit') {
       actions.extOffer({ id: p.id });
@@ -6427,7 +6557,7 @@ actions.extOffer = d => {
   if (r.ok) {
     checkpoint(`Extend ${playerName(p)}`);
     signExtension(L, t, p, talk);
-    talk.signed = { sal: talk.sal, yrs: talk.yrs, opt: talk.opt || 0 };
+    talk.signed = { sal: talk.sal, yrs: talk.yrs, opt: talk.opt || 0, ntc: !!talk.ntc };
     state.dirty = true;
     toast(`✍️ ${playerName(p)} extended`, `$${talk.sal}M × ${talk.yrs}, starting next season`);
   }
@@ -6458,7 +6588,7 @@ actions.extClose = async () => {
         const yrs = a.yrs[0] + Math.floor(rng() * (a.yrs[1] - a.yrs[0] + 1));
         const rising = p.age <= 25 && a.proj > lv;
         const opt = yrs >= 5 ? (rng() < 0.6 ? FA.OPT_PLAYER : FA.OPT_TEAM) : yrs > 1 && rng() < (p.age >= 30 ? 0.55 : rising ? 0.6 : 0.2) ? FA.OPT_PLAYER : 0;
-        const deal = { sal: Math.min(FA.maxSalary(L, p, true), sal), yrs, opt };
+        const deal = { sal: Math.min(FA.maxSalary(L, p, true), sal), yrs, opt, ntc: a.ntc };
         signExtension(L, t, p, deal, true);
         list.push({ name: playerName(p), team: t.shortName, sal: deal.sal, yrs: deal.yrs, opt, lv });
       }
@@ -7128,6 +7258,7 @@ actions.lateSign = d => {
   if (FA.signedRoster(t).length >= O.rosterMax) { toast(`Roster is full (${O.rosterMax})`, '', 2400, true); return; }
   if (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2) { toast('That would put you over the 2nd apron', '', 2400, true); return; }
   FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
+  lockSigning(p, 'Signed this offseason: Dec 15');
   ((calFlags().lateMine ||= [])).push(p.id);
   state.dirty = true;
   render();
@@ -7142,6 +7273,7 @@ actions.lateFinish = () => {
       const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
       if (!p || (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2)) break;
       FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
+      lockSigning(p, 'Signed this offseason: Dec 15');
       list.push({ name: playerName(p), lv: `Lv ${shownLevel(p)}`, team: t.shortName, sal: lateMin(p), yrs: lateYears(p) });
     }
   }

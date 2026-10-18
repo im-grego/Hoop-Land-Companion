@@ -1249,3 +1249,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .cap-bar .cb-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: #fff; opacity: .8; }
 .tier-tag { font-weight: 700; }
 .tier-tag.t-under { color: var(--up); } .tier-tag.t-over { color: var(--cyan); } .tier-tag.t-tax { color: var(--gold); } .tier-tag.t-apron1 { color: #ff9f43; } .tier-tag.t-apron2 { color: var(--down); }
+/* Pick protections in the trade builder */
+.prot-row { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-top: 8px; }
+.prot-row .seg { flex-wrap: nowrap; }
+.prot-row .seg .btn { min-height: 30px; padding: 0 2px; font-size: 11px; white-space: nowrap; }

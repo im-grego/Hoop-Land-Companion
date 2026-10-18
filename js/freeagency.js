@@ -293,8 +293,19 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
-    w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0);
+    w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0) +
+    (offer.ntc ? 0.08 : 0);
 }
+
+// No-trade clauses: a player with 8+ years in the league, 4+ of them with
+// the team, can get one when he re-signs or extends there. He asks for one
+// when he's loyal, chasing money, or a star in his 30s.
+export function seasonsWith(league, p, team) {
+  const cur = league.season.currentYear;
+  return (p.stats || []).filter(s => s.league === 0 && s.yr < cur && (s.season || []).some(x => x.tid === team.id)).length;
+}
+export const ntcEligible = (league, p, team) => !!team && (p.yrs || 0) >= 8 && seasonsWith(league, p, team) >= 4;
+export const wantsNtc = (league, p, team) => ntcEligible(league, p, team) && (tr(p, 'loyalty') >= 14 || tr(p, 'money') >= 15 || (p.age >= 30 && levelOf(p) >= 80));
 
 export function why(motive, offer, strength = 1) {
   const m = MOTIVES[motive];
@@ -588,6 +599,10 @@ export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS, { 
       (used.mle ||= new Set()).add(team.id);
       if (mleFor(league, team, day, {}, o)?.hard) (used.hard ||= new Set()).add(team.id);
     }
+    // CPU teams give the clause to stars who ask; a 1-year re-sign gets the
+    // implicit one (a trade would cost him his Bird rights).
+    if (best.ntc && !(m.from?.id === team.id && ntcEligible(league, m.p, team))) best = { ...best, ntc: false };
+    if (m.from?.id === team.id && (best.cpu && wantsNtc(league, m.p, team) || (best.yrs === 1 && !best.opt))) best = { ...best, ntc: true };
     const rec = signPlayer(league, m.p, team, best, day);
     signings.push({ p: m.p, from: m.from, team, offer: best, motive: m.motive, bidders: list.length, kind, matched,
       why: matched ? `🔒 ${team.shortName} matched the offer sheet` : why(m.motive, best, teamStrength(league, team)), rec });
@@ -617,7 +632,7 @@ export function signPlayer(league, p, team, offer, day) {
   }
   p.tid = team.id;
   p.status = STATUS_SIGNED;
-  Object.assign(p.contract, { tid: team.id, pid: p.id, type: 0, yrs: offer.yrs, sal: offer.sal, opt: offer.opt || 0 });
+  Object.assign(p.contract, { tid: team.id, pid: p.id, type: 0, yrs: offer.yrs, sal: offer.sal, opt: offer.opt || 0, noTrd: offer.ntc ? 1 : 0 });
   if (p.season) { p.season.focus = 0; p.season.onTradeBlock = 0; }
   const row = (p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
   rec.row = row ? { sal: row.sal, stint: row.season?.[row.season.length - 1] && { ...row.season[row.season.length - 1] } } : null;
