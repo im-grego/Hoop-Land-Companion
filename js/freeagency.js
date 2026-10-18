@@ -66,12 +66,43 @@ export function setDeadMoney(map) { DEAD = new Map(Object.entries(map || {}).map
 export const deadMoney = team => DEAD.get(team.id) || 0;
 export const capSpace = (league, team) => league.season.salaryCap - payroll(team) - deadMoney(team);
 
-// Max salary by years in the league (the save's maxContract, % of the cap).
-export function maxSalary(league, p) {
-  const tiers = league.season.maxContract || [25, 30, 35];
-  const pct = p.yrs >= 10 ? tiers[2] : p.yrs >= 7 ? tiers[1] : tiers[0];
-  return Math.round(league.season.salaryCap * pct / 100);
+// Max salary by years in the league (the save's maxContract, % of the cap:
+// 0–6 years, 7–9, 10+). Re-signing or extending with his own team, a star
+// moves up a tier (the Rose rule for 0–6 years, the supermax for 7–9) if he
+// was MVP in one of the last three seasons, or All-League or Defensive
+// Player of the Year last season or in two of the last three.
+const awardIdsCache = new WeakMap();
+function awardIds(league) {
+  if (!awardIdsCache.has(league)) {
+    const list = league.awards || [];
+    const find = re => list.filter(a => re.test(a.name || '')).map(a => a.id);
+    awardIdsCache.set(league, {
+      mvp: find(/^most valuable player$|^mvp$/i),
+      dpoy: find(/defensive player of the year/i),
+      allLeague: find(/^all-(?!def|rook|star)/i),
+    });
+  }
+  return awardIdsCache.get(league);
 }
+const timesWon = (p, ids, years) => (p.awards || []).filter(a => ids.includes(a.id)).flatMap(a => a.yearsWon || []).filter(y => years.includes(y)).length;
+export function maxCriteria(league, p) {
+  const ids = awardIds(league), ly = lastYear(league), last3 = [ly, ly - 1, ly - 2];
+  if (timesWon(p, ids.mvp, last3)) return 'MVP';
+  if (timesWon(p, ids.allLeague, [ly]) || timesWon(p, ids.allLeague, last3) >= 2) return 'All-League';
+  if (timesWon(p, ids.dpoy, [ly]) || timesWon(p, ids.dpoy, last3) >= 2) return 'DPOY';
+  return null;
+}
+export function maxPct(league, p, own = false) {
+  const tiers = league.season.maxContract || [25, 30, 35];
+  const yrs = p.yrs || 0;
+  const tier = yrs >= 10 ? 2 : yrs >= 7 ? 1 : 0;
+  return tiers[own && tier < 2 && maxCriteria(league, p) ? tier + 1 : tier];
+}
+export function maxSalary(league, p, own = false) {
+  return Math.round(league.season.salaryCap * maxPct(league, p, own) / 100);
+}
+// "Supermax" / "Rose rule" when his own team can pay him a tier up.
+export const maxLabel = (league, p) => (maxPct(league, p, true) > maxPct(league, p) ? ((p.yrs || 0) >= 7 ? 'Supermax eligible' : 'Rose rule eligible') : '');
 
 // Asking salary ($M per year) from last season's production, youth and upside.
 export function baseAsk(league, p, o = FA_DEFAULTS) {
@@ -173,7 +204,7 @@ export function offerRoom(league, team, p, day, used = {}, o = FA_DEFAULTS) {
   const full = signedRoster(team).length >= o.rosterMax;
   const mle = day >= 2 && !used.mle?.has(team.id) && capSpace(league, team) < o.mle;
   const min = minOk(p);
-  let max = bird ? maxSalary(league, p) : Math.min(maxSalary(league, p), space);
+  let max = bird ? maxSalary(league, p, true) : Math.min(maxSalary(league, p), space);
   if (mle) max = Math.max(max, o.mle);
   if (min) max = Math.max(max, minFor(p, o));
   return { full, bird, space: space > 0, mle, min, vetMin: min && isVet(p, o), max: full ? 0 : max };
@@ -183,7 +214,8 @@ export function offerRoom(league, team, p, day, used = {}, o = FA_DEFAULTS) {
 export function checkOffer(league, team, p, offer, day, used = {}, o = FA_DEFAULTS) {
   const room = offerRoom(league, team, p, day, used, o);
   if (room.full) return `${team.shortName} roster is full (${o.rosterMax})`;
-  if (offer.sal > maxSalary(league, p)) return `Max for ${playerName(p)} is $${maxSalary(league, p)}M`;
+  const room0 = offerRoom(league, team, p, day, used, o);
+  if (offer.sal > maxSalary(league, p, room0.bird)) return `Max for ${playerName(p)} is $${maxSalary(league, p, room0.bird)}M`;
   if (offer.yrs < 1 || offer.yrs > (room.bird ? o.birdMaxYears : o.maxYears)) return `1–${room.bird ? o.birdMaxYears : o.maxYears} years`;
   if (offer.yrs >= 5 && !offer.opt) return 'A 5-year deal needs an option (4 + 1)';
   if (!room.bird && offer.yrs < 2 && isRestricted(league, p)) return 'An offer sheet runs at least 2 years';
@@ -245,7 +277,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       const bird = m.from?.id === team.id;
       if (slots <= 0) break;
       let sal = Math.round(m.ask * (1 + (rng() * 2 - 1) * o.cpuOverbid));
-      sal = Math.max(o.minSalary, Math.min(maxSalary(league, m.p), sal));
+      sal = Math.max(o.minSalary, Math.min(maxSalary(league, m.p, bird), sal));
       let yrs = m.p.age >= 31 ? 1 + Math.floor(rng() * 2) : m.p.age <= 26 ? 3 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3);
       let offer = { tid: team.id, sal, yrs, opt: rng() < 0.2 ? OPT_PLAYER : rng() < 0.2 ? OPT_TEAM : OPT_NONE, cpu: true };
       // A veteran who'll take the minimum gets the minimum.
@@ -284,7 +316,7 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
       if (!b.cpu || score(b) >= best) continue;
       const team = league.teams.find(t => t.id === b.tid);
       const cap = Math.round(m.ask * o.cpuMaxOverAsk);
-      const sal = Math.min(cap, maxSalary(league, m.p), Math.round(b.sal * (1 + o.cpuRaise * (0.5 + rng() / 2))) + 1);
+      const sal = Math.min(cap, maxSalary(league, m.p, b.tid === m.from?.id), Math.round(b.sal * (1 + o.cpuRaise * (0.5 + rng() / 2))) + 1);
       const next = { ...b, sal, yrs: m.motive === 'security' ? Math.min(b.tid === m.from?.id ? o.birdMaxYears : o.maxYears, b.yrs + 1) : b.yrs, opt: m.motive === 'control' ? OPT_PLAYER : b.opt };
       if (next.yrs >= 5 && !next.opt) next.opt = OPT_PLAYER;
       if (sal <= b.sal || checkOffer(league, team, m.p, next, day, used, o)) continue;

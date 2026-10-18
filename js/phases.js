@@ -54,10 +54,13 @@ export function applyLottery(league, r1) {
   league.season.phase = PHASE_PRE_DRAFT;
 }
 
-// Rookie scale by first-round slot (as the game pays it, $M on a $200M cap).
-const SCALE = [10, 10, 9, 9, 9, 9, 8, 8, 8, 8, 7, 7, 7, 7, 6, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 2];
-export const rookieScale = (league, overall) =>
-  Math.max(2, Math.round((SCALE[Math.min(overall, SCALE.length) - 1] ?? 2) * (league.season.salaryCap || 200) / 200));
+// Rookie scale by first-round slot, as % of the cap: the 2026-27 NBA
+// scale at the 120% teams always pay (No. 1 $14.75M on a $164.96M cap,
+// No. 30 about $3.0M), slots between the published ones interpolated.
+const SCALE_PCT = [8.94, 8.00, 7.18, 6.48, 5.86, 5.42, 4.97, 4.53, 4.09, 3.89, 3.71, 3.53, 3.36, 3.18, 3.01,
+  2.88, 2.75, 2.62, 2.50, 2.37, 2.32, 2.26, 2.21, 2.15, 2.10, 2.04, 1.98, 1.93, 1.87, 1.82];
+export const rookieScale = (league, overall, minSalary = 2) =>
+  Math.max(minSalary, Math.round((SCALE_PCT[Math.min(overall, SCALE_PCT.length) - 1] ?? SCALE_PCT[SCALE_PCT.length - 1]) * (league.season.salaryCap || 200) / 100));
 
 // Sign one of this year's picks: a first-rounder to his 4-year scale deal,
 // a second-rounder at the minimum for `yrs`, both with a team option.

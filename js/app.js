@@ -28,7 +28,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.58.0';
+const APP_VERSION = '0.59.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5231,7 +5231,7 @@ actions.faOffer = d => {
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
     box.querySelector('.box').innerHTML = `
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
-        <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asking $${m.ask}M × ${askYears(m)}</span></p>
+        <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asking $${m.ask}M × ${askYears(m)}</span>${m.from && isUserTeam(m.from) && FA.maxLabel(L, m.p) ? `<br><span class="badge new">${FA.maxLabel(L, m.p)} · max $${FA.maxSalary(L, m.p, true)}M</span>` : ''}</p>
       ${prodBoxes(m.p)}
       ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}${isLeveled(x.id) ? ` ${x.level}` : ''}</span>`).join(' · ')}</p>` : ''}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
@@ -5253,7 +5253,7 @@ actions.faOffer = d => {
     const b = e.target.closest('[data-k]');
     if (!b || b.tagName === 'SELECT') return;
     const k = b.dataset.k;
-    if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p), draft.sal + +b.dataset.d));
+    if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p, draft.tid === m.from?.id), draft.sal + +b.dataset.d));
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
     else if (k === 'mle') { draft.sal = O.mle; draft.yrs = O.mleMaxYears; }
@@ -5647,12 +5647,12 @@ actions.optNeg = d => {
   if (!p || st.done) return;
   if (st.deals?.[p.id]) { st.team[p.id] = 'deal'; saveOptStore(); render(); return; }
   const a = extAsk(p, t);
-  const neg = ((st.neg ||= {})[p.id] ||= { sal: a.sal, yrs: Math.min(a.yrs[1], Math.max(a.yrs[0], 3)), opt: 0, tries: 0, last: null });
+  const neg = ((st.neg ||= {})[p.id] ||= { sal: a.sal, yrs: a.pref, opt: a.pref >= 5 ? FA.OPT_PLAYER : 0, tries: 0, last: null });
   if (neg.tries >= 3) { toast('Talks are over: accept or decline the option'); return; }
   const box = overlay('');
   const paint = () => {
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · option $${p.contract.sal}M · asks $${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}</span></p>
+      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · option $${p.contract.sal}M · asks $${a.sal}M × ${a.pref}</span>${FA.maxLabel(L, p) ? `<br><span class="badge new">${FA.maxLabel(L, p)} · max $${FA.maxSalary(L, p, true)}M</span>` : ''}</p>
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${neg.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${neg.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${neg.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
@@ -5663,7 +5663,7 @@ actions.optNeg = d => {
     const b = e.target.closest('[data-k]');
     if (!b) return;
     const k = b.dataset.k;
-    if (k === 'sal') neg.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p), neg.sal + +b.dataset.d));
+    if (k === 'sal') neg.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p, true), neg.sal + +b.dataset.d));
     else if (k === 'yrs') neg.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, neg.yrs + +b.dataset.d));
     else if (k === 'opt') neg.opt = +b.dataset.v;
     else if (k === 'close') { saveOptStore(); box.remove(); render(); return; }
@@ -6163,11 +6163,13 @@ function extAsk(p, team) {
   const greed = 1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015;
   // He opens high (and always above the minimum) and can be talked down.
   let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
-  sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p), sal));
+  sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p, true), sal));
   const yrs = p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
   const loyal = tr(p, 'loyalty') >= 16, mercenary = tr(p, 'loyalty') <= 5;
   const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
-  return { sal, yrs, mood, proj };
+  // The one length he asks for (the range is how far he'll bend).
+  const pref = Math.round((yrs[0] + yrs[1]) / 2 + 0.01);
+  return { sal, yrs, pref, mood, proj };
 }
 // His answer to an offer: { ok, counter, text }.
 function extAnswer(p, team, offer) {
@@ -6232,7 +6234,7 @@ screens.extensions = () => {
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
       <span class="right small">$${p.contract.sal}M<br><span class="muted">final year</span></span>
-      <span class="meta">${esc(posName(p))} · ${p.age}y · morale ${p.season?.morale ?? '?'} · asks $${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
+      <span class="meta">${esc(posName(p))} · ${p.age}y · morale ${p.season?.morale ?? '?'} · asks $${a.sal}M × ${a.pref}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
       ${status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
@@ -6254,13 +6256,13 @@ actions.extOpen = d => {
   const p = t?.roster.find(x => x.id === +d.id);
   if (!p || st.done) return;
   const a = extAsk(p, t);
-  const talk = (st.talks[p.id] ||= { sal: a.sal, yrs: Math.min(a.yrs[1], Math.max(a.yrs[0], 3)), opt: 0, tries: 0, last: null, signed: null });
+  const talk = (st.talks[p.id] ||= { sal: a.sal, yrs: a.pref, opt: a.pref >= 5 ? FA.OPT_PLAYER : 0, tries: 0, last: null, signed: null });
   talk.opt ||= 0;
   if (talk.signed || talk.tries >= 3) return;
   const box = overlay('');
   const paint = () => {
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · asks $${a.sal}M × ${a.yrs[0]}–${a.yrs[1]}</span></p>
+      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · asks $${a.sal}M × ${a.pref}</span>${FA.maxLabel(L, p) ? `<br><span class="badge new">${FA.maxLabel(L, p)} · max $${FA.maxSalary(L, p, true)}M</span>` : ''}</p>
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${talk.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${talk.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
@@ -6271,7 +6273,7 @@ actions.extOpen = d => {
     const b = e.target.closest('[data-k]');
     if (!b) return;
     const k = b.dataset.k;
-    if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p), talk.sal + +b.dataset.d));
+    if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p, true), talk.sal + +b.dataset.d));
     else if (k === 'yrs') talk.yrs = Math.max(1, Math.min(5, talk.yrs + +b.dataset.d));
     else if (k === 'opt') talk.opt = +b.dataset.v;
     else if (k === 'close') { saveExtStore(); box.remove(); render(); return; }
@@ -6326,7 +6328,7 @@ actions.extClose = async () => {
         const yrs = a.yrs[0] + Math.floor(rng() * (a.yrs[1] - a.yrs[0] + 1));
         const rising = p.age <= 25 && a.proj > lv;
         const opt = yrs >= 5 ? (rng() < 0.6 ? FA.OPT_PLAYER : FA.OPT_TEAM) : yrs > 1 && rng() < (p.age >= 30 ? 0.55 : rising ? 0.6 : 0.2) ? FA.OPT_PLAYER : 0;
-        const deal = { sal: Math.min(FA.maxSalary(L, p), sal), yrs, opt };
+        const deal = { sal: Math.min(FA.maxSalary(L, p, true), sal), yrs, opt };
         signExtension(L, t, p, deal, true);
         list.push({ name: playerName(p), team: t.shortName, sal: deal.sal, yrs: deal.yrs, opt, lv });
       }
