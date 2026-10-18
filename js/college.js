@@ -91,6 +91,11 @@ export function seasonReview(data, li, team) {
 const C_PHASES = { 15: 'Season Complete', 8: 'Offseason', 5: 'All-American Showcase', 6: 'Recruiting', 9: 'New Season' };
 export const collegePhaseName = s => (s.phase === 6 ? `Recruiting · Day ${s.currentDay || 1}` : C_PHASES[s.phase] || `Phase ${s.phase}`);
 
+// Class year from the save's `yrs` (college: 0 freshman … 3 senior; a
+// player who left keeps it in history.yrs).
+export const CLASSES = ['Freshman', 'Sophomore', 'Junior', 'Senior'];
+export const classOf = y => CLASSES[Math.max(0, Math.min(3, y))];
+
 // Draft departures: players who left this college league for the pros. A
 // drafted player keeps his college past in history: coll = the college
 // league's index, id = his college id, tid = his school, yearDeclared.
@@ -107,7 +112,7 @@ export function draftDepartures(data, li) {
       const seasons = (p.stats || []).filter(x => x.league === li && (x.season || []).some(r => r.GP > 0)).length;
       const line = seasonLine(p, li, yr - 1);
       out.push({ p, pro: team, school: schools.get(h.tid) || null, pick: h.draft?.rd ? { rd: h.draft.rd, pk: h.draft.pk } : null,
-        seasons, line, li: pi });
+        cls: classOf(h.yrs ?? 0), seasons, line, li: pi });
     };
     for (const t of L.teams) for (const p of t.roster) add(p, t);
     for (const p of L.freeAgents || []) add(p, null);

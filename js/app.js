@@ -25,7 +25,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram } from './
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.42.1';
+const APP_VERSION = '0.42.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5586,17 +5586,18 @@ screens.departures = () => {
   const all = draftDepartures(state.data, state.leagueIdx);
   const drafted = all.filter(x => x.pick), undrafted = all.filter(x => !x.pick);
   const r1 = drafted.filter(x => x.pick.rd === 1).length;
+  const byCls = ['Freshman', 'Sophomore', 'Junior', 'Senior'].map(c => [c, all.filter(x => x.cls === c).length]).filter(x => x[1]);
   const mine = all.filter(x => x.school === t);
   const bySchool = [...all.reduce((m, x) => (x.school ? m.set(x.school, (m.get(x.school) || 0) + 1) : m), new Map())].sort((a, b) => b[1] - a[1]);
   const myRank = bySchool.findIndex(([sc]) => sc === t) + 1;
   const f1 = v => v.toFixed(1);
   const row = x => `<div class="drill-row ${x.school === t ? 'r1' : ''}"><span class="pk" style="min-width:34px">${x.pick ? `#${x.pick.pk}` : 'UDFA'}</span>
     <span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} <span class="stars">${stars(x.p.pot)}</span><br>
-    <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${esc(x.school?.shortName || '?')}${x.line ? ` · ${f1(x.line.ppg)}/${f1(x.line.rpg)}/${f1(x.line.apg)}` : ''}</span></span>
+    <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · ${x.cls} · ${esc(x.school?.shortName || '?')}${x.line ? ` · ${f1(x.line.ppg)}/${f1(x.line.rpg)}/${f1(x.line.apg)}` : ''}</span></span>
     <span class="small" style="text-align:right">${x.pro ? `${logoImg(x.pro)}<br>${esc(x.pro.shortName)}` : '<span class="muted">Unsigned</span>'}</span></div>`;
   layout({
     title: 'Draft Departures',
-    body: `<p class="note small"><b>${all.length}</b> players left the ${esc(L.shortName || 'college')} for the pros: <b>${drafted.length}</b> drafted (${r1} in the first round)${undrafted.length ? ` and ${undrafted.length} undrafted` : ''}.</p>
+    body: `<p class="note small"><b>${all.length}</b> players left the ${esc(L.shortName || 'college')} for the pros: <b>${drafted.length}</b> drafted (${r1} in the first round)${undrafted.length ? ` and ${undrafted.length} undrafted` : ''}: ${byCls.map(([c, n]) => `${n} ${c === 'Freshman' ? (n > 1 ? 'freshmen' : 'freshman') : c.toLowerCase() + (n > 1 ? 's' : '')}`).join(', ')}.</p>
       <fieldset class="frame"><legend>${esc(t ? t.shortName : 'Your School')}</legend>${mine.length ? `<div class="stack">${mine.map(row).join('')}</div>` : `<p class="note small muted">Nobody left ${esc(t?.city || 'your school')} for the pros this year.</p>`}
         ${myRank ? `<p class="note small" style="margin-top:6px">${myRank === 1 ? 'The most' : `No. ${myRank} in`} players sent to the pros this year.</p>` : ''}</fieldset>
       <fieldset class="frame"><legend>Pro Pipeline</legend><div class="stack">${bySchool.slice(0, 8).map(([sc, n], i) => `<div class="stand-row ${sc === t ? 'mine' : ''}"><span class="small muted">${i + 1}</span>${logoImg(sc)}<span class="grow small"><b>${esc(sc.shortName)}</b></span><span class="small">${n} player${n > 1 ? 's' : ''}</span></div>`).join('')}</div></fieldset>
