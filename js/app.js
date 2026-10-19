@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.101.1';
+const APP_VERSION = '0.102.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -829,7 +829,21 @@ const collegeCalKey = () => `hlc:ccal:${league().shortName}:${league().meta?.sav
 // it started from (reloaded) or a file the app exported from it. Any other
 // save of that year (say, the original simmed again to the same spot)
 // starts the offseason fresh.
-const saveFingerprint = (L = league()) => [L.season.phase, L.season.currentDay || 0, (L.season.news || []).length, L.meta?.uPID || 0, L.teams.reduce((n, t) => n + t.roster.length, 0)].join(':');
+const legacyFingerprint = (L = league()) => [L.season.phase, L.season.currentDay || 0, (L.season.news || []).length, L.meta?.uPID || 0, L.teams.reduce((n, t) => n + t.roster.length, 0)].join(':');
+// Besides where the season stands, it reads the players themselves (their rating
+// totals, ages and contracts), so two franchises started from the same league
+// file never look like the same save.
+const saveFingerprint = (L = league()) => {
+  let h = 0, n = 0;
+  for (const t of L.teams) for (const p of t.roster) {
+    n++;
+    let s = p.age * 7 + (p.contract?.sal || 0) * 13 + (p.contract?.yrs || 0) * 31 + (p.pot || 0);
+    for (const k in p.attributes) s += p.attributes[k][0];
+    h = (Math.imul(h, 31) + s) | 0;
+  }
+  const tail = (L.season.news || []).slice(-3).map(x => `${x.type}.${x.pid}.${x.date}`).join(',');
+  return [L.season.phase, L.season.currentDay || 0, (L.season.news || []).length, L.meta?.uPID || 0, n, L.season.teamId || 0, (h >>> 0).toString(36), tail].join(':');
+};
 // Simple or Complete rules, chosen when a save is first opened and kept
 // with the save's fingerprint. Simple: the offseason without aprons, tax,
 // pick protections, no-trade clauses or trade restrictions.
@@ -858,28 +872,42 @@ function depthPrompt() {
   });
 }
 const fpKey = () => `hlc:cfp:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+// Forget this season's stored progress (mocks, scouting, options, extensions, ...).
+function forgetProgress() {
+  const L = league();
+  const tails = [`:${L.shortName}:${L.meta?.saveName || ''}:${L.season.currentYear}`, `:${seasonKey(L)}`];
+  try {
+    const drop = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('hlc:') && k !== fpKey() && tails.some(t => k.endsWith(t))) drop.push(k);
+    }
+    drop.forEach(k => localStorage.removeItem(k));
+  } catch { /* ignore */ }
+  state.rm = null;
+  for (const k of ['strength', 'opts', 'pre', 'extS', 'tendS', 'survey']) state[k] = {};
+  state.cal = {};
+}
+actions.resetProgress = async () => {
+  if (!(await confirmBox('Start this offseason over? Mocks, scouting, options, extensions and the other steps you finished are forgotten. Your players and contracts stay as they are in the file.', 'Start Over'))) return;
+  forgetProgress();
+  toast('Offseason progress cleared');
+  goHome();
+};
 function freshSaveCheck() {
   const fp = saveFingerprint();
   let known = null;
   try { known = JSON.parse(localStorage.getItem(fpKey())); } catch { known = null; }
+  // Progress stored before the fingerprint read the players is matched by the old one, once, and moved over.
+  const old = legacyFingerprint();
+  if (known && known.base !== fp && !(known.exports || []).includes(fp) && (known.base === old || (known.exports || []).includes(old))) {
+    if (known.base === old) known.base = fp;
+    known.exports = (known.exports || []).map(x => (x === old ? fp : x));
+    try { localStorage.setItem(fpKey(), JSON.stringify(known)); } catch { /* ignore */ }
+  }
   state.fromExport = !!known && known.base !== fp && (known.exports || []).includes(fp);
   if (known && (known.base === fp || (known.exports || []).includes(fp))) { state.depth = known.depth || null; return; }
-  {
-    // A different save (or progress stored before saves were told apart):
-    // forget this season's stored progress.
-    const L = league();
-    const tails = [`:${L.shortName}:${L.meta?.saveName || ''}:${L.season.currentYear}`, `:${seasonKey(L)}`];
-    try {
-      const drop = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k?.startsWith('hlc:') && k !== fpKey() && tails.some(t => k.endsWith(t))) drop.push(k);
-      }
-      drop.forEach(k => localStorage.removeItem(k));
-    } catch { /* ignore */ }
-    state.rm = null;
-    for (const k of ['strength', 'opts', 'pre', 'extS', 'tendS', 'survey']) state[k] = {};
-  }
+  forgetProgress();                 // a different save (or progress stored before saves were told apart)
   state.depth = null;
   try { localStorage.setItem(fpKey(), JSON.stringify({ base: fp, exports: [] })); } catch { /* ignore */ }
 }
@@ -3147,6 +3175,7 @@ screens.settings = (args) => {
     body = `
       ${state.data && state.data.seasonLeagues.length > 1 ? setGroup('League', [`<div class="seg">${state.data.seasonLeagues.map((L, i) => `<button class="btn small ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}</div>`]) : ''}
       ${state.data && !isCollege() ? setGroup('Rules', [`<div class="seg">${[['simple', 'Simple'], ['complete', 'Complete']].map(([k, l]) => `<button class="btn small ${(state.depth || 'complete') === k ? 'on focus' : 'off'}" data-act="setDepth" data-v="${k}">${l}</button>`).join('')}</div>`, '<span class="note muted small">Simple: no aprons, tax, pick protections, no-trade clauses or trade restrictions.</span>']) : ''}
+      ${state.data && !isCollege() ? setGroup('Offseason Progress', ['<button class="btn small" data-act="resetProgress">↺ Start This Offseason Over</button>', '<span class="note muted small">Clears the steps marked done (mocks, scouting, options, extensions, ...) for this save.</span>']) : ''}
       ${setGroup('Offseason Bump', [
         options('Bump gives', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']]),
         options('Point focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']]),
@@ -3931,7 +3960,7 @@ screens.combine = (args) => {
     const board = C.boards[d.k];
     const dnp = board.filter(r => r.v == null);
     const shown = args.all ? board.filter(r => r.v != null) : board.filter(r => r.v != null).slice(0, 25);
-    body = `<div class="opts wrap">${DRILLS.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.name)}</button>`).join('')}</div>
+    body = `<div class="drill-opts">${DRILLS.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.short || x.name)}</button>`).join('')}</div>
       <fieldset class="frame"><legend>${esc(d.name)}</legend><div class="stack">${shown.map((r, i) => `<div class="drill-row ${rank.has(r.p.id) && rank.get(r.p.id) < 30 ? 'r1' : ''}">
         <span class="pk">${i + 1}</span><span class="grow">${nameBtn(r.p)}<br><span class="small muted">${esc(posName(r.p))} · ${heightStr(r.p.ht)} · ${r.p.wt} lb</span></span>
         <b class="drill-val">${fmtDrill(d, r.v)}</b></div>`).join('')}</div>

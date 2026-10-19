@@ -22,15 +22,15 @@ const q = v => Math.round(v * 4) / 4;     // quarter inches
 const lc = t => t.toLowerCase().replace(/\b(acl|mcl)\b/g, m => m.toUpperCase());
 
 export const DRILLS = [
-  { k: 'sprint', name: '3/4-Court Sprint', unit: 's', low: true, dec: 2, group: 'ath' },
-  { k: 'lane', name: 'Lane Agility', unit: 's', low: true, dec: 2, group: 'ath' },
-  { k: 'shuttle', name: 'Shuttle Run', unit: 's', low: true, dec: 2, group: 'ath' },
-  { k: 'maxVert', name: 'Max Vertical', unit: '"', dec: 1, group: 'ath' },
-  { k: 'standVert', name: 'Standing Vertical', unit: '"', dec: 1, group: 'ath' },
-  { k: 'bench', name: 'Bench Press (185 lb)', unit: ' reps', dec: 0, group: 'ath' },
-  { k: 'spot', name: 'Spot-Up Shooting', unit: '/25', dec: 0, group: 'shoot' },
-  { k: 'dribble', name: 'Off-the-Dribble Shooting', unit: '/25', dec: 0, group: 'shoot' },
-  { k: 'ft', name: 'Free Throws', unit: '/25', dec: 0, group: 'shoot' },
+  { k: 'sprint', short: '¾ Sprint', name: '3/4-Court Sprint', unit: 's', low: true, dec: 2, group: 'ath' },
+  { k: 'lane', short: 'Lane Agility', name: 'Lane Agility', unit: 's', low: true, dec: 2, group: 'ath' },
+  { k: 'shuttle', short: 'Shuttle Run', name: 'Shuttle Run', unit: 's', low: true, dec: 2, group: 'ath' },
+  { k: 'maxVert', short: 'Max Vert', name: 'Max Vertical', unit: '"', dec: 1, group: 'ath' },
+  { k: 'standVert', short: 'Standing Vert', name: 'Standing Vertical', unit: '"', dec: 1, group: 'ath' },
+  { k: 'bench', short: 'Bench Press', name: 'Bench Press (185 lb)', unit: ' reps', dec: 0, group: 'ath' },
+  { k: 'spot', short: 'Spot-Up', name: 'Spot-Up Shooting', unit: '/25', dec: 0, group: 'shoot' },
+  { k: 'dribble', short: 'Off Dribble', name: 'Off-the-Dribble Shooting', unit: '/25', dec: 0, group: 'shoot' },
+  { k: 'ft', short: 'Free Throws', name: 'Free Throws', unit: '/25', dec: 0, group: 'shoot' },
 ];
 export const MEASURES = [
   { k: 'htNs', name: 'Height (no shoes)' },
