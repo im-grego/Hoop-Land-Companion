@@ -34,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.98.1';
+const APP_VERSION = '0.99.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -635,11 +635,10 @@ actions.download = async () => {
 // A franchise save back into a league file, to start new saves from it.
 actions.downloadLeague = async () => {
   const L = league();
-  if (L.season.phase !== BUMP_PHASES[0] && !(await confirmBox('A league file should start after the draft and free agency. This save is at ' + esc(phaseName(L.season)) + '. Convert it anyway?', 'Convert'))) return;
   const o = overlay('<div class="spinner"></div><p class="note">Building league file…</p>');
   await nextFrame();
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
-  const C = saveToLeague(L, FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {});
+  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, ...(FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {}) });
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
   o.remove();
@@ -1112,11 +1111,12 @@ screens.main = () => {
       ${calendarCard()}
       <div class="grid2">
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
-        <button class="btn left" data-act="openLeaders" data-m="ratings"><span class="ico">🏀</span> League</button>
+        <button class="btn left" data-act="nav" data-to="editor"><span class="ico">🏀</span> League</button>
       </div>
-      <div class="grid2">
+      <div class="grid3">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
-        <label class="btn left"><span class="ico">📂</span> Load File<input type="file" id="fileInput"></label>
+        <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
+        <button class="btn left" data-act="downloadLeague"><span class="ico">🌐</span> Export League</button>
       </div>
       <p class="center muted small">Version ${APP_VERSION}</p>`,
   });
@@ -2476,15 +2476,12 @@ actions.openPlayer = d => go('player', { id: +d.id });
 
 screens.roster = (args) => {
   const L = league();
-  const mine0 = L.teams.filter(isUserTeam);
-  // Opening another team's page browses the whole league (◀ ▶ through every
-  // team); your own steps through your teams.
-  const others = args.arg != null && !mine0.some(t => t.id === +args.arg);
-  const mine = others ? L.teams : mine0;
+  const mine = L.teams;
   if (!mine.length) { replace('teams'); return; }
   let idx = mine.findIndex(t => t.id === +args.arg);
-  if (idx < 0) idx = 0;
+  if (idx < 0) idx = Math.max(0, mine.findIndex(isUserTeam));
   const t = mine[idx];
+  const others = !isUserTeam(t);
   const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
   const pts = rows.reduce((a, r) => a + r.d.apDelta.reduce((x, y) => x + y, 0), 0);
   const many = mine.length > 1;
@@ -8904,7 +8901,7 @@ screens.editor = (args = {}) => {
   const L = league();
   const tab = args.tab || 'teams';
   const tabs = [['teams', 'Teams'], ['picks', 'Picks'], ['coaches', 'Coaches'], ['tools', 'Tools']];
-  const head = `<p class="note small">${esc(L.leagueName || L.shortName)} · league file · ${L.teams.length} teams. Edits are written into the file when you export.</p>
+  const head = `<p class="note small">${esc(L.leagueName || L.shortName)} · ${state.leagueFile ? 'league file' : 'your save'} · ${L.teams.length} teams. ${state.leagueFile ? 'Edits are written into the file when you export.' : 'Edits change your save; Export League snapshots it.'}</p>
     <div class="tabs">${tabs.map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="edTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   let body = '';
   if (tab === 'teams') {
@@ -8916,6 +8913,8 @@ screens.editor = (args = {}) => {
       body = `<button class="btn small off" data-act="edTeam" data-id="">◀ All teams</button>
         <fieldset class="frame"><legend>${esc(t.city)} ${esc(t.name)}</legend>
           ${edStep('Fans', t.frontOffice?.fans ?? 0, 'edFans', `data-id="${t.id}"`, '0–100')}
+          ${t.frontOffice ? edStep('Coins', t.frontOffice.coins ?? 0, 'edCoins', `data-id="${t.id}"`, '±50') : ''}
+          ${FX.FACILITIES.map(f => edStep(`${f.icon} ${esc(f.label)}`, FX.tierIn(t, f.k), 'edFac', `data-id="${t.id}" data-k="${f.k}"`, 'tier 1–4')).join('')}
           <p class="note small" style="margin-top:6px">Team tag (the game's)</p>
           ${edSeg(ED_TAGS.map((n, i) => [i, n]), t.status ?? 0, 'edTag', `data-id="${t.id}"`)}
           <p class="note small muted">The app reads it as ${esc(appTier(t))}.</p>
@@ -8929,7 +8928,7 @@ screens.editor = (args = {}) => {
     // fills in the rest. Show every pick of the team picked, who holds it, and
     // write an outright entry when one is moved.
     const A = L.teams.find(x => x.id === args.tid) || L.teams[0];
-    const y0 = L.season.startingYear || 2027;
+    const y0 = state.leagueFile ? (L.season.startingYear || 2027) : Math.min(...L.teams.flatMap(t => t.draftPicks.map(p => p.yr)), L.season.currentYear);
     const rows = [];
     for (let y = y0; y < y0 + 7; y++) for (const rd of [1, 2]) rows.push({ y, rd, holder: pickHolder(L, A.id, y, rd) });
     body = `<p class="note small">Pick a team to see its own picks and who holds them. Sending one writes it into the league file.</p>
@@ -8946,7 +8945,8 @@ screens.editor = (args = {}) => {
     const missing = edPlayers(L).filter(p => !p.traits || !Object.values(p.traits).some(v => v > 0)).length;
     body = `<fieldset class="frame"><legend>Traits</legend><p class="note small">${missing} players have no traits set. Open a player from a team's roster to edit his, or fill the empty ones with the app's judgments (real careers for known players, generated for the rest).</p>
       <button class="btn" data-act="edFillTraits">Fill empty traits</button></fieldset>
-      <fieldset class="frame"><legend>Export</legend><p class="note small">Writes the league file with your edits. Start a new save from it in the game.</p><button class="btn focus" data-act="download">💾 Download League File</button></fieldset>`;
+      <fieldset class="frame"><legend>Export</legend><p class="note small">Writes the league file with your edits. Start a new save from it in the game.</p><button class="btn focus" data-act="${state.leagueFile ? 'download' : 'downloadLeague'}">💾 Download League File</button></fieldset>
+      ${state.leagueFile ? '' : '<fieldset class="frame"><legend>Stats</legend><button class="btn" data-act="openLeaders" data-m="ratings">🏀 League Leaders</button></fieldset>'}`;
   }
   layout({ title: 'League Editor', body: head + body });
 };
@@ -8958,6 +8958,13 @@ actions.edTab = d => replace('editor', { tab: d.t });
 actions.edTeam = d => replace('editor', { tab: 'teams', tid: d.id === '' ? undefined : +d.id });
 actions.edFans = d => { const t = league().teams.find(x => x.id === +d.id); t.frontOffice.fans = Math.max(0, Math.min(100, (t.frontOffice.fans ?? 0) + 5 * +d.d)); state.dirty = true; render(); };
 actions.edTag = d => { const t = league().teams.find(x => x.id === +d.id); t.status = +d.v; state.dirty = true; render(); };
+actions.edCoins = d => { const t = league().teams.find(x => x.id === +d.id); t.frontOffice.coins = Math.max(0, (t.frontOffice.coins ?? 0) + 50 * +d.d); state.dirty = true; render(); };
+actions.edFac = d => {
+  const t = league().teams.find(x => x.id === +d.id), fac = FX.facilityOf(t, d.k);
+  if (!fac) { toast('No such building on this team', '', 2400, true); return; }
+  fac.tier = Math.max(1, Math.min(FX.MAX_FAC_TIER, FX.tierIn(t, d.k) + +d.d));
+  state.dirty = true; render();
+};
 actions.edBlock = d => { const p = edPlayers(league()).find(x => x.id === +d.id); if (p?.season) { p.season.onTradeBlock = +d.v; state.dirty = true; render(); } };
 actions.edPlayer = d => {
   const L = league(), p = edPlayers(L).find(x => x.id === +d.id);
@@ -8966,12 +8973,20 @@ actions.edPlayer = d => {
   for (const t of ED_TRAITS) p.traits[t.k] ??= 0;
   const box = overlay('');
   const paint = () => {
-    box.querySelector('.box').innerHTML = `<p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">Traits (0 = unset)</span></p>
+    box.querySelector('.box').innerHTML = `<p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">Contract, morale and traits (0 = unset)</span></p>
+      ${p.contract?.sal ? `<div class="pts-row"><span class="grow small">Salary $M</span><button class="btn square" data-c="sal" data-d="-0.5">−</button><span class="pts-val">${p.contract.sal}</span><button class="btn square" data-c="sal" data-d="0.5">+</button></div>
+      <div class="pts-row"><span class="grow small">Years left</span><button class="btn square" data-c="yrs" data-d="-1">−</button><span class="pts-val">${p.contract.yrs}</span><button class="btn square" data-c="yrs" data-d="1">+</button></div>` : ''}
+      ${p.season && p.season.morale !== undefined ? `<div class="pts-row"><span class="grow small">Morale</span><button class="btn square" data-m="1" data-d="-1">−</button><span class="pts-val">${p.season.morale}</span><button class="btn square" data-m="1" data-d="1">+</button></div>` : ''}
+      ${state.leagueFile ? '' : '<button class="btn small" data-prof>Full profile</button>'}
       ${ED_TRAITS.map(t => `<div class="pts-row"><span class="grow small">${esc(t.lo)} ↔ ${esc(t.hi)}</span><button class="btn square" data-k="${t.k}" data-d="-1">−</button><span class="pts-val">${p.traits[t.k]}</span><button class="btn square" data-k="${t.k}" data-d="1">+</button></div>`).join('')}
       <button class="btn off" data-close>Done</button>`;
   };
   box.addEventListener('click', e => {
     if (e.target.closest('[data-close]')) { box.remove(); render(); return; }
+    if (e.target.closest('[data-prof]')) { box.remove(); go('player', { id: p.id }); return; }
+    const c = e.target.closest('[data-c]'), m = e.target.closest('[data-m]');
+    if (c) { const k = c.dataset.c; p.contract[k] = Math.max(k === 'yrs' ? 1 : 0.5, Math.round((p.contract[k] + +c.dataset.d) * 2) / 2); state.dirty = true; paint(); return; }
+    if (m) { p.season.morale = Math.max(0, Math.min(100, p.season.morale + 5 * +m.dataset.d)); state.dirty = true; paint(); return; }
     const b = e.target.closest('[data-k]');
     if (!b) return;
     p.traits[b.dataset.k] = Math.max(0, Math.min(20, p.traits[b.dataset.k] + +b.dataset.d));

@@ -10,7 +10,7 @@ import { fillTraits } from './traits.js';
 
 const TRAIT_KEYS = ['durability', 'winning', 'money', 'loyalty', 'motor', 'lockerRoom', 'playoffRiser', 'roadWarrior'];
 
-export function saveToLeague(L, { suffix = true, cap = null, maxContract = null } = {}) {
+export function saveToLeague(L, { suffix = true, cap = null, maxContract = null, keepDraft = false } = {}) {
   const C = parseSave(serializeSave(L));          // a copy; the open save is left alone
   const Y = C.season.currentYear;
   const S = C.season;
@@ -19,7 +19,7 @@ export function saveToLeague(L, { suffix = true, cap = null, maxContract = null 
   if (maxContract) S.maxContract = maxContract;
   C.meta.dataType = 1;
   if (suffix && C.meta.saveName && !/ \(league \d+\)$/.test(C.meta.saveName)) C.meta.saveName = `${C.meta.saveName} (league ${Y})`;
-  C.draftClass = [];
+  if (!keepDraft) C.draftClass = [];
   C.contractOffers = [];
   C.currentGame = structuredClone(BLANK_GAME);
   C.career = structuredClone(BLANK_CAREER);
@@ -30,7 +30,7 @@ export function saveToLeague(L, { suffix = true, cap = null, maxContract = null 
     t.headToHeads = [];
     // The coming season's empty row isn't history yet; picks for drafts already held are spent.
     if (t.season) t.season = t.season.filter(r => !(r.yr >= Y && !(r.seasonStats?.GP > 0)));
-    if (t.draftPicks) t.draftPicks = t.draftPicks.filter(pk => pk.yr > Y);
+    if (t.draftPicks) t.draftPicks = t.draftPicks.filter(pk => keepDraft ? pk.yr >= Y : pk.yr > Y);
   }
   for (const t of C.teams.concat(C.starTeams || [])) if (t.legacy === undefined) t.legacy = 0;
   for (const p of people) {
