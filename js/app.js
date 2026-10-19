@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.72.0';
+const APP_VERSION = '0.73.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1409,7 +1409,7 @@ screens.facilities = () => {
         return `<fieldset class="frame"><legend>${f.icon} ${f.label}</legend><div class="tree">${f.tiers.map((tier, i) => {
           const lv = i + 1, have = cur >= lv, next = lv === cur + 1;
           return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : next ? 'next' : 'locked'}">
-            <b class="tn-name">Tier ${lv} · ${esc(tier.name)}</b>
+            <b class="tn-name">Level ${lv} · ${esc(tier.name)}</b>
             <span class="small tn-text">${tier.lines.map(l => `• ${esc(l)}`).join('<br>')}</span>
             ${have ? '<span class="up tn-cost">✓</span>' : next ? `<button class="btn small ${coins >= cost ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" ${coins >= cost ? '' : 'disabled'}>Upgrade ${coinTag(cost)}</button>` : `<span class="muted small tn-cost">${coinTag(FX.upgradeCost(lv - 1))}</span>`}
           </div>`;
@@ -3112,7 +3112,8 @@ function saveSalt() {
   return h >>> 0;
 }
 const scoutFog = () => state.params.scoutVariance * FX.facilityFx(myTeam()).fog;
-const scoutPot = p => workoutDone(p.id) ? p.pot : scoutedPot(p, saveSalt(), scoutFog());
+const revealed = id => !!preStore().reveals?.[id];
+const scoutPot = p => workoutDone(p.id) || revealed(p.id) ? p.pot : scoutedPot(p, saveSalt(), scoutFog());
 // Rating ceilings stay hidden until scouted: a few come out during
 // scouting, more at the combine (athletic ones most), and a private workout
 // shows them all. Which ones is fixed per save + prospect.
@@ -3120,7 +3121,8 @@ const COMBINE_ATTRS = new Set(['STR', 'SPD', 'STM', 'DNK']);
 function ceilStage(p, k) {
   const h = Math.imul((saveSalt() ^ Math.imul(p.id + 1, 2654435761) ^ Math.imul(k.charCodeAt(0) * 131 + k.charCodeAt(2), 40503)) >>> 0, 2246822519) >>> 0;
   const r = h / 4294967296;
-  return r < 0.15 ? 1 : r < (COMBINE_ATTRS.has(k) ? 0.5 : 0.3) ? 2 : 9;
+  const m = FX.facilityFx(myTeam()).ceilMult;
+  return r < 0.15 * m ? 1 : r < (COMBINE_ATTRS.has(k) ? 0.5 : 0.3) * m ? 2 : 9;
 }
 function ceilKnown(p, k) {
   if (!league().draftClass?.some(x => x.id === p.id)) return true;   // drafted: everything shows
@@ -3539,7 +3541,7 @@ function preStore() {
   if (!cache[key]) {
     let v = {};
     try { v = JSON.parse(localStorage.getItem(`hlc:pre:${key}`)) || {}; } catch { v = {}; }
-    cache[key] = { steps: {}, workouts: {}, ...v };
+    cache[key] = { steps: {}, workouts: {}, reveals: {}, ...v };
   }
   return cache[key];
 }
@@ -3740,8 +3742,8 @@ function combineBox(p) {
 // his own words, then our staff adds what they saw. His true ceiling (and
 // every rating's ceiling) is revealed once the interview is done.
 
-const interviewQs = () => 3 + FX.facilityFx(myTeam()).interviews;
-const workoutSlots = () => (state.params.workoutSlots ?? 6) * Math.max(1, state.userTeams.size);
+const interviewQs = () => 3;
+const workoutSlots = () => (state.params.workoutSlots ?? 6) * Math.max(1, state.userTeams.size) + FX.facilityFx(myTeam()).workouts;
 const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= interviewQs();
 const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
 const myTeam = () => league().teams.find(isUserTeam);
@@ -3749,8 +3751,8 @@ const myTeam = () => league().teams.find(isUserTeam);
 // three pairs: each round you ask one of the two, and the other is gone.
 function interviewPairs(p) {
   const rng = mulberry32((saveSalt() ^ Math.imul(p.id + 7, 2654435761)) >>> 0);
-  const qs = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 8).map(y => y.x);
-  return [qs.slice(0, 2), qs.slice(2, 4), qs.slice(4, 6), qs.slice(6, 8)].filter(x => x.length).slice(0, interviewQs());
+  const qs = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 6).map(y => y.x);
+  return [qs.slice(0, 2), qs.slice(2, 4), qs.slice(4, 6)].filter(x => x.length);
 }
 
 // How much a rating can still grow: its ceiling (true potential) minus today.
@@ -3813,8 +3815,6 @@ function workoutQs(p) {
     { k: 'future', q: 'Where do you see yourself in five years?' },
     { k: 'model', q: 'Who do you model your game after?' },
     { k: 'work', q: 'What do you need to work on?' },
-    { k: 'pressure', q: 'How do you handle the big moments?' },
-    { k: 'leader', q: 'Are you a leader or a follower in the locker room?' },
   ];
 }
 const OLD_Q = { work: 'What do you need to work on?' };
@@ -3879,14 +3879,6 @@ function workoutAnswer(p, k) {
     return { quote: vary2(p, 5, ['Drills aren\'t basketball. Put on the tape.', 'I had a bad day. I\'m not a 40-yard-dash guy, I\'m a hooper.']),
       staff: frameNote(p, 'Trainers', 'test') };
   }
-  if (k === 'pressure') {
-    return { quote: vary2(p, 8, ['I want the ball. That\'s what I\'ve worked for.', 'The bigger the moment, the calmer I get.', 'I don\'t think about it. I just play.']), staff: '' };
-  }
-  if (k === 'leader') {
-    const lr = p.traits?.lockerRoom ?? 10;
-    return { quote: lr >= 14 ? 'A leader. I\'ll set the tone from day one.' : lr <= 6 ? 'I\'m here to hoop. Let the vets run the room.' : vary2(p, 9, ['I lead by example, then by voice.', 'I\'ll follow the vets first, then step up.']),
-      staff: p.traits ? `Front office: locker room presence ${traitWord(lr).toLowerCase()}.` : '' };
-  }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
     return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a really good team.']),
@@ -3939,6 +3931,26 @@ function workoutResult(p) {
     : `<span class="down">Not what we hoped: ${t} ceiling (we had ${tierFor(before)}).</span>`;
 }
 
+// Instant read: the scouting network confirms a prospect's true potential
+// (no workout needed), a limited number a draft.
+const revealsLeft = () => FX.facilityFx(myTeam()).reveals - Object.keys(preStore().reveals || {}).length;
+function revealBox(p) {
+  const max = FX.facilityFx(myTeam()).reveals;
+  if (!max || workoutDone(p.id)) return '';
+  if (revealed(p.id)) return `<p class="note small up">🔍 Scouts confirmed his potential.</p>`;
+  const left = revealsLeft();
+  return `<button class="btn small ${left > 0 ? '' : 'off'}" data-act="revealPot" data-id="${p.id}" ${left > 0 ? '' : 'disabled'}>🔍 Instant potential read · ${Math.max(0, left)} of ${max} left</button>`;
+}
+actions.revealPot = d => {
+  const pre = preStore();
+  if (revealsLeft() <= 0 || revealed(+d.id)) return;
+  (pre.reveals ||= {})[+d.id] = true;
+  savePre();
+  state.compCache = {};
+  const p = league().draftClass.find(x => x.id === +d.id);
+  if (p) toast(`${playerName(p)}: ${tierFor(p.pot)} potential confirmed`);
+  render();
+};
 function workoutBox(p) {
   const w = preStore().workouts[p.id];
   if (!w) return '';
@@ -3962,6 +3974,7 @@ screens.workouts = (args) => {
       <div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>
       <p class="note small">${workoutResult(p)}</p>
       ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}
+      ${w.qs.length >= interviewQs() && FX.facilityFx(myTeam()).goodCop && w.qs.length < 6 ? `<p class="note muted small">Good cop, bad cop: ask the rest.</p>${interviewPairs(p).flat().filter(x => !w.qs.includes(x.k)).map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
       ${more > 0 && interviewPairs(p)[w.qs.length] ? `<p class="note muted small">Question ${w.qs.length + 1} of ${interviewQs()}: pick one.</p>${interviewPairs(p)[w.qs.length].map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
     </div>`;
   }).join('');
@@ -3969,7 +3982,7 @@ screens.workouts = (args) => {
   const shown = args.all ? pool : pool.slice(0, 40);
   layout({
     title: 'Private Workouts',
-    body: `<p class="note small">Bring prospects in to work out. ${interviewQs() === 3 ? 'Three' : 'Four'} rounds of questions: pick one of two each time. After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
+    body: `<p class="note small">Bring prospects in to work out. Three rounds of questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''} After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
       ${inGym ? `<fieldset class="frame"><legend>In the Gym</legend><div class="stack">${inGym}</div></fieldset>` : ''}
       <fieldset class="frame"><legend>Invite</legend>
         <p class="note muted small" style="margin-bottom:6px">Your board first, then the rest of the class.</p>
@@ -3991,12 +4004,15 @@ actions.invite = d => {
 actions.askQ = d => {
   const w = preStore().workouts[+d.id];
   const p0 = league().draftClass.find(x => x.id === +d.id);
-  if (!w || !p0 || w.qs.length >= interviewQs() || w.qs.includes(d.k)) return;
-  // Only one of this round's pair can be asked.
-  if (!(interviewPairs(p0)[w.qs.length] || []).some(x => x.k === d.k)) return;
+  const cop = FX.facilityFx(myTeam()).goodCop;
+  if (!w || !p0 || w.qs.length >= (cop ? 6 : interviewQs()) || w.qs.includes(d.k)) return;
+  // Only one of this round's pair can be asked, until the interview is done:
+  // then good cop, bad cop opens the rest.
+  if (w.qs.length < interviewQs()) { if (!(interviewPairs(p0)[w.qs.length] || []).some(x => x.k === d.k)) return; }
+  else if (!interviewPairs(p0).flat().some(x => x.k === d.k)) return;
   w.qs.push(d.k);
   savePre();
-  if (w.qs.length >= interviewQs()) {
+  if (w.qs.length === interviewQs()) {
     state.compCache = {};
     const p = league().draftClass.find(x => x.id === +d.id);
     if (p) toast(`Workout done: ${playerName(p)}`, 'His ceiling and every rating\'s ceiling are on his page.');
@@ -4219,7 +4235,7 @@ screens.prospect = (args) => {
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
       ${playStyleBox(p)}
       ${traitsBox(p, true)}
-      ${workoutBox(p)}${combineBox(p)}
+      ${workoutBox(p)}${revealBox(p)}${combineBox(p)}
       <fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
         ${[...SKILL_ATTRS, ...PHYSICAL].map(k => {
@@ -6825,7 +6841,7 @@ function extAsk(p, team) {
   const greed = 1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015;
   // He opens high (and always above the minimum) and can be talked down.
   let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
-  if (isUserTeam(team)) sal = Math.round(sal * fxNow().askMult);
+  if (isUserTeam(team)) sal = Math.round(sal * fxNow().askMult * FX.facilityFx(team).askMult);
   sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p, true), sal));
   const yrs = p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
   const loyal = tr(p, 'loyalty') >= 16, mercenary = tr(p, 'loyalty') <= 5;
