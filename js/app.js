@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.92.0';
+const APP_VERSION = '0.92.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3842,7 +3842,7 @@ const COVER = {
 // strengths: { area, k, kind, label, gap, text, q }.
 const GAME_AREAS = [
   { id: 'inside', k: 'INS', attrs: ['LAY', 'INS'], tend: t => t.floater + t.post + t.hook, strong: ['Inside Shooting', 'is a polished inside scorer'], sel: ['Inside Shot Selection', 'takes inside shots he can\'t finish yet', 'You take a lot of tough shots inside. Why?'], hes: ['Inside Shot Hesitance', 'can finish inside but passes up looks', 'You can score inside but you don\'t look for it. Why not?'], size: true },
-  { id: 'dunk', k: 'DNK', attrs: ['DNK'], tend: t => t.dunk, strong: ['Strong Finishing', 'finishes strong above the rim'], sel: ['Weak Finishing', 'goes up strong at the rim without the explosiveness to back it up', 'You go up strong at everyone. Is that smart?'], hes: ['Passive Finishing', 'has the hops but won\'t attack the rim', 'You have the athleticism but settle. Why not go at the rim?'] },
+  { id: 'dunk', k: 'DNK', attrs: ['DNK'], tend: t => t.dunk, strong: ['Strong Finishing', 'is explosive and finishes through contact'], sel: ['Weak Finishing', 'attacks the basket without the athleticism to finish through contact', 'You drive at the rim every chance you get. Can you finish through the contact?'], hes: ['Passive Finishing', 'has the explosiveness to finish through contact but rarely attacks the basket', 'You\'re a freak athlete but you rarely drive. Why not attack the rim?'] },
   { id: 'mid', k: 'MID', attrs: ['MID'], tend: t => t.twoPoint, strong: ['Mid-Range Shooting', 'is a real mid-range threat'], sel: ['Mid-Range Shot Selection', 'settles for pull-up jumpers he doesn\'t make', 'Scouts say you settle for pull-up jumpers. Why?'], hes: ['Mid-Range Shot Hesitance', 'has a mid-range shot he doesn\'t trust', 'You\'re a good mid-range shooter but you rarely take it. Why?'] },
   { id: 'three', k: 'TPT', attrs: ['TPT'], tend: t => t.threePoint, strong: ['3PT Shooting', 'is a legitimate three-point shooter'], sel: ['3PT Shot Selection', 'shoots way too many threes for his skill', 'Scouts say you take too many threes for your percentage. Why?'], hes: ['3PT Shot Hesitance', 'can shoot it but won\'t let it fly', 'You can shoot the three but you pass them up. Why?'] },
   { id: 'dribble', k: 'DRB', attrs: ['DRB'], tend: t => t.cross + t.spin + t.step, strong: ['Ball Handling', 'has real ball handling'], over: ['Over Dribbling', 'over-dribbles and holds the ball too long', 'You put the ball on the floor a lot. Is that who you are?'] },
