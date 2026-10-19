@@ -346,7 +346,7 @@ export function runSurvey(L, li = 0, salt = 1) {
   out.push(ask('shooter', 'Other', 'Who is the best pure shooter?',
     ppl(p => { const l = L_(p); return A(p, 'TPT') * 0.5 + A(p, 'MID') * 0.2 + A(p, 'FTS') * 0.3 + (l.tpa >= 3 ? (l.tp - 0.35) * 40 : 0) + skillLv(p, 'LIM'); })));
   out.push(ask('fastest', 'Other', 'Which player is the fastest with the ball?', ppl(p => A(p, 'SPD') * 0.6 + A(p, 'DRB') * 0.4 + skillLv(p, 'STE'))));
-  out.push(ask('passer', 'Other', 'Who is the best passer?', ppl(p => A(p, 'PAS') * 0.6 + L_(p).apg * 1.1 + skillLv(p, 'DIM') + skillLv(p, 'HOT'))));
+  out.push(ask('passer', 'Other', 'Who is the best passer?', ppl(p => A(p, 'PAS') * 0.9 + L_(p).apg * 0.9 + (p.tendencies?.pass ?? 0) * 0.6 + (p.tendencies?.lob ?? 0) * 0.15 + skillLv(p, 'DIM') + skillLv(p, 'HOT'))));
   out.push(ask('leader', 'Other', 'Who is the best leader?',
     ppl((p, t) => (p.age >= 27 ? 3 : 0) + Math.min(p.yrs || 0, 12) * 0.3 + levelOf(p) * 0.08 + pct(t) * 6 + (roleRank(p, t) <= 3 ? 2 : 0))));
   out.push(ask('versatile', 'Other', 'Who is the most versatile player in the league?',
