@@ -1274,3 +1274,4 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 
 button.hg-post { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
 button.hg-post:active { filter: brightness(1.15); }
+.status.s-competing { color: #7fe3a0; }

@@ -33,7 +33,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.95.0';
+const APP_VERSION = '0.96.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -441,13 +441,24 @@ async function loadFile(file) {
   await nextFrame();
   try {
     const text = await file.text();
-    const data = parseSave(text);
+    let data = parseSave(text);
+    // A league file is the league object itself (no seasonLeagues wrapper): open it in the editor.
+    state.leagueFile = false;
+    if (!data.seasonLeagues && Array.isArray(data.teams) && data.season) { data = { seasonLeagues: [data] }; state.leagueFile = true; }
     if (!Array.isArray(data.seasonLeagues) || !data.seasonLeagues.length) throw new Error('No seasonLeagues found');
     state.fileName = file.name;
     state.undo = null;
     state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null;
     preloadLogos(data);   // start the team logos downloading before the heavy setup
     installData(data);
+    if (state.leagueFile) {
+      leagueTraitsIn(data.seasonLeagues[0]);
+      state.depth = 'complete'; state.dirty = false;
+      o.remove();
+      toast(`Loaded league file: ${data.seasonLeagues[0].meta?.saveName || file.name}`, 'Edit it, then export it as a league file.');
+      goHome();
+      return;
+    }
     freshSaveCheck();
     unstampDraftYear();
     const reopened = reopenOptions();
@@ -550,6 +561,7 @@ function spendAllPoints(L) {
   return n;
 }
 function buildExport() {
+  if (state.leagueFile) return buildLeagueExport();
   state.data.seasonLeagues.forEach((L, li) => { if (state.summer[li]) markSummerDone(L); });
   if (!isCollege() && league().season.phase === BUMP_PHASES[0]) spendAllPoints(league());
   // The game's cap becomes this season's 2nd apron (room for in-season
@@ -961,7 +973,7 @@ const STEP_SCREENS = {
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1062,6 +1074,7 @@ screens.main = () => {
     });
     return;
   }
+  if (state.leagueFile) { screens.editor({}); return; }
   const L = league();
   const s = L.season;
   const players = leaguePlayers(L, true).length;
@@ -8783,6 +8796,156 @@ actions.dbxUploadStories = async () => {
   const text = storylinesText(currentStorylines().stories, currentStorylines().podium);
   await dbxSend(new Blob([text], { type: 'text/plain' }), `${state.fileName} storylines ${league().season.currentYear}.txt`, 'storylines');
 };
+
+// ---------------------------------------------------------------------------
+// League editor: open a league file (the league object on its own), change
+// what the game's editor can't reach, and export it again to start new saves.
+// Traits sit on a 0-100 scale in the file and 0-20 here; 0 means unset.
+
+const ED_TAGS = ['Rebuilding', 'Developing', 'Competing', 'Contending'];
+const ED_TRAITS = [...TRAITS.map(t => ({ k: t.k, label: t.label, lo: t.lo, hi: t.hi })), { k: 'roadWarrior', label: 'Road Warrior', lo: 'Homebody', hi: 'Road Warrior' }];
+const edPlayers = L => L.teams.flatMap(t => t.roster).concat(L.freeAgents || []);
+// The file's own values, so traits nobody touched go back out exactly as they came in.
+const rawTraits = new WeakMap();
+function leagueTraitsIn(L) {
+  for (const p of edPlayers(L)) {
+    if (!p.traits) continue;
+    rawTraits.set(p, { ...p.traits });
+    for (const k of ED_TRAITS.map(t => t.k)) if (p.traits[k] > 0) p.traits[k] = Math.max(1, Math.min(20, Math.round(p.traits[k] / 5)));
+  }
+}
+function buildLeagueExport() {
+  const L = state.data.seasonLeagues[0];
+  const keep = new Map();
+  for (const p of edPlayers(L)) {
+    if (!p.traits) continue;
+    keep.set(p, { ...p.traits });
+    const raw = rawTraits.get(p) || {};
+    for (const t of ED_TRAITS) {
+      const v = p.traits[t.k];
+      if (v === undefined) continue;
+      const was = raw[t.k] ?? 0;
+      const same = v === (was > 0 ? Math.max(1, Math.min(20, Math.round(was / 5))) : 0);
+      p.traits[t.k] = same ? was : Math.max(0, Math.min(100, Math.round(v * 5)));
+    }
+  }
+  const text = serializeSave(L);
+  for (const [p, t] of keep) p.traits = t;
+  return new File([text], state.fileName, { type: 'application/octet-stream' });
+}
+const edStep = (label, val, act, data, note = '') => `<div class="pts-row"><span class="grow">${label}${note ? ` <span class="small muted">${note}</span>` : ''}</span><button class="btn square" data-act="${act}" ${data} data-d="-1">−</button><span class="pts-val">${val}</span><button class="btn square" data-act="${act}" ${data} data-d="1">+</button></div>`;
+const edSeg = (opts, cur, act, data) => `<div class="tabs fa-tabs">${opts.map(([v, l]) => `<button class="btn small ${cur === v ? 'on focus' : 'off'}" data-act="${act}" ${data} data-v="${v}">${l}</button>`).join('')}</div>`;
+screens.editor = (args = {}) => {
+  const L = league();
+  const tab = args.tab || 'teams';
+  const tabs = [['teams', 'Teams'], ['picks', 'Picks'], ['coaches', 'Coaches'], ['tools', 'Tools']];
+  const head = `<p class="note small">${esc(L.leagueName || L.shortName)} · league file · ${L.teams.length} teams. Edits are written into the file when you export.</p>
+    <div class="tabs">${tabs.map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="edTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  let body = '';
+  if (tab === 'teams') {
+    const t = L.teams.find(x => x.id === args.tid);
+    if (!t) {
+      body = `<div class="list">${[...L.teams].sort((a, b) => a.city.localeCompare(b.city)).map(x => `<button class="prow" data-act="edTeam" data-id="${x.id}"><span class="name">${logoImg(x)} ${esc(x.city)} ${esc(x.name)}</span><span class="right small">${ED_TAGS[x.status ?? 0] || '—'}<br><span class="muted">fans ${x.frontOffice?.fans ?? 0}</span></span><span class="meta">${x.roster.length} players · ${x.draftPicks.length} picks</span></button>`).join('')}</div>`;
+    } else {
+      const ro = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a));
+      body = `<button class="btn small off" data-act="edTeam" data-id="">◀ All teams</button>
+        <fieldset class="frame"><legend>${esc(t.city)} ${esc(t.name)}</legend>
+          ${edStep('Fans', t.frontOffice?.fans ?? 0, 'edFans', `data-id="${t.id}"`, '0–100')}
+          <p class="note small" style="margin-top:6px">Team tag (the game's)</p>
+          ${edSeg(ED_TAGS.map((n, i) => [i, n]), t.status ?? 0, 'edTag', `data-id="${t.id}"`)}
+          <p class="note small muted">The app reads it as ${esc(appTier(t))}.</p>
+        </fieldset>
+        <fieldset class="frame"><legend>Roster · trade block</legend><div class="stack">${ro.map(p => `<div class="drill-row wrap">
+          <span class="grow"><button class="linkish" data-act="edPlayer" data-id="${p.id}">${esc(playerName(p))}</button> ${lvTag(p)} <span class="small muted">${esc(posName(p))} · ${p.age}y</span></span>
+          <span class="full">${edSeg([[0, 'No'], [1, 'On the block'], [2, 'Untouchable']], p.season?.onTradeBlock ?? 0, 'edBlock', `data-id="${p.id}"`)}</span></div>`).join('')}</div></fieldset>`;
+    }
+  } else if (tab === 'picks') {
+    // A league file lists only some picks outright (traded ones); the game
+    // fills in the rest. Show every pick of the team picked, who holds it, and
+    // write an outright entry when one is moved.
+    const A = L.teams.find(x => x.id === args.tid) || L.teams[0];
+    const y0 = L.season.startingYear || 2027;
+    const rows = [];
+    for (let y = y0; y < y0 + 7; y++) for (const rd of [1, 2]) rows.push({ y, rd, holder: pickHolder(L, A.id, y, rd) });
+    body = `<p class="note small">Pick a team to see its own picks and who holds them. Sending one writes it into the league file.</p>
+      <select class="sel-team" data-act="edPickTeam">${L.teams.map(x => `<option value="${x.id}" ${x === A ? 'selected' : ''}>${esc(x.city)} ${esc(x.name)}</option>`).join('')}</select>
+      <div class="stack" style="margin-top:8px">${rows.map(r => `<div class="drill-row wrap"><span class="grow">${r.y} R${r.rd} <span class="muted small">· ${r.holder.id === A.id ? 'kept' : `held by ${esc(r.holder.shortName)}`}</span></span>
+        <select class="sel-team" data-act="edPickTo" data-tid="${A.id}" data-yr="${r.y}" data-rd="${r.rd}"><option value="">Send to…</option>${L.teams.filter(x => x !== r.holder).map(x => `<option value="${x.id}">${esc(x.shortName)}${x.id === A.id ? ' (back)' : ''}</option>`).join('')}</select></div>`).join('')}</div>`;
+  } else if (tab === 'coaches') {
+    const staffs = L.teams.flatMap(t => (t.frontOffice?.staff || []).filter(c => c.pri === 1 || (c.attributes?.development?.[1] || 0) > 0).map(c => ({ c, t })));
+    const pool = (L.coaches || []).filter(c => c.attributes).map(c => ({ c, t: null }));
+    const row = ({ c, t }) => `<fieldset class="frame"><legend>${esc(c.fn)} ${esc(c.ln)} · ${t ? esc(t.shortName) : 'Free agent'}</legend>
+      ${['development', 'motivation', 'leadership'].map(k => `${edStep(k[0].toUpperCase() + k.slice(1) + ' now', c.attributes[k][0], 'edCoach', `data-id="${c.id}" data-k="${k}" data-w="0"`)}${edStep('&nbsp;&nbsp;max', c.attributes[k][1], 'edCoach', `data-id="${c.id}" data-k="${k}" data-w="1"`)}`).join('')}</fieldset>`;
+    body = `<p class="note small">Each coach's three skill-tree levels (current and max): Development, Motivation (culture) and Leadership (scheme).</p>${[...staffs, ...pool].map(row).join('')}`;
+  } else {
+    const missing = edPlayers(L).filter(p => !p.traits || !Object.values(p.traits).some(v => v > 0)).length;
+    body = `<fieldset class="frame"><legend>Traits</legend><p class="note small">${missing} players have no traits set. Open a player from a team's roster to edit his, or fill the empty ones with the app's judgments (real careers for known players, generated for the rest).</p>
+      <button class="btn" data-act="edFillTraits">Fill empty traits</button></fieldset>
+      <fieldset class="frame"><legend>Export</legend><p class="note small">Writes the league file with your edits. Start a new save from it in the game.</p><button class="btn focus" data-act="download">💾 Download League File</button></fieldset>`;
+  }
+  layout({ title: 'League Editor', body: head + body });
+};
+// The app's own read of a team next to the game's tag (its extra steps are Favorites and Selling).
+function appTier(t) {
+  try { return TIER_NAMES[teamStanding(league(), t).tier] || '—'; } catch { return ED_TAGS[t.status ?? 0] || '—'; }
+}
+actions.edTab = d => replace('editor', { tab: d.t });
+actions.edTeam = d => replace('editor', { tab: 'teams', tid: d.id === '' ? undefined : +d.id });
+actions.edFans = d => { const t = league().teams.find(x => x.id === +d.id); t.frontOffice.fans = Math.max(0, Math.min(100, (t.frontOffice.fans ?? 0) + 5 * +d.d)); state.dirty = true; render(); };
+actions.edTag = d => { const t = league().teams.find(x => x.id === +d.id); t.status = +d.v; state.dirty = true; render(); };
+actions.edBlock = d => { const p = edPlayers(league()).find(x => x.id === +d.id); if (p?.season) { p.season.onTradeBlock = +d.v; state.dirty = true; render(); } };
+actions.edPlayer = d => {
+  const L = league(), p = edPlayers(L).find(x => x.id === +d.id);
+  if (!p) return;
+  p.traits ||= {};
+  for (const t of ED_TRAITS) p.traits[t.k] ??= 0;
+  const box = overlay('');
+  const paint = () => {
+    box.querySelector('.box').innerHTML = `<p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">Traits (0 = unset)</span></p>
+      ${ED_TRAITS.map(t => `<div class="pts-row"><span class="grow small">${esc(t.lo)} ↔ ${esc(t.hi)}</span><button class="btn square" data-k="${t.k}" data-d="-1">−</button><span class="pts-val">${p.traits[t.k]}</span><button class="btn square" data-k="${t.k}" data-d="1">+</button></div>`).join('')}
+      <button class="btn off" data-close>Done</button>`;
+  };
+  box.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) { box.remove(); render(); return; }
+    const b = e.target.closest('[data-k]');
+    if (!b) return;
+    p.traits[b.dataset.k] = Math.max(0, Math.min(20, p.traits[b.dataset.k] + +b.dataset.d));
+    state.dirty = true;
+    paint();
+  });
+  paint();
+};
+actions.edFillTraits = () => { const n = fillTraits(league()); state.dirty = true; toast(`Traits set for ${n} players`); render(); };
+actions.edCoach = d => {
+  const c = [...league().teams.flatMap(t => t.frontOffice?.staff || []), ...(league().coaches || [])].find(x => x.id === +d.id);
+  if (!c) return;
+  const a = c.attributes[d.k], w = +d.w;
+  a[w] = Math.max(0, Math.min(20, a[w] + +d.d));
+  if (a[0] > a[1]) { if (w === 0) a[1] = a[0]; else a[0] = a[1]; }
+  state.dirty = true; render();
+};
+// Who holds team `orig`'s pick for a year and round: an outright entry in some
+// roster's list, else the team itself.
+function pickHolder(L, orig, yr, rd) {
+  for (const t of L.teams) if (t.draftPicks.some(p => p.yr === yr && p.rd === rd && p.otid === orig)) return t;
+  return L.teams.find(t => t.id === orig);
+}
+document.addEventListener('change', e => {
+  const el = e.target;
+  if (el.dataset?.act === 'edPickTeam') replace('editor', { tab: 'picks', tid: +el.value });
+  if (el.dataset?.act === 'edPickTo' && el.value) {
+    const L = league(), orig = +el.dataset.tid, yr = +el.dataset.yr, rd = +el.dataset.rd;
+    const from = pickHolder(L, orig, yr, rd), to = L.teams.find(x => x.id === +el.value);
+    const pk = from.draftPicks.find(x => x.yr === yr && x.rd === rd && x.otid === orig);
+    if (pk) from.draftPicks.splice(from.draftPicks.indexOf(pk), 1);
+    const moved = pk || { pk: 0, rd, tid: to.id, otid: orig, yr };
+    moved.tid = to.id;
+    to.draftPicks.push(moved);
+    state.dirty = true;
+    toast(`${yr} R${rd} to ${to.shortName}`);
+    replace('editor', { tab: 'picks', tid: orig });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Boot

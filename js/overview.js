@@ -93,12 +93,23 @@ export function teamStanding(L, team) {
 // Five tiers, best to worst: Favorites, Contending, Developing, Selling,
 // Rebuilding. The middle splits by age: a young core on the way up is
 // Developing; an aging core that's slipping is Selling.
-export const TIER_NAMES = { favorites: 'Favorites', contending: 'Contending', developing: 'Developing', selling: 'Selling', rebuilding: 'Rebuilding' };
+export const TIER_NAMES = { favorites: 'Favorites', contending: 'Contending', competing: 'Competing', developing: 'Developing', selling: 'Selling', rebuilding: 'Rebuilding' };
 const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
 const projOf = t => [...t.roster].map(p => levelOf(p) * (p.status === 4 ? 0.9 : 1)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0);
 function teamTier(L, team, status, pct, round) {
   const mine = projOf(team);
   const rank = 1 + L.teams.filter(t => t !== team && projOf(t) > mine).length;
+  // The game now tags every team (0 Rebuilding, 1 Developing, 2 Competing,
+  // 3 Contending). When it has, its tag leads; the app keeps two more steps:
+  // Favorites above Contending, and Selling for an aging team in the middle.
+  if (L.teams.some(t => (t.status || 0) > 0)) {
+    const tag = team.status || 0;
+    const age = [...team.roster].filter(p => p.status !== 4).sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 5).reduce((a, p, _, l) => a + p.age / l.length, 0);
+    if (tag >= 3) return rank <= 3 && (pct >= 0.6 || round >= 3) ? 'favorites' : 'contending';
+    if (tag === 2) return age >= 29 && pct < 0.55 ? 'selling' : 'competing';
+    if (tag === 1) return age >= 29 ? 'selling' : 'developing';
+    return 'rebuilding';
+  }
   if (rank <= 3 && (pct >= 0.6 || round >= 3)) return 'favorites';
   if (status === 'contending') return 'contending';
   if (status === 'rebuilding') return 'rebuilding';
