@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.106.0';
+const APP_VERSION = '0.106.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -479,7 +479,7 @@ async function loadFile(file) {
     if (!Array.isArray(data.seasonLeagues) || !data.seasonLeagues.length) throw new Error('No seasonLeagues found');
     state.fileName = file.name;
     state.undo = null;
-    state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null;
+    state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null; state.calLast = undefined; state.calMonth = undefined;
     preloadLogos(data);   // start the team logos downloading before the heavy setup
     installData(data);
     if (state.leagueFile) {
@@ -1065,6 +1065,16 @@ function calendarGrid(cal, cur) {
   const byDay = new Map();
   for (const x of steps) if (x.pos[0] === mo) byDay.set(x.pos[1], [...(byDay.get(x.pos[1]) || []), x.st]);
   const before = (m, d) => !cur ? true : curPos ? (m < curPos[0] || (m === curPos[0] && d < curPos[1])) : false;
+  // When the current event has just moved on, the dates between the old one and the new one get crossed off in turn.
+  const prevKey = state.calLast;
+  state.calLast = cur ? cur.key : '__done';
+  let from = null;
+  if (prevKey && prevKey !== state.calLast) {
+    const ps = cal.find(x => x.key === prevKey), pp = ps ? calPos(ps) : null;
+    if (pp && (!curPos || pp[0] < curPos[0] || (pp[0] === curPos[0] && pp[1] < curPos[1]))) from = pp;
+  }
+  const showingNow = !curPos || mo === curPos[0];
+  let step_ = 0;
   const cells = [];
   for (let i = 0; i < first; i++) cells.push('<span class="cal-day blank"></span>');
   for (let d = 1; d <= days; d++) {
@@ -1072,12 +1082,12 @@ function calendarGrid(cal, cur) {
     const done = here.length && here.every(s => s.done());
     const now = here.includes(cur);
     const past = done || before(mo, d);
+    const animate = from && showingNow && past && (mo > from[0] || (mo === from[0] && d >= from[1]));
     const em = here.length ? CAL_EMOJI[(here.find(s => s === cur) || here[0]).key] || '📅' : '';
-    cells.push(`<button class="cal-day ${here.length ? 'step' : ''} ${past ? 'past' : ''} ${done ? 'done' : ''} ${now ? 'now' : ''}" ${here.length ? `data-act="calPick" data-k="${here[0].key}"` : 'tabindex="-1"'} aria-label="${CAL_MONTHS[mo]} ${d}${here.length ? ': ' + esc(here.map(s => s.title).join(', ')) : ''}"><span class="n">${d}</span>${em ? `<span class="em">${em}</span>` : ''}${done ? '<span class="tick">✓</span>' : ''}</button>`);
+    cells.push(`<button class="cal-day ${here.length ? 'step' : ''} ${past && !animate ? 'past' : ''} ${animate ? 'anim' : ''} ${done ? 'done' : ''} ${now ? 'now' : ''}" ${animate ? `style="--d:${(step_++) * 90}ms"` : ''} ${here.length ? `data-act="calPick" data-k="${here[0].key}"` : 'tabindex="-1"'} aria-label="${CAL_MONTHS[mo]} ${d}${here.length ? ': ' + esc(here.map(s => s.title).join(', ')) : ''}"><span class="n">${d}</span>${em ? `<span class="em">${em}</span>` : ''}${done ? '<span class="tick">✓</span>' : ''}</button>`);
   }
   const mi = months.indexOf(mo);
-  return `<div class="cal-top"><b class="cal-topic">${cur ? `${CAL_EMOJI[cur.key] || '📅'} ${esc(cur.title)}` : '🏁 Offseason complete'}</b><span class="small muted">${cur ? esc(cur.date) : ''}</span></div>
-    <div class="cal-nav"><button class="btn small off" data-act="calMonth" data-dir="-1" ${mi <= 0 ? 'disabled' : ''} aria-label="Previous month">◀</button><b>${CAL_MONTHS[mo].toUpperCase()} ${yr}</b><button class="btn small off" data-act="calMonth" data-dir="1" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="Next month">▶</button></div>
+  return `<div class="cal-nav"><button class="btn small off" data-act="calMonth" data-dir="-1" ${mi <= 0 ? 'disabled' : ''} aria-label="Previous month">◀</button><b>${CAL_MONTHS[mo].toUpperCase()} ${yr}</b><button class="btn small off" data-act="calMonth" data-dir="1" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="Next month">▶</button></div>
     <div class="cal-grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span class="cal-dow">${x}</span>`).join('')}${cells.join('')}</div>`;
 }
 actions.calMonth = d => {
@@ -1096,11 +1106,10 @@ function calendarCard() {
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
-  return `<fieldset class="frame"><legend>${dispYr(s.currentYear)} Offseason</legend>
-    ${calendarGrid(activeCal(), cur)}
-    <ol class="calendar">${activeCal().map(st => {
-      const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
-      return `<li class="cal ${state_}">
+  const cal = activeCal();
+  const item = st => {
+    const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
+    return `<li class="cal ${state_}">
         <span class="cal-date">${esc(st.date)}</span>
         <div class="cal-body">
           <b>${state_ === 'done' ? '✓ ' : state_ === 'locked' ? '🔒 ' : ''}${esc(st.title)}</b>
@@ -1108,7 +1117,12 @@ function calendarCard() {
           ${state_ === 'now' ? stepActions(st.key) : ''}
         </div>
       </li>`;
-    }).join('')}</ol>
+  };
+  // The current event on top (gold), the calendar under it, then the rest of the offseason.
+  return `<fieldset class="frame"><legend>${dispYr(s.currentYear)} Offseason</legend>
+    ${cur ? `<ol class="calendar cal-first">${item(cur)}</ol>` : '<p class="note up">🏁 Offseason complete.</p>'}
+    ${calendarGrid(cal, cur)}
+    <ol class="calendar">${cal.filter(st => st !== cur).map(item).join('')}</ol>
     ${state.undo ? `<button class="btn small" data-act="undoAdvance">↺ Undo ${esc(state.undo.label)}</button>` : ''}
   </fieldset>`;
 }

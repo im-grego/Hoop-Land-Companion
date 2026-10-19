@@ -1315,3 +1315,9 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .cal-day.done .em { opacity: .45; }
 .cal-day .tick { position: absolute; right: 2px; top: 0; font-size: 11px; color: var(--up); }
 .cal-day.now { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
+
+.cal-first { margin-bottom: 8px; }
+.cal-day.anim .n { text-decoration: line-through; text-decoration-color: transparent; animation: calStrike .35s ease-out var(--d, 0ms) forwards; }
+.cal-day.anim { animation: calPulse .35s ease-out var(--d, 0ms); }
+@keyframes calStrike { to { text-decoration-color: currentColor; opacity: .45; } }
+@keyframes calPulse { 40% { transform: scale(.92); background: color-mix(in srgb, var(--gold) 35%, var(--btn)); } 100% { transform: scale(1); } }
