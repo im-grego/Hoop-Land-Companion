@@ -6531,8 +6531,7 @@ function presserEffects(L, t, ans) {
         // The long game is good news for the young (a young star most of all)
         // and a letdown for veterans, a veteran star hardest.
         const youngStar = star && star.age <= 24;
-        out.push({ text: 'Young players\' morale +4', apply: () => t.roster.filter(p => p.age <= 24).forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + (youngStar && p === star ? 6 : 4)); }) });
-        if (youngStar) out.push({ text: `${star.fn} morale +2 more`, apply: () => {} });
+        out.push({ text: youngStar ? `Young players\' morale +4 (${star.fn} +6)` : 'Young players\' morale +4', apply: () => t.roster.filter(p => p.age <= 24).forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + (youngStar && p === star ? 6 : 4)); }) });
         const vets = t.roster.filter(p => p.age >= 29 && p !== star);
         if (vets.length) out.push({ good: false, text: 'Veterans\' morale −2', apply: () => vets.forEach(p => { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 2); }) });
         if (star && !youngStar && q.ctx.mood !== 'quiet') out.push(mood(star, -6));
