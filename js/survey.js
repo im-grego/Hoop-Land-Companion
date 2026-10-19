@@ -306,11 +306,20 @@ export function runSurvey(L, li = 0, salt = 1) {
   // ---- Defense
   const defZ = p => 0.3 * A(p, 'STL') + 0.3 * A(p, 'BLK') + 0.25 * A(p, 'DRE') + 0.15 * A(p, 'SPD') +
     ((L_(p)?.spg || 0) + (L_(p)?.bpg || 0)) * 1.2 + (skillLv(p, 'LOC') + skillLv(p, 'CLA') + skillLv(p, 'TWO') + skillLv(p, 'BAL') + skillLv(p, 'SNA')) * 0.8;
-  out.push(ask('dpoy', 'Defense', 'Who is the best defensive player in the league?', ppl(p => defZ(p) + (L_(p).mpg / 10))));
+  // What GMs actually vote on: the tools, the production (steals, blocks,
+  // boards), a rotation role, how good the player is overall (stars guard
+  // the best players), recent Defensive Player awards and winning.
+  const dpoyWins = p => (p.awards || []).filter(a => a.id === 3).reduce((n, a) => n + (a.yearsWon || []).filter(y => y >= yr - 2).length, 0);
+  const dRole = (p, t) => Math.min(L_(p).mpg, 34) / 34 * 3 + (levelOf(p) - 70) * 0.12 + dpoyWins(p) * 2.5 + pct(t) * 2 + (L_(p).gp < 50 ? -2 : 0);
+  out.push(ask('dpoy', 'Defense', 'Who is the best defensive player in the league?',
+    ppl((p, t) => 0.2 * A(p, 'STL') + 0.25 * A(p, 'BLK') + 0.15 * A(p, 'DRE') + 0.1 * A(p, 'SPD') + 0.1 * A(p, 'STR')
+      + L_(p).spg * 1.6 + L_(p).bpg * 1.6 + L_(p).rpg * 0.15
+      + (skillLv(p, 'LOC') + skillLv(p, 'CLA') + skillLv(p, 'TWO') + skillLv(p, 'BAL') + skillLv(p, 'SNA') + skillLv(p, 'MAG')) * 0.7 + dRole(p, t),
+    p => L_(p).mpg >= 18)));
   out.push(ask('perimeter', 'Defense', 'Who is the best perimeter defender in the league?',
-    ppl(p => A(p, 'STL') * 0.5 + A(p, 'SPD') * 0.3 + (L_(p).spg) * 2 + (skillLv(p, 'LOC') + skillLv(p, 'BAL') + skillLv(p, 'CLA')) * 1.0, p => p.pos <= 5)));
+    ppl((p, t) => A(p, 'STL') * 0.4 + A(p, 'SPD') * 0.25 + A(p, 'STR') * 0.1 + (L_(p).spg) * 2.2 + (skillLv(p, 'LOC') + skillLv(p, 'BAL') + skillLv(p, 'CLA')) * 1.0 + dRole(p, t), p => p.pos <= 5 && L_(p).mpg >= 18)));
   out.push(ask('interior', 'Defense', 'Who is the best interior defender in the league?',
-    ppl(p => A(p, 'BLK') * 0.5 + A(p, 'DRE') * 0.3 + A(p, 'STR') * 0.2 + (L_(p).bpg) * 2 + (skillLv(p, 'SNA') + skillLv(p, 'MAG')) * 1.0, p => p.pos >= 5)));
+    ppl((p, t) => A(p, 'BLK') * 0.4 + A(p, 'DRE') * 0.2 + A(p, 'STR') * 0.2 + (L_(p).bpg) * 2.2 + L_(p).rpg * 0.2 + (skillLv(p, 'SNA') + skillLv(p, 'MAG')) * 1.0 + dRole(p, t), p => p.pos >= 5 && L_(p).mpg >= 18)));
   out.push(ask('versatileD', 'Defense', 'Who is the most versatile defender in the league?',
     ppl(p => Math.min(A(p, 'STL'), A(p, 'BLK') + 2, A(p, 'DRE'), A(p, 'SPD'), A(p, 'STR')) * 1.5 + mean(['STL', 'BLK', 'DRE', 'SPD', 'STR'].map(k => A(p, k))) * 0.4)));
   out.push(ask('defTeam', 'Defense', 'Which team has the best defense?',
