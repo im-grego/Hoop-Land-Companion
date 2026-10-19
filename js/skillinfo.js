@@ -3,7 +3,7 @@
 // "...his game" style sentences in scouting reads.
 export const SKILL_INFO = {
   HIG: { does: 'Decreased stamina used for dunks', says: 'dunking barely tires him' },
-  CRA: { does: 'Increased accuracy on reverse and contact layups and ability to lay it up mid-dunk', says: 'a crafty finisher on reverses and through contact' },
+  CRA: { does: 'Increased accuracy on reverse and contact layups and ability to lay it up mid-dunk', says: 'is a crafty finisher on reverses and through contact' },
   SOF: { does: 'Increased hookshot accuracy', says: 'has a soft touch on his hook' },
   TEA: { does: 'Increased floater accuracy', says: 'has a tear-drop floater' },
   BUL: { does: 'Increased chance of opponent falling when backing down', says: 'bullies defenders on the block' },

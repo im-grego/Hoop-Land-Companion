@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.100.2';
+const APP_VERSION = '0.101.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2686,7 +2686,54 @@ actions.openLeaders = d => {
 };
 actions.leadersAll = () => { const a = state.stack[state.stack.length - 1].args || {}; replace('leaders', { ...a, all: true }); };
 
-// Tags for the top of a player's profile: what's true of him right now.
+const ordN = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
+// Identity tags for the top of a profile: his play-style tags and the ends of his personality (Leader, Ironman, ...).
+function identityChips(p) {
+  const chips = [];
+  for (const x of playStyles(p, 3)) chips.push(`<span class="style-chip">${x.icon} ${esc(x.label)}</span>`);
+  if (traitsSet(p)) for (const t of TRAITS) { const x = traitTag(t, p.traits[t.k] || 0); if (x) chips.push(`<span class="style-chip">${x.icon} ${esc(x.label)}</span>`); }
+  return chips.join('');
+}
+// His place in the league: level rank overall and on his team (cached per league).
+function levelRanks(p, team) {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (!cache.has('lvranks')) {
+    const all = leaguePlayers(league(), true).filter(e => e.team).map(e => ({ id: e.p.id, tid: e.team.id, lv: shownLevel(e.p) })).sort((a, b) => b.lv - a.lv);
+    const byTeam = new Map();
+    cache.set('lvranks', new Map(all.map((e, i) => { const n = (byTeam.get(e.tid) || 0) + 1; byTeam.set(e.tid, n); return [e.id, { league: i + 1, team: n, of: all.length }]; })));
+  }
+  return cache.get('lvranks').get(p.id) || null;
+}
+// A short scouting paragraph: where he stands, how he plays, what he's like, where he's headed, what he's paid.
+function profileReport(p, team) {
+  const out = [];
+  const lv = shownLevel(p), rk = levelRanks(p, team);
+  if (rk) out.push(`Level ${lv}: ${ordN(rk.league)} in the league and ${ordN(rk.team)} on ${esc(team.shortName)}, ${rk.team <= 5 ? 'a starter' : rk.team <= 9 ? 'a rotation piece' : 'on the fringe of the rotation'}.`);
+  else out.push(`Level ${lv}.`);
+  if (p.tendencies) {
+    out.push(esc(styleLine(p)));
+    const sk = earnedSkills(p)[0];
+    if (sk) { const w = skillSays(sk.id); out.push(`${esc(w.charAt(0).toUpperCase() + w.slice(1))}.`); }
+  }
+  if (traitsSet(p)) out.push(esc(personality(p)));
+  // Where he's headed
+  const y = regressionYear(p), up = p.pot >= 9 ? 'star-level' : p.pot >= 7 ? 'starter-level' : p.pot >= 5 ? 'rotation-level' : 'limited';
+  const z = bumpContext().production.get(p.id);
+  const prod = z == null ? '' : z >= 1.5 ? ' Last season he out-produced his peers by a wide margin.' : z >= 0.5 ? ' Last season he produced above his peers.' : z <= -1.5 ? ' Last season he badly under-produced for his role.' : z <= -0.5 ? ' Last season he produced below his peers.' : '';
+  const arc = declining(p) ? `He is in decline (age ${p.age}, regression age ${p.regressionAge}).`
+    : y >= 0 ? `He is at the age where decline starts (regression age ${p.regressionAge}).`
+    : p.age <= 24 ? `He is still developing, with ${up} upside.`
+    : `Peak years: ${-y + 1} season${-y + 1 === 1 ? '' : 's'} before he starts to decline, ${up} ceiling.`;
+  out.push(`${arc}${prod}`);
+  // What he's paid
+  const c = p.contract;
+  if (c?.sal && c.yrs) {
+    const fair = fairSalary(lv), gap = tagGap(fair);
+    out.push(`Paid $${c.sal}M for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}, ${c.sal - fair >= gap ? `above his market value of about $${fair}M` : fair - c.sal >= gap ? `well under his market value of about $${fair}M` : `about his market value ($${fair}M)`}.`);
+  }
+  return out.join(' ');
+}
+// Status tags: what's true of him right now (contract, options, injury, trade block, ...).
 function playerTags(p) {
   const c = p.contract || {}, t = [];
   const add = (label, cls = '') => t.push(`<span class="badge ${cls}">${label}</span>`);
@@ -2704,7 +2751,6 @@ function playerTags(p) {
   else if (c.canExt) add('Extension Eligible', 'new');
   if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
   if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');
-  if (traitsSet(p)) { const d = tr(p, 'durability'); if (d <= 6) add('Injury-Prone', 'down-b'); else if (d >= 16) add('Ironman', 'new'); }
   if (p.season && isComplete() && !isCollege()) t.push(moraleTag(p));
   return t.join('');
 }
@@ -2774,7 +2820,11 @@ screens.player = (args) => {
   const content = tab === 'attributes' ? `${ratings}${skills}${apCard}`
     : tab === 'personality' ? personality
     : tab === 'stats' ? statsTab(p, args)
-    : `${rankBox(p, mpg)}${trainer}
+    : `<fieldset class="frame"><legend>Scouting Report</legend>
+        <p class="note small scout-p">${profileReport(p, team)}</p>
+        ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
+      </fieldset>
+      ${rankBox(p, mpg)}${trainer}
       <div class="grid2">
         <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
         <button class="btn" data-act="revertOne">↺ Revert</button>
@@ -2786,7 +2836,7 @@ screens.player = (args) => {
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
-        ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
+        ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
       </div>
       ${tabsRow}
       ${content}`,
