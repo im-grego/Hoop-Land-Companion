@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.80.0';
+const APP_VERSION = '0.81.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5635,8 +5635,8 @@ function expiringSection(s) {
     const others = list.filter(b => !isUserTeam({ id: b.tid })).length;
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>
       <span class="name">${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
-      <span class="right small">Asks $${m.ask}M × ${askYears(m)}</span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${mineBid ? ` · <span class="up">your offer ${offerText(mineBid)}</span>` : ''}${others ? ` · <span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>
+      <span class="meta">Asks $${m.ask}M × ${askYears(m)}</span>
     </button>`;
   }).join('')}</div></fieldset>`;
 }
@@ -6209,17 +6209,25 @@ function optionCall(L, p, team) {
 // Pitches to keep your own player from opting out. Each one is a promise,
 // remembered next season. Odds depend on why he wants out; one try each.
 const PITCHES = {
-  role: { label: 'Bigger role', promise: 'a bigger role', kept: 'promised a bigger role', odds: { unhappy: 0.65, money: 0.25 } },
-  ext: { label: 'Extension next summer', promise: 'an extension next summer', kept: 'promised an extension next summer', odds: { unhappy: 0.3, money: 0.6 } },
-  win: { label: 'We\'ll add talent', promise: 'help around him', kept: 'promised help around him', odds: { unhappy: 0.45, money: 0.2 } },
+  role: { label: 'Bigger role', promise: 'a bigger role', kept: 'promised a bigger role', prio: 'role' },
+  ext: { label: 'Long-term deal', promise: 'a long-term deal next summer', kept: 'promised a long-term deal', prio: 'security' },
+  pay: { label: 'Overpay', promise: 'a big contract next summer', kept: 'promised a big contract', prio: 'greed' },
+  win: { label: 'Big additions', promise: 'help around him', kept: 'promised help around him', prio: 'contender' },
 };
+// Odds come from what he cares about: the pitch that matches his top
+// priority is the best bet; a poor fit rarely works.
 function pitchOdds(p, team, kind, reason) {
-  let o = PITCHES[kind].odds[reason] ?? 0.3;
-  if (p.age >= 30) o += kind === 'win' ? 0.15 : -0.05;
-  if (p.age <= 25 && kind === 'role') o += 0.1;
-  if (teamRecord(team).pct >= 0.6 && kind === 'win') o += 0.1;
+  const pr = PITCHES[kind].prio;
+  const motive = FA.motiveOf(league(), p);
+  let o = 0.2 + (motive === pr || (pr === 'greed' && motive === 'control') ? 0.35 : 0);
+  if (pr === 'greed') o += (tr(p, 'money') - 10) * 0.015;
+  if (pr === 'contender') o += (tr(p, 'winning') - 10) * 0.015 + (teamRecord(team).pct >= 0.6 ? 0.08 : 0);
+  if (pr === 'security') o += (p.age >= 29 ? 0.08 : 0) + (tr(p, 'loyalty') - 10) * 0.01;
+  if (pr === 'role') o += p.age <= 25 ? 0.08 : 0;
+  if (reason === 'unhappy' && pr !== 'greed') o += 0.08;
+  if (reason === 'money' && pr === 'greed') o += 0.1;
   if (isUserTeam(team)) o += fxNow().promiseBonus;
-  return Math.max(0.05, Math.min(0.9, o));
+  return Math.max(0.05, Math.min(0.85, o));
 }
 function qoCall(L, p, team) {
   if (isUserTeam(team)) return optStore().qo[p.id];
@@ -6449,7 +6457,7 @@ function breakPromise(L, p, team, pr, why, later = false) {
   const say = () => toast(`${playerName(p)} is furious`, `${why} He took a big morale hit and won't meet with ${team.shortName}.`, 5200, true);
   if (later) setTimeout(say, 3200); else say();
 }
-const PROMISE_TEXT = { role: 'a bigger role', ext: 'an extension', win: 'help around him' };
+const PROMISE_TEXT = { role: 'a bigger role', ext: 'a long-term deal', pay: 'a big contract', win: 'help around him' };
 // Role and "help" promises are judged on last season; extension promises
 // when the extension window closes.
 function settlePromises() {
@@ -6457,7 +6465,7 @@ function settlePromises() {
   if (!L || isCollege() || !isComplete() || phaseRank(L.season) < 1 || phaseRank(L.season) > 3) return;
   const yr = L.season.currentYear;
   const ly = lastSeasonYear();
-  for (const pr of loadPromises().filter(x => x.yr === yr - 1 && x.v === 'commit' && (x.src === 'option' || x.src === 'request') && (x.kind === 'role' || x.kind === 'win'))) {
+  for (const pr of loadPromises().filter(x => x.yr === yr - 1 && x.v === 'commit' && x.src === 'option' && (x.kind === 'role' || x.kind === 'win'))) {
     const team = L.teams.find(t => t.id === pr.tid), p = team?.roster.find(x => x.id === pr.pid);
     if (!team || !p || !isUserTeam(team) || state.fromExport) continue;
     const l = seasonLine(p, state.leagueIdx, ly);
@@ -7125,9 +7133,12 @@ actions.extClose = async () => {
   if (!(await confirmBox('Close the extension window?', 'Close'))) return;
   const rng = mulberry32((saveSalt() ^ 0xe7e1) >>> 0);
   // "An extension next summer" has to be delivered by now.
-  for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.v === 'commit' && x.kind === 'ext' && (x.src === 'option' || x.src === 'request'))) {
+  for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.v === 'commit' && (x.kind === 'ext' || x.kind === 'pay') && x.src === 'option')) {
     const team = L.teams.find(t => t.id === pr.tid), p = team?.roster.find(x => x.id === pr.pid);
-    if (team && p && isUserTeam(team) && !st.talks[p.id]?.signed) breakPromise(L, p, team, pr, 'You promised an extension and never gave one.');
+    if (!team || !p || !isUserTeam(team)) continue;
+    const sg = st.talks[p.id]?.signed;
+    const kept = sg && (pr.kind === 'pay' ? sg.sal >= extAsk(p, team).sal : sg.yrs >= 3);
+    if (!kept) breakPromise(L, p, team, pr, `You promised ${PROMISE_TEXT[pr.kind]} and didn't deliver.`);
   }
   const list = [];
   for (const t of L.teams.filter(tt => !isUserTeam(tt))) {

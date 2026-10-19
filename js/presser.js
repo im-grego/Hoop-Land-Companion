@@ -201,7 +201,7 @@ export function promiseStories(league, promises) {
     if (!team || !hit) continue;
     const n = playerName(hit.p);
     if (pr.src === 'option') {
-      const promise = { role: 'a bigger role', ext: 'an extension', win: 'help around him' }[pr.kind] || 'a future';
+      const promise = { role: 'a bigger role', ext: 'a long-term deal', pay: 'a big contract', win: 'help around him' }[pr.kind] || 'a future';
       out.push(hit.t === team
         ? { kind: 'promise', score: 52, icon: '🤝', title: `${n} opted in on a promise`, text: `${Place(team)} promised ${hit.p.fn} ${promise} to keep him from testing free agency. This is the year it has to show.`, pid: hit.p.id }
         : { kind: 'promise', score: 62, icon: '💔', title: `${Place(team)} promised ${n} ${promise}. He's gone.`, text: `He opted in on their word last summer. ${hit.p.fn} is ${hit.t ? `in ${place(hit.t)} now` : 'still looking for a team'}.`, pid: hit.p.id });
