@@ -16,6 +16,7 @@ import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieCont
 import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
 import * as FA from './freeagency.js';
 import * as TR from './traderules.js';
+import * as FX from './facilities.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
@@ -29,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.71.0';
+const APP_VERSION = '0.72.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -328,7 +329,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
-  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); if (!isCollege()) syncDead(); }
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -921,7 +922,7 @@ const STEP_SCREENS = {
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'gameplan', 'playbook'];
+const ALWAYS = ['main', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1130,7 +1131,13 @@ function applyBump(seed) {
   reapplyMentorship();
   const devT = tierNow('dev');
   const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team),
-    ...(isUserTeam(e.team) ? (() => { const f = fxNow(), young = e.p.age <= 23; return { ...(devT ? { devMult: CO.devMult(devT) * (young ? f.labYoung : 1), potMult: CO.potMult(devT) * (e.p.age <= 21 ? f.labPot : 1) } : {}), longMult: f.longMult }; })() : {}) }));
+    ...(() => {
+      const F = FX.facilityFx(e.team), u = isUserTeam(e.team), f = u ? fxNow() : null, a = e.p.age;
+      const dev = (u && devT ? CO.devMult(devT) * (a <= 23 ? f.labYoung : 1) * (a >= 24 && a <= 27 ? f.lateBloom : 1) : 1) * F.devMult;
+      const pot = (u && devT ? CO.potMult(devT) * (a <= 21 ? f.labPot : 1) : 1) * (a <= 21 ? F.youngPot : 1);
+      return { ...(dev !== 1 ? { devMult: dev } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
+        potLossMult: F.potLossMult, longCutMult: F.longCutMult, nagMult: F.nagMult, structStd: F.structStd };
+    })() }));
   applyCulture();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   state.potWhy = new Map(awards.why);
@@ -1312,7 +1319,7 @@ function runStrength() {
     const gains = {};
     let lbs = 0, inch = 0;
     if (p.age <= STR_MAX_AGE) {
-      const odds = Math.min(0.95, strengthOdds(p) * (isUserTeam(team) ? fxNow().strMult : 1));
+      const odds = Math.min(0.95, strengthOdds(p) * (isUserTeam(team) ? fxNow().strMult : 1) * FX.facilityFx(team).strMult);
       const focus = focusOf(p, team);
       const bump = k => { if (p.attributes[k][0] >= ATTR_MAX) return; p.attributes[k][0]++; if (p.attributes[k][1] < p.attributes[k][0]) p.attributes[k][1] = p.attributes[k][0]; gains[k] = (gains[k] || 0) + 1; };
       if (rng() < odds) {
@@ -1350,8 +1357,8 @@ function earnCoachPoints() {
   const tree = treeStore(), t = (myTeam() || null);
   if (!t) return;
   const yr = league().season.currentYear;
-  if (!tree.earned.start) tree.earned.start = { pts: 2, why: ['A new staff'] };
-  if (!tree.earned[yr]) tree.earned[yr] = CO.seasonPoints(t, isCollege());
+  if (!tree.earned.start) tree.earned.start = { pts: isComplete() && !isCollege() ? 3 : 2, why: ['A new staff'] };
+  if (!tree.earned[yr]) { const e = CO.seasonPoints(t, isCollege()); if (isComplete() && !isCollege()) { e.pts++; e.why.push('Franchise growth'); } tree.earned[yr] = e; }
   saveTree();
 }
 const coachPoints = () => { const tr = treeStore(); return Object.values(tr.earned).reduce((a, e) => a + e.pts, 0) - tr.spent; };
@@ -1364,21 +1371,19 @@ function coachCard() {
   const r = k => c?.attributes?.[k]?.[0] ?? '—';
   return `<fieldset class="frame"><legend>Coaching Staff</legend><div class="stack">
     <p class="note"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b> <span class="muted small">Development ${r('development')} · Motivation ${r('motivation')} · Leadership ${r('leadership')}</span></p>
-    <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${coachPoints()}</b> to spend</p>
+    <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${tokTag(coachPoints())}</b> to spend</p>
     <p class="note small muted">${CO.BRANCHES.map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
+    ${isComplete() && !isCollege() ? `<button class="btn" data-act="nav" data-to="facilities">🏟️ Facilities · ${coinTag(coinsOf(t))}</button>` : ''}
   </div></fieldset>`;
 }
 
 // Effects of the extra tree nodes (Complete rules, pros only).
 const fxNow = () => CO.effects(treeStore(), myCoach(), isComplete() && !isCollege());
 // Coins: the game's own currency (each team's frontOffice.coins). Here they
-// pay the luxury tax, buy out a final-year contract, sweeten a trade and
-// open the tree's side nodes. 1 coin = 1/rate of a $1M.
-const coinRate = () => Math.max(1, +state.params.coinRate || 4);
+// only buy facility upgrades.
 const coinsOf = t => t?.frontOffice?.coins ?? 0;
-const coinCost = (m, disc = true) => Math.max(1, Math.round(m * coinRate() * (disc ? fxNow().coinMult : 1)));
 function spendCoins(t, n) {
   if (!t?.frontOffice || coinsOf(t) < n) return false;
   t.frontOffice.coins -= n;
@@ -1386,32 +1391,73 @@ function spendCoins(t, n) {
   return true;
 }
 const coinTag = n => `🪙${n}`;
+const tokTag = n => `🎟️${n}`;
+
+// Facilities: the four buildings, three tiers each. Coins buy the next
+// tier; each tier lists exactly what it does in the app.
+screens.facilities = () => {
+  const t = myTeam();
+  if (!t) { back(); return; }
+  const coins = coinsOf(t);
+  layout({
+    title: 'Facilities',
+    body: `<fieldset class="frame"><legend>${esc(t.shortName)}</legend>
+        <p class="note"><b class="gold">${coinTag(coins)}</b> coins</p>
+        <p class="note small muted">Each upgrade also lifts what the game itself does with the building.</p></fieldset>
+      ${FX.FACILITIES.map(f => {
+        const cur = FX.tierIn(t, f.k), cost = FX.upgradeCost(cur);
+        return `<fieldset class="frame"><legend>${f.icon} ${f.label}</legend><div class="tree">${f.tiers.map((tier, i) => {
+          const lv = i + 1, have = cur >= lv, next = lv === cur + 1;
+          return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : next ? 'next' : 'locked'}">
+            <b class="tn-name">Tier ${lv} · ${esc(tier.name)}</b>
+            <span class="small tn-text">${tier.lines.map(l => `• ${esc(l)}`).join('<br>')}</span>
+            ${have ? '<span class="up tn-cost">✓</span>' : next ? `<button class="btn small ${coins >= cost ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" ${coins >= cost ? '' : 'disabled'}>Upgrade ${coinTag(cost)}</button>` : `<span class="muted small tn-cost">${coinTag(FX.upgradeCost(lv - 1))}</span>`}
+          </div>`;
+        }).join('')}</div></fieldset>`;
+      }).join('')}`,
+  });
+};
+actions.facUpgrade = async d => {
+  const t = myTeam(), f = FX.FACILITIES.find(x => x.k === d.k);
+  const fac = t && FX.facilityOf(t, d.k);
+  if (!f || !fac) return;
+  const cur = FX.tierIn(t, d.k);
+  if (cur >= FX.MAX_FAC_TIER) return;
+  const cost = FX.upgradeCost(cur);
+  if (coinsOf(t) < cost) { toast('Not enough coins', '', 2400, true); return; }
+  if (!(await confirmBox(`Upgrade ${esc(f.label)} to ${esc(f.tiers[cur].name)} for ${coinTag(cost)}?`, 'Upgrade'))) return;
+  checkpoint(`Upgrade ${f.label}`);
+  spendCoins(t, cost);
+  fac.tier = cur + 1;
+  state.dirty = true;
+  render();
+  toast(`${f.label} upgraded`, f.tiers[cur].name);
+};
 
 screens.coachtree = () => {
   earnCoachPoints();
-  const tree = treeStore(), c = myCoach(), free = CO.coachTiers(c), pts = coachPoints(), team = myTeam();
+  const tree = treeStore(), c = myCoach(), free = CO.coachTiers(c), pts = coachPoints();
   const extras = isComplete() && !isCollege();
-  const coins = coinsOf(team);
   const nodeBtn = (b, n, nodes) => {
     const have = CO.nodeOwned(tree, c, n, b.k);
     const cur = tierNow(b.k);
     const reqOk = n.spine ? n.spine === cur + 1 : n.req.every(id => CO.nodeOwned(tree, c, nodes.find(x => x.id === id), b.k));
-    const pc = n.spine ? CO.TIER_COST[n.spine - 1] : n.pts, cc = n.spine ? 0 : n.coins;
+    const pc = n.spine ? CO.TIER_COST[n.spine - 1] : n.pts;
     const txt = n.spine ? b.tiers[n.spine - 1] : n.text;
-    const afford = pts >= pc && coins >= cc;
+    const afford = pts >= pc;
     const cls = have ? 'have' : reqOk ? 'next' : 'locked';
     return `<div class="tree-node ${cls} ${n.wide ? 'wide' : ''}">
       <b class="tn-name">${esc(n.label)}${have && n.spine && free[b.k] >= n.spine ? ' <span class="muted small">· from your coach</span>' : ''}</b>
       <span class="small tn-text">${esc(txt)}</span>
-      ${have ? '<span class="up tn-cost">✓</span>' : reqOk ? `<button class="btn small ${afford ? 'focus' : ''}" data-act="buyNode" data-k="${b.k}" data-id="${n.id}" ${afford ? '' : 'disabled'}>${pc} pt${pc > 1 ? 's' : ''}${cc ? ` · ${coinTag(cc)}` : ''}</button>` : `<span class="muted small tn-cost">${pc} pt${pc > 1 ? 's' : ''}${cc ? ` · ${coinTag(cc)}` : ''}</span>`}
+      ${have ? '<span class="up tn-cost">✓</span>' : reqOk ? `<button class="btn small ${afford ? 'focus' : ''}" data-act="buyNode" data-k="${b.k}" data-id="${n.id}" ${afford ? '' : 'disabled'}>${tokTag(pc)}</button>` : `<span class="muted small tn-cost">${tokTag(pc)}</span>`}
     </div>`;
   };
   const link = '<div class="tree-link"><span></span></div>';
   layout({
     title: 'Skill Tree',
     body: `<fieldset class="frame"><legend>${c ? esc(`${c.fn} ${c.ln}`) : 'Your Staff'}</legend>
-        <p class="note">Points come from each season: one for the job, more for a winning record, the ${isCollege() ? 'tournament' : 'playoffs'}, a deep run and a title. Your coach's own ratings (13+ and 17+) start tiers unlocked.</p>
-        <p class="note"><b class="gold">${pts}</b> point${pts === 1 ? '' : 's'} to spend${extras ? ` · <b class="gold">${coinTag(coins)}</b> coins` : ''}</p>
+        <p class="note">Franchise tokens come from each season: one for the job, more for a winning record, the ${isCollege() ? 'tournament' : 'playoffs'}, a deep run and a title. Your coach's own ratings (13+ and 17+) start tiers unlocked.</p>
+        <p class="note"><b class="gold">${tokTag(pts)}</b> franchise token${pts === 1 ? '' : 's'} to spend</p>
         <div class="stack small">${Object.entries(tree.earned).map(([k, e]) => `<span class="muted">${k === 'start' ? 'Start' : k}: +${e.pts} · ${esc(e.why.join(', '))}</span>`).join('')}</div></fieldset>
       ${CO.BRANCHES.map(b => {
         const nodes = CO.NODES[b.k].filter(n => n.spine || extras);
@@ -1428,15 +1474,14 @@ actions.buyNode = d => {
   const b = CO.BRANCHES.find(x => x.k === d.k), n = CO.NODES[d.k].find(x => x.id === d.id);
   if (!b || !n) return;
   const cur = tierNow(d.k);
-  const pc = n.spine ? CO.TIER_COST[n.spine - 1] : n.pts, cc = n.spine ? 0 : n.coins;
+  const pc = n.spine ? CO.TIER_COST[n.spine - 1] : n.pts;
   if (n.spine ? n.spine !== cur + 1 : !n.req.every(id => CO.nodeOwned(tree, myCoach(), CO.NODES[d.k].find(x => x.id === id), d.k))) return;
-  if (coachPoints() < pc) { toast('Not enough points', '', 2400, true); return; }
-  if (cc && !spendCoins(team, cc)) { toast('Not enough coins', `${coinTag(cc)} needed`, 2400, true); return; }
+  if (coachPoints() < pc) { toast('Not enough tokens', '', 2400, true); return; }
   if (n.spine) tree.bought[d.k] = n.spine; else (tree.nodes ||= {})[n.id] = true;
   tree.spent += pc;
   saveTree();
   if (d.k === 'culture' && n.spine && state.auto[state.leagueIdx]) applyCulture();
-  toast(`${n.label} unlocked`, cc ? `${coinTag(cc)} spent` : '');
+  toast(`${n.label} unlocked`, `${tokTag(pc)} spent`);
   render();
 };
 
@@ -1461,9 +1506,9 @@ screens.tendencies = () => {
   state.tendNav = list.map(e => e.p.id);
   layout({
     title: 'Tendencies',
-    body: `<p class="note small">Scheme tier ${sch}: every player takes ${1 + sch} nudge${sch ? 's' : ''}, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(sch)} from where the offseason started.</p>
+    body: `<p class="note small">Scheme tier ${sch}: every player takes ${1 + sch} nudge${sch ? 's' : ''}, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(sch, fxNow())} from where the offseason started.</p>
       <div class="list">${list.map(({ p, team }) => {
-        const n = CO.nudgesFor(p, sch), used = nudgesUsed(p);
+        const n = CO.nudgesFor(p, sch, fxNow()), used = nudgesUsed(p);
         return `<button class="prow" data-act="openTend" data-id="${p.id}"><span class="name">${esc(playerName(p))}</span>
           <span class="meta">${esc(posName(p))} · ${p.age}y · Lv ${levelOf(p)}${state.userTeams.size > 1 ? ` · ${esc(team.shortName)}` : ''}</span>
           <span class="chg ${used ? 'up' : 'muted'}">${used}/${n}</span></button>`;
@@ -1475,7 +1520,7 @@ actions.stepTend = d => replace('tendplayer', { id: +d.id });
 screens.tendplayer = ({ id }) => {
   const e = tendPlayers().find(x => x.p.id === id);
   if (!e) { back(); return; }
-  const p = e.p, sch = tierNow('scheme'), n = CO.nudgesFor(p, sch), used = nudgesUsed(p), o = origTend(p), lim = CO.maxShift(sch);
+  const p = e.p, sch = tierNow('scheme'), n = CO.nudgesFor(p, sch, fxNow()), used = nudgesUsed(p), o = origTend(p), lim = CO.maxShift(sch, fxNow());
   const ids = state.tendNav || [], at = ids.indexOf(id);
   const nav = (rid, dir) => rid == null ? '' : `<button class="nav-btn" data-act="stepTend" data-id="${rid}" aria-label="${dir < 0 ? 'Previous' : 'Next'} player">${dir < 0 ? '◀' : '▶'}</button>`;
   const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
@@ -1501,9 +1546,9 @@ actions.tendAdj = d => {
   if (!st.orig[p.id]) st.orig[p.id] = { ...p.tendencies };
   const sch = tierNow('scheme'), o = st.orig[p.id], k = d.k, step = +d.d;
   const v = (p.tendencies[k] || 0) + step, dv = v - (o[k] || 0);
-  if (v > 5 || v < -5 || Math.abs(dv) > CO.maxShift(sch)) return;
+  if (v > 5 || v < -5 || Math.abs(dv) > CO.maxShift(sch, fxNow())) return;
   const growing = Math.abs(dv) > Math.abs((p.tendencies[k] || 0) - (o[k] || 0));
-  if (growing && nudgesUsed(p) >= CO.nudgesFor(p, sch)) { toast('No nudges left for him', '', 2400, true); return; }
+  if (growing && nudgesUsed(p) >= CO.nudgesFor(p, sch, fxNow())) { toast('No nudges left for him', '', 2400, true); return; }
   p.tendencies[k] = v;
   saveTend();
   state.dirty = true;
@@ -2940,7 +2985,6 @@ screens.settings = (args) => {
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
       ]) +
       setGroup('Contracts', [
-        options('Coins per $1M', 'coinRate', [[2, '2'], [4, '4'], [6, '6'], [8, '8']], 'Coins pay tax, buyouts and cash in trades.'),
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('2nd-round deals (CPU)', 'rookieR2Years', [[2, '2 yrs'], [3, '3 yrs'], [4, '4 yrs']]),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
@@ -3067,7 +3111,8 @@ function saveSalt() {
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
 }
-const scoutPot = p => workoutDone(p.id) ? p.pot : scoutedPot(p, saveSalt(), state.params.scoutVariance);
+const scoutFog = () => state.params.scoutVariance * FX.facilityFx(myTeam()).fog;
+const scoutPot = p => workoutDone(p.id) ? p.pot : scoutedPot(p, saveSalt(), scoutFog());
 // Rating ceilings stay hidden until scouted: a few come out during
 // scouting, more at the combine (athletic ones most), and a private workout
 // shows them all. Which ones is fixed per save + prospect.
@@ -3695,17 +3740,17 @@ function combineBox(p) {
 // his own words, then our staff adds what they saw. His true ceiling (and
 // every rating's ceiling) is revealed once the interview is done.
 
-const INTERVIEW_QS = 3;
+const interviewQs = () => 3 + FX.facilityFx(myTeam()).interviews;
 const workoutSlots = () => (state.params.workoutSlots ?? 6) * Math.max(1, state.userTeams.size);
-const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= INTERVIEW_QS;
+const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= interviewQs();
 const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
 const myTeam = () => league().teams.find(isUserTeam);
 // Each prospect gets six questions in a random order (fixed per save), in
 // three pairs: each round you ask one of the two, and the other is gone.
 function interviewPairs(p) {
   const rng = mulberry32((saveSalt() ^ Math.imul(p.id + 7, 2654435761)) >>> 0);
-  const qs = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 6).map(y => y.x);
-  return [qs.slice(0, 2), qs.slice(2, 4), qs.slice(4, 6)].filter(x => x.length);
+  const qs = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 8).map(y => y.x);
+  return [qs.slice(0, 2), qs.slice(2, 4), qs.slice(4, 6), qs.slice(6, 8)].filter(x => x.length).slice(0, interviewQs());
 }
 
 // How much a rating can still grow: its ceiling (true potential) minus today.
@@ -3768,6 +3813,8 @@ function workoutQs(p) {
     { k: 'future', q: 'Where do you see yourself in five years?' },
     { k: 'model', q: 'Who do you model your game after?' },
     { k: 'work', q: 'What do you need to work on?' },
+    { k: 'pressure', q: 'How do you handle the big moments?' },
+    { k: 'leader', q: 'Are you a leader or a follower in the locker room?' },
   ];
 }
 const OLD_Q = { work: 'What do you need to work on?' };
@@ -3832,6 +3879,14 @@ function workoutAnswer(p, k) {
     return { quote: vary2(p, 5, ['Drills aren\'t basketball. Put on the tape.', 'I had a bad day. I\'m not a 40-yard-dash guy, I\'m a hooper.']),
       staff: frameNote(p, 'Trainers', 'test') };
   }
+  if (k === 'pressure') {
+    return { quote: vary2(p, 8, ['I want the ball. That\'s what I\'ve worked for.', 'The bigger the moment, the calmer I get.', 'I don\'t think about it. I just play.']), staff: '' };
+  }
+  if (k === 'leader') {
+    const lr = p.traits?.lockerRoom ?? 10;
+    return { quote: lr >= 14 ? 'A leader. I\'ll set the tone from day one.' : lr <= 6 ? 'I\'m here to hoop. Let the vets run the room.' : vary2(p, 9, ['I lead by example, then by voice.', 'I\'ll follow the vets first, then step up.']),
+      staff: p.traits ? `Front office: locker room presence ${traitWord(lr).toLowerCase()}.` : '' };
+  }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
     return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a really good team.']),
@@ -3877,7 +3932,7 @@ const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote"
 
 function workoutResult(p) {
   if (!workoutDone(p.id)) return `<span class="muted">Workout in progress: the full read comes after the interview.</span>`;
-  const before = scoutedPot(p, saveSalt(), state.params.scoutVariance);
+  const before = scoutedPot(p, saveSalt(), scoutFog());
   const t = tierFor(p.pot);
   if (before === p.pot) return `Our scouts had him right: ${t} ceiling. Every rating's ceiling is now on his page.`;
   return before < p.pot ? `<span class="up">Better than we thought: ${t} ceiling (we had ${tierFor(before)}).</span>`
@@ -3902,19 +3957,19 @@ screens.workouts = (args) => {
   const left = cap - ids.length;
   const inGym = ids.map(id => byId.get(id)).filter(Boolean).map(p => {
     const w = pre.workouts[p.id];
-    const more = INTERVIEW_QS - w.qs.length;
+    const more = interviewQs() - w.qs.length;
     return `<div class="workout">
       <div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>
       <p class="note small">${workoutResult(p)}</p>
       ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}
-      ${more > 0 && interviewPairs(p)[w.qs.length] ? `<p class="note muted small">Question ${w.qs.length + 1} of ${INTERVIEW_QS}: pick one.</p>${interviewPairs(p)[w.qs.length].map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
+      ${more > 0 && interviewPairs(p)[w.qs.length] ? `<p class="note muted small">Question ${w.qs.length + 1} of ${interviewQs()}: pick one.</p>${interviewPairs(p)[w.qs.length].map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
     </div>`;
   }).join('');
   const pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
   const shown = args.all ? pool : pool.slice(0, 40);
   layout({
     title: 'Private Workouts',
-    body: `<p class="note small">Bring prospects in to work out. Three rounds of questions: pick one of two each time. After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
+    body: `<p class="note small">Bring prospects in to work out. ${interviewQs() === 3 ? 'Three' : 'Four'} rounds of questions: pick one of two each time. After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
       ${inGym ? `<fieldset class="frame"><legend>In the Gym</legend><div class="stack">${inGym}</div></fieldset>` : ''}
       <fieldset class="frame"><legend>Invite</legend>
         <p class="note muted small" style="margin-bottom:6px">Your board first, then the rest of the class.</p>
@@ -3936,12 +3991,12 @@ actions.invite = d => {
 actions.askQ = d => {
   const w = preStore().workouts[+d.id];
   const p0 = league().draftClass.find(x => x.id === +d.id);
-  if (!w || !p0 || w.qs.length >= INTERVIEW_QS || w.qs.includes(d.k)) return;
+  if (!w || !p0 || w.qs.length >= interviewQs() || w.qs.includes(d.k)) return;
   // Only one of this round's pair can be asked.
   if (!(interviewPairs(p0)[w.qs.length] || []).some(x => x.k === d.k)) return;
   w.qs.push(d.k);
   savePre();
-  if (w.qs.length >= INTERVIEW_QS) {
+  if (w.qs.length >= interviewQs()) {
     state.compCache = {};
     const p = league().draftClass.find(x => x.id === +d.id);
     if (p) toast(`Workout done: ${playerName(p)}`, 'His ceiling and every rating\'s ceiling are on his page.');
@@ -4944,13 +4999,6 @@ function liveUndo(t) {
     for (const [tid, pid] of t.awayAdded) away[tid] = (away[tid] || []).filter(x => x !== pid);
     offSet('away', away);
   }
-  for (const x of t.cash || []) {
-    const T = league().teams.find(y => y.id === x.tid), O = league().teams.find(y => y.id === x.to);
-    if (T?.frontOffice) T.frontOffice.coins += x.c;
-    if (O?.frontOffice && x.gain) O.frontOffice.coins = Math.max(0, O.frontOffice.coins - x.gain);
-    const sent = offGet('cash'); sent[x.tid] = Math.max(0, (sent[x.tid] || 0) - x.m); offSet('cash', sent);
-    const got = offGet('cashGot'); got[x.to] = Math.max(0, (got[x.to] || 0) - x.m); offSet('cashGot', got);
-  }
   if (t.protAdded?.length) saveProt(protLedger().filter(e => !t.protAdded.some(x => x.otid === e.otid && x.yr === e.yr)));
 }
 
@@ -5055,16 +5103,7 @@ screens.liveTrade = (args) => {
   const adjust = tradeAdjust(A, B, aa.filter(x => selA.has(x.key)), bb.filter(x => selB.has(x.key)));
   const pv = x => pickItemValue(x, prot, adjust);
   const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + pv(x), 0);
-  const cashA = cashOf(A, B, args.cashA), cashB = cashOf(B, A, args.cashB);
-  const vA = sum(aa, selA) + cashA * CASH_VALUE, vB = sum(bb, selB) + cashB * CASH_VALUE;
-  const cashRow = (T, other, side, cur) => {
-    if (!cashOn()) return '';
-    const me = isUserTeam(T), room = Math.min(cashLimit() - cashSent(T.id), isUserTeam(other) ? cashLimit() - cashGot(other.id) : Infinity);
-    if (!me && !isUserTeam(other)) return '';
-    const steps = CASH_STEPS.filter(m => m && m <= room);
-    const fx = me ? (cur ? `−${cashCost(cur)} coins` : `−${cashCost(steps[0] || 2)} to −${cashCost(steps[steps.length - 1] || 8)} coins`) : (cur ? `+${cashGain(cur)} coins` : `+${cashGain(steps[0] || 2)} to +${cashGain(steps[steps.length - 1] || 8)} coins`);
-    return `<div class="prot-row"><span class="grow small">${esc(T.shortName)} ${me ? 'adds' : 'sends'} cash <span class="muted">· $${Math.max(0, room)}M left this season</span></span><div class="seg">${steps.map(m => `<button class="btn ${cur === m ? 'on focus' : 'off'}" data-act="liveCash" data-side="${side}" data-v="${cur === m ? 0 : m}" ${me && cashCost(m) > coinsOf(T) ? 'disabled' : ''}>$${m}M</button>`).join('')}</div><p class="note small" style="margin:2px 0 0"><b class="${me ? 'down' : 'up'}">${fx}</b></p></div>`;
-  };
+  const vA = sum(aa, selA), vB = sum(bb, selB);
   // Future firsts being sent can carry a protection.
   const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
   const protRows = !isComplete() ? [] : firsts.map(x => protOf(x.pick)
@@ -5091,7 +5130,6 @@ screens.liveTrade = (args) => {
         <div class="list">${list(bb, selB, 'b')}</div>
       </div>
       ${protRows ? `<fieldset class="frame"><legend>Protections</legend><p class="note small muted">Lands in the protection: it goes back and they get that year's 2nd.</p>${protRows}</fieldset>` : ''}
-      ${(cashRow(A, B, 'a', cashA) || cashRow(B, A, 'b', cashB)) ? (args.cashOpen || cashA || cashB ? `<fieldset class="frame"><legend>Cash</legend>${cashRow(A, B, 'a', cashA)}${cashRow(B, A, 'b', cashB)}</fieldset>` : '<button class="btn" data-act="liveCashOpen">💰 Add Some Cash</button>') : ''}
       ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
         <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
@@ -5100,26 +5138,6 @@ screens.liveTrade = (args) => {
   });
   slideTradeBar();
 };
-
-// ---- Cash in trades (Complete rules): either side can add cash to sweeten a
-// deal, up to 5.15% of the cap a season sent and the same received. Cash you
-// send costs coins (the other team doesn't get any); cash you ask for pays
-// you coins at half the rate, so it can't be farmed. It counts as trade
-// value for whoever sends it.
-const CASH_STEPS = [0, 2, 4, 6, 8];
-const CASH_VALUE = 2.4;                                          // trade points per $1M
-const cashLimit = () => Math.round(FA.capLines(league()).cap * 0.0515);
-const cashOn = () => isComplete() && FA.capSystemOn();
-const cashSent = tid => (offGet('cash')[tid] || 0);
-const cashGot = tid => (offGet('cashGot')[tid] || 0);
-// Cash is a straight 5 coins per $1M both ways ($2M = 10 coins), so asking
-// for cash and sending it cancel out; Deal Maker trims what you pay.
-const cashGain = m => m * 5;
-const cashCost = m => Math.round(m * 5 * fxNow().coinMult);
-// How much of `m` team T can send to `other` (under both limits).
-const cashOf = (T, other, m) => !cashOn() ? 0 : Math.max(0, Math.min(+m || 0, cashLimit() - cashSent(T.id), isUserTeam(other) ? cashLimit() - cashGot(other.id) : Infinity));
-actions.liveCashOpen = () => replace('liveTrade', { ...tradeArgs(), cashOpen: true });
-actions.liveCash = d => { const a = tradeArgs(); replace('liveTrade', { ...a, [d.side === 'a' ? 'cashA' : 'cashB']: +d.v }); };
 
 // ---- Three-team trades
 
@@ -5366,10 +5384,8 @@ actions.liveTradeGo = async d => {
   const sa = pickSide(A, a.selA || []), sb = pickSide(B, a.selB || []);
   const adjust = tradeAdjust(A, B, sa.items, sb.items);
   const pv = x => pickItemValue(x, a.prot || {}, adjust);
-  const cashA = cashOf(A, B, a.cashA), cashB = cashOf(B, A, a.cashB);
-  if (!sa.items.length && !sb.items.length && !cashA && !cashB) { toast('Tap something on either side first'); return; }
-  for (const [T, m] of [[A, cashA], [B, cashB]]) if (m && isUserTeam(T) && cashCost(m) > coinsOf(T)) { toast(`${T.shortName} can't cover that cash`, '', 2400, true); return; }
-  const vA = sa.items.reduce((s, x) => s + pv(x), 0) + cashA * CASH_VALUE, vB = sb.items.reduce((s, x) => s + pv(x), 0) + cashB * CASH_VALUE;
+  if (!sa.items.length && !sb.items.length) { toast('Tap something on either side first'); return; }
+  const vA = sa.items.reduce((s, x) => s + pv(x), 0), vB = sb.items.reduce((s, x) => s + pv(x), 0);
   if (d.force !== '1' || !state.params.commissioner) {
     const no = [[A, vA, vB], [B, vB, vA]].find(([t, give, get]) => !isUserTeam(t) && !cpuAccepts(give, get));
     if (no) { toast(`${no[0].shortName} decline: they want more back`); return; }
@@ -5384,16 +5400,6 @@ actions.liveTradeGo = async d => {
   for (const sd of [sa, sb]) for (const x of sd.items) if (x.pick && prot[x.key] && !protOf(x.pick)) led.push({ otid: x.pick.otid, yr: x.pick.yr, top: prot[x.key], from: sd.team.id });
   saveProt(led);
   const entry = liveExecute(sa, sb);
-  entry.cash = [];
-  for (const [T, O, m] of [[A, B, cashA], [B, A, cashB]]) if (m) {
-    const c = isUserTeam(T) ? cashCost(m) : 0, gain = isUserTeam(O) ? cashGain(m) : 0;
-    if (c) spendCoins(T, c);
-    if (gain && O.frontOffice) { O.frontOffice.coins += gain; state.dirty = true; }
-    const sent = offGet('cash'); sent[T.id] = (sent[T.id] || 0) + m; offSet('cash', sent);
-    const got = offGet('cashGot'); got[O.id] = (got[O.id] || 0) + m; offSet('cashGot', got);
-    entry.cash.push({ tid: T.id, to: O.id, m, c, gain });
-    entry.text += ` · ${T.shortName} ${isUserTeam(T) ? 'add' : 'send'} $${m}M cash`;
-  }
   entry.protAdded = led.filter(e => !e.done && (sa.items.concat(sb.items)).some(x => x.pick && x.pick.otid === e.otid && x.pick.yr === e.yr && prot[x.key]));
   back();
 };
@@ -6155,6 +6161,7 @@ function pitchOdds(p, team, kind, reason) {
   if (p.age >= 30) o += kind === 'win' ? 0.15 : -0.05;
   if (p.age <= 25 && kind === 'role') o += 0.1;
   if (teamRecord(team).pct >= 0.6 && kind === 'win') o += 0.1;
+  if (isUserTeam(team)) o += fxNow().promiseBonus;
   return Math.max(0.05, Math.min(0.9, o));
 }
 function qoCall(L, p, team) {
@@ -6705,23 +6712,6 @@ function syncDead() {
 }
 // Cap bar: payroll, dead money (red) and room under the cap.
 // The tax on an amount over the line (the same brackets as FA.taxBill).
-// Luxury tax, settled at final cuts: ownership covers a share (more for a
-// contender, none for a team it wants to blow up, plus the tree's Leadership
-// nodes); the rest is paid in coins. Unpaid, the locker room takes it badly.
-const taxShare = t => Math.min(1, ({ pay: 0.7, avoid: 0.25, blowup: 0 }[FA.taxStance(league(), t)] ?? 0.25) + fxNow().taxCover);
-const taxOwe = (t, bill) => (bill ? coinCost(bill * (1 - taxShare(t)), false) : 0);
-function taxCard(t) {
-  if (!FA.capSystemOn() || !isUserTeam(t)) return '';
-  const bill = FA.taxBill(league(), t);
-  if (!bill) return '';
-  const owe = taxOwe(t, bill), skip = !!calFlags().taxSkip;
-  const ok = coinsOf(t) >= owe;
-  return `<div class="drill-row wrap"><span class="grow"><b>Luxury tax $${bill}M</b><br><span class="small muted">Ownership covers ${Math.round(taxShare(t) * 100)}% · you pay ${coinTag(owe)} (you have ${coinTag(coinsOf(t))}). Settled after the cuts.</span></span>
-    <span class="opt-btns full"><button class="btn small ${!skip && ok ? 'on focus' : 'off'}" data-act="taxToggle" data-v="pay" ${ok ? '' : 'disabled'}>Pay with coins</button><button class="btn small ${skip || !ok ? 'on focus' : 'off'}" data-act="taxToggle" data-v="skip">Don't pay</button></span>
-    ${skip || !ok ? '<p class="note small down full">Unpaid, ownership is furious: everyone\'s morale drops.</p>' : ''}</div>`;
-}
-actions.taxToggle = d => { calFlags().taxSkip = d.v === 'skip'; render(); };
-const taxLine = t => { const x = (calFlags().taxLog || {})[t.id]; return x ? `<p class="note small ${x.paid ? 'up' : 'down'}">Luxury tax $${x.bill}M · owner covered $${x.cover}M · ${x.paid ? `you paid ${coinTag(x.owe)}` : 'unpaid: morale took a hit'}</p>` : ''; };
 function taxOn(over) {
   let left = over, rate = 1.5, bill = 0, step = 0;
   while (left > 0) { const c = Math.min(5, left); bill += c * rate; left -= c; step++; rate = step === 1 ? 1.75 : step === 2 ? 2.5 : step === 3 ? 3.25 : rate + 0.5; }
@@ -6734,7 +6724,6 @@ function ownerLine(t) {
   const C = FA.capLines(league()), st = FA.taxStance(league(), t);
   const fz = FA.frozenPick(league(), t), yrs = apronYears(t.id);
   return `<p class="note small owner-line">🏛️ ${st === 'pay' ? `Ownership will pay the tax to keep a winner together (up to the 2nd apron, $${C.apron2}M).` : st === 'blowup' ? 'Ownership won\'t pay the tax for a losing team. Shed salary.' : `Ownership wants to stay under the tax line ($${C.tax}M).`}</p>
-    <p class="note small owner-line">🪙 ${coinsOf(t)} coins</p>
     ${fz || yrs ? `<p class="note small owner-line">🔒 ${fz ? `${esc(pickLabel(fz))} frozen (over the 2nd apron). ` : ''}${yrs ? `Over the 2nd apron ${yrs} of the last 5 seasons${yrs >= 2 ? ': 3 sends a first to the end of the round' : ''}.` : ''}</p>` : ''}`;
 }
 
@@ -7598,12 +7587,6 @@ actions.portalDone = () => { calFlags().portal = true; goHome(); nextUp(); };
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
 const cutSel = () => (state.cutSel ||= {});
-// Complete rules: every release leaves its salary on the books (dead money).
-// A final-year deal (not a two-way) can be paid off in coins instead.
-const deadOnOne = () => isComplete() && !isCollege();
-const buyable = p => deadOnOne() && (p.contract?.yrs || 0) === 1 && !p.contract?.type && (p.contract?.sal || 0) > 0;
-const payCut = () => (state.cutPay ||= {});
-actions.cutPay = d => { if (calFlags().cuts) return; const m = payCut(); m[+d.id] = !m[+d.id]; render(); };
 // CPU teams only cut players in the last year of their deal; you can cut
 // anyone, and years left become dead money.
 const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
@@ -7623,15 +7606,12 @@ screens.cuts = () => {
     const picked = ranked.filter(x => sel[x.p.id]).length;
     const mood = (calFlags().taxMood || {})[t.id] || [];
     if (done) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>${capBar(t)}<p class="note small up">✓ Roster is set.</p>
-      ${taxLine(t)}
       ${mood.length ? `<p class="note small" style="margin-top:6px"><b>Locker room</b></p>${mood.map(x => `<p class="note small"><span class="${x.n > 0 ? 'up' : 'down'}">${esc(x.name)} morale ${x.n > 0 ? '+' : ''}${x.n}</span> <span class="muted">· ${esc(x.why)}</span></p>`).join('')}` : ''}</fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
       ${capBar(t)}
-      ${taxCard(t)}
-      <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} ${deadOnOne() ? 'A cut player\'s salary stays on your books as dead money; pay off a final-year deal with coins to clear it.' : 'Cutting a player with years left leaves his salary on your books as dead money.'}</p>
+      <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} Cutting a player with years left leaves his salary on your books as dead money.</p>
       <div class="stack">${ranked.map((x, i) => `<div class="drill-row tap ${sel[x.p.id] ? 'r1' : ''}" data-act="cutToggle" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} ${potStars(x.p)}<br>
-        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? ` · <span class="down">$${x.p.contract.sal * x.p.contract.yrs}M dead if cut</span>` : deadOnOne() && x.p.contract?.sal ? ` · <span class="down">$${x.p.contract.sal}M dead if cut</span>` : ''}</span>
-        ${sel[x.p.id] && buyable(x.p) ? `<span class="small"><button class="btn tiny ${payCut()[x.p.id] ? 'on focus' : 'off'}" data-act="cutPay" data-id="${x.p.id}">${payCut()[x.p.id] ? `Paid off ${coinTag(coinCost(x.p.contract.sal))}` : `Pay off ${coinTag(coinCost(x.p.contract.sal))}`}</button></span>` : ''}</span>
+        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? ` · <span class="down">$${x.p.contract.sal * x.p.contract.yrs}M dead if cut</span>` : ''}</span></span>
         <b class="small ${sel[x.p.id] ? 'down' : 'muted'}">${sel[x.p.id] ? '✂️ Cut' : 'Keep'}</b></div>`).join('')}</div></fieldset>`;
   }).join('');
   const log = calFlags().cutLog;
@@ -7681,6 +7661,7 @@ function requestsState() {
       const morale = p.season?.morale ?? 60, win = tr(p, 'winning'), loy = tr(p, 'loyalty');
       let odds = 0.25 + 0.06 * (strip - 2) + (win >= 15 ? 0.2 : win >= 12 ? 0.08 : 0) + (morale < 50 ? 0.15 : 0) - (loy >= 14 ? 0.2 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.15 : 0);
       if (isUserTeam(t)) odds *= fxNow().requestMult;
+      odds *= 1 - FX.facilityFx(t).requestCut;
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 5, 2654435761) ^ 0x7e9) >>> 0)() >= Math.min(0.75, odds)) continue;
       n++;
       const names = gone.slice(0, 2).map(x => x.ln || playerName(x));
@@ -7780,31 +7761,6 @@ actions.reqAnswer = d => {
 // minimum deals now. You sign who you want (up to the summer roster limit
 // and under the 2nd apron); when you wrap up, CPU teams with open spots
 // fill them with the best who are left.
-// Buy out a final-year deal with coins: he's released and nothing stays on
-// your books.
-function buyoutList(t, done) {
-  if (!deadOnOne() || done) return '';
-  const list = FA.signedRoster(t).filter(buyable).sort((a, b) => b.contract.sal - a.contract.sal).slice(0, 8);
-  if (!list.length) return '';
-  return `<p class="note small" style="margin-top:8px"><b>Buy out a vet</b> <span class="muted">· ${coinTag(coinsOf(t))} to spend</span></p>
-    ${list.map(p => `<div class="drill-row"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · $${p.contract.sal}M final year</span></span>
-      <button class="btn small" data-act="buyout" data-id="${p.id}" ${coinCost(p.contract.sal) > coinsOf(t) ? 'disabled' : ''}>${coinTag(coinCost(p.contract.sal))}</button></div>`).join('')}`;
-}
-actions.buyout = async d => {
-  const L = league();
-  const t = L.teams.find(x => isUserTeam(x) && x.roster.some(p => p.id === +d.id));
-  const p = t?.roster.find(x => x.id === +d.id);
-  if (!p || !buyable(p)) return;
-  const c = coinCost(p.contract.sal);
-  if (!(await confirmBox(`Pay off ${esc(playerName(p))}'s $${p.contract.sal}M for ${coinTag(c)}? He's released and nothing stays on your books.`, 'Pay Off'))) return;
-  if (coinsOf(t) < c) { toast('Not enough coins', '', 2400, true); return; }
-  checkpoint(`Buy out ${playerName(p)}`);
-  spendCoins(t, c);
-  FA.cutPlayer(L, t, p);
-  state.dirty = true;
-  render();
-  toast(`${playerName(p)} paid off`, `${coinTag(c)} spent`);
-};
 const lateMin = p => FA.minFor(p);
 const lateYears = p => (p.age <= 24 ? 2 : 1);
 screens.latefa = (args = {}) => {
@@ -7818,7 +7774,7 @@ screens.latefa = (args = {}) => {
   layout({
     title: 'Late Free Agency',
     body: `<p class="note small">Last call before final cuts. Everyone left takes a minimum deal now: 1 year, or 2 for players 24 and under.</p>
-      ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)} · ${FA.signedRoster(t).length}/${O.rosterMax}</legend>${capBar(t)}${buyoutList(t, done)}</fieldset>`).join('')}
+      ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)} · ${FA.signedRoster(t).length}/${O.rosterMax}</legend>${capBar(t)}</fieldset>`).join('')}
       ${done && log ? `<fieldset class="frame"><legend>Around the League</legend><div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.name)}</b> ${esc(x.lv)} → ${esc(x.team)} · $${x.sal}M × ${x.yrs}</p>`).join('') || '<p class="note small muted">Nobody else signed.</p>'}</div></fieldset>` : ''}
       <div class="tabs fa-tabs">${[['all', 'Best'], ['young', 'Young'], ['vets', 'Vets']].map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="lateView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(p => {
@@ -7872,13 +7828,8 @@ actions.cutsFinish = async () => {
   const mine = L.teams.filter(isUserTeam);
   const short = mine.find(t => cutsShort(t, sel) > 0);
   if (short) { toast(`${short.shortName}: pick ${cutsShort(short, sel)} more to cut`); return; }
-  const minYrs = deadOnOne() ? 0 : 1;
-  const cutList = mine.flatMap(t => cutRank(t).filter(x => sel[x.p.id]).map(x => ({ ...x, t })));
-  const paid = x => buyable(x.p) && payCut()[x.p.id];
-  const deadNew = cutList.filter(x => (x.p.contract?.yrs || 0) > minYrs && !paid(x)).reduce((a, x) => a + x.p.contract.sal * x.p.contract.yrs, 0);
-  const coinsNeeded = cutList.filter(paid).reduce((a, x) => a + coinCost(x.p.contract.sal), 0);
-  for (const t of mine) if (cutList.filter(x => x.t === t && paid(x)).reduce((a, x) => a + coinCost(x.p.contract.sal), 0) > coinsOf(t)) { toast(`${t.shortName} can't afford those payoffs`, '', 2800, true); return; }
-  if (!(await confirmBox(`Make the cuts? Cut players are released to free agency.${deadNew ? ` <b class="down">$${deadNew}M</b> stays on your books as dead money.` : ''}${coinsNeeded ? ` ${coinTag(coinsNeeded)} pays off the final-year deals.` : ''}`, 'Make the Cuts'))) return;
+  const deadNew = mine.flatMap(t => cutRank(t).filter(x => sel[x.p.id] && (x.p.contract?.yrs || 0) > 1)).reduce((a, x) => a + x.p.contract.sal * x.p.contract.yrs, 0);
+  if (!(await confirmBox(`Make the cuts? Cut players are released to free agency.${deadNew ? ` <b class="down">$${deadNew}M</b> stays on your books as dead money.` : ''}`, 'Make the Cuts'))) return;
   checkpoint('Final cuts');
   const list = [];
   let n = 0, mineN = 0;
@@ -7894,8 +7845,7 @@ actions.cutsFinish = async () => {
     if (!go.length) continue;
     for (const x of go) {
       const c = x.p.contract || {};
-      if (isUserTeam(t) && paid(x)) spendCoins(t, coinCost(c.sal));
-      else if (isUserTeam(t) && (c.yrs || 0) > minYrs) saveDead([...deadLedger(), { pid: x.p.id, name: playerName(x.p), tid: t.id, sal: c.sal || 0, yrs: c.yrs, yr: L.season.currentYear }]);
+      if (isUserTeam(t) && (c.yrs || 0) > 1) saveDead([...deadLedger(), { pid: x.p.id, name: playerName(x.p), tid: t.id, sal: c.sal || 0, yrs: c.yrs, yr: L.season.currentYear }]);
       FA.cutPlayer(L, t, x.p);
     }
     n += go.length;
@@ -7912,26 +7862,17 @@ actions.cutsFinish = async () => {
   const fx = fxNow();
   for (const t of L.teams) {
     const m = taxMood(L, t);
-    for (const x of m) { const n = x.n < 0 && isUserTeam(t) && fx.moodHalf ? Math.round(x.n / 2) : x.n; if (x.p.season) x.p.season.morale = Math.max(0, Math.min(100, (x.p.season.morale ?? 60) + n)); }
+    for (const x of m) { const n = x.n < 0 ? Math.round(x.n * (isUserTeam(t) && fx.moodHalf ? 0.5 : 1) * (1 - FX.facilityFx(t).taxCut)) : x.n; if (x.p.season) x.p.season.morale = Math.max(0, Math.min(100, (x.p.season.morale ?? 60) + n)); }
     if (isUserTeam(t) && m.length) moods[t.id] = m.map(x => ({ name: playerName(x.p), n: x.n, why: x.why.join('; ') }));
   }
   calFlags().taxMood = moods;
-  // Open Door lifts everyone; the luxury tax is settled in coins; Franchise
-  // Identity keeps morale from falling below its floor.
-  const taxLog = {};
+  // Open Door and the arena lift everyone; Franchise Identity keeps morale
+  // from falling below its floor.
   for (const t of mine) {
-    if (fx.moraleLift) for (const p of t.roster) if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + fx.moraleLift);
-    const bill = FA.capSystemOn() ? FA.taxBill(L, t) : 0;
-    if (bill) {
-      const owe = taxOwe(t, bill), cover = Math.round(bill * taxShare(t));
-      const ok = !calFlags().taxSkip && spendCoins(t, owe);
-      taxLog[t.id] = { bill, cover, owe, paid: ok };
-      if (!ok) for (const p of t.roster) if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - (fx.moodHalf ? 2 : 4));
-    }
+    const lift = fx.moraleLift + FX.facilityFx(t).morale;
+    if (lift) for (const p of t.roster) if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + lift);
     if (fx.moraleFloor) for (const p of t.roster) if (p.season && (p.season.morale ?? 60) < fx.moraleFloor) p.season.morale = fx.moraleFloor;
   }
-  calFlags().taxLog = taxLog;
-  state.cutPay = {};
   const pen = recordApron();
   if (pen.some(isUserTeam)) toast('2nd apron penalty', 'Over it 3 of the last 5 seasons: your furthest-out first moves to the end of the 1st round', 4200, true);
   calFlags().cuts = true;

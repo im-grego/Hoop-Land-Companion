@@ -123,7 +123,6 @@ export const DEFAULT_PARAMS = {
   lotteryFormat: 'auto',  // auto (from the league's settings) | 321 | top4 | old
   lotteryDraws: 4,        // unused (old setting)
   draftRounds: 2,
-  coinRate: 4,              // coins per $1M (tax, buyouts, cash in trades)
   capSystem: true,          // NBA cap, tax line and aprons by season (the save's cap set to the 2nd apron on export)
   liveCpuTradeChance: 10,  // % chance of a CPU trade around each CPU pick in the live draft
   draftTradeWindow: 8,
@@ -384,12 +383,12 @@ export function maybeRegressionDown(p, injuryClass, z, params, rng) {
 // a strong season (z = production against his peers). `injury` is the
 // injury class ('standard' | 'nagging' | 'structural') when the player had
 // a qualifying injury.
-export function maybeLongevity(p, mult, params, rng, injury = null, z = null) {
+export function maybeLongevity(p, mult, params, rng, injury = null, z = null, cutMult = 1) {
   const year = p.age - p.regressionAge + 1; // 1 = at the regression age, 0 = the year before
   if (year < 0) return false;
   if (year > 1 && !(z != null && z >= 0.5)) return false;
   const pct = injury === 'structural' ? params.structuralLongevityCut : injury ? params.injuryLongevityCut : 0;
-  const cut = 1 - pct / 100;
+  const cut = 1 - pct * cutMult / 100;
   const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut;
   if (rng() * 100 >= chance) return false;
   p.regressionAge++;
@@ -442,8 +441,8 @@ export function injuryRisk(p, year, params) {
 
 export const injuryPotChance = (p, year, params) => injuryRisk(p, year, params)?.chance || 0;
 
-export function maybeInjuryPotLoss(p, year, params, rng) {
-  const chance = injuryPotChance(p, year, params);
+export function maybeInjuryPotLoss(p, year, params, rng, mult = 1) {
+  const chance = injuryPotChance(p, year, params) * mult;
   if (!chance || p.pot <= POT_MIN) return false;
   if (rng() * 100 >= chance) return false;
   p.pot--;
@@ -457,9 +456,9 @@ export function unlockSkill(p, id) {
   else p.skills.push({ id, xp: 0, level: 1, equipped: true });
 }
 
-export function maybeSkills(p, points, params, profiles, rng) {
+export function maybeSkills(p, points, params, profiles, rng, skillMult = 1) {
   if (p.age <= params.skillMaxAge && points >= params.skillMinPoints &&
-      activeSkills(p).length < params.maxSkills && rng() * 100 < params.newSkillChance) {
+      activeSkills(p).length < params.maxSkills && rng() * 100 < params.newSkillChance * skillMult) {
     const ranked = rankSkillsFor(p, profiles).slice(0, 5).filter(s => s.fit > 0);
     const pick = weightedPick(rng, ranked, s => s.fit);
     if (pick) unlockSkill(p, pick.id);
@@ -484,8 +483,10 @@ export function runProgression(entries, params, profiles) {
   for (const e of sorted) {
     const mpg = lastSeasonMpg(e.p, e.leagueIdx);
     const risk = e.injuryYear != null ? injuryRisk(e.p, e.injuryYear, params) : null;
+    // A recovery center treats structural injuries like ordinary ones.
+    if (risk && e.structStd && risk.cls === 'structural') risk.cls = 'standard';
     let pts = pointsFor(e.p, mpg, params, rng);
-    if (risk?.cls === 'nagging') pts = Math.round(pts * params.naggingPointsMult);
+    if (risk?.cls === 'nagging') pts = Math.round(pts * (1 - (1 - params.naggingPointsMult) * (e.nagMult ?? 1)));
     // The coaching tree's Player Development branch (your teams only).
     if (e.devMult) pts = Math.round(pts * e.devMult);
     awards.set(e.p.id, params.bumpMode === 'train' ? trainPoints(e.p, pts, params, rng) : awardPoints(e.p, pts, params, rng));
@@ -500,14 +501,14 @@ export function runProgression(entries, params, profiles) {
     else if (gameRewardedLongevity(e.p, mpg, e, params)) { /* the game gave his year already */ }
     else if (!maybeRegressionDown(e.p, injured ? risk.cls : null, z, params, rng)) {
       const prod = z == null ? 1 : Math.max(0.2, Math.min(2, 1 + params.prodLongevityPerZ * z));
-      maybeLongevity(e.p, mult * prod * (e.longMult || 1), params, rng, injured ? risk.cls : null, z);
+      maybeLongevity(e.p, mult * prod * (e.longMult || 1), params, rng, injured ? risk.cls : null, z, e.longCutMult ?? 1);
     }
     const pot = e.p.pot;
-    if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);
+    if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng, e.potLossMult ?? 1);
     else maybePotential(e.p, mult * (e.potMult || 1), params, rng, z);
     // Why potential dropped, for the report.
     if (e.p.pot < pot) awards.why.set(e.p.id, injured ? 'injury' : z != null && z <= params.prodPotDownZ ? 'production' : mpg && mpg.mpg < 12 ? 'minutes' : 'development');
-    maybeSkills(e.p, pts, params, profiles, rng);
+    maybeSkills(e.p, pts, params, profiles, rng, e.skillMult ?? 1);
     if (e.spend) spendHeldPoints(e.p, params, rng);
   }
   return awards;

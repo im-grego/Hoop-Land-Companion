@@ -20,34 +20,41 @@ export const BRANCHES = [
 export const TIER_COST = [1, 2, 3];
 export const MAX_TIER = 3;
 
-// The tree, top down. Each branch is a spine of three tiers (the old tree,
-// opened by points or by the coach's own rating) with side nodes beside it
-// that cost coins as well as points, and a capstone that needs both ends.
-// `spine` nodes are the tiers; the rest are the Complete rules' additions.
+// The tree, top down, five rows deep. Each branch is a spine of three tiers
+// (the old tree, opened by tokens or by the coach's own rating) with side
+// nodes beside it, a row of two more, and a capstone that needs both. Tokens
+// (franchise tokens, earned each season) buy everything. `spine` nodes are
+// the tiers; the rest are the Complete rules' additions.
 export const NODES = {
   dev: [
     { id: 'd1', row: 1, col: 0, spine: 1, label: 'Fundamentals' },
     { id: 'd2', row: 2, col: 0, spine: 2, label: 'Film Study' },
-    { id: 'dA', row: 2, col: 1, label: 'Strength Lab', text: 'Strength program: +30% odds of a gain', pts: 2, coins: 30, req: ['d1'] },
+    { id: 'dA', row: 2, col: 1, label: 'Strength Lab', text: 'Strength program: +30% odds of a gain', pts: 2, req: ['d1'] },
     { id: 'd3', row: 3, col: 0, spine: 3, label: 'Elite Development' },
-    { id: 'dB', row: 3, col: 1, label: 'Veteran Care', text: '+50% odds to push a veteran\'s regression back a year', pts: 3, coins: 60, req: ['dA'] },
-    { id: 'd4', row: 4, col: 0, wide: true, label: 'Player Lab', text: '+15% more progression for players 23 and under; rookies\' potential odds ×1.25', pts: 4, coins: 120, req: ['d3', 'dB'] },
+    { id: 'dB', row: 3, col: 1, label: 'Veteran Care', text: '+50% odds to push a veteran\'s regression back a year', pts: 3, req: ['dA'] },
+    { id: 'dC', row: 4, col: 0, label: 'Skill Workshop', text: 'Players learn new skills 30% more often', pts: 4, req: ['d3'] },
+    { id: 'dD', row: 4, col: 1, label: 'Late Bloomers', text: '+12% progression for players 24 to 27', pts: 4, req: ['dB'] },
+    { id: 'd4', row: 5, col: 0, wide: true, label: 'Player Lab', text: '+15% progression for players 23 and under; potential bumps 25% likelier for 21 and under', pts: 6, req: ['dC', 'dD'] },
   ],
   culture: [
     { id: 'm1', row: 1, col: 0, spine: 1, label: 'Team Culture' },
     { id: 'm2', row: 2, col: 0, spine: 2, label: 'Locker Room' },
-    { id: 'mA', row: 2, col: 1, label: 'Open Door', text: '+3 morale for everyone each summer · stars ask out less', pts: 2, coins: 30, req: ['m1'] },
+    { id: 'mA', row: 2, col: 1, label: 'Open Door', text: '+3 morale for everyone each summer · stars ask out 20% less often', pts: 2, req: ['m1'] },
     { id: 'm3', row: 3, col: 0, spine: 3, label: 'Brotherhood' },
-    { id: 'mB', row: 3, col: 1, label: 'Win-Now Voice', text: 'Your players re-sign for 5% less · tax and request morale hits halved', pts: 3, coins: 60, req: ['mA'] },
-    { id: 'm4', row: 4, col: 0, wide: true, label: 'Franchise Identity', text: 'Morale can\'t fall under 40 · only Lv 90+ stars can ask out', pts: 4, coins: 120, req: ['m3', 'mB'] },
+    { id: 'mB', row: 3, col: 1, label: 'Win-Now Voice', text: 'Your players re-sign for 5% less · tax and request morale hits halved', pts: 3, req: ['mA'] },
+    { id: 'mC', row: 4, col: 0, label: 'Player Council', text: 'Stars ask out 40% less often', pts: 4, req: ['m3'] },
+    { id: 'mD', row: 4, col: 1, label: 'Hometown Discount', text: 'Your players re-sign for another 5% less', pts: 4, req: ['mB'] },
+    { id: 'm4', row: 5, col: 0, wide: true, label: 'Franchise Identity', text: 'Morale can\'t fall under 40 · only Lv 90+ stars can ask out', pts: 6, req: ['mC', 'mD'] },
   ],
   scheme: [
     { id: 's1', row: 1, col: 0, spine: 1, label: 'Playbook' },
     { id: 's2', row: 2, col: 0, spine: 2, label: 'Defensive Systems' },
-    { id: 'sA', row: 2, col: 1, label: 'Ownership Trust', text: 'The owner covers 20% more of your tax bill', pts: 2, coins: 30, req: ['s1'] },
+    { id: 'sA', row: 2, col: 1, label: 'Clipboard', text: 'One more tendency nudge for players 28 and older', pts: 2, req: ['s1'] },
     { id: 's3', row: 3, col: 0, spine: 3, label: 'Rotation Control' },
-    { id: 'sB', row: 3, col: 1, label: 'Deal Maker', text: 'Cash sweeteners and buyouts cost 25% fewer coins', pts: 3, coins: 60, req: ['sA'] },
-    { id: 's4', row: 4, col: 0, wide: true, label: 'Franchise Voice', text: 'The owner covers another 20% of the tax · promises are believed more', pts: 4, coins: 120, req: ['s3', 'sB'] },
+    { id: 'sB', row: 3, col: 1, label: 'Film Breakdown', text: 'A tendency can move one step further', pts: 3, req: ['sA'] },
+    { id: 'sC', row: 4, col: 0, label: 'Motor Skills', text: 'High-motor players (15+) get two extra nudges', pts: 4, req: ['s3'] },
+    { id: 'sD', row: 4, col: 1, label: 'Locker Room Trust', text: 'Your promises are believed: +10% odds on pitches and promises', pts: 4, req: ['sB'] },
+    { id: 's4', row: 5, col: 0, wide: true, label: 'Franchise Voice', text: 'One more nudge for every player · promises believed another +10%', pts: 6, req: ['sC', 'sD'] },
   ],
 };
 export const EXTRA_IDS = Object.values(NODES).flat().filter(n => !n.spine).map(n => n.id);
@@ -66,24 +73,28 @@ export function coachTiers(coach) {
 
 export const tierOf = (tree, coach, k) => Math.min(MAX_TIER, Math.max(tree.bought[k] || 0, coachTiers(coach)[k]));
 export const nodeOwned = (tree, coach, n, k) => n.spine ? tierOf(tree, coach, k) >= n.spine : !!tree.nodes?.[n.id];
-// What the extra nodes add (all zero/one when none are owned or the simple
+// What the extra nodes add (all neutral when none are owned or the simple
 // rules are on).
 export function effects(tree, coach, on) {
   const has = id => on && !!tree.nodes?.[id];
   return {
     strMult: has('dA') ? 1.3 : 1,
     longMult: has('dB') ? 1.5 : 1,
+    skillMult: has('dC') ? 1.3 : 1,
+    lateBloom: has('dD') ? 1.12 : 1,
     labYoung: has('d4') ? 1.15 : 1,
     labPot: has('d4') ? 1.25 : 1,
     moraleLift: has('mA') ? 3 : 0,
-    requestMult: has('mA') ? 0.8 : 1,
-    askMult: has('mB') ? 0.95 : 1,
+    requestMult: (has('mA') ? 0.8 : 1) * (has('mC') ? 0.6 : 1),
+    askMult: (has('mB') ? 0.95 : 1) * (has('mD') ? 0.95 : 1),
     moodHalf: has('mB'),
     moraleFloor: has('m4') ? 40 : 0,
     requestLv: has('m4') ? 90 : 0,
-    taxCover: (has('sA') ? 0.2 : 0) + (has('s4') ? 0.2 : 0),
-    coinMult: has('sB') ? 0.75 : 1,
-    promiseBonus: has('s4') ? 0.1 : 0,
+    nudgeVet: has('sA') ? 1 : 0,
+    shiftPlus: has('sB') ? 1 : 0,
+    motorPlus: has('sC') ? 2 : 0,
+    nudgeAll: has('s4') ? 1 : 0,
+    promiseBonus: (has('sD') ? 0.1 : 0) + (has('s4') ? 0.1 : 0),
   };
 }
 
@@ -114,12 +125,14 @@ export const cultureCap = t => (t ? 12 + 2 * t : 0);
 
 // Tendency nudges a player takes this offseason: the Scheme tier, plus one
 // for young players and high-motor players, minus one for veterans.
-export function nudgesFor(p, schemeTier) {
-  let n = 1 + schemeTier + (p.age <= 23 ? 1 : 0) + ((p.traits?.motor || 10) >= 15 ? 1 : 0) - (p.age >= 31 ? 1 : 0);
-  return Math.max(1, Math.min(6, n));
+export function nudgesFor(p, schemeTier, fx = {}) {
+  const motor = (p.traits?.motor || 10) >= 15;
+  let n = 1 + schemeTier + (p.age <= 23 ? 1 : 0) + (motor ? 1 + (fx.motorPlus || 0) : 0) - (p.age >= 31 ? 1 : 0)
+    + (p.age >= 28 ? fx.nudgeVet || 0 : 0) + (fx.nudgeAll || 0);
+  return Math.max(1, Math.min(8, n));
 }
 // How far one tendency can move from where the offseason started.
-export const maxShift = schemeTier => (schemeTier >= 3 ? 3 : 2);
+export const maxShift = (schemeTier, fx = {}) => (schemeTier >= 3 ? 3 : 2) + (fx.shiftPlus || 0);
 
 // Game plan: the head coach's own scheme settings in the save (the game
 // uses them when it sims). Each is a numbered option; 0 is the default most

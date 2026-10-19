@@ -11,6 +11,7 @@
 // Contract options: opt 1 = team option, opt 2 = player option.
 
 import { tr, traitsSet } from './traits.js';
+import { facilityFx } from './facilities.js';
 import { jerseyNumber, playerName } from './savefile.js';
 import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
@@ -303,7 +304,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
     w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0) +
-    (offer.ntc ? 0.08 : 0);
+    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0);
 }
 
 // No-trade clauses: a player with 8+ years in the league, 4+ of them with
