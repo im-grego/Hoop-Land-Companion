@@ -345,7 +345,16 @@ export function offerRoom(league, team, p, day, used = {}, o = FA_DEFAULTS) {
 }
 
 // Is this offer allowed? Returns null or the reason it isn't.
+// A player whose promise a team broke won't meet with that team: { pid ->
+// Set(teamId) }, set by the app for the seasons it applies.
+let GRUDGES = new Map();
+export function setGrudges(list) {
+  GRUDGES = new Map();
+  for (const g of list || []) (GRUDGES.get(g.pid) || GRUDGES.set(g.pid, new Set()).get(g.pid)).add(g.tid);
+}
+export const hasGrudge = (p, team) => !!team && !!GRUDGES.get(p.id)?.has(team.id);
 export function checkOffer(league, team, p, offer, day, used = {}, o = FA_DEFAULTS) {
+  if (hasGrudge(p, team)) return `${playerName(p)} refuses to meet with ${team.shortName}`;
   const room = offerRoom(league, team, p, day, used, o);
   if (room.full) return `${team.shortName} roster is full (${o.rosterMax})`;
   const room0 = offerRoom(league, team, p, day, used, o);

@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.78.0';
+const APP_VERSION = '0.79.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -329,7 +329,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
-  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncDead(); }
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -426,6 +426,7 @@ async function loadFile(file) {
     installData(data);
     freshSaveCheck();
     const reopened = reopenOptions();
+    settlePromises();
     state.dirty = reopened > 0;
     const held = holdCpuOffers();
     recordSalaries();
@@ -742,6 +743,7 @@ function freshSaveCheck() {
   const fp = saveFingerprint();
   let known = null;
   try { known = JSON.parse(localStorage.getItem(fpKey())); } catch { known = null; }
+  state.fromExport = !!known && known.base !== fp && (known.exports || []).includes(fp);
   if (known && (known.base === fp || (known.exports || []).includes(fp))) { state.depth = known.depth || null; return; }
   {
     // A different save (or progress stored before saves were told apart):
@@ -6379,6 +6381,44 @@ function presserStore() {
   try { return JSON.parse(localStorage.getItem(`hlc:presser:${seasonKey()}`)) || {}; } catch { return {}; }
 }
 function savePresser(v) { try { localStorage.setItem(`hlc:presser:${seasonKey()}`, JSON.stringify(v)); } catch { /* ignore */ } }
+// Broken promises: a player you promised something and didn't deliver loses
+// a lot of morale and refuses to meet with your team (no extension, no
+// offers) through the next offseason. { pid, tid, until } per save.
+const grudgeKey = () => `hlc:grudge:${league().shortName}:${league().meta?.saveName || ''}`;
+function loadGrudges() { try { return JSON.parse(localStorage.getItem(grudgeKey())) || []; } catch { return []; } }
+function syncGrudges() {
+  if (!state.data) return;
+  const yr = league().season.currentYear;
+  FA.setGrudges(isComplete() ? loadGrudges().filter(g => yr <= g.until) : []);
+}
+function breakPromise(L, p, team, pr, why, later = false) {
+  const yr = L.season.currentYear;
+  if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 30);
+  const list = loadGrudges().filter(g => !(g.pid === p.id && g.tid === team.id));
+  list.push({ pid: p.id, tid: team.id, until: yr + 1 });
+  try { localStorage.setItem(grudgeKey(), JSON.stringify(list)); } catch { /* ignore */ }
+  syncGrudges();
+  state.dirty = true;
+  const say = () => toast(`${playerName(p)} is furious`, `${why} He took a big morale hit and won't meet with ${team.shortName}.`, 5200, true);
+  if (later) setTimeout(say, 3200); else say();
+}
+const PROMISE_TEXT = { role: 'a bigger role', ext: 'an extension', win: 'help around him' };
+// Role and "help" promises are judged on last season; extension promises
+// when the extension window closes.
+function settlePromises() {
+  const L = league();
+  if (!L || isCollege() || !isComplete() || phaseRank(L.season) < 1 || phaseRank(L.season) > 3) return;
+  const yr = L.season.currentYear;
+  const ly = lastSeasonYear();
+  for (const pr of loadPromises().filter(x => x.yr === yr - 1 && x.v === 'commit' && (x.src === 'option' || x.src === 'request') && (x.kind === 'role' || x.kind === 'win'))) {
+    const team = L.teams.find(t => t.id === pr.tid), p = team?.roster.find(x => x.id === pr.pid);
+    if (!team || !p || !isUserTeam(team) || state.fromExport) continue;
+    const l = seasonLine(p, state.leagueIdx, ly);
+    const kept = pr.kind === 'role' ? !!l && (l.mpg >= 26 || l.gs >= 41)
+      : teamRecord(team).pct >= 0.5 && team.roster.some(x => x !== p && shownLevel(x) >= shownLevel(p) - 3);
+    if (!kept) breakPromise(L, p, team, pr, `You promised ${PROMISE_TEXT[pr.kind]} and didn't deliver.`, true);
+  }
+}
 const promisesKey = () => `hlc:promises:${league().shortName}:${league().meta?.saveName || ''}`;
 function loadPromises() { try { return JSON.parse(localStorage.getItem(promisesKey())) || []; } catch { return []; } }
 function savePromises(v) { try { localStorage.setItem(promisesKey(), JSON.stringify(v)); } catch { /* ignore */ } }
@@ -6955,11 +6995,12 @@ screens.extensions = () => {
     const status = talk?.signed ? `<span class="up">✍️ $${talk.signed.sal}M × ${talk.signed.yrs}${optTag(talk.signed.opt)}</span> ${total(talk.signed)}`
       : over ? '<span class="down">Talks broke off</span>'
       : talk?.last ? `<span class="down">${esc(talk.last.text)}</span>` : '';
-    return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done ? 'disabled' : ''}>
+    const grudge = FA.hasGrudge(p, t);
+    return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
       <span class="right small">$${p.contract.sal}M<br><span class="muted">final year</span></span>
       <span class="meta">${esc(posName(p))} · ${p.age}y · morale ${p.season?.morale ?? '?'} · asks $${a.sal}M × ${a.pref}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
-      ${status ? `<span class="chg">${status}</span>` : ''}
+      ${grudge ? '<span class="chg"><span class="down">🚫 Refuses to meet with you: you broke your promise</span></span>' : status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
   const log = st.log;
@@ -7035,6 +7076,11 @@ actions.extClose = async () => {
   const L = league(), st = extStore();
   if (!(await confirmBox('Close the extension window?', 'Close'))) return;
   const rng = mulberry32((saveSalt() ^ 0xe7e1) >>> 0);
+  // "An extension next summer" has to be delivered by now.
+  for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.v === 'commit' && x.kind === 'ext' && (x.src === 'option' || x.src === 'request'))) {
+    const team = L.teams.find(t => t.id === pr.tid), p = team?.roster.find(x => x.id === pr.pid);
+    if (team && p && isUserTeam(team) && !st.talks[p.id]?.signed) breakPromise(L, p, team, pr, 'You promised an extension and never gave one.');
+  }
   const list = [];
   for (const t of L.teams.filter(tt => !isUserTeam(tt))) {
     const status = teamStatus(L, t);
@@ -7850,6 +7896,7 @@ actions.lateSign = d => {
   const p = (L.freeAgents || []).find(x => x.id === +d.id);
   const t = L.teams.find(isUserTeam);
   if (!p || !t) return;
+  if (FA.hasGrudge(p, t)) { toast(`${playerName(p)} refuses to meet with ${t.shortName}`, '', 2800, true); return; }
   if (FA.signedRoster(t).length >= O.rosterMax) { toast(`Roster is full (${O.rosterMax})`, '', 2400, true); return; }
   if (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2) { toast('That would put you over the 2nd apron', '', 2400, true); return; }
   FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
