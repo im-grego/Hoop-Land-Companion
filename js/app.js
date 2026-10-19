@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.104.3';
+const APP_VERSION = '0.105.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6189,6 +6189,55 @@ actions.faDecide = async () => {
 // CPU players on the block get dealt during free agency: a CPU team that
 // values him close to what he's worth sends a player or pick back. Each
 // player is shopped once per day until someone bites.
+// Front offices plan ahead. A contending team with young players who'll need
+// new money soon (rookie deals ending, a rising core) and a payroll that would
+// pass the tax line puts its older, overpaid players on the block to make
+// room a year early. Done once per offseason; the deals then go through the
+// usual block shopping. Returns the reasons, by player id.
+function proactiveFrontOffice() {
+  const L = league();
+  const store = offGet('fo');
+  if (store.done) return store.why || {};
+  const why = {};
+  if (FA.capSystemOn()) {
+    const tax = FA.capLines(L, 1).tax;
+    let n = 0;
+    for (const t of L.teams.filter(x => !isUserTeam(x))) {
+      if (n >= 6) break;
+      const st = teamStatus(L, t);
+      if (st !== 'contending' && st !== 'competing') continue;
+      const players = FA.signedRoster(t);
+      const core = players.filter(p => p.age <= 26 && p.pot >= 7 && shownLevel(p) >= 75 && (p.contract?.yrs ?? 9) <= 1);
+      if (!core.length) continue;
+      const committed = players.filter(p => (p.contract?.yrs ?? 0) >= 2).reduce((s, p) => s + (p.contract.sal || 0), 0);
+      const raises = core.reduce((s, p) => s + Math.max(fairSalary(shownLevel(p)) * 1.05, p.contract?.sal || 0), 0);
+      let over = committed + raises - (tax - 10);   // a front office stays clear of the line, not just under it
+      if (over <= 0) continue;
+      const cands = players.filter(p => p.age >= 31 && (p.contract?.yrs ?? 0) >= 2 && p.season?.onTradeBlock === 0 && !tradeLock(p)
+        && (p.contract.sal - fairSalary(shownLevel(p))) >= tagGap(fairSalary(shownLevel(p))))
+        .sort((x, y) => (y.contract.sal - fairSalary(shownLevel(y))) - (x.contract.sal - fairSalary(shownLevel(x))));
+      for (const p of cands.slice(0, 2)) {
+        if (over <= 0 || n >= 6) break;
+        p.season.onTradeBlock = 1;
+        why[p.id] = `clearing room for ${core.slice(0, 2).map(x => x.ln || playerName(x)).join(' and ')}`;
+        over -= p.contract.sal;
+        n++;
+      }
+    }
+  }
+  offSet('fo', { done: true, why });
+  if (Object.keys(why).length) state.dirty = true;
+  return why;
+}
+// A player with a 9 or 10 potential traded for a lot usually signs long term with the team that gets him.
+function extendAfterTrade(p, team, ratio) {
+  const L = league();
+  if (!p || p.pot < 9 || ratio < 0.95 || (p.contract?.yrs ?? 0) > 2 || p.contract?.ext?.yrs > 0) return false;
+  const a = extAsk(p, team);
+  signExtension(L, team, p, { sal: a.sal, yrs: Math.max(3, a.pref), opt: 0 }, !isUserTeam(team));
+  return a;
+}
+
 function cpuBlockDeals(day) {
   const L = league();
   if (!isComplete() || isCollege()) return [];
@@ -6196,6 +6245,7 @@ function cpuBlockDeals(day) {
   const rng = mulberry32((saveSalt() ^ Math.imul(day + 3, 0x9e3779b1)) >>> 0);
   const cpu = L.teams.filter(t => !isUserTeam(t));
   const done = [];
+  const why = proactiveFrontOffice();
   for (const t of cpu) {
     // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
     for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {
@@ -6231,7 +6281,8 @@ function cpuBlockDeals(day) {
       markAway(rec.moved);
       if (p.season) p.season.onTradeBlock = 0;
       const back = [...best.B.players.map(playerName), ...best.B.picks.map(pk => pickLabel(pk))].join(', ');
-      done.push(`${best.A.team.shortName} send ${playerName(p)} to ${best.B.team.shortName} for ${back}`);
+      const ext = extendAfterTrade(p, best.B.team, (best.B.players.map(x => playerValue(x, state.leagueIdx, ly)).reduce((s, v) => s + v, 0) + best.B.picks.reduce((s, pk) => s + futureValue(pk), 0)) / Math.max(1, want));
+      done.push(`${best.A.team.shortName} send ${playerName(p)} to ${best.B.team.shortName} for ${back}${why[p.id] ? ` (${why[p.id]})` : ''}${ext ? `; he signs a ${Math.max(3, ext.pref)}-year extension` : ''}`);
     }
   }
   if (done.length) { const log = offGet('cpuTrades'); offSet('cpuTrades', Array.isArray(log) ? [...log, ...done] : done); state.dirty = true; }
@@ -8692,6 +8743,9 @@ function stripScore(L, t) {
 // Only real stars ask out: Lv 86+, or a 4.5-5 star potential at Lv 79+ who's
 // at least three years in.
 const demandsHelp = (p, t) => { const lv = shownLevel(p), min = t && isUserTeam(t) && fxNow().requestLv ? fxNow().requestLv : 86; return lv >= min || (p.pot >= 9 && lv >= 79 && lv >= (min > 86 ? min : 0) && (p.yrs ?? 0) >= 3); };
+// Players on their first (rookie) contract have no leverage, and nobody with 3 or more years left asks out:
+// it's the one or two years left that hope to hash out a new deal with whoever picks them up.
+const canAskOut = p => !FA.isRookieScale(p) && (p.contract?.yrs ?? 0) >= 1 && (p.contract?.yrs ?? 0) <= 2;
 function requestsState() {
   const L = league();
   const st = offGet('req');
@@ -8702,7 +8756,7 @@ function requestsState() {
     const { strip, gone } = stripScore(L, t);
     if (strip < 2) continue;
     const roster = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3)
-      .filter(p => demandsHelp(p, t) && tr(p, 'loyalty') < 17 && !tradeLock(p) && p.season?.onTradeBlock !== 2 && (isUserTeam(t) || cpuAsks < 3));
+      .filter(p => demandsHelp(p, t) && tr(p, 'loyalty') < 17 && !tradeLock(p) && p.season?.onTradeBlock !== 2 && canAskOut(p) && (isUserTeam(t) || cpuAsks < 3));
     const max = strip >= 4 ? 2 : 1;
     let n = 0;
     for (const p of roster) {
@@ -8711,7 +8765,8 @@ function requestsState() {
       // Happy players don't ask out: it starts with morale, and a stripped roster only tips an unhappy star.
       if (morale >= 70) continue;
       const moraleOdds = morale < 35 ? 0.35 : morale < 50 ? 0.2 : 0.08;
-      let odds = 0.06 + moraleOdds + 0.04 * (strip - 2) + (win >= 15 ? 0.1 : win >= 12 ? 0.04 : 0) - (loy >= 14 ? 0.15 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.1 : 0);
+      const yrsLeft = p.contract?.yrs ?? 1;
+      let odds = (yrsLeft >= 2 ? 0.5 : 1) * (0.06 + moraleOdds + 0.04 * (strip - 2) + (win >= 15 ? 0.1 : win >= 12 ? 0.04 : 0) - (loy >= 14 ? 0.15 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.1 : 0));
       if (isUserTeam(t)) odds *= fxNow().requestMult;
       odds *= 1 - FX.facilityFx(t).requestCut;
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 5, 2654435761) ^ 0x7e9) >>> 0)() >= Math.min(0.75, odds)) continue;
@@ -8720,6 +8775,18 @@ function requestsState() {
       const names = gone.slice(0, 2).map(x => x.ln || playerName(x));
       list.push({ pid: p.id, tid: t.id, why: `${names.join(' and ')} gone and little coming back`, status: isUserTeam(t) ? 'open' : 'cpu' });
       if (!isUserTeam(t)) { if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, (p.season.morale ?? 60) - 8); } }
+    }
+  }
+  // A star in the last year of his deal who's unhappy can ask to be moved to a new opportunity
+  // (and test free agency from there), stripped roster or not.
+  for (const t of L.teams) {
+    for (const p of FA.signedRoster(t).filter(x => demandsHelp(x, t) && canAskOut(x) && x.contract.yrs === 1 && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
+      const morale = p.season?.morale ?? 60;
+      if (morale >= 50 || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
+      const odds = (morale < 35 ? 0.3 : 0.15) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
+      if (mulberry32((saveSalt() ^ Math.imul(p.id + 11, 2654435761) ^ 0x2b7) >>> 0)() >= odds) continue;
+      if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
+      list.push({ pid: p.id, tid: t.id, why: 'in the last year of his deal and wants a new opportunity', status: isUserTeam(t) ? 'open' : 'cpu' });
     }
   }
   st.list = list;
@@ -8770,6 +8837,8 @@ function reqOffers(r) {
     if (await doOffer(team, o)) {
       const st = offGet('req'), rr = (st.list || []).find(x => x.pid === r.pid);
       if (rr) { rr.status = 'traded'; rr.to = o.team.shortName; offSet('req', st); }
+      const ext = extendAfterTrade(p, o.team, o.ratio ?? 0);
+      if (ext) toast(`${playerName(p)} extends with ${o.team.shortName}`, `${Math.max(3, ext.pref)} years, $${ext.sal}M a year.`);
       ds.block?.delete(`p:${p.id}`);
       ds.offers = null;
       render();
