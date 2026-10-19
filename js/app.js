@@ -1116,7 +1116,7 @@ screens.main = () => {
       <div class="grid3">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
-        <button class="btn left" data-act="downloadLeague"><span class="ico">🌐</span> Export League</button>
+        <button class="btn left" data-act="downloadLeague"><span class="ico">🌐</span> Export</button>
       </div>
       <p class="center muted small">Version ${APP_VERSION}</p>`,
   });

@@ -118,7 +118,9 @@ fieldset.frame > legend {
 .row { display: flex; gap: 8px; align-items: center; }
 .row > .grow { flex: 1; min-width: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.grid3 > .btn { min-width: 0; padding-left: 6px; padding-right: 6px; font-size: 13px; gap: 3px; justify-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grid3 > .btn .ico { margin-right: 0; font-size: 14px; }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 
 /* ---------- Buttons ---------- */
