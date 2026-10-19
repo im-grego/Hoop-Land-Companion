@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.83.0';
+const APP_VERSION = '0.83.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6509,6 +6509,10 @@ function presserEffects(L, t, ans) {
       if (a === 'commit') out.push(mood(P, 8), loyal(P, 1));
       if (a === 'focus' && q.ctx.kind === 'final') out.push(mood(P, -2));
       if (a === 'market') out.push(mood(P, -10), loyal(P, -2));
+    }
+    if (q.key === 'goal') {
+      if (a === 'title' && P) out.push(mood(P, 3));
+      if (a === 'develop') out.push({ text: 'Young players\' morale +2', apply: () => t.roster.filter(p => p.age <= 24).forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 2); }) });
     }
     if (q.key === 'expect' && P) {
       const arr = q.ctx.kind === 'arrival';

@@ -109,7 +109,8 @@ export function presserQuestions(league, team, li = 0) {
     ctx: { kind: c.kind },
   });
   // No contract talk to have: ask about the big arrival, else the 4-star kid.
-  if (!c) {
+  const bt = positionBattle(team);
+  if (!c || !bt) {
     const big = sit.arrivals.filter(p => levelOf(p) >= 78).sort((a, b) => levelOf(b) - levelOf(a))[0];
     const kid = [...team.roster].filter(p => (p.pot || 0) >= 8 && p.age <= 23 && levelOf(p) >= 60).sort((a, b) => (b.pot - a.pot) || (levelOf(b) - levelOf(a)))[0];
     const x = big || kid;
@@ -122,12 +123,19 @@ export function presserQuestions(league, team, li = 0) {
       ctx: { kind: big ? 'arrival' : 'prospect' },
     });
   }
-  const bt = positionBattle(team);
   if (bt) out.push({
     key: 'battle', pid: bt.a.id, pid2: bt.b.id,
     q: `${playerName(bt.a)} and ${playerName(bt.b)} can both play ${bt.slot}. Who starts?`,
     ctx: { slot: bt.slot },
     options: [{ v: 'a', label: playerName(bt.a) }, { v: 'b', label: playerName(bt.b) }, { v: 'open', label: 'It\'s an open competition' }],
+  });
+  // Three questions every time: if the roster gave too little to ask about,
+  // ask what the season's goal is.
+  if (out.length < 2) out.push({
+    key: 'goal', pid: sit.star?.id,
+    q: sit.status === 'rebuilding' ? 'What does a successful season look like for this team?' : 'What\'s the goal for this team this season?',
+    options: [{ v: 'title', label: 'A championship' }, { v: 'playoffs', label: 'Make the playoffs and see' }, { v: 'develop', label: 'Develop the young guys' }],
+    ctx: {},
   });
   const s = sit.star ? playerName(sit.star) : null;
   const q = {
@@ -173,6 +181,14 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
         time: [`${Place(team)} will give ${n} time`, arr ? `"He needs time to settle in." Fans wanted a bigger statement on ${P.fn}.` : `No rush with ${P.fn}. Patience is the plan in ${place(team)}.`],
       }[a];
       out.push({ kind: 'presser-contract', score: 56, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'goal') {
+      const t = {
+        title: [`${Place(team)}: title or bust`, `"A championship." The front office set the bar at the top for ${place(team)}.`],
+        playoffs: [`${Place(team)} aims for the playoffs`, `"Make the playoffs and see what happens." A measured goal for ${place(team)}.`],
+        develop: [`${Place(team)} bets on its young players`, `"Develop the young guys." The scoreboard comes second in ${place(team)}.`],
+      }[a];
+      out.push({ kind: 'presser-contract', score: 54, icon: '🎙️', title: t[0], text: t[1], pid: q.pid });
     }
     if (q.key === 'battle') {
       const A = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid), B = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid2);
