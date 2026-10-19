@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.88.0';
+const APP_VERSION = '0.89.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -451,6 +451,7 @@ async function loadFile(file) {
     const reext = reopenExtensions();
     settlePromises();
     settleIncentives();
+    advanceLoads();
     state.dirty = reopened > 0 || reext > 0;
     const held = holdCpuOffers();
     recordSalaries();
@@ -5596,7 +5597,7 @@ function faState() {
   return s;
 }
 const faValue = p => playerValue(p, state.leagueIdx, lastYear());
-const offerText = o => `$${o.sal}M × ${o.yrs}${o.opt === FA.OPT_PLAYER ? ' · PO' : o.opt === FA.OPT_TEAM ? ' · TO' : ''}`;
+const offerText = o => `$${o.sal}M × ${o.yrs}${o.load && o.load !== 'flat' ? (o.load === 'front' ? ' · FL' : ' · BL') : ''}${o.opt === FA.OPT_PLAYER ? ' · PO' : o.opt === FA.OPT_TEAM ? ' · TO' : ''}`;
 const faBest = (s, m) => {
   const list = s.bids.get(m.p.id) || [];
   if (!list.length) return null;
@@ -5777,6 +5778,8 @@ actions.faDecide = async () => {
   s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
   for (const x of s.signings) { if (x.kind !== 'snt') lockSigning(x.p, signingLock(x)); contractMorale(x.p, x.team, x.from); }
   {
+    const ld = s.signings.filter(x => x.offer?.load && x.offer.load !== 'flat' && x.offer.yrs >= 2 && isUserTeam(x.team));
+    if (ld.length) saveLoadStore([...loadStore().filter(r => !ld.some(x => x.p.id === r.pid)), ...ld.map(x => ({ pid: x.p.id, base: lastSeasonYear(), sched: loadSchedule(x.offer.avg ?? x.offer.sal, x.offer.yrs, x.offer.load), at: 0 }))]);
     const inc = s.signings.filter(x => x.offer?.inc && isUserTeam(x.team));
     if (inc.length) saveIncStore([...incStore().filter(r => !inc.some(x => x.p.id === r.pid && !r.done)), ...inc.map(x => ({ pid: x.p.id, tid: x.team.id, base: lastSeasonYear(), ...x.offer.inc, done: false }))]);
   }
@@ -5878,6 +5881,43 @@ function prodBoxes(p) {
     <p class="note small muted center">${l.gp} games${l.mpg != null ? ` · ${l.mpg.toFixed(1)} MPG` : ''}</p>`;
 }
 // ---------------------------------------------------------------------------
+// Loaded contracts (Complete rules). The game keeps one salary per player, so
+// the app keeps the schedule: the signing year's amount goes in the file, and
+// each offseason it moves the salary to the next year's number. Front-loaded
+// deals start high and step down 6% a year; back-loaded start low and step up.
+const LOADS = { flat: 'Flat', front: 'Front-loaded', back: 'Back-loaded' };
+function loadSchedule(avg, yrs, load) {
+  if (yrs < 2 || !load || load === 'flat') return Array(yrs).fill(avg);
+  const dir = load === 'front' ? -1 : 1;
+  return Array.from({ length: yrs }, (_, i) => Math.max(1, Math.round(avg * (1 + 0.06 * dir * (i - (yrs - 1) / 2)))));
+}
+const loadKey = () => `hlc:load:${league().shortName}:${league().meta?.saveName || ''}`;
+const loadStore = () => { try { return JSON.parse(localStorage.getItem(loadKey())) || []; } catch { return []; } };
+const saveLoadStore = v => { try { localStorage.setItem(loadKey(), JSON.stringify(v)); } catch { /* ignore */ } };
+// After each season, a loaded deal's salary moves to the next year's number.
+function advanceLoads() {
+  const L = league();
+  if (!L || isCollege() || !isComplete() || ![2, 4, 5].includes(L.season.phase)) return;
+  const ly = lastSeasonYear(), moved = [];
+  const led = loadStore();
+  for (const r of led) {
+    const k = Math.min(ly - r.base, r.sched.length - 1);
+    if (r.at >= k) continue;
+    const p = L.teams.flatMap(t => t.roster).find(x => x.id === r.pid);
+    r.at = k;
+    if (!p || p.status !== FA.STATUS_SIGNED || !(p.contract?.yrs > 0)) continue;
+    const bump = (p.contract.sal || 0) - r.sched[k - 1 < 0 ? 0 : k - 1];   // keep any incentive raise
+    p.contract.sal = r.sched[k] + Math.max(0, bump);
+    const stat = (p.stats || []).filter(s => s.yr === L.season.currentYear && s.league === 0).pop();
+    if (stat && stat.sal) stat.sal = p.contract.sal;
+    moved.push(`${playerName(p)} $${p.contract.sal}M`);
+    state.dirty = true;
+  }
+  saveLoadStore(led.filter(r => r.at < r.sched.length - 1));
+  if (moved.length) setTimeout(() => toast('📈 Contract steps', moved.slice(0, 4).join(' · '), 5200), 4200);
+}
+
+// ---------------------------------------------------------------------------
 // Incentives (Complete rules). The game keeps one salary per player, so the
 // app remembers the bonus: a player who hits it has his salary raised by the
 // bonus the next offseason. He values it at the chance he hits it, shaded by
@@ -5977,13 +6017,17 @@ actions.faOffer = d => {
   };
   const paint = () => {
     const team = L.teams.find(t => t.id === draft.tid);
+    // The salary stepper sets the average year; the cap hit is year one.
+    draft.avg ??= draft.sal;
+    if (draft.yrs < 2) draft.load = 'flat';
+    draft.sal = loadSchedule(draft.avg, draft.yrs, draft.load)[0];
     if (draft.inc) { draft.inc.bonus = Math.min(draft.inc.bonus, Math.max(2, Math.round(draft.sal * 0.3))); draft.incEv = incWorth(m.p, team, draft.inc); }
     const err = FA.checkOffer(L, team, m.p, draft, s.day, s.used);
     const kind = err ? null : FA.offerKind(L, team, m.p, draft, s.day, s.used);
     const others = list().filter(b => b.tid !== draft.tid);
     const score = b => FA.offerScore(L, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
     const rival = [...others].sort((a, b) => score(b) - score(a))[0];
-    const standing = draft.sal < m.min ? `<span class="down">Below what they'll take ($${m.min}M)</span>`
+    const standing = (draft.avg ?? draft.sal) + (draft.incEv || 0) < m.min ? `<span class="down">Below what they'll take ($${m.min}M)</span>`
       : !rival ? (s.stage === 'open' ? 'No other bids yet' : '<span class="up">Only offer</span>')
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
@@ -5995,13 +6039,15 @@ actions.faOffer = d => {
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${quick(team)}
-      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
+      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.avg}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
+      ${isComplete() && draft.yrs >= 2 ? `<div class="tabs">${Object.entries(LOADS).map(([k, l]) => `<button class="btn small ${(draft.load || 'flat') === k ? 'on focus' : 'off'}" data-k="load" data-v="${k}">${l}</button>`).join('')}</div>
+        ${draft.load && draft.load !== 'flat' ? `<p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} (cap hit this year $${draft.sal}M)</p>` : ''}` : ''}
       <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
       ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No incentive'], ...Object.entries(INCENTIVES).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
         ${draft.inc ? `<div class="pts-row"><span class="grow small">Bonus if ${esc(incText(m.p, draft.inc))} · <span class="muted">worth ~$${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</span></span><button class="btn square" data-k="incbonus" data-d="-1">−</button><span class="pts-val">$${draft.inc.bonus}M</span><button class="btn square" data-k="incbonus" data-d="1">+</button></div>` : ''}` : ''}
-      <p class="note small">Total $${draft.sal * draft.yrs}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
+      <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
       <div class="${ownExpiring ? 'grid3' : 'grid2'}">
@@ -6014,7 +6060,8 @@ actions.faOffer = d => {
     const b = e.target.closest('[data-k]');
     if (!b || b.tagName === 'SELECT') return;
     const k = b.dataset.k;
-    if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p, draft.tid === m.from?.id), draft.sal + +b.dataset.d));
+    if (k === 'sal') draft.avg = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p, draft.tid === m.from?.id), (draft.avg ?? draft.sal) + +b.dataset.d));
+    else if (k === 'load') draft.load = b.dataset.v;
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
     else if (k === 'inckind' || k === 'incbonus') {
@@ -6025,7 +6072,7 @@ actions.faOffer = d => {
       if (!draft.inc) delete draft.inc;
     }
     else if (k === 'ntc') draft.ntc = !!+b.dataset.v;
-    else if (k === 'mle') { const ml = mleOk(L.teams.find(t => t.id === draft.tid)); if (ml) { draft.sal = ml.sal; draft.yrs = ml.yrs; } }
+    else if (k === 'mle') { const ml = mleOk(L.teams.find(t => t.id === draft.tid)); if (ml) { draft.sal = draft.avg = ml.sal; draft.yrs = ml.yrs; draft.load = 'flat'; } }
     else if (k === 'snt') { box.remove(); sntBox(m, s).then(done => { if (done) render(); }); return; }
     else if (k === 'walk') { box.remove(); actions.faWalk({ id: m.p.id }); return; }
     else if (k === 'vetmin') {
@@ -7271,13 +7318,20 @@ function extAsk(p, team) {
   // He opens high (and always above the minimum) and can be talked down.
   let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
   if (isUserTeam(team)) sal = Math.round(sal * fxNow().askMult * FX.facilityFx(team).askMult);
+  // Holding out: an unhappy player whose traits say money or no loyalty asks
+  // for a market-resetting deal, above the best-paid peers at his position.
+  const holdout = isComplete() && morale < 35 && tr(p, 'loyalty') < 16 && (tr(p, 'money') >= 13 || tr(p, 'loyalty') <= 6);
+  if (holdout) {
+    const peers = league().teams.flatMap(x => x.roster).filter(x => x !== p && Math.abs(x.pos - p.pos) <= 1 && shownLevel(x) >= shownLevel(p) - 2 && x.contract?.sal);
+    sal = Math.round(Math.max(sal * (1.3 + (tr(p, 'money') - 10) * 0.01), peers.reduce((m, x) => Math.max(m, x.contract.sal), 0) * 1.03));
+  }
   sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p, true), sal));
-  const yrs = p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
+  const yrs = holdout ? [2, 3] : p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
   const loyal = tr(p, 'loyalty') >= 16, mercenary = tr(p, 'loyalty') <= 5;
   const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
   // The one length he asks for (the range is how far he'll bend).
   const pref = Math.round((yrs[0] + yrs[1]) / 2 + 0.01);
-  return { sal, yrs, pref, mood, proj, ntc: FA.wantsNtc(league(), p, team), ntcOk: FA.ntcEligible(league(), p, team) };
+  return { sal, yrs, pref, mood, holdout, proj, ntc: FA.wantsNtc(league(), p, team), ntcOk: FA.ntcEligible(league(), p, team) };
 }
 // His answer to an offer: { ok, counter, text }.
 function extAnswer(p, team, offer) {
@@ -7290,6 +7344,10 @@ function extAnswer(p, team, offer) {
   // A no-trade clause is worth a little to him; one he asked for and didn't get costs.
   const ntc = offer.ntc && a.ntcOk ? 0.95 : a.ntc ? 1.05 : 1;
   const need = Math.max(FA.minFor(p), Math.round(a.sal * (1 + 0.06 * off) * mood * opt * ntc));
+  if (a.holdout) {
+    if (offer.sal >= Math.round(a.sal * 0.97) && off === 0) return { ok: true, text: 'Deal.' };
+    return { ok: false, counter: { sal: a.sal, yrs: a.pref }, text: 'He\'s holding out to reset the market. Nothing under his number.' };
+  }
   if (offer.sal >= need) return { ok: true, text: 'Deal.' };
   const yrs = Math.min(Math.max(offer.yrs, a.yrs[0]), a.yrs[1]);
   return { ok: false, counter: { sal: Math.max(need, Math.round(a.sal * (a.mood === 'market' ? 1.2 : 0.95))), yrs },
@@ -7349,7 +7407,7 @@ screens.extensions = () => {
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
       <span class="right small">$${p.contract.sal}M<br><span class="muted">final year</span></span>
-      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
+      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref}${a.holdout ? ' · <span class="down">🚫 holding out</span>' : a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
       ${grudge ? '<span class="chg"><span class="down">🚫 Refuses to meet with you: you broke your promise</span></span>' : status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
@@ -7383,6 +7441,7 @@ actions.extOpen = d => {
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       ${a.ntcOk ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!talk.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${a.ntc ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
       <p class="note small">Total <span class="tot">$${talk.sal * talk.yrs}M</span> · ${3 - talk.tries} offer${3 - talk.tries === 1 ? '' : 's'} left${talk.last ? `<br><span class="down">${esc(talk.last.text)}</span>` : ''}</p>
+      ${a.holdout ? '<p class="note small">He\'s unhappy and wants to reset the market at his position. Pay it, or shop him.</p><button class="btn" data-k="shop">🔁 Shop Him</button>' : ''}
       <div class="grid2"><button class="btn off" data-k="close">Cancel</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
   };
   box.addEventListener('click', e => {
@@ -7394,6 +7453,12 @@ actions.extOpen = d => {
     else if (k === 'opt') talk.opt = +b.dataset.v;
     else if (k === 'ntc') talk.ntc = !!+b.dataset.v;
     else if (k === 'close') { saveExtStore(); box.remove(); render(); return; }
+    else if (k === 'shop') {
+      saveExtStore(); box.remove();
+      (draftState().block ||= new Set()).add(`p:${p.id}`);
+      reqOffers({ pid: p.id, tid: t.id });
+      return;
+    }
     else if (k === 'submit') {
       actions.extOffer({ id: p.id });
       if (talk.signed || talk.tries >= 3) { box.remove(); return; }
