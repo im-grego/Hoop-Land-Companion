@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.85.3';
+const APP_VERSION = '0.85.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5547,6 +5547,14 @@ const askYears = m => m.motive === 'security' ? 4 : m.p.age >= 33 ? 1 : m.p.age 
 const declining = p => p.age > p.regressionAge;
 const posGroup = p => (p.pos <= 2 ? 'guards' : p.pos <= 5 ? 'wings' : 'bigs');
 
+// The cap this year; the years ahead and the lines that matter fold away.
+function capNote(L) {
+  const C = FA.capLines(L), yr = FA.seasonStart(L);
+  const row = k => { const c = FA.capLines(L, k); return `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><b>${yr + k}-${String(yr + k + 1).slice(2)}</b><span class="muted">Cap $${c.cap}M · Tax $${c.tax}M · 1st apron $${c.apron1}M · 2nd apron $${c.apron2}M</span></div>`; };
+  return `<details class="frame"><summary class="note small"><b>Salary cap $${C.cap}M</b> <span class="muted">· projections</span></summary>
+    <div class="stack" style="margin-top:6px">${[0, 1, 2, 3, 4].map(row).join('')}</div>
+    <p class="note small muted" style="margin-top:6px">Tax line, then the 1st apron (can't use the room exception or take back salary in trades) and the 2nd apron (no combining salaries, no trading frozen picks). Past 2030 the cap keeps growing about 5% a year.</p></details>`;
+}
 screens.fa = (args = {}) => {
   const L = league();
   if (L.season.phase !== BUMP_PHASES[0]) {
@@ -5595,7 +5603,7 @@ screens.fa = (args = {}) => {
     body: `
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${expiringSection(s)}
-      ${FA.capSystemOn() ? `<p class="note small muted">Cap $${FA.capLines(L).cap}M now · $${FA.capLines(L, 1).cap}M next year · $${FA.capLines(L, 2).cap}M the year after (tax $${FA.capLines(L).tax}M)</p>` : ''}
+      ${FA.capSystemOn() ? capNote(L) : ''}
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const space = FA.capSpace(L, t);
         const tools = space > 0 ? `<span class="up">$${space}M cap space</span>` : `<span class="down">$${-space}M over the cap</span>`;
