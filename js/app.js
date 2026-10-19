@@ -5,7 +5,7 @@ import {
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
-  lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
+  lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, projectionRanks, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
   needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore, LOTTERY_FORMATS,
@@ -29,7 +29,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.63.0';
+const APP_VERSION = '0.64.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4452,7 +4452,27 @@ function liveState() {
 }
 const liveOrder = () => actualDraftOrder(league()) || [];
 const lastYear = () => Math.max(...league().teams.map(t => teamRecord(t).yr || 0));
-const futureValue = pk => pickValue(league(), pk) * TR.protFactor(protOf(pk)?.top || 0);
+// Roster change each team would see from a trade (for valuing picks).
+function tradeAdjust(A, B, itemsA, itemsB) {
+  const pl = items => items.filter(x => x.player).map(x => x.player);
+  const m = new Map();
+  m.set(A.id, { remove: pl(itemsA), add: pl(itemsB) });
+  m.set(B.id, { remove: pl(itemsB), add: pl(itemsA) });
+  return m;
+}
+// A trade-list item's value: future firsts re-priced with the deal's roster
+// changes and any protection being added.
+function pickItemValue(x, prot, adjust) {
+  if (!x.pick || !x.key.startsWith('f:')) return x.value;
+  return pickValue(league(), x.pick, { adjust, top: protOf(x.pick)?.top || prot[x.key] || 0 });
+}
+// "Lottery" / "Mid" / "Late" for a pick from its team's projected slot,
+// pulled toward the middle for picks further out.
+function pickOutlook(slot, yrs) {
+  const s = 15.5 + (slot - 15.5) * Math.max(0.3, 1 - 0.14 * yrs);
+  return s <= 6 ? 'Top 6 likely' : s <= 14 ? 'Lottery' : s <= 22 ? 'Mid' : 'Late';
+}
+const futureValue = pk => pickValue(league(), pk, { top: protOf(pk)?.top || 0 });
 const frozenFn = (t, pk) => FA.pickFrozen(league(), t, pk);
 const boardRank = p => boardOrder().indexOf(p) + 1 || 60;
 const prospectById = id => league().draftClass.find(p => p.id === id);
@@ -4853,7 +4873,8 @@ function liveAssets(team) {
   }
   for (const pk of [...team.draftPicks].filter(x => x.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
     const frozen = FA.pickFrozen(L, team, pk);
-    out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: `${esc(pickLabel(pk))}${frozen ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}`, html: true, locked: frozen, value: futureValue(pk), pick: pk });
+    const proj = projectionRanks(L).get(pk.otid);
+    out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: `${esc(pickLabel(pk))}${frozen ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}${pk.rd === 1 && proj ? ` <span class="muted small">${pickOutlook(proj.slot, pk.yr - L.season.currentYear)}</span>` : ''}`, html: true, locked: frozen, value: futureValue(pk), pick: pk });
   }
   for (const s of tradeableProspects(live, order, team.id, Infinity)) {
     const p = prospectById(s.pid);
@@ -4891,7 +4912,9 @@ screens.liveTrade = (args) => {
   const selA = new Set(args.selA || []), selB = new Set(args.selB || []);
   const aa = liveAssets(A), bb = liveAssets(B);
   const prot = args.prot || {};
-  const pv = x => x.value * (x.pick && !protOf(x.pick) ? TR.protFactor(prot[x.key] || 0) : 1);
+  // Picks are valued off each team's roster as it would be after this deal.
+  const adjust = tradeAdjust(A, B, aa.filter(x => selA.has(x.key)), bb.filter(x => selB.has(x.key)));
+  const pv = x => pickItemValue(x, prot, adjust);
   const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + pv(x), 0);
   const vA = sum(aa, selA), vB = sum(bb, selB);
   // Future firsts being sent can carry a protection.
@@ -5000,7 +5023,8 @@ actions.liveTradeGo = async d => {
   };
   const sa = pickSide(A, a.selA || []), sb = pickSide(B, a.selB || []);
   if (!sa.items.length && !sb.items.length) { toast('Tap something on either side first'); return; }
-  const pv = x => x.value * (x.pick && !protOf(x.pick) ? TR.protFactor((a.prot || {})[x.key] || 0) : 1);
+  const adjust = tradeAdjust(A, B, sa.items, sb.items);
+  const pv = x => pickItemValue(x, a.prot || {}, adjust);
   const vA = sa.items.reduce((s, x) => s + pv(x), 0), vB = sb.items.reduce((s, x) => s + pv(x), 0);
   if (d.force !== '1' || !state.params.commissioner) {
     const no = [[A, vA, vB], [B, vB, vA]].find(([t, give, get]) => !isUserTeam(t) && !cpuAccepts(give, get));

@@ -1,6 +1,6 @@
 // Draft tools: prospect comps, lottery simulation, mock drafts, pick trades.
 
-import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr } from './savefile.js';
+import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr, levelOf } from './savefile.js';
 import { mulberry32 } from './progression.js';
 
 // The 12 skill ratings (physical ratings aren't kept for retirees).
@@ -757,13 +757,61 @@ export function tradePicks(teamA, teamB, fromA, fromB) {
   move(teamB, teamA, fromB);
 }
 
-// Rough pick value for trade evaluation (higher = more valuable).
-export function pickValue(league, pk) {
-  const year = league.season.currentYear;
-  const table = standings(league).map(r => r.team.id);
-  const rank = Math.max(0, table.indexOf(pk.otid));
-  const base = pk.rd === 1 ? 100 - rank * 2.2 : 30 - rank * 0.6;
-  return Math.max(5, base * Math.pow(0.85, Math.max(0, pk.yr - year)));
+// ---- Pick projection
+// Where a team's pick is likely to land, from the roster it has right now
+// (top nine players by level, weighted), last season's record and whether
+// the front office is contending or rebuilding. Recomputed from the live
+// rosters each time, so a trade (or signing) one step earlier changes the
+// next pick value; `adjust` previews a trade not yet made:
+// Map(teamId -> { add: [players], remove: [players] }).
+const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
+const STATUS_NUDGE = { contending: 0.3, developing: 0, rebuilding: -0.3 };
+const projCache = { sig: '', map: null, status: null };
+const slotPts = overall => 3 + 130 * Math.exp(-0.075 * (overall - 1));   // same scale as trades.slotValue
+const talentOf = (players) => players.map(p => levelOf(p)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0);
+const zOf = vals => { const m = mean(vals), sd = Math.sqrt(mean(vals.map(x => (x - m) ** 2))) || 1; return vals.map(v => (v - m) / sd); };
+function rankTeams(league, rosterOf, status) {
+  const teams = league.teams;
+  const zt = zOf(teams.map(t => talentOf(rosterOf(t))));
+  const zr = zOf(teams.map(t => teamRecord(t).pct ?? 0.5));
+  const score = teams.map((t, i) => 0.65 * zt[i] + 0.35 * zr[i] + (STATUS_NUDGE[status.get(t.id)] || 0));
+  const order = teams.map((t, i) => ({ id: t.id, s: score[i] })).sort((a, b) => a.s - b.s || a.id - b.id);   // worst first
+  return new Map(order.map((x, i) => [x.id, { slot: i + 1, status: status.get(x.id), score: x.s }]));
+}
+const onRoster = p => p.status !== 4 && p.status !== 5;
+export function projectionRanks(league, adjust = null) {
+  const sig = league.teams.map(t => t.roster.map(p => `${p.id}${p.status}`).join(',')).join('|') + league.season.currentYear;
+  if (projCache.sig !== sig) {
+    const status = new Map(league.teams.map(t => [t.id, teamStatus(league, t)]));
+    projCache.sig = sig; projCache.status = status;
+    projCache.map = rankTeams(league, t => t.roster.filter(onRoster), status);
+  }
+  if (!adjust || !adjust.size) return projCache.map;
+  return rankTeams(league, t => {
+    const a = adjust.get(t.id);
+    const base = t.roster.filter(onRoster);
+    return a ? base.filter(p => !(a.remove || []).includes(p)).concat((a.add || []).filter(onRoster)) : base;
+  }, projCache.status);
+}
+
+// Value of a pick (trade points, the same scale as draft slots). It's the
+// average over where the pick could land: centered on the team's projected
+// slot, pulled toward the middle (and spread wider) the further out it is.
+// A first with `top` protection pays a 2nd in the lands-in-the-top-N cases.
+export function pickValue(league, pk, opts = {}) {
+  const yrs = Math.max(0, pk.yr - league.season.currentYear);
+  const proj = projectionRanks(league, opts.adjust).get(pk.otid);
+  const slot = proj ? proj.slot : 15.5;
+  const w = Math.max(0.3, 1 - 0.14 * yrs);
+  const mu = 15.5 + (slot - 15.5) * w, sd = Math.min(11, 3.5 + 2.2 * yrs);
+  const top = pk.rd === 1 ? opts.top || 0 : 0;
+  let sum = 0, tot = 0;
+  for (let s = 1; s <= 30; s++) {
+    const wt = Math.exp(-0.5 * ((s - mu) / sd) ** 2);
+    sum += wt * (s <= top ? slotPts(30 + s) : slotPts((pk.rd === 1 ? 0 : 30) + s));
+    tot += wt;
+  }
+  return Math.max(3, (sum / tot) * Math.pow(0.93, yrs));
 }
 
 // ---------------------------------------------------------------------------

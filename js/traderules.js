@@ -44,7 +44,6 @@ export function stepienErr(league, A, B, prot = () => false) {
 // to the team that protected it and the holder gets that team's 2nd that
 // year instead. Value to the holder drops with the protection.
 export const PROTECTIONS = [0, 4, 10, 14, 20];
-export const protFactor = top => ({ 0: 1, 4: 0.88, 10: 0.72, 14: 0.62, 20: 0.48 }[top] ?? 1);
 
 // Settle this year's protected picks once the order is set (pk.pk is the
 // 0-based slot). `ledger` is [{ otid, yr, top, from }]; returns what
