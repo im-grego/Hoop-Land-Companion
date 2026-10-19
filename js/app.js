@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.104.1';
+const APP_VERSION = '0.104.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6197,7 +6197,10 @@ function cpuBlockDeals(day) {
   const cpu = L.teams.filter(t => !isUserTeam(t));
   const done = [];
   for (const t of cpu) {
-    for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock && !tradeLock(x) && x.contract?.yrs > 0)) {
+    // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
+    for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {
+      if (done.length >= 5) break;
+      if (rng() > 0.4) continue;                                   // not every shopped player draws a call every day
       const want = playerValue(p, state.leagueIdx, ly);
       let best = null;
       for (const u of [...cpu].filter(x => x !== t).sort(() => rng() - 0.5).slice(0, 12)) {
@@ -6213,11 +6216,11 @@ function cpuBlockDeals(day) {
         }
         for (const pack of packs) {
           const v = pack.reduce((a, x) => a + x.value, 0);
-          if (v < want * 0.6 || v > want * 1.05) continue;
+          if (v < want * 0.8 || v > want * 1.1) continue;
           const A = { team: t, players: [p], picks: [] };
           const B = { team: u, players: pack.filter(x => x.player).map(x => x.player), picks: pack.filter(x => x.pick).map(x => x.pick) };
           if (tradeRulesErr(L, A, B) || ntcRefusal(L, A, B)) continue;
-          const score = Math.abs(v - want * 0.9);
+          const score = Math.abs(v - want * 0.95);
           if (!best || score < best.score) best = { A, B, score };
         }
         if (best && best.score < want * 0.1) break;
@@ -8691,11 +8694,12 @@ function requestsState() {
   const st = offGet('req');
   if (st.list || !isComplete() || isCollege()) return st;
   const list = [];
+  let cpuAsks = 0;                                          // a few CPU stars ask out in a summer, not every one
   for (const t of L.teams) {
     const { strip, gone } = stripScore(L, t);
     if (strip < 2) continue;
     const roster = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3)
-      .filter(p => demandsHelp(p, t) && tr(p, 'loyalty') < 17 && !tradeLock(p));
+      .filter(p => demandsHelp(p, t) && tr(p, 'loyalty') < 17 && !tradeLock(p) && p.season?.onTradeBlock !== 2 && (isUserTeam(t) || cpuAsks < 3));
     const max = strip >= 4 ? 2 : 1;
     let n = 0;
     for (const p of roster) {
@@ -8706,6 +8710,7 @@ function requestsState() {
       odds *= 1 - FX.facilityFx(t).requestCut;
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 5, 2654435761) ^ 0x7e9) >>> 0)() >= Math.min(0.75, odds)) continue;
       n++;
+      if (!isUserTeam(t)) cpuAsks++;
       const names = gone.slice(0, 2).map(x => x.ln || playerName(x));
       list.push({ pid: p.id, tid: t.id, why: gone.length ? `${names.join(' and ')} gone and little coming back` : 'the roster has been stripped', status: isUserTeam(t) ? 'open' : 'cpu' });
       if (!isUserTeam(t)) { if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, (p.season.morale ?? 60) - 8); } }
