@@ -13,7 +13,7 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
-import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary } from './trades.js';
+import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
 import * as TR from './traderules.js';
 import * as FX from './facilities.js';
@@ -34,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.99.2';
+const APP_VERSION = '0.99.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6724,7 +6724,7 @@ screens.options = () => {
   const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
   const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
   const mine = x => isUserTeam(x.team);
-  const tag = c => c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const tag = c => c.worth - c.sal >= tagGap(c.worth) ? '<span class="badge new">Bargain</span>' : c.sal - c.worth >= tagGap(c.worth) ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option${(state.reopened?.est || new Set()).has(x.p.id) ? ' (est.)' : ''}</span><br><span class="small muted">Market value $${x.c.worth}M</span> ${tag(x.c)}</span>`;
   const done = !!st.done;
   const myTeamOpts = list.filter(x => mine(x) && x.c.kind === 'team');
@@ -7205,7 +7205,7 @@ function overviewTeam(L, t) {
   const needs = rosterNeeds(L, t, { level: shownLevel, li: state.leagueIdx });
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
   const row = (x, right, sub = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y${sub}</span></span>${right ? `<span class="small" style="text-align:right">${right}</span>` : ''}</div>`;
-  const valTag = (sal, worth) => worth >= sal * 1.15 ? '<span class="badge new">Bargain</span>' : worth < sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
+  const valTag = (sal, worth) => worth - sal >= tagGap(worth) ? '<span class="badge new">Bargain</span>' : sal - worth >= tagGap(worth) ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
       <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${teamTag(st.tier)}</div>
       <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>

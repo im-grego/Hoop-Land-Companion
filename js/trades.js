@@ -10,9 +10,23 @@ import { shownLevel as levelOf } from './regression.js';
 // #30 ≈ 17, #60 ≈ 4), on the same scale as future picks' pickValue.
 export const slotValue = overall => 3 + 130 * Math.exp(-0.075 * (overall - 1));
 
-// A fair salary ($M a year) for a player's level: a max deal (~$50M) at
-// 100, $30M at 90, $26M at 86, $12M at 72, the minimum below the mid-60s.
-export const fairSalary = level => Math.max(2, Math.round(level >= 90 ? 30 + (level - 90) * 2 : level - 60));
+// A fair salary ($M a year) for a player's level, read off a curve tuned to
+// the league's real pay: the top few (level 95+) are max and supermax deals
+// in the high 50s and low 60s, a 90 is around $46M, an 80 about $25M, and
+// the scale flattens into the single digits for rotation players.
+const FAIR = [[100, 62], [97, 58], [94, 54], [92, 50], [90, 46], [88, 42], [86, 38], [84, 34], [82, 29], [80, 25], [78, 20], [76, 15], [74, 12], [72, 10], [70, 8], [68, 6.5], [66, 5], [64, 4], [62, 3.5], [60, 3], [56, 2]];
+export const fairSalary = level => {
+  if (level >= FAIR[0][0]) return FAIR[0][1] + Math.round((level - FAIR[0][0]) * 0.8);
+  for (let i = 1; i < FAIR.length; i++) {
+    const [lv, sal] = FAIR[i], [hv, hs] = FAIR[i - 1];
+    if (level >= lv) return Math.round(sal + (hs - sal) * (level - lv) / (hv - lv));
+  }
+  return 2;
+};
+// How far over (or under) fair a deal must be to carry a tag: about 17% of
+// the fair figure, never under $4M, so a star's tag isn't a rounding error
+// and a rotation player's isn't a quarter of the deal.
+export const tagGap = fair => Math.max(4, fair * 0.17);
 
 // What a contract does to a player's trade value. Overpays cost more the
 // longer they run; a player option means there's no getting out (it counts
@@ -32,9 +46,9 @@ export function contractValue(p) {
   }
   if (over > 0) {
     const pen = Math.min(30, over * Math.min(years, 4) * 0.35 * (c.opt === 2 ? 1.25 : 1));
-    return { adj: -pen, tag: over >= 6 ? 'Overpaid' : '' };
+    return { adj: -pen, tag: over >= tagGap(fair) ? 'Overpaid' : '' };
   }
-  return { adj: Math.min(12, -over * years * 0.25), tag: -over >= 6 ? 'Bargain' : '' };
+  return { adj: Math.min(12, -over * years * 0.25), tag: -over >= tagGap(fair) ? 'Bargain' : '' };
 }
 
 // Rough value of a player: level and last season's production, youth and
