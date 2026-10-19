@@ -90,3 +90,33 @@ export function autoTendencies(p, rng) {
   }
   return moves;
 }
+
+// Rookie play styles against the league's: the game hands a draft class
+// tendencies that sit above the active players' (it leans positive, with less
+// spread and ratings that line up too neatly). Re-map each tendency so the
+// class has the active players' distribution at his position group, keeping
+// each prospect's rank within the class, then jitter a quarter of them a point
+// so ratings and tendencies don't line up perfectly.
+const group = p => (p.pos <= 2 ? 0 : p.pos <= 5 ? 1 : 2);
+export function normalizeTendencies(klass, active, rng) {
+  const changed = [];
+  const keys = Object.keys(active.find(p => p.tendencies)?.tendencies || {});
+  for (const g of [0, 1, 2]) {
+    const cls = klass.filter(p => p.tendencies && group(p) === g);
+    const pool = active.filter(p => p.tendencies && group(p) === g);
+    if (cls.length < 4 || pool.length < 20) continue;
+    for (const k of keys) {
+      const ref = pool.map(p => p.tendencies[k]).sort((a, b) => a - b);
+      const order = [...cls].sort((a, b) => a.tendencies[k] - b.tendencies[k] || a.id - b.id);
+      order.forEach((p, i) => {
+        const q = (i + 0.5) / order.length;
+        let v = ref[Math.min(ref.length - 1, Math.floor(q * ref.length))];
+        if (rng() < 0.25) v += rng() < 0.5 ? -1 : 1;
+        v = clampT(v);
+        if (!changed.some(c => c.p === p)) changed.push({ p, was: { ...p.tendencies } });
+        p.tendencies[k] = v;
+      });
+    }
+  }
+  return changed;
+}

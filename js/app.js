@@ -21,7 +21,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
-import { refitCeilings, potBumpCeilings, autoTendencies } from './autoplay.js';
+import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -33,7 +33,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.94.1';
+const APP_VERSION = '0.95.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3451,7 +3451,7 @@ function centerBoard() {
 function looksCard() {
   const done = state.looks?.[seasonKey()];
   return `<fieldset class="frame"><legend>🎨 Class Looks &amp; Builds</legend><div class="row">
-    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players, and spread their regression ages and stamina by build and play style. Names and skill ratings stay.'}</p>
+    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players, and spread their regression ages, stamina and tendencies to match the active players. Names and skill ratings stay.'}</p>
     ${done ? '<button class="btn small off" data-act="looksUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="looksMatch">Match My League</button>'}
   </div></fieldset>`;
 }
@@ -3492,6 +3492,9 @@ actions.looksMatch = () => {
     p.attributes.STM[0] = p.attributes.STM[1] = b.stm;
   }
   if (!before.length) { toast('Not enough players in the league to draw from'); return; }
+  // Rookie play styles in line with the active players'.
+  const tn = normalizeTendencies(L.draftClass, L.teams.flatMap(t => t.roster), mulberry32((saveSalt() ^ 0x7e11) >>> 0));
+  for (const c of tn) { const b = before.find(x => x.p === c.p); if (b) b.tend = c.was; }
   (state.looks ||= {})[seasonKey()] = before;
   state.dirty = true;
   render();
@@ -3502,6 +3505,7 @@ actions.looksUndo = () => {
     x.p.appearance = x.appearance; x.p.accessories = x.accessories;
     if (x.reg != null) x.p.regressionAge = x.reg;
     if (x.stm) x.p.attributes.STM = [...x.stm];
+    if (x.tend) x.p.tendencies = x.tend;
   }
   delete state.looks[seasonKey()];
   render();
