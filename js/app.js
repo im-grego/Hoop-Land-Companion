@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.103.1';
+const APP_VERSION = '0.104.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6271,6 +6271,20 @@ function loadSchedule(avg, yrs, load) {
   const dir = load === 'front' ? -1 : 1;
   return Array.from({ length: yrs }, (_, i) => Math.max(1, Math.round(avg * (1 + 0.06 * dir * (i - (yrs - 1) / 2)))));
 }
+
+// "Qualifies for the Supermax": his own team can pay him a tier up (the Rose
+// rule for 0-6 years of service, the supermax for 7-9), by award.
+function maxLine(L, p, ahead = 0) {
+  if (!FA.capSystemOn() || !FA.maxLabel(L, p)) return '';
+  const rose = (p.yrs || 0) < 7;
+  return `<p class="note small up">⭐ Qualifies for the ${rose ? 'Rose Rule' : 'Supermax'} (${FA.maxPct(L, p, true)}% of the cap) · ${esc(FA.maxReason(L, p))} · max $${FA.maxSalary(L, p, true, ahead)}M</p>`;
+}
+// The highest average a deal can carry: the first year can't pass the max, so
+// a back-loaded deal's average can sit above it and a front-loaded one's below.
+function maxAvgFor(L, p, own, yrs, load, ahead = 0) {
+  const first = loadSchedule(1000, yrs, load)[0] / 1000;
+  return Math.floor(FA.maxSalary(L, p, own, ahead) / first);
+}
 const loadKey = () => `hlc:load:${league().shortName}:${league().meta?.saveName || ''}`;
 const loadStore = () => { try { return JSON.parse(localStorage.getItem(loadKey())) || []; } catch { return []; } };
 const saveLoadStore = v => { try { localStorage.setItem(loadKey(), JSON.stringify(v)); } catch { /* ignore */ } };
@@ -6400,6 +6414,7 @@ actions.faOffer = d => {
     // The salary stepper sets the average year; the cap hit is year one.
     draft.avg ??= draft.sal;
     if (draft.yrs < 2) draft.load = 'flat';
+    draft.avg = Math.min(draft.avg, Math.max(FA.FA_DEFAULTS.minSalary, maxAvgFor(L, m.p, draft.tid === m.from?.id, draft.yrs, draft.load)));
     draft.sal = loadSchedule(draft.avg, draft.yrs, draft.load)[0];
     const pitched = (s.cutPitch ||= {})[m.p.id];
     if (pitched?.ok) { draft.cut = pitched.pct; draft.cutEv = Math.round(draft.avg * pitched.pct * 10) / 10; }
@@ -6413,23 +6428,32 @@ actions.faOffer = d => {
       : !rival ? (s.stage === 'open' ? 'No other bids yet' : '<span class="up">Only offer</span>')
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
+    const hasExtras = isComplete() || (ownExpiring && cutPitchOk(m.p, team));
+    const tab = hasExtras && draft.tab === 'extras' ? 'extras' : 'terms';
+    const extrasOn = (draft.load && draft.load !== 'flat' && draft.yrs >= 2 ? 1 : 0) + (draft.inc ? 1 : 0) + (pitched?.ok ? 1 : 0);
+    const termsHtml = `${quick(team)}
+      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.avg}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
+      <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
+      <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
+      ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
+${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load && draft.load !== 'flat' && draft.yrs >= 2 ? LOADS[draft.load] : '', draft.inc ? `$${draft.inc.bonus}M bonus (${INCENTIVES[draft.inc.kind].label})` : '', pitched?.ok ? 'pay cut' : ''].filter(Boolean).join(' · ')}</p>` : ''}`;
+    const extrasHtml = `
+      ${isComplete() && draft.yrs >= 2 ? `<div class="tabs">${Object.entries(LOADS).map(([k, l]) => `<button class="btn small ${(draft.load || 'flat') === k ? 'on focus' : 'off'}" data-k="load" data-v="${k}">${l.replace('-loaded', '')}</button>`).join('')}</div>
+        ${draft.load && draft.load !== 'flat' ? `<p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} (cap hit this year $${draft.sal}M)</p>` : ''}` : ''}
+      ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
+      ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No incentive'], ...Object.entries(INCENTIVES).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
+        ${draft.inc ? `<div class="pts-row"><span class="grow small">Bonus if ${esc(incText(m.p, draft.inc))} · <span class="muted">worth ~$${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</span></span><button class="btn square" data-k="incbonus" data-d="-1">−</button><span class="pts-val">$${draft.inc.bonus}M</span><button class="btn square" data-k="incbonus" data-d="1">+</button></div>` : ''}` : ''}
+`;
     box.querySelector('.box').innerHTML = `
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
-        <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asking $${m.ask}M × ${askYears(m)}</span>${m.from && isUserTeam(m.from) && FA.maxLabel(L, m.p) ? `<br><span class="badge new">${FA.maxLabel(L, m.p)} · max $${FA.maxSalary(L, m.p, true)}M</span>` : ''}</p>
+        <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asking $${m.ask}M × ${askYears(m)}</span></p>
+      ${m.from && isUserTeam(m.from) ? maxLine(L, m.p) : ''}
       ${prodBoxes(m.p)}
       ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}${isLeveled(x.id) ? ` ${x.level}` : ''}</span>`).join(' · ')}</p>` : ''}
       <p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
-      ${quick(team)}
-      <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${draft.avg}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
-      <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
-      ${isComplete() && draft.yrs >= 2 ? `<div class="tabs">${Object.entries(LOADS).map(([k, l]) => `<button class="btn small ${(draft.load || 'flat') === k ? 'on focus' : 'off'}" data-k="load" data-v="${k}">${l}</button>`).join('')}</div>
-        ${draft.load && draft.load !== 'flat' ? `<p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} (cap hit this year $${draft.sal}M)</p>` : ''}` : ''}
-      <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
-      ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
-      ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
-      ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No incentive'], ...Object.entries(INCENTIVES).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
-        ${draft.inc ? `<div class="pts-row"><span class="grow small">Bonus if ${esc(incText(m.p, draft.inc))} · <span class="muted">worth ~$${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</span></span><button class="btn square" data-k="incbonus" data-d="-1">−</button><span class="pts-val">$${draft.inc.bonus}M</span><button class="btn square" data-k="incbonus" data-d="1">+</button></div>` : ''}` : ''}
+      ${hasExtras ? `<div class="tabs">${[['terms', 'Terms'], ['extras', `Extras${extrasOn ? ` · ${extrasOn}` : ''}`]].map(([k, l]) => `<button class="btn small ${tab === k ? 'on focus' : 'off'}" data-k="tab" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
+      ${tab === 'extras' ? extrasHtml : termsHtml}
       <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
@@ -6443,7 +6467,8 @@ actions.faOffer = d => {
     const b = e.target.closest('[data-k]');
     if (!b || b.tagName === 'SELECT') return;
     const k = b.dataset.k;
-    if (k === 'sal') draft.avg = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p, draft.tid === m.from?.id), (draft.avg ?? draft.sal) + +b.dataset.d));
+    if (k === 'tab') draft.tab = b.dataset.v;
+    else if (k === 'sal') draft.avg = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(maxAvgFor(L, m.p, draft.tid === m.from?.id, draft.yrs, draft.load), (draft.avg ?? draft.sal) + +b.dataset.d));
     else if (k === 'load') draft.load = b.dataset.v;
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
@@ -6938,7 +6963,8 @@ actions.optNeg = d => {
   const box = overlay('');
   const paint = () => {
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · option $${p.contract.sal}M · asks $${a.sal}M × ${a.pref}</span>${FA.maxLabel(L, p) ? `<br><span class="badge new">${FA.maxLabel(L, p)} · max $${FA.maxSalary(L, p, true)}M</span>` : ''}</p>
+      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · option $${p.contract.sal}M · asks $${a.sal}M × ${a.pref}</span></p>
+      ${maxLine(L, p)}
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${neg.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${neg.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${neg.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
@@ -7763,7 +7789,7 @@ function extAsk(p, team) {
     const peers = league().teams.flatMap(x => x.roster).filter(x => x !== p && Math.abs(x.pos - p.pos) <= 1 && shownLevel(x) >= shownLevel(p) - 2 && x.contract?.sal);
     sal = Math.round(Math.max(sal * (1.3 + (tr(p, 'money') - 10) * 0.01), peers.reduce((m, x) => Math.max(m, x.contract.sal), 0) * 1.03));
   }
-  sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p, true), sal));
+  sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p, true, p.contract?.yrs || 1), sal));
   const yrs = holdout ? [2, 3] : p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];
   const loyal = tr(p, 'loyalty') >= 16, mercenary = tr(p, 'loyalty') <= 5;
   const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
@@ -7873,7 +7899,8 @@ actions.extOpen = d => {
   const box = overlay('');
   const paint = () => {
     box.querySelector('.box').innerHTML = `
-      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · asks $${a.sal}M × ${a.pref}</span>${FA.maxLabel(L, p) ? `<br><span class="badge new">${FA.maxLabel(L, p)} · max $${FA.maxSalary(L, p, true)}M</span>` : ''}</p>
+      <p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · asks $${a.sal}M × ${a.pref}</span></p>
+      ${maxLine(L, p, p.contract?.yrs || 1)}
       <div class="pts-row"><span class="grow">Salary</span><button class="btn square" data-k="sal" data-d="-1">−</button><span class="pts-val">$${talk.sal}M</span><button class="btn square" data-k="sal" data-d="1">+</button></div>
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${talk.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
@@ -7887,7 +7914,7 @@ actions.extOpen = d => {
     const b = e.target.closest('[data-k]');
     if (!b) return;
     const k = b.dataset.k;
-    if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p, true), talk.sal + +b.dataset.d));
+    if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p, true, p.contract?.yrs || 1), talk.sal + +b.dataset.d));
     else if (k === 'yrs') talk.yrs = Math.max(1, Math.min(5, talk.yrs + +b.dataset.d));
     else if (k === 'opt') talk.opt = +b.dataset.v;
     else if (k === 'ntc') talk.ntc = !!+b.dataset.v;

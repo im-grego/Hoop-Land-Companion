@@ -221,9 +221,13 @@ export function maxPct(league, p, own = false) {
   const tier = yrs >= 10 ? 2 : yrs >= 7 ? 1 : 0;
   return tiers[own && tier < 2 && maxCriteria(league, p) ? tier + 1 : tier];
 }
-export function maxSalary(league, p, own = false) {
-  return Math.round(capLines(league).cap * maxPct(league, p, own) / 100);
+// `ahead` = seasons until the deal starts (an extension starts when the
+// current contract ends, on that season's bigger cap).
+export function maxSalary(league, p, own = false, ahead = 0) {
+  return Math.round(capLines(league, ahead).cap * maxPct(league, p, own) / 100);
 }
+// What earns the tier up, in words: "MVP", "All-NBA" or "DPOY" (or '').
+export const maxReason = (league, p) => ({ 'MVP': 'MVP', 'All-League': 'All-NBA', 'DPOY': 'DPOY' }[maxCriteria(league, p)] || '');
 // "Supermax" / "Rose rule" when his own team can pay him a tier up.
 export const maxLabel = (league, p) => (maxPct(league, p, true) > maxPct(league, p) ? ((p.yrs || 0) >= 7 ? 'Supermax eligible' : 'Rose rule eligible') : '');
 
