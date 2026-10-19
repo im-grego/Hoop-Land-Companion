@@ -29,7 +29,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.70.0';
+const APP_VERSION = '0.71.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5061,7 +5061,9 @@ screens.liveTrade = (args) => {
     if (!cashOn()) return '';
     const me = isUserTeam(T), room = Math.min(cashLimit() - cashSent(T.id), isUserTeam(other) ? cashLimit() - cashGot(other.id) : Infinity);
     if (!me && !isUserTeam(other)) return '';
-    return `<div class="prot-row"><span class="grow small">${esc(T.shortName)} ${me ? 'adds' : 'sends'} cash <span class="muted">${me ? `(🪙${coinsOf(T)}` : '(you get the coins'} · $${Math.max(0, room)}M left this season)</span></span><div class="seg">${CASH_STEPS.filter(m => m <= room).map(m => `<button class="btn ${cur === m ? 'on focus' : 'off'}" data-act="liveCash" data-side="${side}" data-v="${m}" ${me && cashCost(m) > coinsOf(T) ? 'disabled' : ''}>${m ? `<span style="display:block;text-align:center">$${m}M<span class="small" style="display:block">${me ? coinTag(cashCost(m)) : `+${coinTag(cashGain(m))}`}</span></span>` : 'None'}</button>`).join('')}</div></div>`;
+    const steps = CASH_STEPS.filter(m => m && m <= room);
+    const fx = me ? (cur ? `−${cashCost(cur)} coins` : `−${cashCost(steps[0] || 2)} to −${cashCost(steps[steps.length - 1] || 8)} coins`) : (cur ? `+${cashGain(cur)} coins` : `+${cashGain(steps[0] || 2)} to +${cashGain(steps[steps.length - 1] || 8)} coins`);
+    return `<div class="prot-row"><span class="grow small">${esc(T.shortName)} ${me ? 'adds' : 'sends'} cash <span class="muted">· $${Math.max(0, room)}M left this season</span></span><div class="seg">${steps.map(m => `<button class="btn ${cur === m ? 'on focus' : 'off'}" data-act="liveCash" data-side="${side}" data-v="${cur === m ? 0 : m}" ${me && cashCost(m) > coinsOf(T) ? 'disabled' : ''}>$${m}M</button>`).join('')}</div><p class="note small" style="margin:2px 0 0"><b class="${me ? 'down' : 'up'}">${fx}</b></p></div>`;
   };
   // Future firsts being sent can carry a protection.
   const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
