@@ -123,6 +123,7 @@ export const DEFAULT_PARAMS = {
   lotteryFormat: 'auto',  // auto (from the league's settings) | 321 | top4 | old
   lotteryDraws: 4,        // unused (old setting)
   draftRounds: 2,
+  coinRate: 4,              // coins per $1M (tax, buyouts, cash in trades)
   capSystem: true,          // NBA cap, tax line and aprons by season (the save's cap set to the 2nd apron on export)
   liveCpuTradeChance: 10,  // % chance of a CPU trade around each CPU pick in the live draft
   draftTradeWindow: 8,
@@ -499,7 +500,7 @@ export function runProgression(entries, params, profiles) {
     else if (gameRewardedLongevity(e.p, mpg, e, params)) { /* the game gave his year already */ }
     else if (!maybeRegressionDown(e.p, injured ? risk.cls : null, z, params, rng)) {
       const prod = z == null ? 1 : Math.max(0.2, Math.min(2, 1 + params.prodLongevityPerZ * z));
-      maybeLongevity(e.p, mult * prod, params, rng, injured ? risk.cls : null, z);
+      maybeLongevity(e.p, mult * prod * (e.longMult || 1), params, rng, injured ? risk.cls : null, z);
     }
     const pot = e.p.pot;
     if (injured) maybeInjuryPotLoss(e.p, e.injuryYear, params, rng);

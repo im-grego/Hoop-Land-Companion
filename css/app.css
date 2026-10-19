@@ -1253,3 +1253,17 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .prot-row { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-top: 8px; }
 .prot-row .seg { flex-wrap: nowrap; }
 .prot-row .seg .btn { min-height: 30px; padding: 0 2px; font-size: 11px; white-space: nowrap; }
+/* Coaching tree, top down */
+.tree { display: flex; flex-direction: column; }
+.tree-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tree-row2.one { grid-template-columns: 1fr; }
+.tree-link { display: flex; justify-content: center; height: 14px; }
+.tree-link span { display: block; width: 4px; background: var(--btn-edge); }
+.tree-node { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; background: var(--btn); border: 3px solid var(--btn-edge); min-width: 0; }
+.tree-node.have { border-color: var(--up); }
+.tree-node.next { border-color: var(--gold); }
+.tree-node.locked { opacity: .5; }
+.tree-node .tn-name { font-size: 14px; }
+.tree-node .tn-text { color: var(--muted, #9db9e6); }
+.tree-node .tn-cost { margin-top: auto; }
+.tree-node .btn { align-self: flex-start; }
