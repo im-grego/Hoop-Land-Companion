@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.107.1';
+const APP_VERSION = '0.107.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1045,6 +1045,9 @@ function calPos(st) {
 }
 // One month of the grid. `anim` = { fromDay }: those passed days cross off one after another.
 function calMonthHtml(cal, cur, mo, anim = null) {
+  // A step shows as finished only when it comes before the current one; flags stored from an earlier run never tick a later event.
+  const curIdx = cur ? cal.indexOf(cur) : cal.length;
+  const isDone = st => cal.indexOf(st) < curIdx;
   const yr = dispYr(league().season.currentYear);
   const curPos = cur ? calPos(cur) : null;
   const first = new Date(yr, mo, 1).getDay(), days = new Date(yr, mo + 1, 0).getDate();
@@ -1060,7 +1063,7 @@ function calMonthHtml(cal, cur, mo, anim = null) {
   for (let i = 0; i < first; i++) cells.push('<span class="cal-day blank"></span>');
   for (let d = 1; d <= days; d++) {
     const here = byDay.get(d) || [];
-    const done = here.length && here.every(s => s.done());
+    const done = here.length && here.every(isDone);
     const now = here.includes(cur);
     const past = done || before(mo, d);
     const animate = anim && past && d >= anim.fromDay;
@@ -1086,12 +1089,24 @@ function calendarGrid(cal, cur) {
   }
   if (from && from[0] < mo) {
     const p1 = calMonthHtml(cal, cur, from[0], { fromDay: from[1] });
-    setTimeout(() => { const w = document.getElementById('cal-wrap'); if (w) w.innerHTML = calMonthHtml(cal, cur, mo, { fromDay: 1 }).html; }, p1.n * p1.per + 700);
+    // After the dates cross off, the page turns to the new month.
+    setTimeout(() => {
+      const w = document.getElementById('cal-wrap');
+      if (!w) return;
+      w.classList.add('turn-out');
+      setTimeout(() => {
+        if (!w.isConnected) return;
+        w.innerHTML = calMonthHtml(cal, cur, mo, { fromDay: 1 }).html;
+        w.classList.remove('turn-out');
+        w.classList.add('turn-in');
+        setTimeout(() => w.classList.remove('turn-in'), 520);
+      }, 420);
+    }, p1.n * p1.per + 600);
     return `<div id="cal-wrap">${p1.html}</div>`;
   }
   return `<div id="cal-wrap">${calMonthHtml(cal, cur, mo, from ? { fromDay: from[0] === mo ? from[1] : 1 } : null).html}</div>`;
 }
-actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st) toast(`${st.date} · ${st.title}`, st.done() ? 'Done.' : st.blurb, 3200); };
+actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st) { const c = activeCal(), cu = currentStep(); toast(`${st.date} · ${st.title}`, c.indexOf(st) < (cu ? c.indexOf(cu) : c.length) ? 'Done.' : st.blurb, 3200); } };
 
 function calendarCard() {
   const s = league().season;
@@ -1101,7 +1116,7 @@ function calendarCard() {
   const cur = currentStep();
   const cal = activeCal();
   const item = st => {
-    const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
+    const state_ = cal.indexOf(st) < (cur ? cal.indexOf(cur) : cal.length) ? 'done' : st === cur ? 'now' : 'locked';
     return `<li class="cal ${state_}">
         <span class="cal-date">${esc(st.date)}</span>
         <div class="cal-body">

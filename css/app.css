@@ -1332,3 +1332,9 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .cal-first .cal.now { padding: 8px 10px; }
 .cal-nav { margin: 2px 0 4px; }
 .cal-day { min-height: 38px; }
+
+/* Turning the page to the next month. */
+#cal-wrap.turn-out { transform-origin: left center; animation: calPageOut .42s ease-in forwards; }
+#cal-wrap.turn-in { transform-origin: right center; animation: calPageIn .5s ease-out; }
+@keyframes calPageOut { to { transform: perspective(900px) rotateY(-82deg); opacity: .1; } }
+@keyframes calPageIn { from { transform: perspective(900px) rotateY(82deg); opacity: .1; } to { transform: perspective(900px) rotateY(0); opacity: 1; } }
