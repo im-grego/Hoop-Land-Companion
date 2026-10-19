@@ -1321,3 +1321,14 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .cal-day.anim { animation: calPulse .35s ease-out var(--d, 0ms); }
 @keyframes calStrike { to { text-decoration-color: currentColor; opacity: .45; } }
 @keyframes calPulse { 40% { transform: scale(.92); background: color-mix(in srgb, var(--gold) 35%, var(--btn)); } 100% { transform: scale(1); } }
+
+/* Home: a tighter league header, and the full step list folded away so the event and the calendar fit the screen. */
+.league-card.compact { gap: 10px; padding: 6px 10px; }
+.league-card.compact .league-logo { width: 30px; height: 42px; }
+.league-card.compact b { font-size: 15px; }
+.league-card.compact .grow { gap: 1px; }
+.league-card.compact .note { font-size: 12px; margin: 0; }
+.cal-all > summary { cursor: pointer; padding: 8px 4px; font-weight: 700; color: var(--cyan); }
+.cal-first .cal.now { padding: 8px 10px; }
+.cal-nav { margin: 2px 0 4px; }
+.cal-day { min-height: 38px; }

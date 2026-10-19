@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.107.0';
+const APP_VERSION = '0.107.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -366,15 +366,8 @@ function render() {
   // iOS can drop a scroll made while it's still finishing a tap; put it
   // back once the redraw has settled.
   const keep = () => { if (Math.abs(window.scrollY - target) > 2) window.scrollTo(0, target); };
-  // The calendar keeps the current step in the middle of the screen.
-  const now = top.name === 'main' && $app.querySelector('.cal.now');
-  if (now) {
-    const center = () => window.scrollTo(0, Math.max(0, now.getBoundingClientRect().top + window.scrollY - (window.innerHeight - now.offsetHeight) / 2));
-    center(); requestAnimationFrame(center); setTimeout(center, 80);
-  } else {
-    requestAnimationFrame(keep);
-    setTimeout(keep, 80);
-  }
+  requestAnimationFrame(keep);
+  setTimeout(keep, 80);
   top.y = null;
   lastView = view;
 }
@@ -1122,7 +1115,7 @@ function calendarCard() {
   return `<fieldset class="frame"><legend>${dispYr(s.currentYear)} Offseason</legend>
     ${cur ? `<ol class="calendar cal-first">${item(cur)}</ol>` : '<p class="note up">🏁 Offseason complete.</p>'}
     ${calendarGrid(cal, cur)}
-    <ol class="calendar">${cal.filter(st => st !== cur).map(item).join('')}</ol>
+    <details class="cal-all"><summary>All steps</summary><ol class="calendar">${cal.filter(st => st !== cur).map(item).join('')}</ol></details>
     ${state.undo ? `<button class="btn small" data-act="undoAdvance">↺ Undo ${esc(state.undo.label)}</button>` : ''}
   </fieldset>`;
 }
@@ -1254,7 +1247,7 @@ screens.main = () => {
   layout({
     title: 'Main Menu',
     body: `
-      <div class="league-card">
+      <div class="league-card compact">
         ${leagueBadge(L)}
         <div class="grow"><b>${esc(L.leagueName || L.shortName)}</b>
           <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}</span></div>
