@@ -1271,3 +1271,6 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .prow.gone { opacity: .45; filter: grayscale(1); }
 .prow.gone .nm { text-decoration: line-through; text-decoration-thickness: 2px; }
 .fa-roster summary { cursor: pointer; padding: 6px 0; }
+
+button.hg-post { display: block; width: 100%; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+button.hg-post:active { filter: brightness(1.15); }

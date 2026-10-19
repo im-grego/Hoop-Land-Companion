@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.83.1';
+const APP_VERSION = '0.84.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5706,6 +5706,7 @@ actions.faDecide = async () => {
   (calFlags().faLog ||= {})[s.day] = { n: s.signings.length, best: line(best), big: line(top) };
   state.undo = null;
   saveUsed(s.used);
+  const swaps = cpuBlockDeals(s.day);
   if (state.params.faClearCpuOffers) {
     s.cleared = L.contractOffers.map((o, i) => [o, i]).filter(([o]) => !state.userTeams.has(o.tid));
     L.contractOffers = L.contractOffers.filter(o => state.userTeams.has(o.tid));
@@ -5715,8 +5716,58 @@ actions.faDecide = async () => {
   render();
   const mineSigned = s.signings.filter(x => isUserTeam(x.team)).length;
   const qos = s.released?.qo || [];
+  if (swaps.length) setTimeout(() => toast(`🔁 ${swaps.length} trade${swaps.length > 1 ? 's' : ''} around the league`, swaps.slice(0, 3).join(' · ')), 3200);
   toast(`${s.signings.length} signed${mineSigned ? `, ${mineSigned} with your teams` : ''}`, qos.length ? `${qos.length} restricted free agent${qos.length > 1 ? 's' : ''} accepted the qualifying offer.` : '');
 };
+
+// CPU players on the block get dealt during free agency: a CPU team that
+// values him close to what he's worth sends a player or pick back. Each
+// player is shopped once per day until someone bites.
+function cpuBlockDeals(day) {
+  const L = league();
+  if (!isComplete() || isCollege()) return [];
+  const ly = lastYear(), yr = L.season.currentYear;
+  const rng = mulberry32((saveSalt() ^ Math.imul(day + 3, 0x9e3779b1)) >>> 0);
+  const cpu = L.teams.filter(t => !isUserTeam(t));
+  const done = [];
+  for (const t of cpu) {
+    for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock && !tradeLock(x) && x.contract?.yrs > 0)) {
+      const want = playerValue(p, state.leagueIdx, ly);
+      let best = null;
+      for (const u of [...cpu].filter(x => x !== t).sort(() => rng() - 0.5).slice(0, 12)) {
+        const stars = new Set([...u.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly)).slice(0, 2));
+        const assets = [
+          ...FA.signedRoster(u).filter(x => !stars.has(x) && !tradeLock(x) && x.contract?.yrs > 0).map(x => ({ player: x, value: playerValue(x, state.leagueIdx, ly) })),
+          ...u.draftPicks.filter(pk => pk.yr > yr && !FA.pickFrozen(L, u, pk)).map(pk => ({ pick: pk, value: futureValue(pk) })),
+        ];
+        const packs = [];
+        for (let i = 0; i < assets.length; i++) {
+          packs.push([assets[i]]);
+          for (let j = i + 1; j < assets.length && packs.length < 300; j++) packs.push([assets[i], assets[j]]);
+        }
+        for (const pack of packs) {
+          const v = pack.reduce((a, x) => a + x.value, 0);
+          if (v < want * 0.6 || v > want * 1.05) continue;
+          const A = { team: t, players: [p], picks: [] };
+          const B = { team: u, players: pack.filter(x => x.player).map(x => x.player), picks: pack.filter(x => x.pick).map(x => x.pick) };
+          if (tradeRulesErr(L, A, B) || ntcRefusal(L, A, B)) continue;
+          const score = Math.abs(v - want * 0.9);
+          if (!best || score < best.score) best = { A, B, score };
+        }
+        if (best && best.score < want * 0.1) break;
+      }
+      if (!best) continue;
+      const rec = executeTrade(best.A, best.B, yr);
+      for (const m of rec.moved) tradeMorale(L, m.p, m.to);
+      markAway(rec.moved);
+      if (p.season) p.season.onTradeBlock = 0;
+      const back = [...best.B.players.map(playerName), ...best.B.picks.map(pickLabel)].join(', ');
+      done.push(`${best.A.team.shortName} send ${playerName(p)} to ${best.B.team.shortName} for ${back}`);
+    }
+  }
+  if (done.length) { const log = offGet('cpuTrades'); offSet('cpuTrades', Array.isArray(log) ? [...log, ...done] : done); state.dirty = true; }
+  return done;
+}
 
 actions.faUndo = async () => {
   const s = faState();
@@ -6618,11 +6669,11 @@ function leagueGramCard() {
   const posts = leagueGram(league(), isUserTeam, state.leagueIdx);
   if (!posts.length) return '';
   return `<h2 class="team-title">Trending on Hoop Gram</h2>
-    <div class="stack">${posts.map(x => `<div class="hg-post">
-      <div class="hg-head"><span class="hg-avatar">HG</span><b>${esc(x.handle)}</b><span class="hg-tag">${esc(x.tag)}</span></div>
+    <div class="stack">${posts.map(x => `<${x.pid ? `button data-act="openPlayer" data-id="${x.pid}"` : 'div'} class="hg-post ${x.pid ? 'tap' : ''}">
+      <div class="hg-head"><span class="hg-avatar">HG</span><b>${esc(x.handle)}</b></div>
       <p class="hg-text">${esc(x.text)}</p>
       <div class="hg-foot"><span>❤️ ${x.likes.toLocaleString()}</span><span class="muted">${esc(x.team.shortName)}</span></div>
-    </div>`).join('')}</div>`;
+    </${x.pid ? 'button' : 'div'}>`).join('')}</div>`;
 }
 
 screens.storylines = () => {
@@ -6767,12 +6818,11 @@ function rumorPost(r) {
   if (r.kind === 'blowup' || r.kind === 'taxpay') star.splice(0, star.length, ...(r.kind === 'blowup' ? blowup : taxpay));
   const handle = pick(['@HoopInsider', '@LeagueWhispers', '@CapSpaceGuy', '@TradeMachine', '@CourtsideSources']);
   const likes = 800 + (seed % 9000) + r.heat * 4000;
-  return `<div class="hg-post">
-    <div class="hg-head"><span class="hg-avatar">HG</span><b>${handle}</b><span class="hg-tag">${r.kind === 'star' ? 'Disgruntled?' : r.kind === 'blowup' ? 'Blow it up?' : r.kind === 'taxpay' ? 'Tax bill' : 'Could be moved'} ${'🔥'.repeat(Math.max(1, r.heat))}</span></div>
+  return `<button class="hg-post tap" data-act="openPlayer" data-id="${p.id}">
+    <div class="hg-head"><span class="hg-avatar">HG</span><b>${handle}</b></div>
     <p class="hg-text">${esc((r.kind === 'vet' ? pick(vet) : pick(star)).trim())}</p>
-    <div class="hg-foot"><span>❤️ ${likes.toLocaleString()}</span><button class="btn small" data-act="openPlayer" data-id="${p.id}">${esc(nm)} ${lvTag(p)}</button></div>
-    <p class="note small muted" style="margin-top:4px">${esc(t.shortName)} · ${esc(posName(p))} · ${p.age}y · ${moraleFace(r.morale)} ${r.morale}</p>
-  </div>`;
+    <div class="hg-foot"><span>❤️ ${likes.toLocaleString()}</span><span class="muted">${esc(t.shortName)} · ${esc(nm)} ${lvTag(p)}</span></div>
+  </button>`;
 }
 screens.overview = (args = {}) => {
   const L = league();

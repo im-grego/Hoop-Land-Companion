@@ -149,7 +149,7 @@ export function rosterNeeds(L, team, { level = levelOf, li = 0 } = {}) {
       text: `Only ${rot.length || 'no'} rotation-quality ${name.toLowerCase()} signed for next season` });
     if (!best || level(best) < cuts.starter) out.push({ group: g, kind: 'Starter', sev: !best || level(best) < cuts.rotation ? 3 : 2,
       text: best ? `No starting-caliber ${name.toLowerCase().slice(0, -1)}: ${playerName(best)} (Lv ${level(best)}) is your best` : `No ${name.toLowerCase()} on the roster` });
-    if (!young.length) out.push({ group: g, kind: 'Upside', sev: 1, text: `No ${name.toLowerCase().slice(0, -1)} 24 or younger with 3½★+ potential` });
+    if (!young.length) out.push({ group: g, kind: 'Upside', sev: 1, text: `No ${name.toLowerCase().slice(0, -1)} 24 or younger with Starter-level or better potential` });
     if (old.length && old.length >= Math.max(1, rot.length - 1)) out.push({ group: g, kind: 'Age', sev: old.length >= 2 ? 2 : 1,
       text: `${old.map(p => `${playerName(p)} (${p.age})`).join(', ')} ${old.length > 1 ? 'are' : 'is'} at the end of ${old.length > 1 ? 'their primes' : 'his prime'}` });
   }
