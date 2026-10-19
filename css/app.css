@@ -1343,3 +1343,17 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 main.panel.bare { margin-top: 10px; }
+
+/* Slimmer title board, about the height of the league card; same everywhere. */
+.marquee, .marquee { height: 52px; }
+.marquee-track span, .marquee-track span { font-size: 24px; letter-spacing: 3px; line-height: 24px; padding-right: 60px;
+  -webkit-mask-size: 3px 3px; mask-size: 3px 3px;
+  -webkit-mask-image: linear-gradient(90deg, #000 0 2px, transparent 2px 3px), linear-gradient(#000 0 2px, transparent 2px 3px);
+  mask-image: linear-gradient(90deg, #000 0 2px, transparent 2px 3px), linear-gradient(#000 0 2px, transparent 2px 3px); }
+.marquee { border-width: 3px; }
+.header .back, .nav-btn { width: 56px; }
+@media (min-width: 700px) {
+  .marquee { height: 52px; }
+  .marquee-track span { font-size: 24px; letter-spacing: 3px; }
+  .header .back, .nav-btn { width: 72px; }
+}
