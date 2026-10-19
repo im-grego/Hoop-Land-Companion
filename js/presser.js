@@ -113,10 +113,11 @@ export function presserQuestions(league, team, li = 0) {
   if (!c || !bt) {
     const big = sit.arrivals.filter(p => levelOf(p) >= 78).sort((a, b) => levelOf(b) - levelOf(a))[0];
     const kid = [...team.roster].filter(p => (p.pot || 0) >= 8 && p.age <= 23 && levelOf(p) >= 60).sort((a, b) => (b.pot - a.pot) || (levelOf(b) - levelOf(a)))[0];
-    const x = big || kid;
+    const any = [...team.roster].filter(p => p.age <= 24).sort((a, b) => ((b.pot || 0) - (a.pot || 0)) || (levelOf(b) - levelOf(a)))[0];
+    const x = big || kid || ((!c && !bt) ? any : null);
     if (x) out.push({
       key: 'expect', pid: x.id,
-      q: big ? `You brought in ${playerName(x)} this summer. What do you expect from him?` : `${playerName(x)} has ${x.pot / 2}-star potential. What are the expectations?`,
+      q: big ? `You brought in ${playerName(x)} this summer. What do you expect from him?` : `${playerName(x)} has ${(x.pot || 0) / 2}-star potential. What are the expectations?`,
       options: big
         ? [{ v: 'star', label: 'He\'s the centerpiece' }, { v: 'fit', label: 'He fits in with the group' }, { v: 'time', label: 'He needs time to settle in' }]
         : [{ v: 'star', label: 'He\'s the future of this team' }, { v: 'fit', label: 'He\'ll earn his minutes' }, { v: 'time', label: 'No rush with him' }],
