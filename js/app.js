@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.85.1';
+const APP_VERSION = '0.85.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -307,10 +307,9 @@ function go(name, args = {}) {
   history.pushState({ depth: state.stack.length }, '');
   render();
 }
-// The league's logo: the NBA mark for NBA leagues, else Hoop Land's.
+// The league's logo: the pro mark for pro leagues, a ball for college.
 function leagueBadge(L) {
-  const nba = L.leagueType === 0 && /NBA|National Basketball/i.test(`${L.shortName} ${L.leagueName}`);
-  return `<img class="league-logo ${nba ? 'px' : ''}" src="icons/${nba ? 'nba-px.png' : L.leagueType !== 0 ? 'league-ball.png' : 'hoopland-logo.png'}" alt="">`;
+  return `<img class="league-logo" src="icons/${L.leagueType === 0 ? 'pro-logo.png' : 'league-ball.png'}" alt="">`;
 }
 
 function goHome() {
@@ -424,6 +423,7 @@ async function loadFile(file) {
     state.fileName = file.name;
     state.undo = null;
     state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null;
+    preloadLogos(data);   // start the team logos downloading before the heavy setup
     installData(data);
     freshSaveCheck();
     const reopened = reopenOptions();
