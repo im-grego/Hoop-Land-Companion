@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.73.0';
+const APP_VERSION = '0.74.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1409,7 +1409,7 @@ screens.facilities = () => {
         return `<fieldset class="frame"><legend>${f.icon} ${f.label}</legend><div class="tree">${f.tiers.map((tier, i) => {
           const lv = i + 1, have = cur >= lv, next = lv === cur + 1;
           return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : next ? 'next' : 'locked'}">
-            <b class="tn-name">Level ${lv} · ${esc(tier.name)}</b>
+            <b class="tn-name">Tier ${lv} · ${esc(tier.name)}</b>
             <span class="small tn-text">${tier.lines.map(l => `• ${esc(l)}`).join('<br>')}</span>
             ${have ? '<span class="up tn-cost">✓</span>' : next ? `<button class="btn small ${coins >= cost ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" ${coins >= cost ? '' : 'disabled'}>Upgrade ${coinTag(cost)}</button>` : `<span class="muted small tn-cost">${coinTag(FX.upgradeCost(lv - 1))}</span>`}
           </div>`;
