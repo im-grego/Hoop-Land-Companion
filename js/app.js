@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.74.0';
+const APP_VERSION = '0.75.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1485,7 +1485,7 @@ actions.buyNode = d => {
   render();
 };
 
-// Tendencies: each of your players takes a few nudges this offseason
+// Tendencies: you have some influence over each of your players this offseason
 // (Scheme tier, youth, motor). Changes go straight into the save; the
 // offseason's starting values are kept to reset to.
 const tendKey = () => `hlc:tend:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
@@ -1506,7 +1506,7 @@ screens.tendencies = () => {
   state.tendNav = list.map(e => e.p.id);
   layout({
     title: 'Tendencies',
-    body: `<p class="note small">Scheme tier ${sch}: every player takes ${1 + sch} nudge${sch ? 's' : ''}, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(sch, fxNow())} from where the offseason started.</p>
+    body: `<p class="note small">Scheme tier ${sch}: every player has ${1 + sch} influence, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(sch, fxNow())} from where the offseason started.</p>
       <div class="list">${list.map(({ p, team }) => {
         const n = CO.nudgesFor(p, sch, fxNow()), used = nudgesUsed(p);
         return `<button class="prow" data-act="openTend" data-id="${p.id}"><span class="name">${esc(playerName(p))}</span>
@@ -1528,7 +1528,7 @@ screens.tendplayer = ({ id }) => {
     title: playerName(p),
     left: nav(at > 0 ? ids[at - 1] : null, -1),
     right: nav(at >= 0 && at < ids.length - 1 ? ids[at + 1] : null, 1),
-    body: `<fieldset class="frame"><legend>Nudges · ${used}/${n} used</legend>
+    body: `<fieldset class="frame"><legend>Influence · ${used}/${n} used</legend>
         <p class="note small">${esc(posName(p))} · ${p.age}y · Motor ${p.traits?.motor || '—'}. ${esc(styleLine(p))}</p>
         ${used ? '<button class="btn small" data-act="resetTend" data-id="' + p.id + '">↺ Reset his tendencies</button>' : ''}</fieldset>
       ${TEND_GROUPS.map(([g, ks]) => `<fieldset class="frame"><legend>${g}</legend><div class="stack">${ks.map(k => {
@@ -1548,7 +1548,7 @@ actions.tendAdj = d => {
   const v = (p.tendencies[k] || 0) + step, dv = v - (o[k] || 0);
   if (v > 5 || v < -5 || Math.abs(dv) > CO.maxShift(sch, fxNow())) return;
   const growing = Math.abs(dv) > Math.abs((p.tendencies[k] || 0) - (o[k] || 0));
-  if (growing && nudgesUsed(p) >= CO.nudgesFor(p, sch, fxNow())) { toast('No nudges left for him', '', 2400, true); return; }
+  if (growing && nudgesUsed(p) >= CO.nudgesFor(p, sch, fxNow())) { toast('No influence left for him', '', 2400, true); return; }
   p.tendencies[k] = v;
   saveTend();
   state.dirty = true;

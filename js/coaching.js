@@ -5,7 +5,7 @@
 //
 // - Player Development: more offseason progression points and better odds
 //   of a potential bump for your players.
-// - Scheme: tendency nudges in Training Camp / Summer Development.
+// - Leadership: tendency influence in Training Camp / Summer Development.
 // - Culture: locker room and loyalty for your roster (pros), recruiting pull
 //   (college).
 
@@ -15,7 +15,7 @@ export const BRANCHES = [
   { k: 'culture', label: 'Motivation', icon: '🤝', rating: 'motivation',
     tiers: ['+1 Locker Room and Loyalty (up to 14) · +10% recruiting pull', '+2 (up to 16) · +20% recruiting pull', '+3 (up to 18) · +30% recruiting pull'] },
   { k: 'scheme', label: 'Leadership', icon: '🧠', rating: 'leadership',
-    tiers: ['2 tendency nudges per player · game plan: offense', '3 nudges per player · game plan: defense', '4 nudges per player; a tendency can move 3 · game plan: rotation'] },
+    tiers: ['2 influence per player · game plan: offense', '3 influence per player · game plan: defense', '4 influence per player; a tendency can move 3 · game plan: rotation'] },
 ];
 export const TIER_COST = [1, 2, 3];
 export const MAX_TIER = 3;
@@ -49,12 +49,12 @@ export const NODES = {
   scheme: [
     { id: 's1', row: 1, col: 0, spine: 1, label: 'Playbook' },
     { id: 's2', row: 2, col: 0, spine: 2, label: 'Defensive Systems' },
-    { id: 'sA', row: 2, col: 1, label: 'Clipboard', text: 'One more tendency nudge for players 28 and older', pts: 2, req: ['s1'] },
+    { id: 'sA', row: 2, col: 1, label: 'Clipboard', text: 'One more influence for players 28 and older', pts: 2, req: ['s1'] },
     { id: 's3', row: 3, col: 0, spine: 3, label: 'Rotation Control' },
     { id: 'sB', row: 3, col: 1, label: 'Film Breakdown', text: 'A tendency can move one step further', pts: 3, req: ['sA'] },
-    { id: 'sC', row: 4, col: 0, label: 'Motor Skills', text: 'High-motor players (15+) get two extra nudges', pts: 4, req: ['s3'] },
+    { id: 'sC', row: 4, col: 0, label: 'Motor Skills', text: 'High-motor players (15+) get two extra influence', pts: 4, req: ['s3'] },
     { id: 'sD', row: 4, col: 1, label: 'Locker Room Trust', text: 'Your promises are believed: +10% odds on pitches and promises', pts: 4, req: ['sB'] },
-    { id: 's4', row: 5, col: 0, wide: true, label: 'Franchise Voice', text: 'One more nudge for every player · promises believed another +10%', pts: 6, req: ['sC', 'sD'] },
+    { id: 's4', row: 5, col: 0, wide: true, label: 'Franchise Voice', text: 'One more influence for every player · promises believed another +10%', pts: 6, req: ['sC', 'sD'] },
   ],
 };
 export const EXTRA_IDS = Object.values(NODES).flat().filter(n => !n.spine).map(n => n.id);
@@ -123,7 +123,7 @@ export const potMult = t => 1 + 0.15 * t;
 export const recruitMult = t => 1 + 0.1 * t;
 export const cultureCap = t => (t ? 12 + 2 * t : 0);
 
-// Tendency nudges a player takes this offseason: the Scheme tier, plus one
+// Tendency influence a player has this offseason: the Scheme tier, plus one
 // for young players and high-motor players, minus one for veterans.
 export function nudgesFor(p, schemeTier, fx = {}) {
   const motor = (p.traits?.motor || 10) >= 15;

@@ -1,7 +1,7 @@
 // Facilities: the four buildings every team has (frontOffice.facilities,
 // tier 1-4 in the save). Tier 1 comes with the team and does nothing; each
 // upgrade (tiers 2, 3, 4) gets the game's own benefit (injury prevention, XP
-// gains, coin income: 5%, 10%, 25%; scouting assignments 3 / 5 / 10) plus the
+// gains, coin income: 5%, 10%, 25%; scouting is entirely in the app) plus the
 // app's own perks on top, each wired to something the app does. Coins buy
 // the upgrades. Complete rules only.
 
@@ -20,9 +20,9 @@ export const FACILITIES = [
   ] },
   { k: 'scouting', type: 2, label: 'Scouting', icon: '🔭', tiers: [
     { name: 'Local Scouts', lines: ['Standard issue, no bonuses'] },
-    { name: 'Regional Network', lines: ['Game: 3 scouting assignments', 'Instant read: confirm the true potential of 2 prospects', 'Potential reads 10% tighter'] },
-    { name: 'National Network', lines: ['Game: 5 scouting assignments', 'Instant read on 4 prospects', 'Potential reads 25% tighter', '50% more rating ceilings known before a workout'] },
-    { name: 'Global Network', lines: ['Game: 10 scouting assignments', 'Instant read on 8 prospects', 'Potential reads 40% tighter', 'Double the rating ceilings known before a workout', 'Good cop, bad cop: ask all six interview questions'] },
+    { name: 'Regional Network', lines: ['Instant read: confirm the true potential of 2 prospects', 'Potential reads 10% tighter'] },
+    { name: 'National Network', lines: ['Instant read on 4 prospects', 'Potential reads 25% tighter', '50% more rating ceilings known before a workout'] },
+    { name: 'Global Network', lines: ['Instant read on 8 prospects', 'Potential reads 40% tighter', 'Double the rating ceilings known before a workout', 'Good cop, bad cop: ask all six interview questions'] },
   ] },
   { k: 'arena', type: 3, label: 'Arena', icon: '🏟️', tiers: [
     { name: 'Neighborhood Arena', lines: ['Standard issue, no bonuses'] },
