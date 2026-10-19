@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.108.1';
+const APP_VERSION = '0.108.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -304,18 +304,18 @@ function skillHint(id) {
 // ---------------------------------------------------------------------------
 // Layout + routing
 
-function layout({ title, left = '', right = '', body, action = null }) {
+function layout({ title, left = '', right = '', body, action = null, bare = false }) {
   const t = esc(title);
   $app.innerHTML = `
-    <div class="header">
+    ${bare ? `<h1 class="sr-only">${t}</h1>` : `<div class="header">
       ${state.stack.length > 1 ? `<button class="btn back" data-act="back" aria-label="Back">${BACK_ARROW}</button>` : ''}
       ${left}
       <div class="marquee" role="heading" aria-level="1" aria-label="${t}">
         <div class="marquee-track" aria-hidden="true"><span>${t}</span><span>${t}</span></div>
       </div>
       ${right}
-    </div>
-    <main class="panel">${body}</main>
+    </div>`}
+    <main class="panel ${bare ? 'bare' : ''}">${body}</main>
     ${action ? `<div class="bottom"><button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
 }
 
@@ -1262,6 +1262,7 @@ screens.main = () => {
   if (!state.data) {
     layout({
       title: 'Main Menu',
+      bare: true,
       body: `
         <img class="hero" src="icons/banner.jpg" alt="Hoop Land">
         <fieldset class="frame"><legend>Hoop Land Companion</legend>
@@ -1283,6 +1284,7 @@ screens.main = () => {
   const yourTeams = L.teams.filter(isUserTeam).map(t => t.shortName).join(', ') || 'None picked';
   layout({
     title: 'Main Menu',
+      bare: true,
     body: `
       <div class="league-card compact">
         ${leagueBadge(L)}

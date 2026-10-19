@@ -1340,3 +1340,6 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .peel-flap { background: linear-gradient(135deg, #4d8fe0 0%, #1b5fb8 60%, #0b3a7a 100%); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .15); filter: drop-shadow(-6px -6px 8px rgba(0, 0, 0, .35)); }
 .cal-nav { justify-content: center; }
 .cal-nav b { font-size: 17px; letter-spacing: 2px; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+main.panel.bare { margin-top: 10px; }
