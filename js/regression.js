@@ -1,5 +1,11 @@
 import { ATTRS, PHYSICAL, regressionYear, levelOf } from './savefile.js';
 
+// TODO(level mismatch): in Hoop Land, regressed players show a level a few
+// points higher than the app computes (e.g. 64 in game vs 58 here; one more
+// year on his regression age turns 58 into 64). The REG_DROP table below was
+// measured on 20/20 players, so the real drop probably scales with the
+// player's rating total rather than being a flat number of points. Kept as is
+// for now; revisit with more game-vs-app samples (age, regression age, ratings).
 // In-game regression: the save keeps a player's peak ratings, and the game
 // shows them minus a drop that grows each year past his regression age
 // (same points off any rating, measured on a 20/20 player). Retired players
