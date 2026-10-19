@@ -5,13 +5,12 @@
 import { signedRoster, FA_DEFAULTS } from './freeagency.js';
 
 // A team taking back more players than it sends needs the roster spots.
-export function rosterErr(A, B, max = FA_DEFAULTS.rosterMax) {
-  for (const [me, them] of [[A, B], [B, A]]) {
-    const out = (me.players || []).length, inn = (them.players || []).length;
-    const n = signedRoster(me.team).length;
-    if (inn > out && n - out + inn > max) return `${me.team.shortName} need an open roster spot (${n}/${max})`;
-  }
-  return null;
+export function rosterErrTeam(team, outN, inN, max = FA_DEFAULTS.rosterMax) {
+  const n = signedRoster(team).length;
+  return inN > outN && n - outN + inN > max ? `${team.shortName} need an open roster spot (${n}/${max})` : null;
+}
+export function rosterErr(A, B, max) {
+  return rosterErrTeam(A.team, (A.players || []).length, (B.players || []).length, max) || rosterErrTeam(B.team, (B.players || []).length, (A.players || []).length, max);
 }
 
 // Stepien rule: a team can't go two straight drafts without a first. A
@@ -28,14 +27,21 @@ function gaps(league, team, picks, prot) {
   for (let y = first; y < last; y++) if (!has(y) && !has(y + 1)) n++;
   return n;
 }
-export function stepienErr(league, A, B, prot = () => false) {
-  for (const [me, them] of [[A, B], [B, A]]) {
-    const out = me.picks || [], inn = them.picks || [];
-    if (!out.some(pk => pk.rd === 1)) continue;
-    const after = me.team.draftPicks.filter(pk => !out.includes(pk)).concat(inn);
-    if (gaps(league, me.team, after, prot) > gaps(league, me.team, me.team.draftPicks, prot)) {
-      return `${me.team.shortName} can't go two straight drafts without a first-round pick (Stepien rule)`;
-    }
+export function stepienTeam(league, team, out, inn, prot = () => false) {
+  if (!out.some(pk => pk.rd === 1)) return null;
+  const after = team.draftPicks.filter(pk => !out.includes(pk)).concat(inn);
+  return gaps(league, team, after, prot) > gaps(league, team, team.draftPicks, prot)
+    ? `${team.shortName} can't go two straight drafts without a first-round pick (Stepien rule)` : null;
+}
+export function stepienErr(league, A, B, prot) {
+  return stepienTeam(league, A.team, A.picks || [], B.picks || [], prot) || stepienTeam(league, B.team, B.picks || [], A.picks || [], prot);
+}
+// Touch rule: in a three-team deal every team must send or receive an asset
+// with each of the other two. flows = [{ team, sendTo: Map(teamId -> count) }].
+export function touchErr(moves, teams) {
+  for (const t of teams) for (const u of teams) {
+    if (t === u) continue;
+    if (!moves.some(m => (m.from === t.id && m.to === u.id) || (m.from === u.id && m.to === t.id))) return `${t.shortName} and ${u.shortName} have to swap something directly (touch rule)`;
   }
   return null;
 }

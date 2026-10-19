@@ -124,19 +124,23 @@ export function capTier(league, team, extra = 0) {
 // { team, players } (players sent out). Over the cap a team can take back
 // up to 125% of what it sends (+$1M); at the 1st apron no more than it
 // sends; nobody ends over the 2nd apron. Returns null or the reason.
-export function tradeCheck(league, A, B) {
-  if (!CAP_ON) return null;
+export function tradeCheckTeam(league, team, out, inn) {
+  if (!CAP_ON || inn <= out) return null;
   const C = capLines(league);
-  const sal = list => (list || []).reduce((a, p) => a + (p.status === STATUS_SIGNED || p.status === STATUS_DRAFTED ? p.contract?.sal || 0 : 0), 0);
-  for (const [me, them] of [[A, B], [B, A]]) {
-    const out = sal(me.players), inn = sal(them.players);
-    if (inn <= out) continue;
-    const after = teamCommitted(me.team) - out + inn;
-    if (after > C.apron2) return `${me.team.shortName} would go over the 2nd apron ($${C.apron2}M)`;
-    if (after <= C.cap) continue;
-    if (after >= C.apron1) return `${me.team.shortName} is at the 1st apron: can't take back more salary than it sends ($${inn}M in, $${out}M out)`;
-    if (inn > Math.floor(out * 1.25) + 1) return `${me.team.shortName} is over the cap: can take back up to $${Math.floor(out * 1.25) + 1}M for $${out}M out`;
-  }
+  const after = teamCommitted(team) - out + inn;
+  if (after > C.apron2) return `${team.shortName} would go over the 2nd apron ($${C.apron2}M)`;
+  if (after <= C.cap) return null;
+  if (after >= C.apron1) return `${team.shortName} is at the 1st apron: can't take back more salary than it sends ($${inn}M in, $${out}M out)`;
+  if (inn > Math.floor(out * 1.25) + 1) return `${team.shortName} is over the cap: can take back up to $${Math.floor(out * 1.25) + 1}M for $${out}M out`;
+  return null;
+}
+const tradeSal = list => (list || []).reduce((a, p) => a + (p.status === STATUS_SIGNED || p.status === STATUS_DRAFTED ? p.contract?.sal || 0 : 0), 0);
+export function tradeCheck(league, A, B) {
+  return tradeCheckTeam(league, A.team, tradeSal(A.players), tradeSal(B.players)) || tradeCheckTeam(league, B.team, tradeSal(B.players), tradeSal(A.players));
+}
+// Any number of teams: flows = [{ team, send: { players }, recv: { players } }].
+export function tradeCheckMulti(league, flows) {
+  for (const f of flows) { const e = tradeCheckTeam(league, f.team, tradeSal(f.send.players), tradeSal(f.recv.players)); if (e) return e; }
   return null;
 }
 // How a front office feels about the tax: 'pay' (a contender keeping a

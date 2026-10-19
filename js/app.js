@@ -5,7 +5,7 @@ import {
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
-  lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, projectionRanks, lotteryDone, actualDraftOrder, rookieComps,
+  lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
   recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
   needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore, LOTTERY_FORMATS,
@@ -29,7 +29,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.64.0';
+const APP_VERSION = '0.65.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4466,12 +4466,6 @@ function pickItemValue(x, prot, adjust) {
   if (!x.pick || !x.key.startsWith('f:')) return x.value;
   return pickValue(league(), x.pick, { adjust, top: protOf(x.pick)?.top || prot[x.key] || 0 });
 }
-// "Lottery" / "Mid" / "Late" for a pick from its team's projected slot,
-// pulled toward the middle for picks further out.
-function pickOutlook(slot, yrs) {
-  const s = 15.5 + (slot - 15.5) * Math.max(0.3, 1 - 0.14 * yrs);
-  return s <= 6 ? 'Top 6 likely' : s <= 14 ? 'Lottery' : s <= 22 ? 'Mid' : 'Late';
-}
 const futureValue = pk => pickValue(league(), pk, { top: protOf(pk)?.top || 0 });
 const frozenFn = (t, pk) => FA.pickFrozen(league(), t, pk);
 const boardRank = p => boardOrder().indexOf(p) + 1 || 60;
@@ -4787,9 +4781,7 @@ function liveExecute(A, B, cpu = false) {
   const live = liveState();
   const L = league();
   const rec = executeTrade(A, B, L.season.currentYear);
-  const away = offGet('away');
-  for (const m of rec.moved) (away[m.from.id] ||= []).push(m.p.id);
-  offSet('away', away);
+  const awayAdded = markAway(rec.moved);
   const moves = [];
   for (const [from, to] of [[A, B], [B, A]]) {
     for (const ov of from.prospects || []) { moves.push({ ov, from: from.team.id, to: to.team.id }); live.sel[ov].to = to.team.id; }
@@ -4801,18 +4793,69 @@ function liveExecute(A, B, cpu = false) {
     ...(side.prospects || []).map(ov => `${playerName(prospectById(live.sel[ov].pid))} (#${ov})`),
   ].join(', ') || 'nothing';
   const text = `${A.team.shortName} send ${label(A)} · ${B.team.shortName} send ${label(B)}`;
-  live.trades.push({ rec, moves, text, cpu, at: Object.keys(live.sel).length });
+  const entry = { rec, moves, text, cpu, awayAdded, at: Object.keys(live.sel).length };
+  live.trades.push(entry);
   live.offers = {};
   draftState().offers = null;
   state.dirty = true;
   toast('🚨 Trade Alert', text);
+  return entry;
+}
+// Players a team traded away this offseason (it can't reacquire them).
+function markAway(moved) {
+  const away = offGet('away');
+  const added = moved.map(m => [m.from.id, m.p.id]);
+  for (const [tid, pid] of added) (away[tid] ||= []).push(pid);
+  offSet('away', away);
+  return added;
+}
+
+// A trade of three teams: items = [{ x (asset), from, to }]. One pair of
+// moves per direction; undone together.
+function liveExecuteMulti(teams, items) {
+  const live = liveState();
+  const L = league();
+  const order = liveOrder();
+  const recs = [], moves = [], lines = [];
+  let awayAdded = [];
+  for (const from of teams) for (const to of teams) {
+    if (from === to) continue;
+    const mine = items.filter(i => i.from === from && i.to === to);
+    if (!mine.length) continue;
+    const players = mine.filter(i => i.x.player).map(i => i.x.player), picks = mine.filter(i => i.x.pick).map(i => i.x.pick);
+    const rec = executeTrade({ team: from, players, picks }, { team: to, players: [], picks: [] }, L.season.currentYear);
+    recs.push(rec);
+    awayAdded = awayAdded.concat(markAway(rec.moved));
+    for (const i of mine.filter(i => i.x.prospect)) { moves.push({ ov: i.x.prospect, from: from.id, to: to.id }); live.sel[i.x.prospect].to = to.id; }
+    lines.push(`${from.shortName} → ${to.shortName}: ${mine.map(i => itemText(i.x, order)).join(', ')}`);
+  }
+  const text = lines.join(' · ');
+  const entry = { rec: { multi: recs }, moves, text, cpu: false, awayAdded, at: Object.keys(live.sel).length };
+  live.trades.push(entry);
+  live.offers = {};
+  draftState().offers = null;
+  state.dirty = true;
+  toast('🚨 Three-Team Trade', text);
+  return entry;
+}
+function itemText(x, order = liveOrder()) {
+  const L = league();
+  if (x.player) return playerName(x.player);
+  if (x.prospect) return `${playerName(prospectById(liveState().sel[x.prospect].pid))} (#${x.prospect})`;
+  return x.key.startsWith('c:') ? `#${x.key.slice(2)}` : pickLabel(x.pick, L);
 }
 
 function liveUndo(t) {
   const live = liveState();
   draftState().offers = null;
-  undoTrade(t.rec);
+  for (const r of [...(t.rec.multi || [t.rec])].reverse()) undoTrade(r);
   for (const m of t.moves) if (live.sel[m.ov]) live.sel[m.ov].to = m.from;
+  if (t.awayAdded?.length) {
+    const away = offGet('away');
+    for (const [tid, pid] of t.awayAdded) away[tid] = (away[tid] || []).filter(x => x !== pid);
+    offSet('away', away);
+  }
+  if (t.protAdded?.length) saveProt(protLedger().filter(e => !t.protAdded.some(x => x.otid === e.otid && x.yr === e.yr)));
 }
 
 actions.liveUndoTrade = d => {
@@ -4873,8 +4916,7 @@ function liveAssets(team) {
   }
   for (const pk of [...team.draftPicks].filter(x => x.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
     const frozen = FA.pickFrozen(L, team, pk);
-    const proj = projectionRanks(L).get(pk.otid);
-    out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: `${esc(pickLabel(pk))}${frozen ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}${pk.rd === 1 && proj ? ` <span class="muted small">${pickOutlook(proj.slot, pk.yr - L.season.currentYear)}</span>` : ''}`, html: true, locked: frozen, value: futureValue(pk), pick: pk });
+    out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: `${esc(pickLabel(pk))}${frozen ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}`, html: true, locked: frozen, value: futureValue(pk), pick: pk });
   }
   for (const s of tradeableProspects(live, order, team.id, Infinity)) {
     const p = prospectById(s.pid);
@@ -4909,6 +4951,7 @@ screens.liveTrade = (args) => {
   const bId = args.b != null && +args.b !== aId ? +args.b : onClock != null && onClock !== aId ? onClock : teams.find(t => t.id !== aId).id;
   args.a = aId; args.b = bId;
   const A = L.teams.find(t => t.id === aId), B = L.teams.find(t => t.id === bId);
+  if (args.c != null && args.c !== aId && args.c !== bId) { const C = L.teams.find(t => t.id === +args.c); if (C) return liveTrade3(args, A, B, C, left); }
   const selA = new Set(args.selA || []), selB = new Set(args.selB || []);
   const aa = liveAssets(A), bb = liveAssets(B);
   const prot = args.prot || {};
@@ -4946,9 +4989,173 @@ screens.liveTrade = (args) => {
       ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
         <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
-      </div>` : '<button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>'}`,
+      </div>` : '<button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>'}
+      <button class="btn" data-act="liveAdd3">➕ Add a Third Team</button>`,
   });
   slideTradeBar();
+};
+
+// ---- Three-team trades
+
+const threeTeams = a => (a.c != null ? [a.a, a.b, a.c].map(id => league().teams.find(t => t.id === +id)) : null);
+function threeItems(teams, assets, sel) {
+  const out = [];
+  for (const t of teams) for (const x of assets.get(t.id)) {
+    const to = sel[x.key];
+    if (to != null && !x.locked && +to !== t.id && teams.some(u => u.id === +to)) out.push({ x, from: t, to: teams.find(u => u.id === +to) });
+  }
+  return out;
+}
+function tradeAdjustN(teams, items) {
+  const m = new Map(teams.map(t => [t.id, { remove: [], add: [] }]));
+  for (const i of items) if (i.x.player) { m.get(i.from.id).remove.push(i.x.player); m.get(i.to.id).add.push(i.x.player); }
+  return m;
+}
+const flowOf = (t, items) => ({
+  team: t,
+  send: { players: items.filter(i => i.from === t && i.x.player).map(i => i.x.player), picks: items.filter(i => i.from === t && i.x.pick).map(i => i.x.pick) },
+  recv: { players: items.filter(i => i.to === t && i.x.player).map(i => i.x.player), picks: items.filter(i => i.to === t && i.x.pick).map(i => i.x.pick) },
+});
+// Every rule a three-team deal has to clear (the touch rule included).
+function rulesErr3(L, teams, items) {
+  const away = offGet('away');
+  const flows = teams.map(t => flowOf(t, items));
+  for (const f of flows) {
+    const back = f.recv.players.find(p => (away[f.team.id] || []).includes(p.id));
+    if (back) return `${f.team.shortName} traded ${playerName(back)} away this offseason and can't get him back`;
+    const lock = f.send.players.find(p => tradeLock(p));
+    if (lock) return `${playerName(lock)} can't be traded yet (${tradeLock(lock)})`;
+    const pk = f.send.picks.find(x => FA.pickFrozen(L, f.team, x) || lotteryLocked(x));
+    if (pk) return lotteryLocked(pk) ? 'Lottery picks can\'t be traded until the lottery is drawn' : `${pickLabel(pk)} is frozen (2nd apron)`;
+  }
+  const touch = TR.touchErr(items.map(i => ({ from: i.from.id, to: i.to.id })), teams);
+  if (touch) return touch;
+  return FA.tradeCheckMulti(L, flows)
+    || flows.map(f => TR.rosterErrTeam(f.team, f.send.players.length, f.recv.players.length)).find(Boolean)
+    || flows.map(f => TR.stepienTeam(L, f.team, f.send.picks, f.recv.picks, isProt)).find(Boolean)
+    || null;
+}
+function ntc3(L, items) {
+  for (const i of items) {
+    const p = i.x.player;
+    if (!p?.contract?.noTrd) continue;
+    const morale = p.season?.morale ?? 60;
+    if (morale < 35 || (teamStatus(L, i.to) === 'contending' && morale >= 45 && tr(p, 'loyalty') < 16)) continue;
+    return `${playerName(p)} won't waive his no-trade clause for ${i.to.shortName}`;
+  }
+  return null;
+}
+async function physicals3(L, items) {
+  const yr = lastSeasonYear();
+  for (const i of [...items]) {
+    const p = i.x.player;
+    const r = p && injuryRisk(p, yr, state.params);
+    if (!r || !(r.chance >= 10 || (r.cls === 'structural' && r.games >= 20))) continue;
+    const what = `${injuryName(r.worst)}, ${r.games} games out${r.chance ? `, ${Math.round(r.chance)}% risk` : ''}`;
+    if (isUserTeam(i.from) && !isUserTeam(i.to)) {
+      const used = new Set(items.filter(j => j.x.pick).map(j => j.x.pick));
+      const second = i.from.draftPicks.filter(pk => pk.rd === 2 && pk.yr > L.season.currentYear && !used.has(pk)).sort((a, b) => b.yr - a.yr)[0];
+      if (r.chance >= 25 || !second) { toast('Trade off', `${playerName(p)} failed his physical with ${i.to.shortName}`, 3600, true); return false; }
+      if (!(await confirmBox(`${esc(playerName(p))}'s physical raised flags (${esc(what)}). ${esc(i.to.shortName)} want ${esc(pickLabel(second))} added.`, 'Add It'))) return false;
+      items.push({ x: { key: `f:${second.yr}:${second.rd}:${second.otid}`, pick: second, value: futureValue(second) }, from: i.from, to: i.to });
+    } else if (isUserTeam(i.to) && !isUserTeam(i.from)) {
+      if (!(await confirmBox(`${esc(playerName(p))}'s physical raised flags (${esc(what)}). Go through with it?`, 'Complete Trade'))) return false;
+    }
+  }
+  return true;
+}
+
+function liveTrade3(args, A, B, C, left) {
+  const L = league();
+  const teams = [A, B, C];
+  const tab = teams.find(t => t.id === +args.tab) || A;
+  const sel = args.sel3 || {}, prot = args.prot || {};
+  const assets = new Map(teams.map(t => [t.id, liveAssets(t)]));
+  const items = threeItems(teams, assets, sel);
+  const adjust = tradeAdjustN(teams, items);
+  const val = i => pickItemValue(i.x, prot, adjust);
+  const give = t => items.filter(i => i.from === t).reduce((s, i) => s + val(i), 0);
+  const get = t => items.filter(i => i.to === t).reduce((s, i) => s + val(i), 0);
+  const others = teams.filter(t => t !== tab);
+  const many = t => (t === A ? left.length > 1 : true);
+  const arrow = (dir, ch, side) => `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>`;
+  const side = tab === A ? 'a' : tab === B ? 'b' : 'c';
+  const list = assets.get(tab.id).map(x => {
+    const dest = sel[x.key] != null && +sel[x.key] !== tab.id ? teams.find(t => t.id === +sel[x.key]) : null;
+    return `<button class="pick ${dest ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle3" data-k="${x.key}"`}>
+      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span>${dest ? `<span class="badge new">→ ${esc(dest.shortName)}</span>` : ''}</button>`;
+  }).join('') || '<p class="note muted">Nothing to trade.</p>';
+  const verdict = teams.map(t => {
+    const g = give(t), r = get(t);
+    const cpu = !isUserTeam(t);
+    const ok = cpuAccepts(g, r);
+    return `<p class="note small"><b>${esc(t.shortName)}</b> sends ${Math.round(g)} · gets ${Math.round(r)}${cpu && items.length ? ` · ${ok ? '<span class="up">would accept</span>' : '<span class="down">would decline</span>'}` : ''}</p>`;
+  }).join('');
+  const firsts = items.filter(i => i.x.pick && i.x.pick.rd === 1 && i.x.pick.yr > L.season.currentYear);
+  const protRows = firsts.map(i => protOf(i.x.pick)
+    ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><span class="small muted">already protected</span></div>`
+    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[i.x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${i.x.key}" data-v="${v}">${v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
+  layout({
+    title: '3-Team Trade',
+    body: `
+      <div class="tabs">${teams.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="liveTab3" data-id="${t.id}">${esc(t.shortName)}${items.filter(i => i.from === t).length ? ` · ${items.filter(i => i.from === t).length}` : ''}</button>`).join('')}</div>
+      ${many(tab) ? `<div class="tsel">${arrow(-1, '◀', side)}<span class="tsel-team"><span class="tsel-name"><b>${esc(tab.shortName)}</b></span></span>${arrow(1, '▶', side)}</div>` : ''}
+      <p class="note small muted">Tap to send to ${esc(others[0].shortName)}, again for ${esc(others[1].shortName)}.</p>
+      <div class="list">${list}</div>
+      <fieldset class="frame"><legend>The Deal</legend>
+        ${items.length ? items.map(i => `<p class="note small">${esc(i.from.shortName)} → ${esc(i.to.shortName)}: ${esc(itemText(i.x))}</p>`).join('') : '<p class="note small muted">Nothing selected</p>'}
+        <div class="stack" style="margin-top:6px">${verdict}</div>
+      </fieldset>
+      ${protRows ? `<fieldset class="frame"><legend>Protections</legend><p class="note small muted">Lands in the protection: it goes back and they get that year's 2nd.</p>${protRows}</fieldset>` : ''}
+      <div class="${state.params.commissioner ? 'grid3' : 'grid2'}">
+        <button class="btn off" data-act="liveDrop3">↩ Two Teams</button>
+        <button class="btn focus" data-act="liveTradeGo3" data-force="0">🤝 Propose</button>
+        ${state.params.commissioner ? '<button class="btn" data-act="liveTradeGo3" data-force="1">⚡ Force</button>' : ''}
+      </div>`,
+  });
+}
+actions.liveAdd3 = () => {
+  const a = tradeArgs(), L = league();
+  const c = L.teams.find(t => t.id !== +a.a && t.id !== +a.b && !isUserTeam(t)) || L.teams.find(t => t.id !== +a.a && t.id !== +a.b);
+  replace('liveTrade', { ...a, c: c.id, tab: a.a, sel3: {}, prot: {} });
+};
+actions.liveDrop3 = () => { const a = tradeArgs(); replace('liveTrade', { ...a, c: null, sel3: {}, selA: [], selB: [], tab: null }); };
+actions.liveTab3 = d => replace('liveTrade', { ...tradeArgs(), tab: +d.id });
+actions.liveToggle3 = d => {
+  const a = tradeArgs();
+  const teams = threeTeams(a);
+  const tab = teams.find(t => t.id === +a.tab) || teams[0];
+  const o = teams.filter(t => t !== tab);
+  const cur = a.sel3?.[d.k];
+  const seq = [null, o[0].id, o[1].id];
+  const next = seq[(seq.findIndex(v => v === (cur ?? null)) + 1) % 3];
+  const sel3 = { ...(a.sel3 || {}) };
+  if (next == null) delete sel3[d.k]; else sel3[d.k] = next;
+  replace('liveTrade', { ...a, sel3 });
+};
+actions.liveTradeGo3 = async d => {
+  const a = tradeArgs(), L = league();
+  const teams = threeTeams(a);
+  const force = d.force === '1' && state.params.commissioner;
+  const assets = new Map(teams.map(t => [t.id, liveAssets(t)]));
+  const items = threeItems(teams, assets, a.sel3 || {});
+  if (!items.length) { toast('Tap something to send first'); return; }
+  const err = rulesErr3(L, teams, items) || ntc3(L, items);
+  if (err && !force) { toast('Trade not allowed', err, 3600, true); return; }
+  const prot = a.prot || {};
+  const adjust = tradeAdjustN(teams, items);
+  if (!force) {
+    const no = teams.find(t => !isUserTeam(t) && !cpuAccepts(items.filter(i => i.from === t).reduce((s, i) => s + pickItemValue(i.x, prot, adjust), 0), items.filter(i => i.to === t).reduce((s, i) => s + pickItemValue(i.x, prot, adjust), 0)));
+    if (no) { toast(`${no.shortName} decline: they want more back`); return; }
+    if (!(await physicals3(L, items))) return;
+  }
+  const led = protLedger();
+  const added = [];
+  for (const i of items) if (i.x.pick && prot[i.x.key] && !protOf(i.x.pick)) { const e = { otid: i.x.pick.otid, yr: i.x.pick.yr, top: prot[i.x.key], from: i.from.id }; led.push(e); added.push(e); }
+  saveProt(led);
+  const entry = liveExecuteMulti(teams, items);
+  entry.protAdded = added;
+  back();
 };
 
 actions.liveTrade = () => { if (state.revealing) return; tradeBarPos = 50; go('liveTrade', {}); };
@@ -4994,16 +5201,21 @@ actions.liveCycle = d => {
   const a = tradeArgs();
   const teams = [...L.teams].sort((x, y) => x.shortName.localeCompare(y.shortName));
   const mine = teams.filter(isUserTeam);
-  const pool = d.side === 'a'
-    ? (state.params.commissioner || !mine.length ? teams : mine)
-    : teams.filter(t => t.id !== a.a);
+  const three = a.c != null;
+  const pool = d.side === 'a' ? (state.params.commissioner || !mine.length ? teams : mine)
+    : teams.filter(t => !(d.side === 'b' ? [a.a, ...(three ? [a.c] : [])] : [a.a, a.b]).includes(t.id));
   const cur = pool.findIndex(t => t.id === a[d.side]);
   const next = pool[(cur + +d.dir + pool.length) % pool.length];
-  const upd = { ...a, [d.side]: next.id, [d.side === 'a' ? 'selA' : 'selB']: [] };
-  if (d.side === 'a' && next.id === a.b) { upd.b = teams.find(t => t.id !== next.id).id; upd.selB = []; }
+  const upd = { ...a, [d.side]: next.id };
+  if (three) { upd.sel3 = {}; upd.tab = next.id; }
+  else upd[d.side === 'a' ? 'selA' : 'selB'] = [];
+  // Moving your team onto another slot's team sends that slot elsewhere.
+  if (d.side === 'a') for (const k of three ? ['b', 'c'] : ['b']) if (upd[k] === next.id) {
+    upd[k] = teams.find(t => ![upd.a, upd.b, upd.c].includes(t.id)).id;
+    if (!three) upd.selB = [];
+  }
   replace('liveTrade', upd);
 };
-
 actions.liveProt = d => { const a = tradeArgs(); replace('liveTrade', { ...a, prot: { ...(a.prot || {}), [d.k]: +d.v } }); };
 actions.liveToggle = d => {
   const a = tradeArgs();
@@ -5039,7 +5251,8 @@ actions.liveTradeGo = async d => {
   const led = protLedger();
   for (const sd of [sa, sb]) for (const x of sd.items) if (x.pick && prot[x.key] && !protOf(x.pick)) led.push({ otid: x.pick.otid, yr: x.pick.yr, top: prot[x.key], from: sd.team.id });
   saveProt(led);
-  liveExecute(sa, sb);
+  const entry = liveExecute(sa, sb);
+  entry.protAdded = led.filter(e => !e.done && (sa.items.concat(sb.items)).some(x => x.pick && x.pick.otid === e.otid && x.pick.yr === e.yr && prot[x.key]));
   back();
 };
 
