@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.108.2';
+const APP_VERSION = '0.109.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1005,12 +1005,11 @@ function stepActions(key) {
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
     case 'overview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="overview">📊 Offseason Overview</button><button class="btn" data-act="calDone" data-k="overview">✅ Wrap Up</button></div>`;
     case 'preview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🔭 Draft Preview</button><button class="btn" data-act="calDone" data-k="preview">✅ Wrap Up</button></div>`;
-    case 'lottery': return `<button class="btn big focus" data-act="nav" data-to="lottery">🎱 Draft Lottery</button>`;
-    case 'mock1': return `<button class="btn big focus" data-act="openMock" data-n="1">📰 Read Mock Draft 1.0</button>`;
-    case 'scout': return `<button class="btn big focus" data-act="nav" data-to="draft">🔎 Scouting</button>
-      <button class="btn small off" data-act="preAdvance" data-k="scout" style="margin-top:8px">${preStore().scoutSeen ? '⏭ Advance to the Combine' : 'Skip ahead to the Combine'}</button>`;
-    case 'combine': return `<button class="btn big focus" data-act="nav" data-to="combine">⏱ Draft Combine</button>`;
-    case 'mock2': return `<button class="btn big focus" data-act="openMock" data-n="2">📰 Read Mock Draft 2.0</button>`;
+    case 'lottery': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="lottery">🎱 Draw</button><button class="btn" data-act="homeSimLottery">⏭ Sim</button></div>`;
+    case 'mock1': return `<div class="grid2"><button class="btn focus" data-act="openMock" data-n="1">📰 Read</button><button class="btn" data-act="preFinish" data-k="mock1">⏭ Skip</button></div>`;
+    case 'scout': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🔎 Begin</button><button class="btn" data-act="preFinish" data-k="scout">⏭ Skip</button></div>`;
+    case 'combine': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="combine">⏱ Attend</button><button class="btn" data-act="preFinish" data-k="combine">⏭ Skip</button></div>`;
+    case 'mock2': return `<div class="grid2"><button class="btn focus" data-act="openMock" data-n="2">📰 Read</button><button class="btn" data-act="preFinish" data-k="mock2">⏭ Skip</button></div>`;
     case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
       <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
     case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
@@ -1185,6 +1184,7 @@ function screenAllowed(name) {
 
 // Sim: draw it and go straight to the full order, no reveal.
 actions.simLotteryNow = () => actions.advLottery({ instant: true });
+actions.homeSimLottery = () => actions.advLottery({ instant: true, fromHome: true });
 
 actions.advLottery = async (opts = {}) => {
   const L = league();
@@ -1211,7 +1211,8 @@ actions.advLottery = async (opts = {}) => {
   // The result shows on the same lottery screen, revealed from the last
   // lottery pick up to #1.
   state.lotteryReveal = !opts.instant;
-  if (state.stack[state.stack.length - 1].name === 'lottery') render(); else go('lottery');
+  // From Home, Sim stays on Home: the calendar moves on and the winner is in the toast.
+  if (opts.fromHome || state.stack[state.stack.length - 1].name === 'lottery') render(); else go('lottery');
   if (opts.instant) {
     const jump = order.indexOf(r1[0]);
     toast(`🎱 ${`${r1[0].city} ${r1[0].name}`.trim()} win the lottery!`, jump > 0 ? `Jumped ${jump} spot${jump > 1 ? 's' : ''} to #1.` : 'They held onto the top spot.');
