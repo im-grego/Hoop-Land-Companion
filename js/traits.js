@@ -7,15 +7,28 @@
 
 // Scale: 0-4 the low name, 5-9 Low, 10-15 Solid, 16-20 the high name.
 export const TRAITS = [
-  { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Durable' },
-  { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Me-first', hi: 'Competitor' },
-  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Wants the bag' },
-  { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Loyal' },
-  { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'High motor' },
-  { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader' },
-  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Rises' },
+  { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Ironman', loIcon: '🩹', hiIcon: '🦾', loSays: 'always seems to be hurting', hiSays: 'rarely misses time' },
+  { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Indifferent', hi: 'Competitor', loIcon: '😐', hiIcon: '🏆', loSays: 'doesn\'t much care about the standings', hiSays: 'lives to win' },
+  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Wants the bag', loIcon: '🧢', hiIcon: '💰', loSays: 'plays for the team, not the contract', hiSays: 'follows the money' },
+  { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Committed', loIcon: '🗡️', hiIcon: '🤝', loSays: 'goes where the offer is best', hiSays: 'stays where he\'s wanted' },
+  { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'Relentless', loIcon: '😴', hiIcon: '🔋', loSays: 'coasts when he can', hiSays: 'never stops working' },
+  { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', loIcon: '☣️', hiIcon: '🗣️', loSays: 'is a problem in the locker room', hiSays: 'sets the tone in the locker room' },
+  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Shines', loIcon: '🥶', hiIcon: '✨', loSays: 'shrinks in the big moments', hiSays: 'gets better when it matters' },
 ];
 export const traitLabel = (t, v) => (v >= 16 ? t.hi : v <= 4 ? t.lo : v <= 9 ? 'Low' : 'Solid');
+// The tag a trait earns at either end of the scale: { icon, label } or null.
+export const traitTag = (t, v) => (v >= 16 ? { icon: t.hiIcon, label: t.hi } : v > 0 && v <= 4 ? { icon: t.loIcon, label: t.lo } : null);
+// A line on his personality from the strongest traits (`keys` limits which
+// ones are known).
+export function personality(p, keys = null) {
+  const says = TRAITS.filter(t => !keys || keys.includes(t.k)).map(t => ({ t, v: p.traits?.[t.k] || 0 }))
+    .filter(x => x.v >= 16 || (x.v > 0 && x.v <= 4))
+    .sort((a, b) => Math.abs(b.v - 10) - Math.abs(a.v - 10)).slice(0, 3)
+    .map(x => (x.v >= 16 ? x.t.hiSays : x.t.loSays));
+  if (!says.length) return 'A steady pro with no strong tendencies either way.';
+  const text = says.length === 1 ? says[0] : `${says.slice(0, -1).join(', ')} and ${says[says.length - 1]}`;
+  return `${text[0].toUpperCase()}${text.slice(1)}.`;
+}
 export const TRAIT_KEYS = TRAITS.map(t => t.k);
 export const traitWord = v => v >= 16 ? 'High' : v >= 10 ? 'Solid' : v >= 5 ? 'Low' : 'Very low';
 export const traitsSet = p => !!p.traits && TRAIT_KEYS.some(k => (p.traits[k] || 0) > 0);

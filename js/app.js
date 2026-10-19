@@ -20,7 +20,7 @@ import * as FX from './facilities.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
-import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitsSet, tr, fillTraits, isReal } from './traits.js';
+import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.75.0';
+const APP_VERSION = '0.76.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6671,13 +6671,18 @@ function rangeCard() {
 function traitsBox(p, prospect = false) {
   if (!p.traits || !traitsSet(p)) return '';
   const seen = k => !prospect || k === 'durability' || k === 'motor' || workoutDone(p.id);
-  return `<fieldset class="frame"><legend>Traits${isReal(p) ? ' <span class="muted small">· real-life read</span>' : ''}</legend><div class="stack">${TRAITS.map(t => {
+  const known = TRAITS.filter(t => seen(t.k));
+  const tags = known.map(t => traitTag(t, p.traits[t.k] || 0)).filter(Boolean);
+  return `<fieldset class="frame"><legend>Personality${isReal(p) ? ' <span class="muted small">· real-life read</span>' : ''}</legend>
+    ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
+    <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
+    <details class="tend-wrap"><summary class="small">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
     const v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
     return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'top' : v >= 10 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
       <span class="small"><b>${v}</b> <span class="${v >= 16 ? 'gold' : 'muted'}">${traitLabel(t, v)}</span></span>
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
-  }).join('')}</div>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
+  }).join('')}</div></details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
 actions.traitAdj = d => {
   const L = league();
