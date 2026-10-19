@@ -6,7 +6,7 @@ import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlo
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
-  recoveryFor, projectedRookie, originalRatings, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
+  recoveryFor, projectedRookie, originalRatings, setRecoveryBonus, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
   needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore, LOTTERY_FORMATS,
 } from './draft.js';
@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.85.4';
+const APP_VERSION = '0.86.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -70,7 +70,7 @@ function loadParams() {
       // v3 changed the bump to award points; older settings don't apply.
       if ((saved.version || 0) < 3) return structuredClone(DEFAULT_PARAMS);
       // v4 flipped summer league recovery (older rookies win back more).
-      if (saved.version < 4) delete saved.recoveryBands;
+      if (saved.version < 4 || saved.version < 12) delete saved.recoveryBands; // v12: rookies are all 21 or younger
       // v5 rescaled injury risk for natural (unedited) injuries.
       if (saved.version < 5) for (const k of ['injuryMinGames', 'injuryPotPerGame']) delete saved[k];
       if (saved.version < 7) for (const k of ['softTissueParts', 'softTissueMult', 'softTissuePointsMult', 'structuralParts', 'structuralMult']) delete saved[k]; // v7 injury classes
@@ -83,8 +83,16 @@ function loadParams() {
   } catch { /* storage unavailable */ }
   return structuredClone(DEFAULT_PARAMS);
 }
+// Hoop Land's rookies are all 21 or younger, so age alone gives them little
+// back: a 21-year-old gets +2; a top-5 pick (or a Lock / Top 5 prospect),
+// or a relentless worker, gets +1; never more than +2 in all.
+setRecoveryBonus(p => {
+  const pk = p.history?.draft?.pk;
+  const top = pk ? pk <= 5 : ['Lock', 'Top 5'].includes(gradeOf(p)[0]);
+  return top || (traitsSet(p) && tr(p, 'motor') >= 16) ? 1 : 0;
+});
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 11 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 12 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -7350,6 +7358,8 @@ screens.review = () => {
   const s = r.stats;
   const tag = n => n.team != null ? ` <span class="muted">(${['1st', '2nd', '3rd'][n.team] || ''} team)</span>` : '';
   const pRow = (p, right) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}</span><span class="small" style="text-align:right">${right}</span></div>`;
+  // One award per row: the award on top, the winner under it, nothing cut off.
+  const awRow = (name, p) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(name)}</b><br><span class="small">${esc(playerName(p))} ${lvTag(p)}</span></span></div>`;
   const rk = k => r.ranks?.[k] ? `<span class="rk-of">${ordinal(r.ranks[k])}</span>` : '';
   layout({
     title: 'Season in Review',
@@ -7366,12 +7376,12 @@ screens.review = () => {
         <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
-      ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => pRow(w.p, `🏅 ${esc(w.name)}${tag(w)}`)).join('')}</div></fieldset>` : ''}
+      ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}
       <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
         ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}
-        ${r.finalsMvp ? `<div class="drill-row tap" data-act="openPlayer" data-id="${r.finalsMvp.p.id}"><span class="grow small"><b>${esc(r.finalsMvp.name)}</b></span><span class="small">${esc(playerName(r.finalsMvp.p))}</span></div>` : ''}
+        ${r.finalsMvp ? awRow(r.finalsMvp.name, r.finalsMvp.p) : ''}
         ${r.semis.length ? `<p class="note small" style="margin-top:6px">${r.pro ? 'Conference Finals' : 'Final Four'}: ${r.semis.map(([a, b]) => `<b class="${a === t ? 'gold' : ''}">${esc(a.shortName)}</b> v <b class="${b === t ? 'gold' : ''}">${esc(b.shortName)}</b>`).join(' · ')}</p>` : ''}
-        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${w.p.id}"><span class="grow small"><b>${esc(w.name)}</b></span><span class="small">${esc(playerName(w.p))}</span></div>`).join('') || '<p class="note small muted">None recorded.</p>'}</div>
+        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => awRow(w.name, w.p)).join('') || '<p class="note small muted">None recorded.</p>'}</div>
         ${r.allTeams.length ? `<h4 class="ov-h">First Teams</h4><div class="stack">${[...new Set(r.allTeams.map(w => w.name))].map(n => `<p class="note small"><b>${esc(n)}:</b> ${r.allTeams.filter(w => w.name === n).map(w => esc(playerName(w.p))).join(', ')}</p>`).join('')}</div>` : ''}
       </fieldset>
       <fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
@@ -8130,6 +8140,27 @@ actions.lateFinish = () => {
   render();
   toast('Late free agency is done', `${list.length} signings around the league`);
 };
+// Contenders fill their last bench spots for the playoffs: a late-round
+// rookie with no upside gives way to a proven veteran who wins, a playoff
+// riser first. Rookies on those teams don't make the 15 just for being drafted.
+function depthSwaps(L) {
+  const yr = L.season.currentYear;
+  for (const t of L.teams.filter(x => !isUserTeam(x) && teamStatus(L, x) === 'contending')) {
+    for (let i = 0; i < 2; i++) {
+      const spare = FA.signedRoster(t).filter(p => { const d = p.history?.draft; return d && d.yr === yr && d.rd > 1 && (p.pot || 0) <= 5; })
+        .sort((a, b) => shownLevel(a) - shownLevel(b))[0];
+      if (!spare) break;
+      const score = p => shownLevel(p) + (traitsSet(p) ? (tr(p, 'winning') >= 14 ? 3 : 0) + (tr(p, 'playoffRiser') >= 14 ? 4 : tr(p, 'playoffRiser') <= 5 ? -4 : 0) : 0);
+      const vet = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && x.age >= 27 && shownLevel(x) >= shownLevel(spare) + 8
+        && (!FA.capSystemOn() || FA.teamCommitted(t) - (spare.contract?.sal || 0) + lateMin(x) <= FA.capLines(L).apron2))
+        .sort((a, b) => score(b) - score(a))[0];
+      if (!vet) break;
+      FA.cutPlayer(L, t, spare);
+      FA.signPlayer(L, vet, t, { tid: t.id, sal: lateMin(vet), yrs: 1, opt: 0 }, L.season.currentDay || 3);
+      lockSigning(vet, 'Signed this offseason: Dec 15');
+    }
+  }
+}
 actions.cutToggle = d => { if (calFlags().cuts) return; const sel = cutSel(); sel[+d.id] = !sel[+d.id]; render(); };
 actions.cutsFinish = async () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
@@ -8141,6 +8172,7 @@ actions.cutsFinish = async () => {
   checkpoint('Final cuts');
   const list = [];
   let n = 0, mineN = 0;
+  depthSwaps(L);
   for (const t of L.teams) {
     const ranked = cutRank(t);
     const go = isUserTeam(t) ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax));

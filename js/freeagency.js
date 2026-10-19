@@ -721,7 +721,8 @@ export function buildMarket(league, day, o = FA_DEFAULTS) {
 export function cutScore(p, level, year = 0) {
   // This year's picks: teams don't cut a first-rounder they just drafted.
   const d = p.history?.draft;
-  const pick = d && d.yr === year ? (d.rd === 1 ? 40 : 6) : 0;
+  // A late pick with no upside (one or two stars) doesn't get the cushion.
+  const pick = d && d.yr === year ? (d.rd === 1 ? 40 : (p.pot || 0) >= 7 ? 6 : (p.pot || 0) >= 5 ? 2 : -8) : 0;
   return cutScoreBase(p, level) + pick;
 }
 function cutScoreBase(p, level) {

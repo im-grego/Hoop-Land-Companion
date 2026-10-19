@@ -14,18 +14,21 @@ export const DRAFT_FLOOR = 2;
 export const draftDrop = v => (v <= DRAFT_FLOOR ? v : Math.max(DRAFT_FLOOR, v - DRAFT_DROP));
 
 // Summer league recovery right after the draft: older rookies win back part
-// of the drop ([maxAge, points]): 18-19 keep the full -4, 20-21 net -3,
-// 22+ net -2. A rating never recovers past its pre-draft value.
-export const DEFAULT_RECOVERY = [[19, 0], [21, 1], [99, 2]];
-export const recoveryFor = (age, bands = DEFAULT_RECOVERY) => (bands.find(b => age <= b[0]) || [0, 0])[1];
+// of the drop ([maxAge, points]): 21+ net -2; top-5 picks and hard workers get one more (max +2).
+// A rating never recovers past its pre-draft value.
+export const DEFAULT_RECOVERY = [[20, 0], [99, 2]];
+// A player-specific extra point (top-5 pick, hard worker): see the app.
+let BONUS = () => 0;
+export const setRecoveryBonus = f => { BONUS = f; };
+export const recoveryFor = (age, bands = DEFAULT_RECOVERY, p = null) => Math.min(2, (bands.find(b => age <= b[0]) || [0, 0])[1] + (p ? BONUS(p) : 0));
 
 // Where a pre-draft rating ends up after the drop and summer league.
-export const projectedRookie = (v, age, bands = DEFAULT_RECOVERY) =>
-  Math.min(v, draftDrop(v) + recoveryFor(age, bands));
+export const projectedRookie = (v, age, bands = DEFAULT_RECOVERY, p = null) =>
+  Math.min(v, draftDrop(v) + recoveryFor(age, bands, p));
 
 // The projected rookie line (net of drop and recovery).
 export function rookieLine(p, bands = DEFAULT_RECOVERY) {
-  return SKILL_ATTRS.map(k => projectedRookie(p.attributes[k][0], p.age, bands));
+  return SKILL_ATTRS.map(k => projectedRookie(p.attributes[k][0], p.age, bands, p));
 }
 
 // Prospect floor: the rookie line plus natural development (+2 a rating),
@@ -54,7 +57,7 @@ export function originalRatings(league) {
 export function applySummerLeague(p, original, bands = DEFAULT_RECOVERY) {
   const gains = {};
   SKILL_ATTRS.forEach((k, i) => {
-    const target = projectedRookie(original[i], p.age, bands);
+    const target = projectedRookie(original[i], p.age, bands, p);
     const a = p.attributes[k];
     if (a[0] < target) {
       gains[k] = target - a[0];
@@ -659,7 +662,7 @@ export function actualDraftOrder(league) {
 export function rookieFloorVector(p, original = null, bands = DEFAULT_RECOVERY) {
   return withDevelopment(p, SKILL_ATTRS.map((k, i) => {
     const cur = p.attributes[k][0];
-    return original ? Math.max(cur, projectedRookie(original[i], p.age, bands)) : cur;
+    return original ? Math.max(cur, projectedRookie(original[i], p.age, bands, p)) : cur;
   }));
 }
 
