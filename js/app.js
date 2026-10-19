@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.77.0';
+const APP_VERSION = '0.78.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -425,7 +425,8 @@ async function loadFile(file) {
     state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null;
     installData(data);
     freshSaveCheck();
-    state.dirty = false;
+    const reopened = reopenOptions();
+    state.dirty = reopened > 0;
     const held = holdCpuOffers();
     recordSalaries();
     if (isCollege()) { try { state.cal = JSON.parse(localStorage.getItem(collegeCalKey())) || {}; } catch { state.cal = {}; } }
@@ -2613,7 +2614,6 @@ screens.player = (args) => {
         <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
       </div>
-      <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">✏️ Edit Ceilings${ceilMode ? ' · on' : ''}</button>
       ${rankBox(p, mpg)}
       <fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
@@ -2635,6 +2635,7 @@ screens.player = (args) => {
       ${playStyleBox(p)}
       ${traitsBox(p)}
       <fieldset class="frame"><legend>Ratings</legend>
+        <div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button></div>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
@@ -2982,6 +2983,7 @@ screens.settings = (args) => {
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
       ]) +
       setGroup('Contracts', [
+        options('Game option decisions', 'redoOptions', [[true, 'Re-run here'], [false, 'Keep the game\'s']], 'The game decides options before it exports; Re-run reopens them so you and the app decide.'),
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('2nd-round deals (CPU)', 'rookieR2Years', [[2, '2 yrs'], [3, '3 yrs'], [4, '4 yrs']]),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
@@ -6068,6 +6070,42 @@ function holdCpuOffers() {
   return hold.length;
 }
 
+// The game decides every option before it exports (it leaves a news item
+// for each: 18 player option exercised, 19 player option declined, 20 team
+// option exercised, 21 team option declined). To run them here, the app
+// puts those players back as they stood: exercised ones get their option
+// flag back; declined ones come off the free-agent list with an estimated
+// salary (the game wipes a declined deal). Returns how many it reopened.
+const GAME_OPT = { 18: [2, false], 19: [2, true], 20: [1, false], 21: [1, true] };
+function reopenOptions() {
+  state.reopened = { n: 0, est: new Set() };
+  const L = league();
+  if (!L || isCollege() || state.params.redoOptions === false) return 0;
+  const rk = phaseRank(L.season);
+  if (rk < 1 || rk > 3 || optStore().done) return 0;
+  const byId = new Map(L.teams.flatMap(t => t.roster.map(p => [p.id, [p, t]])));
+  let n = 0;
+  for (const nw of L.season.news || []) {
+    const kind = nw.category === 2 && nw.phase === 2 ? GAME_OPT[nw.type] : null;
+    const e = kind && byId.get(nw.pid);
+    if (!e) continue;
+    const [p, t] = e, [opt, declined] = kind;
+    if (!declined && p.status === FA.STATUS_SIGNED && !p.contract.opt && (p.contract.yrs || 0) >= 1) {
+      p.contract.opt = opt;
+      n++;
+    } else if (declined && p.status === FA.STATUS_EXPIRING && !(p.contract.yrs || 0) && t.id === nw.tid) {
+      const d = p.history?.draft;
+      const sal = salaryBook()[p.id] || (opt === 1 && FA.isRookieScale(p) && d?.pk > 0 ? rookieScale(L, d.pk) : Math.max(FA.FA_DEFAULTS.minSalary, Math.round(marketValue(p) * 0.85)));
+      p.status = FA.STATUS_SIGNED;
+      Object.assign(p.contract, { tid: t.id, pid: p.id, yrs: 1, sal, opt });
+      state.reopened.est.add(p.id);
+      n++;
+    }
+  }
+  state.reopened.n = n;
+  return n;
+}
+
 const optionPlayers = L => L.teams.flatMap(t => t.roster.filter(p => p.contract && (p.status === FA.STATUS_SIGNED || p.status === FA.STATUS_EXPIRING) && (p.contract.yrs || 0) <= 1 && (p.contract.opt === 1 || p.contract.opt === 2)).map(p => ({ p, team: t })));
 const marketValue = p => fairSalary(shownLevel(p));
 // Qualifying offer amount (NBA CBA): a first-rounder off his rookie deal
@@ -6189,7 +6227,7 @@ screens.options = () => {
   const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
   const mine = x => isUserTeam(x.team);
   const tag = c => c.worth >= c.sal * 1.15 ? '<span class="badge new">Bargain</span>' : c.worth < c.sal * 0.85 ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
-  const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option · market value $${x.c.worth}M</span> ${tag(x.c)}</span>`;
+  const head = x => `<span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y · $${x.c.sal}M option${(state.reopened?.est || new Set()).has(x.p.id) ? ' (est.)' : ''}</span><br><span class="small muted">Market value $${x.c.worth}M</span> ${tag(x.c)}</span>`;
   const done = !!st.done;
   const myTeamOpts = list.filter(x => mine(x) && x.c.kind === 'team');
   const myPlayerOpts = list.filter(x => mine(x) && x.c.kind === 'player');
@@ -6199,7 +6237,7 @@ screens.options = () => {
   const pending = myTeamOpts.some(x => !x.c.choice) || myQO.some(x => st.qo[x.p.id] == null);
   layout({
     title: 'Options Deadline',
-    body: `<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, decline it to let him go, or negotiate: decline it for a longer deal now, before anyone else can bid.</p>
+    body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, decline it to let him go, or negotiate: decline it for a longer deal now, before anyone else can bid.</p>
       <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
         <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}${btn('optNeg', x.p.id, 'deal', x.c.choice === 'deal', deal ? '✍️ New Deal' : 'Negotiate')}</span>
         ${deal ? `<p class="note small up full">Option declined for a new deal: $${deal.sal}M × ${deal.yrs}${deal.opt === FA.OPT_PLAYER ? ' · PO' : deal.opt === FA.OPT_TEAM ? ' · TO' : ''} <span class="tot">$${deal.sal * deal.yrs}M</span></p>` : neg?.last && !neg.last.ok ? `<p class="note small down full">${esc(neg.last.text)}${neg.tries >= 3 ? ' Talks are over.' : ''}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>

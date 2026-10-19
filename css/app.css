@@ -188,7 +188,7 @@ h2.team-title { margin: 0; font-size: 22px; display: flex; align-items: center; 
   text-align: left;
   width: 100%;
 }
-.prow .name { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prow .name { font-size: 15px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prow .meta { font-size: 13px; color: var(--dim); grid-column: 1; }
 .prow .right { grid-row: 1 / span 2; grid-column: 2; text-align: right; }
 .prow .chg { font-size: 12px; color: #bfe0ff; grid-column: 1 / -1; font-weight: 400; }
@@ -468,7 +468,7 @@ fieldset.frame > legend {
 .list { gap: 8px; }
 .prow, .lot-row, .pick, .story, .skill { border-width: 3px; box-shadow: 0 3px 0 var(--btn-shadow); }
 .prow { padding: 10px 12px; gap: 4px 12px; }
-.prow .name { font-size: 17px; font-weight: 700; }
+.prow .name { font-size: 15px; font-weight: 700; text-align: left; }
 .prow .meta { font-size: 13.5px; font-weight: 600; }
 .prow .chg { font-size: 13px; font-weight: 500; }
 .lot-row { padding: 8px 10px; gap: 10px; }
