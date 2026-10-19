@@ -18,33 +18,48 @@ const clampT = v => Math.max(-5, Math.min(5, v));
 // Total of the twelve skill ratings a potential allows (level cap 30 + 7 x pot).
 export const capTotal = pot => 28 + 14 * (pot || 0);
 
-// Spread a player's rating ceilings so they add up to what his potential
-// allows, but only when his ceilings are used up (every rating at its max) and
-// his potential says there's more level to reach. The extra room goes to what
-// he's good at and does most, instead of the game's flat +4 on everything.
-export function refitCeilings(p) {
-  if (!p.attributes || !p.pot) return 0;
+// Where extra rating room is most likely to go: what he's already good at and
+// does most (tendencies), his size (bigs: inside and boards; guards: handle,
+// passing, shooting) and age (young players spread it around, veterans
+// double down on strengths).
+const BIG = ['INS', 'BLK', 'DRE', 'ORE'], GUARD = ['DRB', 'PAS', 'TPT', 'STL'], WING = ['MID', 'TPT', 'LAY', 'DNK'];
+function allocWeights(p) {
   const A = k => p.attributes[k][0];
-  const ceil = k => Math.max(A(k), p.attributes[k][1]);
   const t = p.tendencies || {};
   const tendOf = k => Object.entries(TEND_ATTR).filter(([, a]) => a === k).reduce((m, [x]) => Math.max(m, t[x] || 0), -5);
-  const weight = k => (A(k) + 2) * (1 + 0.12 * Math.max(0, tendOf(k)));
-  const target = capTotal(p.pot);
-  let total = SKILL_KEYS.reduce((a, k) => a + ceil(k), 0);
-  const nowTotal = SKILL_KEYS.reduce((a, k) => a + A(k), 0);
-  // Only a player who has used up his ceilings (or been padded past his potential).
-  const room = total - nowTotal;
-  if (total < target && room <= 2 && nowTotal < target - 4) {
-    let need = target - total;
-    while (need > 0) {
-      const k = SKILL_KEYS.filter(x => ceil(x) < CAP20(x)).sort((a, b) => weight(b) * (1 - ceil(b) / 22) - weight(a) * (1 - ceil(a) / 22))[0];
-      if (!k) break;
-      p.attributes[k][1] = ceil(k) + 1;
-      need--; total++;
-    }
-    return target - total === 0 ? 1 : 0;
+  const grp = p.pos >= 6 ? BIG : p.pos <= 2 ? GUARD : WING;
+  const power = p.age <= 24 ? 0.6 : p.age >= 30 ? 1.4 : 1;
+  return Object.fromEntries(SKILL_KEYS.map(k => [k, Math.pow((A(k) + 2) * (1 + 0.12 * Math.max(0, tendOf(k))) * (grp.includes(k) ? 1.3 : 1), power)]));
+}
+// Add `n` points of rating room, one at a time, where it's most likely to be used.
+export function addCeilings(p, n) {
+  const ceil = k => Math.max(p.attributes[k][0], p.attributes[k][1]);
+  const w = allocWeights(p);
+  let added = 0;
+  while (added < n) {
+    const k = SKILL_KEYS.filter(x => ceil(x) < CAP20(x)).sort((a, b) => w[b] * (1 - ceil(b) / 22) - w[a] * (1 - ceil(a) / 22))[0];
+    if (!k) break;
+    p.attributes[k][1] = ceil(k) + 1;
+    added++;
   }
-  return 0;
+  return added;
+}
+const ceilTotal = p => SKILL_KEYS.reduce((a, k) => a + Math.max(p.attributes[k][0], p.attributes[k][1]), 0);
+const nowTotal = p => SKILL_KEYS.reduce((a, k) => a + p.attributes[k][0], 0);
+
+// A player whose ceilings are all used up while his potential says there's
+// more level to reach gets four more points of room (no more than his
+// potential allows), instead of the game's flat +4 on every rating.
+export function refitCeilings(p) {
+  if (!p.attributes || !p.pot) return 0;
+  const total = ceilTotal(p), now = nowTotal(p), target = capTotal(p.pot);
+  if (total >= target || total - now > 2 || now >= target - 4) return 0;
+  return addCeilings(p, Math.min(4, target - total));
+}
+// A potential bump in the offseason: the new ceilings add up to the new potential.
+export function potBumpCeilings(p, oldPot) {
+  if (!p.attributes || !p.pot || !(p.pot > oldPot)) return 0;
+  return addCeilings(p, Math.max(0, capTotal(p.pot) - ceilTotal(p)));
 }
 
 // One offseason of tendency drift. `rng` is a 0-1 generator. Returns how many

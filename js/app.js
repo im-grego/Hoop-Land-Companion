@@ -21,7 +21,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
-import { refitCeilings, autoTendencies } from './autoplay.js';
+import { refitCeilings, potBumpCeilings, autoTendencies } from './autoplay.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -33,7 +33,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.94.0';
+const APP_VERSION = '0.94.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1182,6 +1182,8 @@ function applyBump(seed) {
   applyCulture();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   state.potWhy = new Map(awards.why);
+  // A potential bump brings new ratings room with it, adding up to the new potential.
+  if (state.params.dynamicCeilings !== false) for (const e of entries) potBumpCeilings(e.p, snapOf(e.p).pot);
   // Play styles follow the new ratings and ages (young players move most).
   let tendMoved = 0;
   if (state.params.autoTendencies !== false) {
