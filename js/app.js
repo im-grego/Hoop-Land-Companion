@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.79.0';
+const APP_VERSION = '0.80.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2615,6 +2615,7 @@ screens.player = (args) => {
         <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
+        ${p.season && isComplete() && !isCollege() ? `<p class="note small">${moraleTag(p)} <span class="muted">morale</span></p>` : ''}
       </div>
       ${rankBox(p, mpg)}
       <fieldset class="frame"><legend>Trainer</legend>
@@ -4942,6 +4943,7 @@ function liveExecute(A, B, cpu = false) {
   const live = liveState();
   const L = league();
   const rec = executeTrade(A, B, L.season.currentYear);
+  for (const m of rec.moved) tradeMorale(L, m.p, m.to);
   const awayAdded = markAway(rec.moved);
   const moves = [];
   for (const [from, to] of [[A, B], [B, A]]) {
@@ -4986,6 +4988,7 @@ function liveExecuteMulti(teams, items) {
     const players = mine.filter(i => i.x.player).map(i => i.x.player), picks = mine.filter(i => i.x.pick).map(i => i.x.pick);
     const rec = executeTrade({ team: from, players, picks }, { team: to, players: [], picks: [] }, L.season.currentYear);
     recs.push(rec);
+    for (const m of rec.moved) tradeMorale(L, m.p, m.to);
     awayAdded = awayAdded.concat(markAway(rec.moved));
     for (const i of mine.filter(i => i.x.prospect)) { moves.push({ ov: i.x.prospect, from: from.id, to: to.id }); live.sel[i.x.prospect].to = to.id; }
     lines.push(`${from.shortName} → ${to.shortName}: ${mine.map(i => itemText(i.x, order)).join(', ')}`);
@@ -5691,7 +5694,7 @@ actions.faDecide = async () => {
     matches.set(m.p.id, pick === 'match');
   }
   s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
-  for (const x of s.signings) if (x.kind !== 'snt') lockSigning(x.p, signingLock(x));
+  for (const x of s.signings) { if (x.kind !== 'snt') lockSigning(x.p, signingLock(x)); contractMorale(x.p, x.team, x.from); }
   // Last day: anyone still without a deal leaves their old team.
   if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L, { qoFor: qoAmount, day: s.day });
   // The calendar shows the best player signed and the biggest contract.
@@ -6080,6 +6083,7 @@ function holdCpuOffers() {
 // salary (the game wipes a declined deal). Returns how many it reopened.
 const GAME_OPT = { 18: [2, false], 19: [2, true], 20: [1, false], 21: [1, true] };
 function reopenOptions() {
+  state.moraleDone = new Set();
   state.reopened = { n: 0, est: new Set() };
   const L = league();
   if (!L || isCollege() || state.params.redoOptions === false) return 0;
@@ -6381,6 +6385,49 @@ function presserStore() {
   try { return JSON.parse(localStorage.getItem(`hlc:presser:${seasonKey()}`)) || {}; } catch { return {}; }
 }
 function savePresser(v) { try { localStorage.setItem(`hlc:presser:${seasonKey()}`, JSON.stringify(v)); } catch { /* ignore */ } }
+// ---- Morale
+// Faces for 0-19, 20-39, 40-59, 60-79, 80-100.
+const MORALE_FACES = ['😡', '😞', '😐', '🙂', '😄'];
+const moraleFace = m => MORALE_FACES[Math.max(0, Math.min(4, Math.floor((m ?? 60) / 20)))];
+const moraleTag = p => `${moraleFace(p.season?.morale)} ${p.season?.morale ?? '?'}`;
+// A change of situation (a trade, a new deal, a bigger role) lifts a player's
+// mood, a lot more when he was unhappy; a smaller role costs some. Each kind
+// counts once per player a session. Everyone in the league, not just yours.
+function moraleEvent(p, kind, n, why) {
+  if (!isComplete() || isCollege() || !p.season) return 0;
+  const k = `${p.id}:${kind}`;
+  if ((state.moraleDone ||= new Set()).has(k)) return 0;
+  state.moraleDone.add(k);
+  const m = p.season.morale ?? 60;
+  const lift = n > 0 && m < 40 ? Math.round(n * 1.6) : n;
+  p.season.morale = Math.max(0, Math.min(100, m + lift));
+  (calFlags().moraleLog ||= []).push({ pid: p.id, tid: p.tid, from: m, to: p.season.morale, why });
+  state.dirty = true;
+  return lift;
+}
+const roleRank = (team, p) => 1 + FA.signedRoster(team).filter(x => x !== p && shownLevel(x) > shownLevel(p)).length;
+function tradeMorale(L, p, to) {
+  let n = 7;
+  const l = seasonLine(p, state.leagueIdx, lastSeasonYear());
+  if (roleRank(to, p) <= 5 && (!l || l.mpg < 24)) n += 5;
+  if (teamStatus(L, to) === 'contending') n += 3;
+  moraleEvent(p, `trade:${to.id}`, n, `fresh start in ${to.shortName}`);
+}
+function contractMorale(p, team, old) {
+  const moved = old && old.id !== team.id;
+  moraleEvent(p, `deal:${team.id}`, 8 + (moved ? 4 : 0), moved ? `signed with ${team.shortName}` : 'new contract');
+}
+// Final cuts: a player who's now a projected starter after sitting last year
+// feels it; a former starter pushed down the roster does too.
+function roleMorale(L) {
+  const ly = lastSeasonYear();
+  for (const t of L.teams) for (const p of FA.signedRoster(t)) {
+    const l = seasonLine(p, state.leagueIdx, ly), rank = roleRank(t, p);
+    if (rank <= 5 && l && l.gs < 20 && l.mpg < 24) moraleEvent(p, 'role', 6, 'projected starter');
+    else if (rank > 8 && l && l.gs >= 41) moraleEvent(p, 'role', -6, 'pushed out of the rotation');
+  }
+}
+
 // Broken promises: a player you promised something and didn't deliver loses
 // a lot of morale and refuses to meet with your team (no extension, no
 // offers) through the next offseason. { pid, tid, until } per save.
@@ -6697,7 +6744,7 @@ function rumorPost(r) {
     <div class="hg-head"><span class="hg-avatar">HG</span><b>${handle}</b><span class="hg-tag">${r.kind === 'star' ? 'Disgruntled?' : r.kind === 'blowup' ? 'Blow it up?' : r.kind === 'taxpay' ? 'Tax bill' : 'Could be moved'} ${'🔥'.repeat(Math.max(1, r.heat))}</span></div>
     <p class="hg-text">${esc((r.kind === 'vet' ? pick(vet) : pick(star)).trim())}</p>
     <div class="hg-foot"><span>❤️ ${likes.toLocaleString()}</span><button class="btn small" data-act="openPlayer" data-id="${p.id}">${esc(nm)} ${lvTag(p)}</button></div>
-    <p class="note small muted" style="margin-top:4px">${esc(t.shortName)} · ${esc(posName(p))} · ${p.age}y · morale ${r.morale}</p>
+    <p class="note small muted" style="margin-top:4px">${esc(t.shortName)} · ${esc(posName(p))} · ${p.age}y · ${moraleFace(r.morale)} ${r.morale}</p>
   </div>`;
 }
 screens.overview = (args = {}) => {
@@ -6947,6 +6994,7 @@ function extAnswer(p, team, offer) {
     text: a.mood === 'market' ? 'His camp wants to see what free agency brings. It would take an overpay.' : offer.sal < need * 0.8 ? 'Not close. His agent walked out of the room.' : 'Close, but not there yet.' };
 }
 function signExtension(L, t, p, deal, cpu = false) {
+  moraleEvent(p, `ext:${L.season.currentYear}`, 8, 'extension');
   const ntc = deal.ntc && FA.ntcEligible(L, p, t) ? 1 : 0;
   // Over 4 seasons in all, or a raise over 120%: six months before a trade.
   if (deal.yrs + 1 > 4 || deal.sal > (p.contract.sal || 0) * 1.2) lockSigning(p, 'Extended: 6 months');
@@ -6999,7 +7047,7 @@ screens.extensions = () => {
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
       <span class="right small">$${p.contract.sal}M<br><span class="muted">final year</span></span>
-      <span class="meta">${esc(posName(p))} · ${p.age}y · morale ${p.season?.morale ?? '?'} · asks $${a.sal}M × ${a.pref}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
+      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref}${a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
       ${grudge ? '<span class="chg"><span class="down">🚫 Refuses to meet with you: you broke your promise</span></span>' : status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
@@ -7708,6 +7756,7 @@ screens.cuts = () => {
     const picked = ranked.filter(x => sel[x.p.id]).length;
     const mood = (calFlags().taxMood || {})[t.id] || [];
     if (done) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>${capBar(t)}<p class="note small up">✓ Roster is set.</p>
+      ${(() => { const mv = (calFlags().moraleLog || []).filter(x => x.tid === t.id && Math.abs(x.to - x.from) >= 3).sort((a, b) => Math.abs(b.to - b.from) - Math.abs(a.to - a.from)).slice(0, 8); return mv.length ? `<p class="note small" style="margin-top:6px"><b>Morale moves</b></p>${mv.map(x => { const pl = playerById(x.pid); return pl ? `<p class="note small">${esc(playerName(pl))} ${moraleFace(x.from)} → ${moraleFace(x.to)} <span class="${x.to > x.from ? 'up' : 'down'}">${x.to > x.from ? '+' : ''}${x.to - x.from}</span> <span class="muted">· ${esc(x.why)}</span></p>` : ''; }).join('')}` : ''; })()}
       ${mood.length ? `<p class="note small" style="margin-top:6px"><b>Locker room</b></p>${mood.map(x => `<p class="note small"><span class="${x.n > 0 ? 'up' : 'down'}">${esc(x.name)} morale ${x.n > 0 ? '+' : ''}${x.n}</span> <span class="muted">· ${esc(x.why)}</span></p>`).join('')}` : ''}</fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
       ${capBar(t)}
@@ -7787,7 +7836,7 @@ function requestCard() {
     if (!p) return '';
     const done = r.status !== 'open';
     const res = { promised: 'You promised help; he\'s staying for now.', refused: 'He didn\'t buy it.', block: 'On the trade block.', ignored: 'You said no. He isn\'t happy.', traded: `Traded to ${r.to || 'another team'}.` }[r.status];
-    return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(t.shortName)} · wants out: ${esc(r.why)} · morale ${p.season?.morale ?? '?'}</span></span>
+    return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(t.shortName)} · wants out: ${esc(r.why)} · ${moraleTag(p)}</span></span>
       ${done ? `<p class="note small ${r.status === 'block' || r.status === 'promised' || r.status === 'traded' ? 'up' : 'down'} full">${esc(res)}</p>` : ''}
       ${!calFlags().cuts && r.status !== 'traded' ? `<span class="opt-btns full">
         <button class="btn small ${r.status === 'promised' ? 'on focus' : 'off'}" data-act="reqAnswer" data-id="${r.pid}" data-v="promise" ${r.tried || r.status === 'block' ? 'disabled' : ''}>Promise help</button>
@@ -7955,6 +8004,7 @@ actions.cutsFinish = async () => {
     if (isUserTeam(t)) mineN += go.length;
     list.push({ team: t.shortName, names: go.map(x => playerName(x.p)) });
   }
+  roleMorale(L);
   calFlags().cutLog = { n, mine: mineN, list };
   {
     const rq = offGet('req');
