@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.100.0';
+const APP_VERSION = '0.100.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2762,10 +2762,8 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
-        ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
-        ${p.season && isComplete() && !isCollege() ? `<p class="note small">${moraleTag(p)} <span class="muted">· ${moraleWord(p.season.morale)}</span></p>` : ''}
+        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb</p>
+        <p class="note small pl-meta">${[`<span class="stars">${potStars(p)}</span>`, archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>', p.contract?.sal && `${esc(contractText(p))}${contractBadge(p)}`, p.season && isComplete() && !isCollege() && moraleTag(p)].filter(Boolean).join(' · ')}</p>
       </div>
       ${tabsRow}
       ${content}`,
