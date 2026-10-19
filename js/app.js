@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.110.2';
+const APP_VERSION = '0.110.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1262,8 +1262,9 @@ actions.undoAdvance = async () => {
 screens.main = () => {
   if (!state.data) {
     layout({
-      title: 'Import File',
-      body: `<div class="load-screen">
+      title: 'Main Menu',
+      bare: true,
+      body: `
         <img class="hero" src="icons/banner.jpg" alt="Hoop Land">
         <fieldset class="frame"><legend>Hoop Land Companion</legend>
           <div class="stack">
@@ -1272,7 +1273,7 @@ screens.main = () => {
               <input type="file" id="fileInput"></label>
           </div>
         </fieldset>
-        <p class="center muted small">Version ${APP_VERSION}</p></div>`,
+        <p class="center muted small">Version ${APP_VERSION}</p>`,
     });
     return;
   }

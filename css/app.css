@@ -1357,10 +1357,3 @@ main.panel.bare { margin-top: 10px; }
   .marquee-track span { font-size: 24px; letter-spacing: 3px; }
   .header .back, .nav-btn { width: 72px; }
 }
-
-/* Taller, thinner title letters. */
-.marquee-track span { font-family: "VT323", var(--pixel); font-size: 42px; line-height: 42px; letter-spacing: 3px; font-weight: 400;
-  -webkit-mask-image: none; mask-image: none; }
-@media (min-width: 700px) { .marquee-track span { font-size: 42px; letter-spacing: 3px; } }
-
-.load-screen { display: flex; flex-direction: column; gap: 12px; justify-content: center; min-height: calc(100dvh - 130px); padding-bottom: 40px; }
