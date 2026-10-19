@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.106.1';
+const APP_VERSION = '0.107.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -479,7 +479,7 @@ async function loadFile(file) {
     if (!Array.isArray(data.seasonLeagues) || !data.seasonLeagues.length) throw new Error('No seasonLeagues found');
     state.fileName = file.name;
     state.undo = null;
-    state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null; state.calLast = undefined; state.calMonth = undefined;
+    state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null; state.calLast = undefined;
     preloadLogos(data);   // start the team logos downloading before the heavy setup
     installData(data);
     if (state.leagueFile) {
@@ -777,11 +777,11 @@ const CALENDAR = [
     done: () => !!extStore().done || phaseRank(league().season) >= 4 },
   { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies pick their numbers, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
-  { key: 'fa1', date: 'Week 1', title: 'Free Agency · Week 1', blurb: 'No more collusion: the market opens and the big deals happen.',
+  { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Week 1', blurb: 'No more collusion: the market opens and the big deals happen.',
     done: () => faDone(1) },
-  { key: 'fa2', date: 'Week 2', title: 'Free Agency · Week 2', blurb: 'Teams over the cap can use the mid-level exception.',
+  { key: 'fa2', date: 'Jul 13', title: 'Free Agency · Week 2', blurb: 'Teams over the cap can use the mid-level exception.',
     done: () => faDone(2) },
-  { key: 'fa3', date: 'Week 3', title: 'Free Agency · Week 3', blurb: 'Last call: asking prices drop, and anyone left unsigned leaves their old team.',
+  { key: 'fa3', date: 'Jul 20', title: 'Free Agency · Week 3', blurb: 'Last call: asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
   { key: 'dev', date: 'Sep 21', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
@@ -1046,35 +1046,23 @@ function stepActions(key) {
 const CAL_EMOJI = { office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const CAL_WEEKS = { 'Week 1': [6, 6], 'Week 2': [6, 13], 'Week 3': [6, 20] };           // free agency weeks sit in July
 function calPos(st) {
   const m = /^([A-Z][a-z]{2}) (\d{1,2})$/.exec(st.date);
-  if (m) return [CAL_MONTHS.indexOf(m[1]), +m[2]];
-  return CAL_WEEKS[st.date] || null;
+  return m ? [CAL_MONTHS.indexOf(m[1]), +m[2]] : null;
 }
-function calendarGrid(cal, cur) {
-  const L = league();
-  const yr = dispYr(L.season.currentYear);
-  const steps = cal.map(st => ({ st, pos: calPos(st) })).filter(x => x.pos);
-  if (!steps.length) return '';
-  const months = [...new Set(steps.map(x => x.pos[0]))].sort((a, b) => a - b);
+// One month of the grid. `anim` = { fromDay }: those passed days cross off one after another.
+function calMonthHtml(cal, cur, mo, anim = null) {
+  const yr = dispYr(league().season.currentYear);
   const curPos = cur ? calPos(cur) : null;
-  let mo = state.calMonth;
-  if (mo == null || !months.includes(mo)) mo = curPos ? curPos[0] : months[months.length - 1];
   const first = new Date(yr, mo, 1).getDay(), days = new Date(yr, mo + 1, 0).getDate();
   const byDay = new Map();
-  for (const x of steps) if (x.pos[0] === mo) byDay.set(x.pos[1], [...(byDay.get(x.pos[1]) || []), x.st]);
+  for (const st of cal) { const p = calPos(st); if (p && p[0] === mo) byDay.set(p[1], [...(byDay.get(p[1]) || []), st]); }
   const before = (m, d) => !cur ? true : curPos ? (m < curPos[0] || (m === curPos[0] && d < curPos[1])) : false;
-  // When the current event has just moved on, the dates between the old one and the new one get crossed off in turn.
-  const prevKey = state.calLast;
-  state.calLast = cur ? cur.key : '__done';
-  let from = null;
-  if (prevKey && prevKey !== state.calLast) {
-    const ps = cal.find(x => x.key === prevKey), pp = ps ? calPos(ps) : null;
-    if (pp && (!curPos || pp[0] < curPos[0] || (pp[0] === curPos[0] && pp[1] < curPos[1]))) from = pp;
-  }
-  const showingNow = !curPos || mo === curPos[0];
-  let step_ = 0;
+  // The whole run takes about a second and a half, however many dates it crosses.
+  let count = 0;
+  if (anim) for (let d = anim.fromDay; d <= days; d++) if (before(mo, d)) count++;
+  const per = Math.max(25, Math.min(90, Math.round(1500 / Math.max(1, count))));
+  let n = 0;
   const cells = [];
   for (let i = 0; i < first; i++) cells.push('<span class="cal-day blank"></span>');
   for (let d = 1; d <= days; d++) {
@@ -1082,22 +1070,34 @@ function calendarGrid(cal, cur) {
     const done = here.length && here.every(s => s.done());
     const now = here.includes(cur);
     const past = done || before(mo, d);
-    const animate = from && showingNow && past && (mo > from[0] || (mo === from[0] && d >= from[1]));
+    const animate = anim && past && d >= anim.fromDay;
     const em = here.length ? CAL_EMOJI[(here.find(s => s === cur) || here[0]).key] || '📅' : '';
-    cells.push(`<button class="cal-day ${here.length ? 'step' : ''} ${past && !animate ? 'past' : ''} ${animate ? 'anim' : ''} ${done ? 'done' : ''} ${now ? 'now' : ''}" ${animate ? `style="--d:${(step_++) * 90}ms"` : ''} ${here.length ? `data-act="calPick" data-k="${here[0].key}"` : 'tabindex="-1"'} aria-label="${CAL_MONTHS[mo]} ${d}${here.length ? ': ' + esc(here.map(s => s.title).join(', ')) : ''}"><span class="n">${d}</span>${em ? `<span class="em">${em}</span>` : ''}${done ? '<span class="tick">✓</span>' : ''}</button>`);
+    cells.push(`<button class="cal-day ${here.length ? 'step' : ''} ${past && !animate ? 'past' : ''} ${animate ? 'anim' : ''} ${done ? 'done' : ''} ${now ? 'now' : ''}" ${animate ? `style="--d:${(n++) * per}ms"` : ''} ${here.length ? `data-act="calPick" data-k="${here[0].key}"` : 'tabindex="-1"'} aria-label="${CAL_MONTHS[mo]} ${d}${here.length ? ': ' + esc(here.map(s => s.title).join(', ')) : ''}"><span class="n">${d}</span>${em ? `<span class="em">${em}</span>` : ''}${done ? '<span class="tick">✓</span>' : ''}</button>`);
   }
-  const mi = months.indexOf(mo);
-  return `<div class="cal-nav"><button class="btn small off" data-act="calMonth" data-dir="-1" ${mi <= 0 ? 'disabled' : ''} aria-label="Previous month">◀</button><b>${CAL_MONTHS[mo].toUpperCase()} ${yr}</b><button class="btn small off" data-act="calMonth" data-dir="1" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="Next month">▶</button></div>
-    <div class="cal-grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span class="cal-dow">${x}</span>`).join('')}${cells.join('')}</div>`;
+  return { n, per, html: `<div class="cal-nav"><b>${CAL_MONTHS[mo].toUpperCase()} ${yr}</b></div>
+    <div class="cal-grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span class="cal-dow">${x}</span>`).join('')}${cells.join('')}</div>` };
 }
-actions.calMonth = d => {
-  const L = league(), cal = activeCal();
+// The calendar follows the current event: it shows that event's month by itself. When the event moves on,
+// the dates up to the next one cross off in turn (and the month turns over when the next event is in a later month).
+function calendarGrid(cal, cur) {
   const months = [...new Set(cal.map(st => calPos(st)).filter(Boolean).map(p => p[0]))].sort((a, b) => a - b);
-  const cur = currentStep(), curPos = cur ? calPos(cur) : null;
-  const at = months.indexOf(state.calMonth ?? (curPos ? curPos[0] : months[months.length - 1]));
-  state.calMonth = months[Math.max(0, Math.min(months.length - 1, at + +d.dir))];
-  render();
-};
+  if (!months.length) return '';
+  const curPos = cur ? calPos(cur) : null;
+  const mo = curPos ? curPos[0] : months[months.length - 1];
+  const prevKey = state.calLast;
+  state.calLast = cur ? cur.key : '__done';
+  let from = null;
+  if (prevKey && prevKey !== state.calLast) {
+    const ps = cal.find(x => x.key === prevKey), pp = ps ? calPos(ps) : null;
+    if (pp && (!curPos || pp[0] < curPos[0] || (pp[0] === curPos[0] && pp[1] < curPos[1]))) from = pp;
+  }
+  if (from && from[0] < mo) {
+    const p1 = calMonthHtml(cal, cur, from[0], { fromDay: from[1] });
+    setTimeout(() => { const w = document.getElementById('cal-wrap'); if (w) w.innerHTML = calMonthHtml(cal, cur, mo, { fromDay: 1 }).html; }, p1.n * p1.per + 700);
+    return `<div id="cal-wrap">${p1.html}</div>`;
+  }
+  return `<div id="cal-wrap">${calMonthHtml(cal, cur, mo, from ? { fromDay: from[0] === mo ? from[1] : 1 } : null).html}</div>`;
+}
 actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st) toast(`${st.date} · ${st.title}`, st.done() ? 'Done.' : st.blurb, 3200); };
 
 function calendarCard() {
