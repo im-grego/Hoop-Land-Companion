@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.109.0';
+const APP_VERSION = '0.110.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2679,9 +2679,38 @@ screens.roster = (args) => {
     body: `
       <h2 class="team-title">${logoImg(t)}${esc(t.city)} ${esc(t.name)}</h2>
       ${others ? '' : `<p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>`}
-      <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
+      <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>
+      ${movesBox(L, t)}`,
   });
 };
+
+// Everyone who joined or left a team since last season, judged by the team on
+// each player's last stats line.
+function teamMoves(L, t) {
+  const yr = lastYear(), cur = L.season.currentYear, li = state.leagueIdx;
+  const line = p => seasonLine(p, li, yr);
+  const nameOf = id => L.teams.find(x => x.id === id)?.shortName;
+  const rookie = p => p.history?.draft?.yr === cur || p.history?.yearDeclared === cur;
+  const ins = [], outs = [];
+  for (const p of t.roster) {
+    const l = line(p);
+    if (l && l.tid === t.id) continue;
+    ins.push({ p, from: rookie(p) ? 'Draft' : l ? (nameOf(l.tid) || 'Free agency') : 'Signed' });
+  }
+  const pool = [...L.teams.filter(x => x !== t).flatMap(x => x.roster.map(p => ({ p, to: x.shortName }))), ...(L.freeAgents || []).map(p => ({ p, to: 'Free agency' }))];
+  for (const { p, to } of pool) if (line(p)?.tid === t.id) outs.push({ p, to });
+  const byLv = (a, b) => shownLevel(b.p) - shownLevel(a.p);
+  return { ins: ins.sort(byLv), outs: outs.sort(byLv) };
+}
+function movesBox(L, t) {
+  const { ins, outs } = teamMoves(L, t);
+  const row = (p, tag, arrow) => `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted">${arrow} ${esc(tag)}${arrow === '←' ? ` · $${p.contract.sal}M × ${p.contract.yrs}` : ''}</span></div>`;
+  return `<details class="frame" style="margin-top:10px" ${state.movesOpen ? 'open' : ''}><summary data-act="movesToggle"><b>Moves</b> <span class="small muted">In ${ins.length} · Out ${outs.length}</span></summary>
+    <p class="note small" style="margin-top:6px"><b>In</b></p>${ins.map(m => row(m.p, m.from, '←')).join('') || '<span class="small muted">None</span>'}
+    <p class="note small" style="margin-top:6px"><b>Out</b></p>${outs.map(m => row(m.p, m.to, '→')).join('') || '<span class="small muted">None</span>'}
+  </details>`;
+}
+actions.movesToggle = () => { state.movesOpen = !state.movesOpen; replace('roster', state.stack[state.stack.length - 1].args); };
 
 // ---------------------------------------------------------------------------
 // Player editor
