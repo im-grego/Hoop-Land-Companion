@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.108.0';
+const APP_VERSION = '0.108.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1039,6 +1039,7 @@ function stepActions(key) {
 const CAL_EMOJI = { office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 function calPos(st) {
   const m = /^([A-Z][a-z]{2}) (\d{1,2})$/.exec(st.date);
   return m ? [CAL_MONTHS.indexOf(m[1]), +m[2]] : null;
@@ -1070,7 +1071,7 @@ function calMonthHtml(cal, cur, mo, anim = null) {
     const em = here.length ? CAL_EMOJI[(here.find(s => s === cur) || here[0]).key] || '📅' : '';
     cells.push(`<button class="cal-day ${here.length ? 'step' : ''} ${past && !animate ? 'past' : ''} ${animate ? 'anim' : ''} ${done ? 'done' : ''} ${now ? 'now' : ''}" ${animate ? `style="--d:${(n++) * per}ms"` : ''} ${here.length ? `data-act="calPick" data-k="${here[0].key}"` : 'tabindex="-1"'} aria-label="${CAL_MONTHS[mo]} ${d}${here.length ? ': ' + esc(here.map(s => s.title).join(', ')) : ''}"><span class="n">${d}</span>${em ? `<span class="em">${em}</span>` : ''}${done ? '<span class="tick">✓</span>' : ''}</button>`);
   }
-  return { n, per, html: `<div class="cal-nav"><b>${CAL_MONTHS[mo].toUpperCase()} ${yr}</b></div>
+  return { n, per, html: `<div class="cal-nav"><b>${CAL_FULL[mo].toUpperCase()} ${yr}</b></div>
     <div class="cal-grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span class="cal-dow">${x}</span>`).join('')}${cells.join('')}</div>` };
 }
 // The calendar follows the current event: it shows that event's month by itself. When the event moves on,
