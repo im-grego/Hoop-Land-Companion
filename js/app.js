@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.89.0';
+const APP_VERSION = '0.90.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6021,6 +6021,8 @@ actions.faOffer = d => {
     draft.avg ??= draft.sal;
     if (draft.yrs < 2) draft.load = 'flat';
     draft.sal = loadSchedule(draft.avg, draft.yrs, draft.load)[0];
+    const pitched = (s.cutPitch ||= {})[m.p.id];
+    if (pitched?.ok) { draft.cut = pitched.pct; draft.cutEv = Math.round(draft.avg * pitched.pct * 10) / 10; }
     if (draft.inc) { draft.inc.bonus = Math.min(draft.inc.bonus, Math.max(2, Math.round(draft.sal * 0.3))); draft.incEv = incWorth(m.p, team, draft.inc); }
     const err = FA.checkOffer(L, team, m.p, draft, s.day, s.used);
     const kind = err ? null : FA.offerKind(L, team, m.p, draft, s.day, s.used);
@@ -6045,6 +6047,7 @@ actions.faOffer = d => {
         ${draft.load && draft.load !== 'flat' ? `<p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} (cap hit this year $${draft.sal}M)</p>` : ''}` : ''}
       <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
+      ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
       ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No incentive'], ...Object.entries(INCENTIVES).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
         ${draft.inc ? `<div class="pts-row"><span class="grow small">Bonus if ${esc(incText(m.p, draft.inc))} · <span class="muted">worth ~$${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</span></span><button class="btn square" data-k="incbonus" data-d="-1">−</button><span class="pts-val">$${draft.inc.bonus}M</span><button class="btn square" data-k="incbonus" data-d="1">+</button></div>` : ''}` : ''}
       <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
@@ -6064,6 +6067,12 @@ actions.faOffer = d => {
     else if (k === 'load') draft.load = b.dataset.v;
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
+    else if (k === 'cut') {
+      const r = cutPitch(m.p, L.teams.find(t => t.id === draft.tid));
+      (s.cutPitch ||= {})[m.p.id] = r;
+      if (!r.ok && m.p.season) m.p.season.morale = Math.max(0, (m.p.season.morale ?? 60) - 3);
+      toast(r.ok ? `${playerName(m.p)} is in` : `${playerName(m.p)} passed`, r.ok ? `He'll weigh a ${Math.round(r.pct * 100)}% discount as worth it.` : 'He wants his money.', 2600, !r.ok);
+    }
     else if (k === 'inckind' || k === 'incbonus') {
       const tm = L.teams.find(t => t.id === draft.tid);
       if (k === 'inckind') draft.inc = b.dataset.v ? { kind: b.dataset.v, bonus: draft.inc?.bonus || 2, target: incTarget(m.p, b.dataset.v) } : null;
@@ -7309,6 +7318,24 @@ function projLevel(p) {
   return lv + Math.round(up * Math.max(0.5, ((p.pot || 7) - 5) / 3)) - down;
 }
 // What he wants: { sal, yrs: [min, max], mood } — mood: 'eager' | 'open' | 'market'.
+// The pay-cut pitch: only for a star, only on a contending (or favored)
+// team. A winner who isn't chasing money may take less to keep the team
+// strong. Extreme traits decide it: a money chaser (17+) won't hear it, a
+// win-first player (17+) nearly always does. One try per player and window.
+function cutPitchOk(p, team) {
+  const lv = shownLevel(p);
+  return isComplete() && team && isUserTeam(team) && teamStatus(league(), team) === 'contending' && (lv >= 86 || ((p.pot || 0) >= 9 && lv >= 79));
+}
+function cutPitch(p, team) {
+  const win = tr(p, 'winning'), money = tr(p, 'money'), loy = tr(p, 'loyalty'), morale = p.season?.morale ?? 60;
+  const pct = Math.round(Math.max(0.06, Math.min(0.18, 0.08 + (win - 10) * 0.01)) * 100) / 100;
+  let odds = 0.25 + (win - 10) * 0.05 + (FA.motiveOf(league(), p) === 'contender' ? 0.2 : 0) - (money - 10) * 0.05 + (loy - 10) * 0.02 + (morale >= 70 ? 0.1 : morale < 45 ? -0.2 : 0);
+  if (money >= 17) odds = 0;
+  else if (win >= 17 && money <= 12) odds = Math.max(odds, 0.9);
+  odds = Math.max(0, Math.min(0.9, odds));
+  const ok = mulberry32((saveSalt() ^ Math.imul(p.id + 3, 2246822519) ^ 0xc07) >>> 0)() < odds;
+  return { ok, pct, odds };
+}
 function extAsk(p, team) {
   const proj = projLevel(p);
   const base = fairSalary(proj);
@@ -7343,7 +7370,7 @@ function extAnswer(p, team, offer) {
   const opt = offer.opt === FA.OPT_TEAM ? 1.06 : offer.opt === FA.OPT_PLAYER ? 0.96 : 1;
   // A no-trade clause is worth a little to him; one he asked for and didn't get costs.
   const ntc = offer.ntc && a.ntcOk ? 0.95 : a.ntc ? 1.05 : 1;
-  const need = Math.max(FA.minFor(p), Math.round(a.sal * (1 + 0.06 * off) * mood * opt * ntc));
+  const need = Math.max(FA.minFor(p), Math.round(a.sal * (1 + 0.06 * off) * mood * opt * ntc * (1 - (offer.cut || 0))));
   if (a.holdout) {
     if (offer.sal >= Math.round(a.sal * 0.97) && off === 0) return { ok: true, text: 'Deal.' };
     return { ok: false, counter: { sal: a.sal, yrs: a.pref }, text: 'He\'s holding out to reset the market. Nothing under his number.' };
@@ -7441,7 +7468,8 @@ actions.extOpen = d => {
       <div class="tabs">${[[FA.OPT_TEAM, 'Team opt'], [0, 'No option'], [FA.OPT_PLAYER, 'Player opt']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       ${a.ntcOk ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!talk.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${a.ntc ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
       <p class="note small">Total <span class="tot">$${talk.sal * talk.yrs}M</span> · ${3 - talk.tries} offer${3 - talk.tries === 1 ? '' : 's'} left${talk.last ? `<br><span class="down">${esc(talk.last.text)}</span>` : ''}</p>
-      ${a.holdout ? '<p class="note small">He\'s unhappy and wants to reset the market at his position. Pay it, or shop him.</p><button class="btn" data-k="shop">🔁 Shop Him</button>' : ''}
+      ${a.holdout ? '<p class="note small">He\'s unhappy and wants to reset the market at his position. Pay it, shop him, or sign him high and send him out.</p><div class="grid2"><button class="btn" data-k="shop">🔁 Shop Him</button><button class="btn" data-k="snt">🤝 Sign-and-Trade</button></div>' : ''}
+      ${!a.holdout && cutPitchOk(p, t) ? (talk.cut ? `<p class="note small up">🏆 He'll take ${Math.round(talk.cut * 100)}% less to keep this team a contender.</p>` : talk.cutTried ? '<p class="note small muted">He heard the pay-cut pitch and passed.</p>' : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
       <div class="grid2"><button class="btn off" data-k="close">Cancel</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
   };
   box.addEventListener('click', e => {
@@ -7453,6 +7481,19 @@ actions.extOpen = d => {
     else if (k === 'opt') talk.opt = +b.dataset.v;
     else if (k === 'ntc') talk.ntc = !!+b.dataset.v;
     else if (k === 'close') { saveExtStore(); box.remove(); render(); return; }
+    else if (k === 'cut') {
+      if (talk.cutTried) return;
+      talk.cutTried = true;
+      const r = cutPitch(p, t);
+      if (r.ok) { talk.cut = r.pct; talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.round(talk.sal * (1 - r.pct))); toast(`${playerName(p)} is in`, `He'll take ${Math.round(r.pct * 100)}% less to win.`); }
+      else { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 3); toast(`${playerName(p)} passed`, 'He wants his money.', 2600, true); }
+      saveExtStore();
+    }
+    else if (k === 'snt') {
+      saveExtStore(); box.remove();
+      extSignAndTrade(p, t, { sal: a.sal, yrs: a.pref, opt: 0, ntc: false });
+      return;
+    }
     else if (k === 'shop') {
       saveExtStore(); box.remove();
       (draftState().block ||= new Set()).add(`p:${p.id}`);
@@ -7467,6 +7508,46 @@ actions.extOpen = d => {
   });
   paint();
 };
+// Sign-and-trade for a holdout: he signs the extension at his number, then
+// goes to a team that values him on the new deal. If the trade falls through,
+// the signing is undone.
+function extSignAndTrade(p, team, deal) {
+  const L = league(), ds = draftState();
+  const keep = structuredClone(p.contract);
+  Object.assign(p.contract, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0 });
+  ds.offerSeed = Math.floor(Math.random() * 1e9);
+  let offers = [];
+  try { offers = frontOfficeOffers(team, { only: `p:${p.id}`, max: 6 }).filter(o => o.kind === 'block').slice(0, 6); } finally { p.contract = keep; }
+  const box = overlay('');
+  box.querySelector('.box').innerHTML = `<p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">Signs $${deal.sal}M × ${deal.yrs} (starting next season), then goes to:</span></p>
+    <div class="stack">${offers.map((o, i) => `<div class="offer"><p class="note small"><b>${esc(o.team.shortName)}</b> ${offerRating(o)}: ${esc(o.give.map(x => x.text).join(' + '))}</p><button class="btn small" data-i="${i}">Accept</button></div>`).join('') || '<p class="note small muted">Nobody will take that contract right now.</p>'}</div>
+    <button class="btn off" data-close style="margin-top:8px">Close</button>`;
+  box.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) { box.remove(); return; }
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const o = offers[+b.dataset.i];
+    box.remove();
+    const had = structuredClone(p.contract);
+    const ledBefore = extLedger();
+    signExtension(L, team, p, deal);
+    const m = offGet('signed'); delete m[p.id]; offSet('signed', m);      // the 6-month lock doesn't apply to a sign-and-trade
+    // The trade rules look at the deal as it will stand; let him move on his current contract.
+    if (await doOffer(team, o)) {
+      const st = extStore(); st.talks[p.id] = { ...(st.talks[p.id] || {}), signed: { ...deal, snt: true }, tries: 3 };
+      saveExtStore();
+      ds.block?.delete(`p:${p.id}`);
+      ds.offers = null;
+      state.dirty = true;
+      render();
+    } else {
+      p.contract = had;
+      saveExtLedger(ledBefore);
+      toast('Sign-and-trade fell through', 'The extension was undone.', 3000, true);
+      extSignAndTrade(p, team, deal);
+    }
+  });
+}
 actions.extOffer = d => {
   const L = league(), st = extStore();
   const t = L.teams.find(tt => tt.roster.some(x => x.id === +d.id));

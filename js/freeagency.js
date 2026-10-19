@@ -299,7 +299,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   // A veteran taking a discount cares about what they're chasing, not a
   // couple of million more.
   if (discounted) w.greed = 0.3;
-  const money = ((offer.avg ?? offer.sal) + (offer.incEv || 0)) / Math.max(1, ask);   // avg: the average year of a loaded deal   // incEv: what he thinks his incentives are worth ($M)
+  const money = ((offer.avg ?? offer.sal) + (offer.incEv || 0) + (offer.cutEv || 0)) / Math.max(1, ask);   // avg: the average year of a loaded deal   // incEv: what he thinks his incentives are worth ($M)
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
@@ -542,7 +542,7 @@ export function pendingMatches(league, market, bids, day, userTeams, used = {}, 
     const list = (bids.get(m.p.id) || []).filter(b => !checkOffer(league, league.teams.find(t => t.id === b.tid), m.p, b, day, used, o));
     if (!list.length) continue;
     const best = bestOffer(league, m, list);
-    if (best.tid !== m.from.id && ((best.avg ?? best.sal) + (best.incEv || 0)) >= (m.min ?? m.ask * o.acceptPct[Math.min(2, day - 1)])) out.push({ m, best });
+    if (best.tid !== m.from.id && ((best.avg ?? best.sal) + (best.incEv || 0) + (best.cutEv || 0)) >= (m.min ?? m.ask * o.acceptPct[Math.min(2, day - 1)])) out.push({ m, best });
   }
   return out;
 }
@@ -620,7 +620,7 @@ export function decide(league, market, bids, day, used = {}, o = FA_DEFAULTS, { 
     if (!list.length) continue;
     const score = b => offerScore(league, m.p, b, m.ask, m.motive, m.from?.id, m.min < m.ask * 0.75);
     let best = [...list].sort((a, b) => score(b) - score(a))[0];
-    if (((best.avg ?? best.sal) + (best.incEv || 0)) < (m.min ?? m.ask * accept)) continue;
+    if (((best.avg ?? best.sal) + (best.incEv || 0) + (best.cutEv || 0)) < (m.min ?? m.ask * accept)) continue;
     // Offer sheet on a restricted free agent: the old team may match.
     let matched = false;
     if (m.from && best.tid !== m.from.id && isRestricted(league, m.p)) {
