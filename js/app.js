@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.105.1';
+const APP_VERSION = '0.105.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2756,10 +2756,12 @@ function profileReport(p, team) {
   const y = regressionYear(p), up = tierFor(p.pot);
   const z = bumpContext().production.get(p.id);
   const prod = z == null ? '' : z >= 1.5 ? ' Last season he out-produced his peers by a wide margin.' : z >= 0.5 ? ' Last season he produced above his peers.' : z <= -1.5 ? ' Last season he badly under-produced for his role.' : z <= -0.5 ? ' Last season he produced below his peers.' : '';
+  const POT_PHRASE = { Legend: 'an all-time great', 'Hall of Fame': 'a Hall of Famer', Superstar: 'a superstar', 'All-Star': 'an All-Star', 'Quality Starter': 'a quality starter', 'Role Player': 'a role player', 'Rotational Player': 'a rotational player', 'G-League': 'a G-League player' };
+  const can = `He has the potential to be ${POT_PHRASE[up] || 'a ' + up}.`;
   const arc = declining(p) ? `He is in decline (age ${p.age}, regression age ${p.regressionAge}).`
-    : y >= 0 ? `He is at the age where decline starts (regression age ${p.regressionAge}).`
-    : p.age <= 24 ? `He is still developing, with ${/^[AEIOU]/.test(up) ? 'an' : 'a'} ${up} ceiling.`
-    : `Peak years: ${-y + 1} season${-y + 1 === 1 ? '' : 's'} before he starts to decline, ${up} ceiling.`;
+    : y >= 0 ? `He is at the age where decline starts (regression age ${p.regressionAge}). ${can}`
+    : p.age <= 24 ? `He is still developing. ${can}`
+    : `${can} He has ${-y + 1} season${-y + 1 === 1 ? '' : 's'} before decline starts.`;
   out.push(`${arc}${prod}`);
   // What he's paid
   const c = p.contract;
