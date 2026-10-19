@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.85.2';
+const APP_VERSION = '0.85.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5595,6 +5595,7 @@ screens.fa = (args = {}) => {
     body: `
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${expiringSection(s)}
+      ${FA.capSystemOn() ? `<p class="note small muted">Cap $${FA.capLines(L).cap}M now · $${FA.capLines(L, 1).cap}M next year · $${FA.capLines(L, 2).cap}M the year after (tax $${FA.capLines(L).tax}M)</p>` : ''}
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const space = FA.capSpace(L, t);
         const tools = space > 0 ? `<span class="up">$${space}M cap space</span>` : `<span class="down">$${-space}M over the cap</span>`;
