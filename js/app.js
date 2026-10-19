@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.104.2';
+const APP_VERSION = '0.104.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -8682,9 +8682,12 @@ actions.goHomeCuts = () => goHome();
 // ask you for an answer.
 function stripScore(L, t) {
   const sit = teamSituation(L, t, state.leagueIdx);
-  const w = p => { const lv = shownLevel(p); return lv >= 70 ? (lv - 62) / 8 : 0; };
-  const loss = sit.departures.reduce((a, p) => a + w(p), 0), gain = sit.arrivals.reduce((a, p) => a + w(p), 0);
-  return { strip: loss - 0.6 * gain + (FA.capSystemOn() && FA.taxStance(L, t) === 'blowup' ? 1 : 0), gone: sit.departures.filter(p => w(p) > 0).sort((a, b) => shownLevel(b) - shownLevel(a)) };
+  // Only a star's departure (Lv 86+) strips a team; any decent arrival (Lv 70+) softens it.
+  const star = p => { const lv = shownLevel(p); return lv >= 86 ? (lv - 78) / 4 : 0; };
+  const arr = p => { const lv = shownLevel(p); return lv >= 70 ? (lv - 62) / 8 : 0; };
+  const loss = sit.departures.reduce((a, p) => a + star(p), 0), gain = sit.arrivals.reduce((a, p) => a + arr(p), 0);
+  const gone = sit.departures.filter(p => star(p) > 0).sort((a, b) => shownLevel(b) - shownLevel(a));
+  return { strip: gone.length ? loss - 0.6 * gain + (FA.capSystemOn() && FA.taxStance(L, t) === 'blowup' ? 1 : 0) : 0, gone };
 }
 // Only real stars ask out: Lv 86+, or a 4.5-5 star potential at Lv 79+ who's
 // at least three years in.
@@ -8705,14 +8708,17 @@ function requestsState() {
     for (const p of roster) {
       if (n >= max) break;
       const morale = p.season?.morale ?? 60, win = tr(p, 'winning'), loy = tr(p, 'loyalty');
-      let odds = 0.25 + 0.06 * (strip - 2) + (win >= 15 ? 0.2 : win >= 12 ? 0.08 : 0) + (morale < 50 ? 0.15 : 0) - (loy >= 14 ? 0.2 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.15 : 0);
+      // Happy players don't ask out: it starts with morale, and a stripped roster only tips an unhappy star.
+      if (morale >= 70) continue;
+      const moraleOdds = morale < 35 ? 0.35 : morale < 50 ? 0.2 : 0.08;
+      let odds = 0.06 + moraleOdds + 0.04 * (strip - 2) + (win >= 15 ? 0.1 : win >= 12 ? 0.04 : 0) - (loy >= 14 ? 0.15 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.1 : 0);
       if (isUserTeam(t)) odds *= fxNow().requestMult;
       odds *= 1 - FX.facilityFx(t).requestCut;
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 5, 2654435761) ^ 0x7e9) >>> 0)() >= Math.min(0.75, odds)) continue;
       n++;
       if (!isUserTeam(t)) cpuAsks++;
       const names = gone.slice(0, 2).map(x => x.ln || playerName(x));
-      list.push({ pid: p.id, tid: t.id, why: gone.length ? `${names.join(' and ')} gone and little coming back` : 'the roster has been stripped', status: isUserTeam(t) ? 'open' : 'cpu' });
+      list.push({ pid: p.id, tid: t.id, why: `${names.join(' and ')} gone and little coming back`, status: isUserTeam(t) ? 'open' : 'cpu' });
       if (!isUserTeam(t)) { if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, (p.season.morale ?? 60) - 8); } }
     }
   }
