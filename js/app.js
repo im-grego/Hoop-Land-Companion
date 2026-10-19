@@ -17,6 +17,7 @@ import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractVa
 import * as FA from './freeagency.js';
 import * as TR from './traderules.js';
 import * as FX from './facilities.js';
+import { buildPack, savePack, readPack, isPack, packMatch, applyPackTraits, packPickDiffs, applyPackPicks, packTeamDiffs, applyPackTeams } from './leaguepack.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
@@ -34,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.99.6';
+const APP_VERSION = '0.100.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -436,6 +437,29 @@ $app.addEventListener('change', e => {
 // ---------------------------------------------------------------------------
 // Loading / exporting
 
+// The league pack that belongs to this save, if one is kept here and most of
+// its players are in the save.
+function matchingPack(L) {
+  const pack = readPack(L.shortName || L.leagueName || 'league');
+  return pack && packMatch(pack, L) >= 0.8 ? pack : null;
+}
+// Picks and fan bases a franchise lost on the way through the game, offered once per save.
+async function packPrompt(pack) {
+  for (let i = 0; i < 60 && document.querySelector('.overlay'); i++) await new Promise(r => setTimeout(r, 500));   // after the rules question
+  const L = league();
+  const key = `hlc:packdone:${pack.league}:${L.meta?.saveName || ''}:${L.season.currentYear}`;
+  try { if (localStorage.getItem(key)) return; } catch {}
+  const picks = packPickDiffs(pack, L), teams = packTeamDiffs(pack, L);
+  if (!picks.length && !teams.length) return;
+  const lines = [...picks.slice(0, 6).map(d => `${dispYr(d.yr)} R${d.rd} (${L.teams.find(t => t.id === d.otid)?.shortName}) back to ${L.teams.find(t => t.id === d.tid)?.shortName}`), ...(picks.length > 6 ? [`and ${picks.length - 6} more picks`] : []), ...(teams.length ? [`${teams.length} teams' fans or tags`] : [])];
+  const r = await choiceBox(`<b>${esc(pack.name)}</b> had some things the game dropped:<br><span class="small muted">${lines.map(esc).join('<br>')}</span>`, [['no', 'Leave As Is', 'off'], ['yes', 'Apply My League', 'focus']]);
+  try { localStorage.setItem(key, '1'); } catch {}
+  if (r !== 'yes') return;
+  const n = applyPackPicks(picks, L) + applyPackTeams(teams);
+  state.dirty = true; render();
+  toast(`Applied ${n} changes`, 'Export the season file to keep them.');
+}
+
 async function loadFile(file) {
   if (state.dirty && !(await confirmBox('You have unsaved changes. Load a different file anyway?', 'Load'))) return;
   const o = overlay('<div class="spinner"></div><p class="note">Reading season file…</p>');
@@ -443,6 +467,12 @@ async function loadFile(file) {
   try {
     const text = await file.text();
     let data = parseSave(text);
+    if (isPack(data)) {
+      savePack(data);
+      o.remove();
+      toast(`League pack kept: ${data.name}`, `${Object.keys(data.traits).length} players' traits, ${data.picks.length} pick holdings. Load a franchise from that league and it will offer them.`);
+      return;
+    }
     // A league file is the league object itself (no seasonLeagues wrapper): open it in the editor.
     state.leagueFile = false;
     if (!data.seasonLeagues && Array.isArray(data.teams) && data.season) { data = { seasonLeagues: [data] }; state.leagueFile = true; }
@@ -475,6 +505,8 @@ async function loadFile(file) {
     if (!isCollege() && lotteryDone(league())) settleProt(league());
     const filled = fillTraits(data.seasonLeagues[0]) + (state.leagueIdx ? fillTraits(data.seasonLeagues[state.leagueIdx]) : 0);
     if (filled) state.dirty = true;
+    const pack = !isCollege() ? matchingPack(data.seasonLeagues[0]) : null;
+    if (pack) { const n = applyPackTraits(pack, data.seasonLeagues[0]); if (n) toast(`Your traits restored for ${n} players`, pack.name); setTimeout(() => packPrompt(pack), 700); }
     const signedIn = isCollege() ? applyRecruiting() : 0;
     o.remove();
     if (!isCollege() && !state.depth) setTimeout(depthPrompt, 400);
@@ -651,14 +683,23 @@ actions.downloadLeague = async () => {
   const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {}) });
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
+  // The pack: traits, far-out traded picks, fans and tags, for giving back to a franchise started from this league.
+  const pack = buildPack(C, name);
+  savePack(pack);
+  const packFile = new File([JSON.stringify(pack)], `${name} PACK.json`, { type: 'application/json' });
   o.remove();
-  if (inArtifact()) { if (await artifactSave(file.name, file)) toast('League file saved. Remove .json from the name.'); return; }
-  const url = URL.createObjectURL(file);
-  const a = document.createElement('a');
-  a.href = url; a.download = file.name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-  toast('League file saved', 'Start a new franchise from it in the game.');
+  const give = async f => {
+    if (inArtifact()) return artifactSave(f.name, f);
+    const url = URL.createObjectURL(f);
+    const a = document.createElement('a');
+    a.href = url; a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return true;
+  };
+  const ok = await give(file);
+  if (ok) await give(packFile);
+  if (ok) toast('League file and pack saved', inArtifact() ? 'Remove .json from the league file name. Load the pack file on any device to give a franchise its traits back.' : 'Start a franchise from the league file. The pack gives it your traits, picks and fans back.');
 };
 
 actions.share = async () => {
