@@ -34,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.97.0';
+const APP_VERSION = '0.98.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2660,18 +2660,8 @@ screens.player = (args) => {
           </div>`; }).join('')}
         </div>
       </fieldset>` : '';
-  layout({
-    title: 'Player Profile',
-    body: `
-      <div>
-        <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
-        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
-        ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
-        ${p.season && isComplete() && !isCollege() ? `<p class="note small">${moraleTag(p)} <span class="muted">· ${moraleWord(p.season.morale)}</span></p>` : ''}
-      </div>
-      ${rankBox(p, mpg)}
-      <fieldset class="frame"><legend>Trainer</legend>
+  const tab = ['overview', 'attributes', 'personality', 'stats'].includes(args.tab) ? args.tab : 'overview';
+  const trainer = `<fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
           ${productionText(p)}
           <div class="pts-row">
@@ -2687,17 +2677,15 @@ screens.player = (args) => {
             <button class="btn square" data-act="potAdj" data-dir="1" aria-label="Higher potential">+</button>
           </div>
         </div>
-      </fieldset>
-      ${playStyleBox(p)}
-      ${traitsBox(p)}
-      <fieldset class="frame"><legend>Ratings</legend>
+      </fieldset>`;
+  const ratings = `<fieldset class="frame"><legend>Ratings</legend>
         <div class="row" style="justify-content:flex-end;margin-bottom:12px"><button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button></div>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
         <p class="note muted small" style="margin-top:10px">Bar = current rating, lighter shade = gained this offseason, white notch = ceiling. Declining players show what the game shows: their peak minus this year's regression (the red number), with the red running up to the peak the save keeps. Raising a rating past its ceiling lifts the ceiling with it.</p>
-      </fieldset>
-      <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
+      </fieldset>`;
+  const skills = `<fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend>
         <div class="stack">
           ${p.skills.map((s, i) => s.level < 1 ? '' : `
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
@@ -2710,15 +2698,68 @@ screens.player = (args) => {
           ${activeSkills(p).length ? '' : '<p class="note muted">No skills.</p>'}
           <button class="btn" data-act="addSkill">＋ Add Skill</button>
         </div>
-      </fieldset>
-      ${apCard}
+      </fieldset>`;
+  const tabsRow = `<div class="tabs pl-tabs">${[['overview', 'Overview'], ['attributes', 'Attributes'], ['personality', 'Personality'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  const personality = (playStyleBox(p) + traitsBox(p)) || '<p class="note muted">Personality isn\'t set for this player yet. Reload the file and it fills in.</p>';
+  const content = tab === 'attributes' ? `${ratings}${skills}${apCard}`
+    : tab === 'personality' ? personality
+    : tab === 'stats' ? statsTab(p, args)
+    : `${rankBox(p, mpg)}${trainer}
       <div class="grid2">
         <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
         <button class="btn" data-act="revertOne">↺ Revert</button>
-      </div>`,
+      </div>`;
+  layout({
+    title: 'Player Profile',
+    body: `
+      <div>
+        <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
+        <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
+        <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
+        ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
+        ${p.season && isComplete() && !isCollege() ? `<p class="note small">${moraleTag(p)} <span class="muted">· ${moraleWord(p.season.morale)}</span></p>` : ''}
+      </div>
+      ${tabsRow}
+      ${content}`,
     action: { act: 'back', label: 'Done' },
   });
 };
+actions.plTab = d => replace('player', { ...state.stack[state.stack.length - 1].args, tab: d.t });
+actions.plStats = d => replace('player', { ...state.stack[state.stack.length - 1].args, sv: d.v });
+
+// Stats tab: season by season, regular season and playoffs, with the highs.
+const STAT_COLS = [['GP', r => r.GP], ['MPG', r => r.MIN[0] / 60 / r.GP], ['PTS', r => r.PTS / r.GP], ['REB', r => r.REB / r.GP], ['AST', r => r.AST / r.GP], ['STL', r => r.STL / r.GP], ['BLK', r => r.BLK / r.GP], ['TO', r => r.TO / r.GP],
+  ['FG%', r => (r.FGA ? r.FGM / r.FGA * 100 : null)], ['3P%', r => (r.TPA ? r.TPM / r.TPA * 100 : null)], ['FT%', r => (r.FTA ? r.FTM / r.FTA * 100 : null)]];
+const sumRows = rows => rows.reduce((t, r) => { for (const k of ['GP', 'GS', 'PTS', 'FGM', 'FGA', 'TPM', 'TPA', 'FTM', 'FTA', 'REB', 'ORB', 'AST', 'STL', 'BLK', 'TO', 'PF', 'DD', 'TD', 'POTG']) t[k] = (t[k] || 0) + (r[k] || 0); t.MIN = [(t.MIN?.[0] || 0) + (r.MIN?.[0] || 0)]; return t; }, {});
+function statsTab(p, args) {
+  const L = league();
+  const sv = args.sv === 'playoffs' ? 'playoffs' : 'season';
+  const teamOf = id => L.teams.find(t => t.id === id)?.shortName || '—';
+  const years = (p.stats || []).filter(x => x.league === state.leagueIdx);
+  const rows = years.flatMap(y => (y[sv] || []).filter(r => r.GP > 0).map(r => ({ yr: y.yr, r })));
+  const f = (v, dp = 1) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(dp));
+  const line = (label, team, r, cls = '') => `<tr class="${cls}"><td class="yr">${label}</td><td>${team}</td>${STAT_COLS.map(([k, g]) => `<td>${k === 'GP' ? r.GP : f(g(r), k.endsWith('%') ? 1 : 1)}</td>`).join('')}</tr>`;
+  const table = rows.length ? `<div class="stat-wrap"><table class="stat-table"><thead><tr><th>Yr</th><th>Tm</th>${STAT_COLS.map(([k]) => `<th>${k}</th>`).join('')}</tr></thead><tbody>
+      ${rows.map(({ yr, r }) => line(yr, teamOf(r.tid), r)).join('')}
+      ${line('Career', '', sumRows(rows.map(x => x.r)), 'tot')}</tbody></table></div>` : `<p class="note muted">No ${sv === 'playoffs' ? 'playoff' : 'regular season'} games on record.</p>`;
+  // Highs: best season averages (20+ games, 5+ in the playoffs), counting stats, and what the game keeps.
+  const minGp = sv === 'playoffs' ? 5 : 20;
+  const best = rows.filter(x => x.r.GP >= minGp);
+  const top = (label, g) => { const x = [...best].sort((a, b) => g(b.r) - g(a.r))[0]; return x ? `<div><span class="muted small">${label}</span><b>${f(g(x.r))}</b><span class="small muted">${x.yr}</span></div>` : ''; };
+  const tot = sumRows(rows.map(x => x.r));
+  const recs = ['season', 'playoffs', 'finals'].flatMap(kind => Object.entries(L.records?.[kind] || {}).flatMap(([stat, list]) => (list || []).map((x, i) => ({ kind, stat, v: x.value, yr: x.yr, rank: i + 1, pid: x.pid })))).filter(x => x.pid === p.id);
+  const g = p.gameStats;
+  const recent = g && g.GP ? `${g.PTS} pts · ${g.REB} reb · ${g.AST} ast · ${g.STL} stl · ${g.BLK} blk (${g.FGM}/${g.FGA} FG)` : '';
+  return `<div class="tabs fa-tabs">${[['season', 'Regular Season'], ['playoffs', 'Playoffs']].map(([k, l]) => `<button class="btn small ${k === sv ? 'on focus' : 'off'}" data-act="plStats" data-v="${k}">${l}</button>`).join('')}</div>
+    <fieldset class="frame"><legend>${sv === 'playoffs' ? 'Playoffs' : 'Regular Season'} by Year</legend>${table}</fieldset>
+    ${rows.length ? `<fieldset class="frame"><legend>Highs</legend>
+      <div class="statline">${top('PPG', r => r.PTS / r.GP)}${top('RPG', r => r.REB / r.GP)}${top('APG', r => r.AST / r.GP)}${top('SPG', r => r.STL / r.GP)}${top('BPG', r => r.BLK / r.GP)}</div>
+      <p class="note small" style="margin-top:8px">${tot.PTS?.toLocaleString() || 0} points · ${tot.REB?.toLocaleString() || 0} rebounds · ${tot.AST?.toLocaleString() || 0} assists · ${tot.DD || 0} double-doubles · ${tot.TD || 0} triple-doubles · ${tot.POTG || 0} player-of-the-game awards</p>
+      ${recent ? `<p class="note small muted">Last game: ${esc(recent)}</p>` : ''}
+      ${recs.length ? `<p class="note small gold">${recs.map(x => `🏅 ${x.kind === 'season' ? '' : x.kind === 'playoffs' ? 'Playoff ' : 'Finals '}${esc(x.stat)} ${x.v} in a game (${x.yr}), No. ${x.rank} all-time`).join('<br>')}</p>` : ''}
+      <p class="note muted small">The game keeps season totals and league records; it doesn't store each player's game highs, so highs here are his best season averages and any record he holds.</p>
+    </fieldset>` : ''}`;
+}
 
 // Rating bar colors by group: finishing (light blue), shooting (green),
 // playmaking/handles (orange), defense (red).
