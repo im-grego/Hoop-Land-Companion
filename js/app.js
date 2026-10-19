@@ -29,7 +29,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.66.0';
+const APP_VERSION = '0.67.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3931,7 +3931,7 @@ function draftOffice() {
     html: `
       ${mine.length > 1 ? `<div class="opts">${mine.map(t => `<button class="btn small ${t === team ? 'on focus' : 'off'}" data-act="officeTeam" data-id="${t.id}">${esc(t.shortName)}</button>`).join('')}</div>` : ''}
       <fieldset class="frame"><legend>Offers</legend>
-        ${offers.length ? `<div class="stack">${offers.map((o, i) => `<div class="offer"><p class="note small"><b>${esc(o.team.shortName)}</b> ${o.kind === 'up' ? 'want to move up' : 'offer'}: ${esc(o.give.map(x => x.text).join(' + '))}<br><span class="muted">for ${esc(o.get.map(x => x.text).join(' + '))}</span></p>
+        ${offers.length ? `<div class="stack">${offers.map((o, i) => `<div class="offer"><p class="note small"><b>${esc(o.team.shortName)}</b> ${o.kind === 'up' ? 'want to move up' : 'offer'} ${offerRating(o)}: ${esc(o.give.map(x => x.text).join(' + '))}<br><span class="muted">for ${esc(o.get.map(x => x.text).join(' + '))}</span></p>
           <button class="btn small" data-act="officeAccept" data-i="${i}">Accept</button></div>`).join('')}</div>`
         : `<p class="note">No offers yet. Put players or picks on the block below${block.size ? ', then field offers' : ''}.</p>`}
         <div class="grid2" style="margin-top:10px">
@@ -3957,13 +3957,15 @@ function draftOffice() {
 // Offers for what's on the block (and calls to move up into your picks):
 // each CPU team builds a package worth a bit less than what it gets, from
 // its own picks and players (never its two best players).
-function frontOfficeOffers(team) {
+// How an offer stacks up against what you're sending.
+const offerRating = o => o.ratio == null ? '' : o.ratio >= 0.93 ? '<span class="badge new">Strong</span>' : o.ratio >= 0.78 ? '<span class="badge">Fair</span>' : '<span class="badge down-b">Light</span>';
+function frontOfficeOffers(team, { only = null, max = 3 } = {}) {
   const L = league();
   const ds = draftState();
   const block = ds.block || new Set();
   const rng = mulberry32((ds.offerSeed ||= Math.floor(Math.random() * 1e9)));
   const mineAll = liveAssets(team).filter(x => !x.locked);
-  const onBlock = mineAll.filter(x => block.has(x.key));
+  const onBlock = mineAll.filter(x => only ? x.key === only : block.has(x.key));
   const out = [];
   const ly = lastYear();
   const others = L.teams.filter(t => !isUserTeam(t)).sort(() => rng() - 0.5);
@@ -3972,23 +3974,31 @@ function frontOfficeOffers(team) {
   for (const want of onBlock) {
     let n = 0;
     for (const t of others) {
-      if (n >= 3) break;
-      if (rng() < 0.45) continue;
+      if (n >= max) break;
+      if (rng() < (only ? 0.15 : 0.45)) continue;
       const stars = new Set([...t.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly)).slice(0, 2));
       const theirs = liveAssets(t).filter(x => !x.prospect && !x.locked && !(x.player && stars.has(x.player))).sort((a, b) => a.value - b.value);
-      const lo = want.value * 0.8, hi = want.value * 1.0;
-      let pack = theirs.find(x => x.value >= lo && x.value <= hi);
-      if (!pack) {
-        outer: for (let i = 0; i < theirs.length; i++) for (let j = i + 1; j < theirs.length; j++) {
+      // What they'd put up: anywhere from a light offer to full value (the
+      // rating shows which).
+      const lo = want.value * 0.5, hi = want.value * 1.02, target = want.value * (0.62 + rng() * 0.4);
+      const cands = [];
+      // Teams over the cap have to send salary back to take his.
+      const capOk = c => !FA.tradeCheck(L, { team, players: want.player ? [want.player] : [] }, { team: t, players: c.filter(x => x.player).map(x => x.player) });
+      for (let i = 0; i < theirs.length; i++) {
+        if (theirs[i].value >= lo && theirs[i].value <= hi && capOk([theirs[i]])) cands.push([theirs[i]]);
+        for (let j = i + 1; j < theirs.length && cands.length < 400; j++) {
           const v = theirs[i].value + theirs[j].value;
-          if (v >= lo && v <= hi) { pack = [theirs[i], theirs[j]]; break outer; }
+          if (v >= lo && v <= hi && capOk([theirs[i], theirs[j]])) cands.push([theirs[i], theirs[j]]);
         }
       }
+      const val = c => c.reduce((a, x) => a + x.value, 0);
+      cands.sort((a, b) => Math.abs(val(a) - target) - Math.abs(val(b) - target));
+      const pack = cands[0];
       if (!pack) continue;
       const give = [pack].flat();
       // Skip pointless swaps (their 2030 R1 for your 2030 R1).
       if (give.length === 1 && give[0].pick && want.pick && give[0].pick.yr === want.pick.yr && give[0].pick.rd === want.pick.rd) continue;
-      out.push({ team: t, kind: 'block', give: give.map(x => ({ ...x, text: text(x) })), get: [{ ...want, text: text(want) }] });
+      out.push({ team: t, kind: 'block', ratio: give.reduce((a, x) => a + x.value, 0) / Math.max(1, want.value), give: give.map(x => ({ ...x, text: text(x) })), get: [{ ...want, text: text(want) }] });
       n++;
     }
   }
@@ -4002,6 +4012,7 @@ function frontOfficeOffers(team) {
         get: [{ pick: x.get, key: `c:${o.overall}`, text: `#${o.overall}` }] });
     }
   });
+  out.sort((a, b) => (b.ratio ?? 1) - (a.ratio ?? 1));
   // Only deals that work under the cap rules.
   const side = (t, items) => ({ team: t, players: items.filter(x => x.player).map(x => x.player) });
   return out.filter(o => { const a = side(team, o.get), b = side(o.team, o.give); a.picks = o.get.filter(x => x.pick).map(x => x.pick); b.picks = o.give.filter(x => x.pick).map(x => x.pick); return !tradeRulesErr(L, a, b) && !ntcRefusal(L, a, b); });
@@ -4031,17 +4042,20 @@ actions.officeAccept = async d => {
   if (!o) return;
   const mine = L.teams.filter(isUserTeam);
   const team = L.teams.find(t => t.id === (ds.officeTeam ?? mine[0].id)) || mine[0];
-  if (!(await confirmBox(`Send ${esc(o.get.map(x => x.text).join(' + '))} to ${esc(o.team.shortName)} for ${esc(o.give.map(x => x.text).join(' + '))}?`, 'Accept'))) return;
+  if (await doOffer(team, o)) { for (const x of o.get) ds.block?.delete(x.key); ds.offers = null; render(); }
+};
+// Confirm and make an offer's trade. → true when it went through.
+async function doOffer(team, o) {
+  const L = league();
+  if (!(await confirmBox(`Send ${esc(o.get.map(x => x.text).join(' + '))} to ${esc(o.team.shortName)} for ${esc(o.give.map(x => x.text).join(' + '))}?`, 'Accept'))) return false;
   const side = (t, items) => ({ team: t, picks: items.filter(x => x.pick).map(x => x.pick), players: items.filter(x => x.player).map(x => x.player), prospects: [] });
   const sa = side(team, o.get), sb = side(o.team, o.give);
   const capErr = tradeRulesErr(L, sa, sb) || ntcRefusal(L, sa, sb);
-  if (capErr) { toast('Trade not allowed', capErr, 3200, true); return; }
-  if (!(await physicals(L, sa, sb))) return;
+  if (capErr) { toast('Trade not allowed', capErr, 3200, true); return false; }
+  if (!(await physicals(L, sa, sb))) return false;
   liveExecute(sa, sb);
-  for (const x of o.get) ds.block?.delete(x.key);
-  ds.offers = null;
-  render();
-};
+  return true;
+}
 
 // College prospects carry the college league's logo.
 const COLLEGE_LOGO = '<img class="college-logo" src="icons/league-ball.png" alt="">';
@@ -4602,7 +4616,9 @@ function tradeRulesErr(L, A, B) {
     const pk = (me.picks || []).find(x => FA.pickFrozen(L, me.team, x) || lotteryLocked(x));
     if (pk) return lotteryLocked(pk) ? 'Lottery picks can\'t be traded until the lottery is drawn' : `${pickLabel(pk)} is frozen (2nd apron)`;
   }
-  return FA.tradeCheck(L, A, B) || TR.rosterErr(A, B) || TR.stepienErr(L, A, B, isProt);
+  // CPU teams make room by waiving someone, so only yours needs the open spot.
+  const roster = [A, B].filter(x => isUserTeam(x.team)).map(x => TR.rosterErrTeam(x.team, (x.players || []).length, ((x === A ? B : A).players || []).length)).find(Boolean);
+  return FA.tradeCheck(L, A, B) || roster || TR.stepienErr(L, A, B, isProt);
 }
 // No-trade clauses: he waives it for a contender he's happy to join, or
 // when he's miserable where he is.
@@ -5066,7 +5082,7 @@ function rulesErr3(L, teams, items) {
   const touch = TR.touchErr(items.map(i => ({ from: i.from.id, to: i.to.id })), teams);
   if (touch) return touch;
   return FA.tradeCheckMulti(L, flows)
-    || flows.map(f => TR.rosterErrTeam(f.team, f.send.players.length, f.recv.players.length)).find(Boolean)
+    || flows.filter(f => isUserTeam(f.team)).map(f => TR.rosterErrTeam(f.team, f.send.players.length, f.recv.players.length)).find(Boolean)
     || flows.map(f => TR.stepienTeam(L, f.team, f.send.picks, f.recv.picks, isProt)).find(Boolean)
     || null;
 }
@@ -7529,6 +7545,9 @@ function stripScore(L, t) {
   const loss = sit.departures.reduce((a, p) => a + w(p), 0), gain = sit.arrivals.reduce((a, p) => a + w(p), 0);
   return { strip: loss - 0.6 * gain + (FA.capSystemOn() && FA.taxStance(L, t) === 'blowup' ? 1 : 0), gone: sit.departures.filter(p => w(p) > 0).sort((a, b) => shownLevel(b) - shownLevel(a)) };
 }
+// Only real stars ask out: Lv 86+, or a 4.5-5 star potential at Lv 79+ who's
+// at least three years in.
+const demandsHelp = p => shownLevel(p) >= 86 || (p.pot >= 9 && shownLevel(p) >= 79 && (p.yrs ?? 0) >= 3);
 function requestsState() {
   const L = league();
   const st = offGet('req');
@@ -7538,7 +7557,7 @@ function requestsState() {
     const { strip, gone } = stripScore(L, t);
     if (strip < 2) continue;
     const roster = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3)
-      .filter(p => shownLevel(p) >= 78 && p.age >= 23 && tr(p, 'loyalty') < 17 && !tradeLock(p));
+      .filter(p => demandsHelp(p) && tr(p, 'loyalty') < 17 && !tradeLock(p));
     const max = strip >= 4 ? 2 : 1;
     let n = 0;
     for (const p of roster) {
@@ -7567,17 +7586,44 @@ function requestCard() {
     const p = playerById(r.pid), t = L.teams.find(x => x.id === r.tid);
     if (!p) return '';
     const done = r.status !== 'open';
-    const res = { promised: 'You promised help; he\'s staying for now.', refused: 'He didn\'t buy it.', block: 'On the trade block.', ignored: 'You said no. He isn\'t happy.' }[r.status];
+    const res = { promised: 'You promised help; he\'s staying for now.', refused: 'He didn\'t buy it.', block: 'On the trade block.', ignored: 'You said no. He isn\'t happy.', traded: `Traded to ${r.to || 'another team'}.` }[r.status];
     return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(t.shortName)} · wants out: ${esc(r.why)} · morale ${p.season?.morale ?? '?'}</span></span>
-      ${done ? `<p class="note small ${r.status === 'block' || r.status === 'promised' ? 'up' : 'down'} full">${esc(res)}</p>` : ''}
-      ${!calFlags().cuts ? `<span class="opt-btns full">
+      ${done ? `<p class="note small ${r.status === 'block' || r.status === 'promised' || r.status === 'traded' ? 'up' : 'down'} full">${esc(res)}</p>` : ''}
+      ${!calFlags().cuts && r.status !== 'traded' ? `<span class="opt-btns full">
         <button class="btn small ${r.status === 'promised' ? 'on focus' : 'off'}" data-act="reqAnswer" data-id="${r.pid}" data-v="promise" ${r.tried || r.status === 'block' ? 'disabled' : ''}>Promise help</button>
-        <button class="btn small ${r.status === 'block' ? 'on focus' : 'off'}" data-act="reqAnswer" data-id="${r.pid}" data-v="block">Shop him</button>
+        <button class="btn small ${r.status === 'block' ? 'on focus' : 'off'}" data-act="reqAnswer" data-id="${r.pid}" data-v="block">${r.status === 'block' ? 'See offers' : 'Shop him'}</button>
         <button class="btn small ${r.status === 'ignored' ? 'on focus' : 'off'}" data-act="reqAnswer" data-id="${r.pid}" data-v="no">Say no</button></span>` : ''}</div>`;
   };
   if (!mine.length && !cpu.length) return '';
   return `${mine.length ? `<fieldset class="frame"><legend>Trade Requests</legend><div class="stack">${mine.map(row).join('')}</div></fieldset>` : ''}
     ${cpu.length ? `<fieldset class="frame"><legend>Wants Out</legend><div class="stack">${cpu.map(r => { const p = playerById(r.pid), t = L.teams.find(x => x.id === r.tid); return p ? `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(t.shortName)} · ${esc(r.why)}</span></span><b class="small gold">On the block</b></div>` : ''; }).join('')}</div></fieldset>` : ''}`;
+}
+// Teams call about a player who wants out: a handful of offers, each
+// rated against what he's worth, so the light ones show.
+function reqOffers(r) {
+  const L = league(), ds = draftState();
+  const p = playerById(r.pid), team = L.teams.find(t => t.id === r.tid);
+  if (!p || !team) return;
+  ds.offerSeed = Math.floor(Math.random() * 1e9);
+  const offers = frontOfficeOffers(team, { only: `p:${p.id}`, max: 6 }).filter(o => o.kind === 'block').slice(0, 6);
+  const box = overlay('');
+  box.querySelector('.box').innerHTML = `<p class="note"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${p.age}y · ${p.contract?.sal ? `$${p.contract.sal}M × ${p.contract.yrs}` : ''}</span></p>
+    <div class="stack">${offers.map((o, i) => `<div class="offer"><p class="note small"><b>${esc(o.team.shortName)}</b> ${offerRating(o)}: ${esc(o.give.map(x => x.text).join(' + '))}</p><button class="btn small" data-i="${i}">Accept</button></div>`).join('') || '<p class="note small muted">Nobody is biting right now.</p>'}</div>
+    <button class="btn off" data-close style="margin-top:8px">Close</button>`;
+  box.addEventListener('click', async e => {
+    if (e.target.closest('[data-close]')) { box.remove(); return; }
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const o = offers[+b.dataset.i];
+    box.remove();
+    if (await doOffer(team, o)) {
+      const st = offGet('req'), rr = (st.list || []).find(x => x.pid === r.pid);
+      if (rr) { rr.status = 'traded'; rr.to = o.team.shortName; offSet('req', st); }
+      ds.block?.delete(`p:${p.id}`);
+      ds.offers = null;
+      render();
+    } else reqOffers(r);
+  });
 }
 actions.reqAnswer = d => {
   const L = league(), st = offGet('req');
@@ -7594,11 +7640,15 @@ actions.reqAnswer = d => {
     else bump(-3);
     toast(ok ? `${playerName(p)} will give it a year` : `${playerName(p)} isn't convinced`, ok ? 'You promised help around him.' : 'He still wants out.');
   } else if (d.v === 'block') {
+    if (r.status !== 'block') bump(3);
     r.status = 'block';
     if (p.season) p.season.onTradeBlock = 1;
     const b = (draftState().block ||= new Set()); b.add(`p:${p.id}`);
-    bump(3);
-    toast(`${playerName(p)} is on the block`, 'Teams will call in the Front Office tab.');
+    offSet('req', st);
+    state.dirty = true;
+    render();
+    reqOffers(r);
+    return;
   } else {
     r.status = 'ignored';
     bump(-6);
