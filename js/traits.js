@@ -124,8 +124,12 @@ export function generateTraits(p, teamId = p.tid) {
 // Fill every unset player (pros, free agents, prospects) in a league.
 // Returns how many were filled. Real players get REAL values (by name).
 export function fillTraits(L) {
+  return fillPairs([...L.teams.flatMap(t => t.roster.map(p => [p, t.id])), ...(L.freeAgents || []).map(p => [p, 0]), ...(L.draftClass || []).map(p => [p, 0])]);
+}
+// The same for any list of players (retirees, Hall of Famers, all-star squads).
+export const fillTraitsList = players => fillPairs(players.map(p => [p, 0]));
+function fillPairs(everyone) {
   let n = 0;
-  const everyone = [...L.teams.flatMap(t => t.roster.map(p => [p, t.id])), ...(L.freeAgents || []).map(p => [p, 0]), ...(L.draftClass || []).map(p => [p, 0])];
   for (const [p, tid] of everyone) {
     // Saves from the newer game builds drop the traits block; make one so the app can keep its own.
     if (!p.traits) p.traits = Object.fromEntries(TRAIT_KEYS.map(k => [k, 0]));

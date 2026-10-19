@@ -91,32 +91,51 @@ export function autoTendencies(p, rng) {
   return moves;
 }
 
-// Rookie play styles against the league's: the game hands a draft class
-// tendencies that sit above the active players' (it leans positive, with less
-// spread and ratings that line up too neatly). Re-map each tendency so the
-// class has the active players' distribution at his position group, keeping
-// each prospect's rank within the class, then jitter a quarter of them a point
-// so ratings and tendencies don't line up perfectly.
+// Rookie play styles: a draft class comes with tendencies well above the
+// active players' (more shots, more moves, no blocking at all). Re-map each
+// tendency onto the lower end of the league's own distribution at his position
+// group (the 5th to 60th percentile, by his rank in the class), ranking
+// prospects by tendency and by the rating behind it so the better-suited
+// players keep the higher values. Then lean into his game: a strong rating
+// (15+) nudges its tendency up, a weak one (8 or less) down, and his two
+// best-fitting tendencies get one more.
 const group = p => (p.pos <= 2 ? 0 : p.pos <= 5 ? 1 : 2);
-export function normalizeTendencies(klass, active, rng) {
+export function shapeRookieTendencies(rookies, active, rng) {
   const changed = [];
   const keys = Object.keys(active.find(p => p.tendencies)?.tendencies || {});
   for (const g of [0, 1, 2]) {
-    const cls = klass.filter(p => p.tendencies && group(p) === g);
+    const cls = rookies.filter(p => p.tendencies && group(p) === g);
     const pool = active.filter(p => p.tendencies && group(p) === g);
     if (cls.length < 4 || pool.length < 20) continue;
+    const seen = new Set();
+    const touch = p => { if (!seen.has(p)) { seen.add(p); changed.push({ p, was: { ...p.tendencies } }); } };
+    const fit = new Map(cls.map(p => [p, {}]));
     for (const k of keys) {
       const ref = pool.map(p => p.tendencies[k]).sort((a, b) => a - b);
-      const order = [...cls].sort((a, b) => a.tendencies[k] - b.tendencies[k] || a.id - b.id);
+      const a = TEND_ATTR[k];
+      const attrOf = p => (a ? p.attributes[a][0] : 0);
+      const flat = new Set(cls.map(p => p.tendencies[k])).size < 4;        // no spread to rank by (every rookie blocks the same)
+      const score = p => (flat ? attrOf(p) : p.tendencies[k] + (a ? 0.35 * (attrOf(p) - 10) : 0));
+      const order = [...cls].sort((x, y) => score(x) - score(y) || x.id - y.id);
       order.forEach((p, i) => {
-        const q = (i + 0.5) / order.length;
+        const q = 0.05 + 0.55 * ((i + 0.5) / order.length);
         let v = ref[Math.min(ref.length - 1, Math.floor(q * ref.length))];
-        if (rng() < 0.25) v += rng() < 0.5 ? -1 : 1;
-        v = clampT(v);
-        if (!changed.some(c => c.p === p)) changed.push({ p, was: { ...p.tendencies } });
-        p.tendencies[k] = v;
+        if (a) {
+          const r = attrOf(p);
+          if (r >= 17) v += 2; else if (r >= 15) v += 1; else if (r <= 8) v -= 1;
+          fit.get(p)[k] = r;
+        }
+        if (rng() < 0.2) v += rng() < 0.5 ? -1 : 1;
+        touch(p);
+        p.tendencies[k] = clampT(v);
       });
+    }
+    // His identity: the two tendencies that sit on his best ratings get one more.
+    for (const p of cls) {
+      const best = Object.entries(fit.get(p)).sort((x, y) => y[1] - x[1]).slice(0, 2).filter(([, r]) => r >= 13);
+      for (const [k] of best) p.tendencies[k] = clampT(p.tendencies[k] + 1);
     }
   }
   return changed;
 }
+export const normalizeTendencies = shapeRookieTendencies;
