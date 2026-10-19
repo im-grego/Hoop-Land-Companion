@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.87.1';
+const APP_VERSION = '0.88.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3432,20 +3432,46 @@ function centerBoard() {
 // hair, gear); names, stats and ratings stay. Undo keeps the originals.
 function looksCard() {
   const done = state.looks?.[seasonKey()];
-  return `<fieldset class="frame"><legend>🎨 Class Looks</legend><div class="row">
-    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players. Names, stats and ratings stay.'}</p>
+  return `<fieldset class="frame"><legend>🎨 Class Looks &amp; Builds</legend><div class="row">
+    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players, and spread their regression ages and stamina by build and play style. Names and skill ratings stay.'}</p>
     ${done ? '<button class="btn small off" data-act="looksUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="looksMatch">Match My League</button>'}
   </div></fieldset>`;
+}
+// Builds: the game hands nearly every prospect a regression age of 32 and
+// stamina of 20. Spread them by how the player is built and plays: athletes
+// and the injury-prone age sooner, shooters and skilled big men age
+// gracefully; big bodies carry less stamina than slight, well-framed ones,
+// with the odd outlier either way.
+function classBuild(p, rng) {
+  const A = k => p.attributes[k][0];
+  const g = () => { const u = Math.max(1e-9, rng()), w = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w); };
+  const ath = (A('SPD') + A('DNK')) / 2, skill = (A('TPT') + A('MID') + A('FTS') + A('PAS')) / 4;
+  const m = medicalFlag(p);
+  const big = p.ht >= 82 || p.wt >= 250, slight = p.wt > 0 && p.wt / p.ht < 2.55;
+  let reg = 32 - Math.max(-1, Math.min(3, (ath - 13) * 0.6)) + Math.max(-1, Math.min(3, (skill - 12) * 0.5))
+    - (m?.level === 'red' ? 2 : m?.level === 'yellow' ? 1 : 0) + (big && A('INS') >= 14 ? 1 : 0) + (slight && ath >= 15 ? -1 : 0) + g() * 0.9;
+  reg = Math.max(29, Math.min(36, Math.round(reg)));
+  let [lo, hi] = big ? [15, 18] : slight ? [18, 20] : [16, 19];
+  let stm = lo + Math.floor(rng() * (hi - lo + 1));
+  const r = rng();
+  if (r < 0.05) stm = 13 + (rng() < 0.5 ? 1 : 0);          // a rare weak engine
+  else if (r > 0.92) stm = Math.min(20, stm + 3);           // an outlier with a big motor
+  return { reg, stm };
 }
 actions.looksMatch = () => {
   const L = league();
   const rng = mulberry32((saveSalt() ^ 0x100c) >>> 0);
+  const rng2 = mulberry32((saveSalt() ^ 0xb11d) >>> 0);
   const before = [];
+  let looks = true;
   for (const p of L.draftClass || []) {
-    const look = leagueLook(L, rng, p);
-    if (!look) break;
-    before.push({ p, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories) });
-    Object.assign(p, look);
+    const look = looks ? leagueLook(L, rng, p) : null;
+    if (!look) looks = false;
+    const b = classBuild(p, rng2);
+    before.push({ p, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories), reg: p.regressionAge, stm: [...p.attributes.STM] });
+    if (look) Object.assign(p, look);
+    p.regressionAge = b.reg;
+    p.attributes.STM[0] = p.attributes.STM[1] = b.stm;
   }
   if (!before.length) { toast('Not enough players in the league to draw from'); return; }
   (state.looks ||= {})[seasonKey()] = before;
@@ -3454,7 +3480,11 @@ actions.looksMatch = () => {
 };
 actions.looksUndo = () => {
   const list = state.looks?.[seasonKey()] || [];
-  for (const x of list) { x.p.appearance = x.appearance; x.p.accessories = x.accessories; }
+  for (const x of list) {
+    x.p.appearance = x.appearance; x.p.accessories = x.accessories;
+    if (x.reg != null) x.p.regressionAge = x.reg;
+    if (x.stm) x.p.attributes.STM = [...x.stm];
+  }
   delete state.looks[seasonKey()];
   render();
 };
@@ -3799,15 +3829,19 @@ function frameRoom(p) {
   const long = Math.max(0, Math.min(1, (p.ht - avgHt) / 4 + 0.5));   // a taller frame carries more
   return Math.max(0, Math.min(1, youth * 0.5 + light * 0.3 + long * 0.2));
 }
-const FRAME_LINES = {
-  frame: [`at {age}, he has the time and the frame to fill out.`, `some room to add to his frame, not a lot.`, `his body is about what it's going to be.`],
-  motor: [`he's {age}; a real conditioning program will show up fast.`, `his conditioning can get better, but don't expect a new engine.`, `what you see is his motor.`],
-  test: [`at {age}, his testing numbers should look better a year from now.`, `a strength program could move his numbers a little.`, `those numbers are close to what he'll test at as a pro.`],
-};
+// What the strength program can still do for him, from the same odds it
+// runs on: age (years left in the program), frame, size and potential.
 const frameNote = (p, who = 'Strength staff', kind = 'frame') => {
-  const r = frameRoom(p);
-  const line = FRAME_LINES[kind][r >= 0.6 ? 0 : r >= 0.35 ? 1 : 2].replace('{age}', p.age);
-  return `${who}: ${line}`;
+  const odds = strengthOdds(p), yrs = Math.max(0, STR_MAX_AGE - p.age), r = frameRoom(p);
+  const size = `${heightStr(p.ht)}, ${p.wt} lbs`;
+  const body = r >= 0.6 ? 'a frame with room to fill out' : r >= 0.35 ? 'a frame that can add a little' : 'a frame that is mostly filled out';
+  const what = kind === 'motor' ? 'conditioning' : kind === 'test' ? 'his testing numbers' : 'his strength and physical ratings';
+  const horizon = yrs >= 5 ? `${yrs} more summers of program work` : yrs >= 2 ? `a few more summers of program work` : yrs === 1 ? 'one more summer of program work' : 'no more program summers';
+  const out = odds >= 0.55 ? `${size}, ${body}. At ${p.age} with ${horizon}, expect ${what} to move for real.`
+    : odds >= 0.35 ? `${size}, ${body}. With ${horizon}, ${what} should improve, but gradually.`
+    : odds >= 0.2 ? `${size}, ${body}. ${what[0].toUpperCase()}${what.slice(1)} can still tick up some, though not by much, with ${horizon}.`
+    : `${size}, ${body}. At ${p.age} the program is mostly maintenance; ${what} won't change much.`;
+  return `${who}: ${out}`;
 };
 
 // The questions this prospect can be asked: the standard ones, plus his
@@ -3903,6 +3937,12 @@ function workoutAnswer(p, k) {
   const idol = idolFor(p);
   if (!idol) return { quote: 'Nobody. I want to be the first me.', staff: '' };
   const sim = Math.max(0, Math.round(100 - idol.dist * 3));
+  // Sometimes the room reads the comparison as a reach: his ceiling is below the idol's.
+  const gap = (idol.pot || 0) - (p.pot || 0);
+  const roll = ((p.id * 2654435761) >>> 0) % 100;
+  const stretch = gap >= 2 ? roll < 80 : gap >= 1 ? roll < 55 : sim < 40 ? roll < 25 : false;
+  if (stretch) return { quote: vary2(p, 7, [`${idol.name}. I grew up watching him.`, `${idol.name}, for sure. I had his poster on my wall.`]),
+    staff: vary2(p, 8, [`Scouts: that's a stretch. ${idol.last} is a lofty comparison for a player with this ceiling.`, `Scouts: nice to dream, but ${idol.last} is a lofty comparison. Don't count on that ceiling.`, `Scouts: he'd love to be ${idol.last}, but that's a reach for where his game tops out.`]) };
   return { quote: vary2(p, 7, [`${idol.name}. I grew up watching him.`, `${idol.name}, for sure. I had his poster on my wall.`, `${idol.name}. I used to study his tape as a kid.`]),
     staff: sim >= 60 ? `Scouts: you can see a lot of ${idol.last} in his game.` : sim >= 40 ? `Scouts: there are flashes of ${idol.last} in his game.` : `Scouts: different players, but you can see where the inspiration comes from.` };
 }
@@ -3932,7 +3972,7 @@ function idolFor(p) {
     const ys = proYears(x);
     if (ys.length && ys.filter(y => y >= kid[0] && y <= kid[1]).length < 2) continue;
     const d = compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e) - ((x.pot || 8) - 8) * 2.5;
-    if (!best || d < best.score) best = { score: d, dist: compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e), name: playerName(x), last: x.ln || playerName(x) };
+    if (!best || d < best.score) best = { score: d, dist: compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e), name: playerName(x), last: x.ln || playerName(x), pot: x.pot || 0 };
   }
   return best;
 }
