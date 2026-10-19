@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.110.4';
+const APP_VERSION = '0.110.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -103,9 +103,12 @@ function rememberGrades(L) {
   for (const p of L.draftClass || []) m[p.id] = gradeOf(p)[0];
   try { localStorage.setItem(gradeMemoKey(), JSON.stringify(m)); } catch { /* ignore */ }
 }
+// Grading needs the class's floors, and a floor needs the bonus: while the
+// board vectors are being built, grade by the plain floor instead of looping.
+let vecsBuilding = false;
 setRecoveryBonus(p => {
   let g = gradeMemo()[p.id];
-  if (!g) { try { if (league().season.phase === PHASE_PRE_DRAFT) g = gradeOf(p)[0]; } catch { /* no class to grade against */ } }
+  if (!g && !vecsBuilding) { try { if (league().season.phase === PHASE_PRE_DRAFT) g = gradeOf(p)[0]; } catch { /* no class to grade against */ } }
   return g === '#1 Pick' || g === 'Top 5' ? 1 : 0;
 });
 function saveParams() {
@@ -1012,7 +1015,7 @@ function stepActions(key) {
     case 'mock2': return `<div class="grid2"><button class="btn focus" data-act="openMock" data-n="2">📰 Read</button><button class="btn" data-act="preFinish" data-k="mock2">⏭ Skip</button></div>`;
     case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
       <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
-    case 'draft': return `<button class="btn big focus" data-act="nav" data-to="draft">🎓 Go to the Draft</button>`;
+    case 'draft': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Begin</button><button class="btn" data-act="homeSimDraft">⏭ Sim</button></div>`;
     case 'options': return `<button class="btn big focus" data-act="nav" data-to="options">📝 Options Deadline</button>`;
     case 'ext': return `<button class="btn big focus" data-act="nav" data-to="extensions">🖊️ Extension Window</button>`;
     case 'camp': return `<button class="btn big focus" data-act="nav" data-to="camp">🏀 Summer League</button>`;
@@ -3522,7 +3525,9 @@ function draftVecs() {
       potOf: p => scoutPot(p),
     };
     const cls = league().draftClass || [];
-    cache.set('vecs', { fns, scales: cls.length ? classScales(cls, fns.ceilOf, fns.floorOf) : { cm: 0, cs: 1, fm: 0, fs: 1 } });
+    vecsBuilding = true;
+    try { cache.set('vecs', { fns, scales: cls.length ? classScales(cls, fns.ceilOf, fns.floorOf) : { cm: 0, cs: 1, fm: 0, fs: 1 } }); }
+    finally { vecsBuilding = false; }
   }
   return cache.get('vecs');
 }
@@ -5384,9 +5389,14 @@ function draftLive() {
 }
 
 // Draft-day trades, newest first (undo only with Commissioner Mode on).
-function tradesBox(live) {
+// `byPick`: the recap lists trades from the highest pick down; the live view
+// keeps the latest first.
+function tradesBox(live, byPick = false) {
+  const top = t => Math.min(...[...t.text.matchAll(/#(\d+)/g)].map(m => +m[1]), Infinity);
+  const rows = live.trades.map((t, i) => [t, i]);
+  if (byPick) rows.sort((a, b) => top(a[0]) - top(b[0]) || a[1] - b[1]); else rows.reverse();
   return `<fieldset class="frame"><legend>Draft-Day Trades</legend><div class="stack">
-    ${live.trades.map((t, i) => [t, i]).reverse().map(([t, i]) => `<div class="row"><p class="note grow small">${esc(t.text)}</p>${!t.cpu && state.params.commissioner ? `<button class="btn small" data-act="liveUndoTrade" data-i="${i}">Undo</button>` : ''}</div>`).join('')}
+    ${rows.map(([t, i]) => `<div class="row"><p class="note grow small">${esc(t.text)}</p>${!t.cpu && state.params.commissioner ? `<button class="btn small" data-act="liveUndoTrade" data-i="${i}">Undo</button>` : ''}</div>`).join('')}
   </div></fieldset>`;
 }
 
@@ -5421,7 +5431,7 @@ function draftRecap(live, order) {
   });
   if (sortBy === 'level') byReadiness(rows);
   return `<button class="btn big focus" data-act="liveFinish">✅ Finish Draft</button>
-    ${live.trades.length ? tradesBox(live) : ''}
+    ${live.trades.length ? tradesBox(live, true) : ''}
     <fieldset class="frame"><legend>Draft Recap</legend>
       ${sortToggle('recapSort', sortBy)}
       <p class="note muted small" style="margin:6px 0 8px">Levels are as rookies: every pick's ratings dip moving up to the pros, and older rookies get some of it back.</p>
@@ -5431,6 +5441,11 @@ function draftRecap(live, order) {
 
 // Picks made since `before` get revealed one by one on the next render.
 const newPicks = (live, before) => Object.keys(live.sel).map(Number).filter(ov => !before.has(ov)).sort((a, b) => a - b);
+actions.homeSimDraft = () => {
+  if (state.revealing) return;
+  liveSim('all');
+  go('draft', {});
+};
 actions.liveSim = d => {
   if (state.revealing) return;
   const live = liveState();
