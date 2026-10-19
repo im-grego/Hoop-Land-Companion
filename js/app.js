@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.105.2';
+const APP_VERSION = '0.105.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1215,7 +1215,8 @@ function phaseWarning(s) {
   return `<p class="note gold small" style="margin-top:10px">The offseason bump is meant for free agency (Day ${BUMP_DAY}, before advancing to the new season). This file is at ${esc(phaseName(s))}.</p>`;
 }
 
-actions.nav = d => go(d.to, d.arg ? { arg: d.arg } : {});
+// data-replace: step sideways (next/previous team) without stacking history, so Back still goes Home.
+actions.nav = d => (d.replace ? replace(d.to, d.arg ? { arg: d.arg } : {}) : go(d.to, d.arg ? { arg: d.arg } : {}));
 
 // ---------------------------------------------------------------------------
 // Team selection
@@ -2576,8 +2577,8 @@ screens.roster = (args) => {
   const nextT = mine[(idx + 1) % mine.length];
   layout({
     title: others ? t.shortName : 'My Team',
-    left: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">${logoImg(prevT)}◀</button>` : '',
-    right: many ? `<button class="nav-btn" data-act="nav" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶${logoImg(nextT)}</button>` : '',
+    left: many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">${logoImg(prevT)}◀</button>` : '',
+    right: many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶${logoImg(nextT)}</button>` : '',
     body: `
       <h2 class="team-title">${logoImg(t)}${esc(t.city)} ${esc(t.name)}</h2>
       ${others ? '' : `<p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>`}
