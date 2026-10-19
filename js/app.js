@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.82.0';
+const APP_VERSION = '0.82.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -332,7 +332,7 @@ function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   const top = state.stack[state.stack.length - 1];
-  const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.args?.view ?? ''}:${top.args?.id ?? ''}`;
+  const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
   $app.dataset.screen = top.name;
   screens[top.name](top.args);
@@ -1505,7 +1505,7 @@ const nudgesUsed = p => Object.keys(TEND_LABELS).reduce((a, k) => a + Math.abs((
 
 screens.tendencies = () => {
   const sch = tierNow('scheme');
-  const list = tendPlayers().sort((a, b) => levelOf(b.p) - levelOf(a.p));
+  const list = tendPlayers().sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
   state.tendNav = list.map(e => e.p.id);
   layout({
     title: 'Tendencies',
@@ -1513,7 +1513,7 @@ screens.tendencies = () => {
       <div class="list">${list.map(({ p, team }) => {
         const n = CO.nudgesFor(p, sch, fxNow()), used = nudgesUsed(p);
         return `<button class="prow" data-act="openTend" data-id="${p.id}"><span class="name">${esc(playerName(p))}</span>
-          <span class="meta">${esc(posName(p))} · ${p.age}y · Lv ${levelOf(p)}${state.userTeams.size > 1 ? ` · ${esc(team.shortName)}` : ''}</span>
+          <span class="meta">${esc(posName(p))} · ${p.age}y · Lv ${shownLevel(p)}${state.userTeams.size > 1 ? ` · ${esc(team.shortName)}` : ''}</span>
           <span class="chg ${used ? 'up' : 'muted'}">${used}/${n}</span></button>`;
       }).join('') || '<p class="note muted">No players.</p>'}</div>`,
   });
@@ -1621,7 +1621,7 @@ screens.playbook = () => {
   const sch = tierNow('scheme'), books = loadBooks();
   const so = (t.scoringOptions || []);
   const rosterIds = new Set(t.roster.map(p => p.id));
-  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${levelOf(p)}</option>`;
+  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
   layout({
     title: 'Playbook',
     body: `<fieldset class="frame"><legend>${esc(t.shortName)} Quick Plays</legend>
@@ -3211,7 +3211,7 @@ const GRADES = [
 ];
 const compAvg = list => { const xs = (list || []).slice(0, 3).map(x => x.pot || 0).filter(Boolean); return xs.length ? xs.reduce((a, v, i) => a + v * [0.5, 0.3, 0.2][i], 0) / [0.5, 0.3, 0.2].slice(0, xs.length).reduce((a, b) => a + b, 0) : 0; };
 // Grade score: potential leads (as scouted: 9 = 4½★ is top-five talent,
-// a 10 is almost always a Lock), then polish (how good his best ratings are
+// a 10 needs the polish to match), then polish (how good his best ratings are
 // right now) and how high they can go, younger a little better. A raw
 // high-ceiling teenager and a polished five-star freshman with the same
 // potential land apart. Thresholds are fixed, so each grade's count
@@ -3220,11 +3220,11 @@ function gradeScore(p) {
   const v = draftVecs();
   const top8 = a => { const t = [...a].sort((x, y) => y - x).slice(0, 8); return t.reduce((q, w) => q + w, 0) / (t.length || 1); };
   const age = p.age <= 19 ? (19 - p.age) * 0.15 : -(p.age - 19) * 0.2;
-  return scoutPot(p) + 0.3 * (top8(v.fns.floorOf(p)) - 11.5) + 0.25 * (top8(v.fns.ceilOf(p)) - 13) + age;
+  return scoutPot(p) + 0.5 * (top8(v.fns.floorOf(p)) - 11.5) + 0.25 * (top8(v.fns.ceilOf(p)) - 13) + age;
 }
 function gradeOf(p) {
   const s = gradeScore(p);
-  return GRADES[s >= 9.9 ? 0 : s >= 9.2 ? 1 : s >= 8.2 ? 2 : s >= 7.5 ? 3 : s >= 6.3 ? 4 : s >= 5.6 ? 5 : 6];
+  return GRADES[s >= 10.2 ? 0 : s >= 9.4 ? 1 : s >= 8.2 ? 2 : s >= 7.5 ? 3 : s >= 6.3 ? 4 : s >= 5.6 ? 5 : 6];
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
 // One prospect in the "make your pick" list.
@@ -3501,6 +3501,10 @@ function goneMap() {
 }
 const prospectRow = (p, extra = '', { mine = false } = {}) => {
   const gone = goneMap().get(p.id);
+  if (gone) return `<button class="prow cprow gone" data-act="openProspect" data-id="${p.id}">
+  <span class="name"><span class="nm">${esc(playerName(p))}</span> <span class="small muted">#${gone.overall}${gone.team ? ` · ${esc(gone.team.shortName)}` : ''}</span></span>
+  <span class="meta">${esc(posName(p))} · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''} · ${p.age}y</span>
+</button>`;
   const star = onBoard(p.id) && !mine;
   const c = compsFor(p);
   const t = league().teams.find(isUserTeam);
