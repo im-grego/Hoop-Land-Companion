@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.87.0';
+const APP_VERSION = '0.87.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -84,12 +84,25 @@ function loadParams() {
   return structuredClone(DEFAULT_PARAMS);
 }
 // Hoop Land's rookies are all 21 or younger, so age alone gives them little
-// back: a 21-year-old gets +2; a top-5 pick (or a Lock / Top 5 prospect),
-// or a relentless worker, gets +1; never more than +2 in all.
+// back: a 21-year-old gets +2; a prospect graded #1 Pick or Top 5 gets +1;
+// never more than +2 in all. The grade is the one scouts gave before the
+// draft, remembered per season.
+const gradeMemoKey = () => `hlc:grades:${seasonKey()}`;
+function gradeMemo() {
+  const c = (state.gradeMemo ||= {});
+  const k = gradeMemoKey();
+  if (!c[k]) { try { c[k] = JSON.parse(localStorage.getItem(k)) || {}; } catch { c[k] = {}; } }
+  return c[k];
+}
+function rememberGrades(L) {
+  const m = gradeMemo();
+  for (const p of L.draftClass || []) m[p.id] = gradeOf(p)[0];
+  try { localStorage.setItem(gradeMemoKey(), JSON.stringify(m)); } catch { /* ignore */ }
+}
 setRecoveryBonus(p => {
-  const pk = p.history?.draft?.pk;
-  const top = pk ? pk <= 5 : ['Lock', 'Top 5'].includes(gradeOf(p)[0]);
-  return top || (traitsSet(p) && tr(p, 'motor') >= 16) ? 1 : 0;
+  let g = gradeMemo()[p.id];
+  if (!g) { try { if (league().season.phase === PHASE_PRE_DRAFT) g = gradeOf(p)[0]; } catch { /* no class to grade against */ } }
+  return g === '#1 Pick' || g === 'Top 5' ? 1 : 0;
 });
 function saveParams() {
   try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 12 })); } catch { /* ignore */ }
@@ -3194,7 +3207,7 @@ function fillsFor(team, p) {
 // potential: 11 Legend, 10 Hall of Fame, 9 Superstar, 8 All-Star,
 // 7 Starter, 6 Role Player, 5 Bench Depth.
 const GRADES = [
-  ['Lock', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
+  ['#1 Pick', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
   ['Second Round', 'g-r2'], ['UDFA', 'g-udfa'], ['N/A', 'g-na'],
 ];
 const compAvg = list => { const xs = (list || []).slice(0, 3).map(x => x.pot || 0).filter(Boolean); return xs.length ? xs.reduce((a, v, i) => a + v * [0.5, 0.3, 0.2][i], 0) / [0.5, 0.3, 0.2].slice(0, xs.length).reduce((a, b) => a + b, 0) : 0; };
@@ -5040,6 +5053,7 @@ actions.liveFinish = async () => {
   if (clockIndex(live, order) >= 0) { toast('Finish every pick first'); return; }
   if (!(await confirmBox('Finish the draft and move on?', 'Finish'))) return;
   checkpoint('Draft');
+  rememberGrades(L);
   const res = applyDraft(L, livePicks(live, order), state.leagueIdx);
   for (const r of leagueRookies(L)) state.snaps.set(snapKey(r.p.id), snapshot(r.p));
   ageAdjust();
