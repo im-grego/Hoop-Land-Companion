@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.102.0';
+const APP_VERSION = '0.103.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5517,6 +5517,16 @@ function liveAssets(team) {
   return out;
 }
 
+
+// A team's cap in a trade: the bar shows payroll as it would be after the deal.
+function tradeCap(t, outP, inP, label = false) {
+  const sal = ps => ps.reduce((s, p) => s + (p.contract?.sal || 0), 0);
+  const pay = FA.payroll(t), dead = deadFor(t.id);
+  const after = pay - sal(outP) + sal(inP), d = after - pay;
+  return `<div class="trade-cap">${label ? `<b class="small">${esc(t.shortName)}</b>` : ''}${capBarOf(after, dead, true)}
+    <p class="small muted trade-cap-line">${d ? `$${pay}M → <b class="${d > 0 ? 'down' : 'up'}">$${after}M</b> (${d > 0 ? '+' : '−'}$${Math.abs(d)}M)` : `Payroll $${pay}M`}</p></div>`;
+}
+
 screens.liveTrade = (args) => {
   const L = league();
   const teams = [...L.teams].sort((a, b) => a.shortName.localeCompare(b.shortName));
@@ -5558,8 +5568,8 @@ screens.liveTrade = (args) => {
     title: order.length ? 'Draft-Day Trade' : 'Trade',
     body: `
       <div class="grid2 trade">
-        <div class="stack">${select('a', aId)}</div>
-        <div class="stack">${select('b', bId)}</div>
+        <div class="stack">${select('a', aId)}${tradeCap(A, aa.filter(x => selA.has(x.key) && x.player).map(x => x.player), bb.filter(x => selB.has(x.key) && x.player).map(x => x.player))}</div>
+        <div class="stack">${select('b', bId)}${tradeCap(B, bb.filter(x => selB.has(x.key) && x.player).map(x => x.player), aa.filter(x => selA.has(x.key) && x.player).map(x => x.player))}</div>
       </div>
       ${tradeBar(A, B, vA, vB)}
       <div class="grid2 trade">
@@ -5683,6 +5693,7 @@ function liveTrade3(args, A, B, C, left) {
     title: '3-Team Trade',
     body: `
       <div class="tabs">${teams.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="liveTab3" data-id="${t.id}">${esc(t.shortName)}${items.filter(i => i.from === t).length ? ` · ${items.filter(i => i.from === t).length}` : ''}</button>`).join('')}</div>
+      <fieldset class="frame"><legend>Cap</legend>${teams.map(t => tradeCap(t, items.filter(i => i.from === t && i.x.player).map(i => i.x.player), items.filter(i => i.to === t && i.x.player).map(i => i.x.player), true)).join('')}</fieldset>
       ${many(tab) ? `<div class="tsel">${arrow(-1, '◀', side)}<span class="tsel-team"><span class="tsel-name"><b>${esc(tab.shortName)}</b></span></span>${arrow(1, '▶', side)}</div>` : ''}
       <p class="note small muted">Tap to send to ${esc(others[0].shortName)}, again for ${esc(others[1].shortName)}.</p>
       <div class="list">${list}</div>
@@ -7608,7 +7619,7 @@ function taxMood(L, t) {
 }
 // Cap bar: payroll, dead money (red) and room, with ticks at the cap, the
 // tax line and both aprons; the tier and any tax bill underneath.
-function capBarOf(pay, dead) {
+function capBarOf(pay, dead, compact = false) {
   const C = FA.capLines(league());
   const lines = C.off ? [['Cap', C.cap]] : [['Cap', C.cap], ['Tax', C.tax], ['1st', C.apron1], ['2nd', C.apron2]];
   const top = Math.max(C.off ? C.cap : C.apron2 * 1.04, pay + dead);
@@ -7618,7 +7629,7 @@ function capBarOf(pay, dead) {
   const next = lines.find(([, v]) => v > total);
   const zones = C.off ? '' : `background:linear-gradient(90deg, #2f6b4a 0 ${pct(C.cap)}%, #24507a ${pct(C.cap)}% ${pct(C.tax)}%, #6b5a1e ${pct(C.tax)}% ${pct(C.apron1)}%, #7a4a1e ${pct(C.apron1)}% ${pct(C.apron2)}%, #7a2430 ${pct(C.apron2)}%)`;
   return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}</div>
-    <div class="cap-legend small"><span>Payroll $${pay}M</span>${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
+    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
 }
 
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;

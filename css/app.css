@@ -1296,3 +1296,6 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .pl-chips, .pl-tags { justify-content: flex-start; }
 .drill-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .drill-opts .btn { min-width: 0; padding-left: 4px; padding-right: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trade-cap { margin-top: 6px; }
+.trade-cap .cap-legend { gap: 2px 6px; }
+.trade-cap-line { margin: 0 0 4px; }
