@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.91.0';
+const APP_VERSION = '0.91.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3834,7 +3834,30 @@ const COVER = {
   STL: [['BLK', 'he protects the rim, so the steals aren\'t his job']],
   BLK: [['STL', 'he plays the passing lanes, rim protection isn\'t his job'], ['DRE', 'he\'s a rebounder first; the blocks are not his job']],
 };
+// Where what he does doesn't match what he can do: tendencies (-5..+5) against
+// the ratings behind them. { k (skill it's about), gap, q, quote, text }.
+function tendFlags(p) {
+  const t = p.tendencies;
+  if (!t) return [];
+  const A = k => p.attributes[k][0];
+  const out = [];
+  const add = (k, gap, q, quote, text) => out.push({ k, gap, q, quote, text });
+  if (t.threePoint >= 2 && A('TPT') <= 10) add('TPT', t.threePoint + (10 - A('TPT')), 'Scouts say you take too many threes for your percentage. Why?', 'When I\'m open I\'m shooting. That\'s who I am.', 'he shoots way too many threes for his skill');
+  if (t.twoPoint >= 2 && A('MID') <= 9) add('MID', t.twoPoint + (9 - A('MID')), 'Scouts say you settle for pull-up jumpers. Why?', 'It\'s the shot I\'m comfortable with. I\'ll get it to fall.', 'he settles for pull-up jumpers he doesn\'t make');
+  if (t.dunk >= 3 && A('DNK') <= 9) add('DNK', t.dunk + (9 - A('DNK')), 'You go up strong at everyone. Is that smart?', 'I play with fire. I\'m not backing down from anybody.', 'he hunts dunks his athleticism doesn\'t back up');
+  if ((t.post >= 2 || t.hook >= 2) && A('INS') <= 9) add('INS', Math.max(t.post, t.hook) + (9 - A('INS')), 'You want it on the block a lot. Is the post game there?', 'I\'ve got moves, I just have to finish them.', 'he wants the post more than the post game justifies');
+  if (t.step >= 3 && A('DRB') <= 9) add('DRB', t.step + (9 - A('DRB')), 'You get fancy off the dribble. Do you have the handle for it?', 'I\'m working on it every day.', 'he tries to get fancy with a handle that isn\'t there yet');
+  if (t.pass >= 3 && A('PAS') <= 9) add('PAS', t.pass + (9 - A('PAS')), 'You force a lot of passes. Are you a passer?', 'I see things. Sometimes it\'s just a bad read.', 'he forces passes he can\'t make');
+  if (t.pass <= -3 && A('PAS') >= 14) add('PAS', -t.pass + (A('PAS') - 13), 'You can pass but you don\'t. Why not?', 'I was asked to score. Give me the freedom and you\'ll see.', 'he can pass better than he lets on and should do it more');
+  if (A('DRE') >= 13 && t.defReb <= -2) add('DRE', -t.defReb + (A('DRE') - 12), 'You\'re a good rebounder but you don\'t chase them. Why?', 'Honestly, I leak out in transition. I can go harder on the glass.', 'he\'s a good rebounder who doesn\'t go after it; he\'d love to see him try harder on the glass');
+  if (A('ORE') >= 13 && t.offReb <= -2) add('ORE', -t.offReb + (A('ORE') - 12), 'You\'re good on the offensive glass but you don\'t crash it. Why?', 'I\'m getting back on D. I can do both.', 'he has the tools to crash the offensive glass and doesn\'t');
+  if (t.stealOnBall >= 2 && A('STL') <= 9) add('STL', t.stealOnBall + (9 - A('STL')), 'You reach a lot. Is that a concern?', 'I\'m aggressive. I want to make plays.', 'he reaches in and gambles; an undisciplined defender');
+  if (t.block >= 2 && A('BLK') <= 9) add('BLK', t.block + (9 - A('BLK')), 'You go for a lot of blocks. Do you foul too much?', 'I want to protect the rim. That\'s how I help.', 'he chases blocks he doesn\'t get; an undisciplined defender who fouls');
+  return out.sort((a, b) => b.gap - a.gap);
+}
 function scoutTake(p, a, room, what) {
+  const tf = tendFlags(p).find(f => f.k === a);
+  if (tf) return `Scouts: ${tf.text}.`;
   const hit = (COVER[a] || []).find(([k]) => p.attributes[k][0] >= 15);
   if (hit) return `Scouts: ${hit[1]}.`;
   const tail = room >= 4 ? vary2(p, 11, [`there's a lot of room to grow in his ${what}, and that's where the upside lives.`, `his ${what} has real room; with the right staff it becomes a strength.`])
@@ -3886,6 +3909,8 @@ function workoutQs(p) {
     if (x?.skip) qs.push({ k: 'skip', q: 'Why didn\'t you test at the combine?' });
     else if (x && x.bonus < -0.25) qs.push({ k: 'combine', q: 'The combine numbers weren\'t great. What did they get wrong?' });
   }
+  const tf = tendFlags(p)[0];
+  if (tf) qs.push({ k: `t:${tf.k}`, q: tf.q });
   if (r.strengths.length) qs.push({ k: 'best', q: 'What\'s the best part of your game?' });
   return [...qs,
     { k: 'body', q: 'How\'s the body holding up?' },
@@ -3914,11 +3939,18 @@ function workoutAnswer(p, k) {
   if (k === 'work') {
     const w = r().weaknesses;
     const firstPerson = t => t.toLowerCase().replace(/\bhim\b/g, 'me').replace(/\bhis\b/g, 'my').replace(/\bhe\b/g, 'I').replace(/\bhimself\b/g, 'myself');
-    return { quote: w.length ? `Honestly? ${w.map(x => firstPerson(x.text)).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '' };
+    // The scouts' side: what the tape says (tendencies vs ratings), then room to grow or cover.
+    const takes = [...tendFlags(p).slice(0, 1).map(f => f.text), ...w.filter(x => SKILL_ATTRS.includes(x.k)).slice(0, 2).map(x => scoutTake(p, x.k, roomFor(p, x.k), GROWTH[x.k] || 'game').replace(/^Scouts: /, '').replace(/\.$/, ''))];
+    const uniq = [...new Set(takes)].slice(0, 3);
+    return { quote: w.length ? `Honestly? ${w.map(x => firstPerson(x.text)).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '', scout: uniq.length ? `Scouts: ${uniq.join('. ')}.` : '' };
   }
   if (k === 'motor') {
     return { quote: vary2(p, 2, ['People who say that haven\'t watched me in the fourth quarter. But yeah, my conditioning is my summer focus.', 'That\'s fair. I\'m getting in the best shape of my life this summer.']),
       staff: frameNote(p, 'Trainers', 'motor') };
+  }
+  if (k.startsWith('t:')) {
+    const f = tendFlags(p).find(x => x.k === k.slice(2));
+    if (f) return { quote: f.quote, staff: '', scout: `Scouts: ${f.text}.` };
   }
   if (k.startsWith('w:')) {
     const a = k.slice(2);
