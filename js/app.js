@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.81.0';
+const APP_VERSION = '0.81.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2615,7 +2615,7 @@ screens.player = (args) => {
         <p class="note">${esc(team ? `${team.city} ${team.name}` : 'Free Agent')} · ${esc(pos)} · Age ${p.age} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
-        ${p.season && isComplete() && !isCollege() ? `<p class="note small">${moraleTag(p)} <span class="muted">morale</span></p>` : ''}
+        ${p.season && isComplete() && !isCollege() ? `<p class="note small">${moraleTag(p)} <span class="muted">· ${moraleWord(p.season.morale)}</span></p>` : ''}
       </div>
       ${rankBox(p, mpg)}
       <fieldset class="frame"><legend>Trainer</legend>
@@ -6397,7 +6397,9 @@ function savePresser(v) { try { localStorage.setItem(`hlc:presser:${seasonKey()}
 // Faces for 0-19, 20-39, 40-59, 60-79, 80-100.
 const MORALE_FACES = ['😡', '😞', '😐', '🙂', '😄'];
 const moraleFace = m => MORALE_FACES[Math.max(0, Math.min(4, Math.floor((m ?? 60) / 20)))];
-const moraleTag = p => `${moraleFace(p.season?.morale)} ${p.season?.morale ?? '?'}`;
+const MORALE_WORDS = ['Furious', 'Upset', 'Indifferent', 'Content', 'Happy'];
+const moraleWord = m => MORALE_WORDS[Math.max(0, Math.min(4, Math.floor((m ?? 60) / 20)))];
+const moraleTag = p => `<span title="${moraleWord(p.season?.morale)}">${moraleFace(p.season?.morale)}</span> ${p.season?.morale ?? '?'}`;
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
 // counts once per player a session. Everyone in the league, not just yours.
