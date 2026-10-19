@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.84.0';
+const APP_VERSION = '0.84.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -427,8 +427,9 @@ async function loadFile(file) {
     installData(data);
     freshSaveCheck();
     const reopened = reopenOptions();
+    const reext = reopenExtensions();
     settlePromises();
-    state.dirty = reopened > 0;
+    state.dirty = reopened > 0 || reext > 0;
     const held = holdCpuOffers();
     recordSalaries();
     if (isCollege()) { try { state.cal = JSON.parse(localStorage.getItem(collegeCalKey())) || {}; } catch { state.cal = {}; } }
@@ -541,7 +542,12 @@ function buildExport() {
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
   rememberExport();
+  // The game extends a pile of players when the season opens, at values we
+  // don't want. A file leaving free agency goes out with everyone's extension
+  // eligibility off; the next offseason reopens it (reopenExtensions).
+  const shut = shutExtensions();
   const text = serializeSave(state.data);
+  for (const p of shut) p.contract.canExt = true;
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
 
@@ -7026,6 +7032,34 @@ function capBarOf(pay, dead) {
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;
 function extLedger() { try { return JSON.parse(localStorage.getItem(extLedgerKey())) || []; } catch { return []; } }
 function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+
+// Extension eligibility switched off in the exported file, by save.
+const extOffKey = () => `hlc:extoff:${league().shortName}:${league().meta?.saveName || ''}`;
+function shutExtensions() {
+  const L = league();
+  if (!L || isCollege() || L.season.phase !== BUMP_PHASES[0]) return [];
+  const shut = L.teams.flatMap(t => t.roster).filter(p => p.contract && p.contract.canExt === true);
+  try { localStorage.setItem(extOffKey(), JSON.stringify({ yr: L.season.currentYear, ids: shut.map(p => p.id) })); } catch { /* ignore */ }
+  for (const p of shut) p.contract.canExt = false;
+  return shut;
+}
+// Next offseason (before free agency): the players whose window we closed
+// get it back, if they're still on that final year.
+function reopenExtensions() {
+  const L = league();
+  if (!L || isCollege()) return 0;
+  let rec; try { rec = JSON.parse(localStorage.getItem(extOffKey())); } catch { rec = null; }
+  if (!rec || ![2, 4, 5].includes(L.season.phase) || L.season.currentYear < rec.yr) return 0;
+  const ids = new Set(rec.ids);
+  let n = 0;
+  for (const p of L.teams.flatMap(t => t.roster)) {
+    if (!ids.has(p.id) || p.contract?.canExt !== false || p.contract.yrs !== 1 || p.contract.ext?.yrs > 0) continue;
+    p.contract.canExt = true; n++;
+  }
+  try { localStorage.removeItem(extOffKey()); } catch { /* ignore */ }
+  if (n) state.dirty = true;
+  return n;
+}
 
 const extEligible = (L, t) => t.roster.filter(p => p.status === FA.STATUS_SIGNED && (p.contract?.yrs || 0) === 1 && p.contract.canExt !== false && !(p.contract.ext?.yrs > 0) && !(p.contract.opt > 0));
 // Where he'll be in a year: young players still climbing, veterans near
