@@ -78,6 +78,11 @@ const CAP_SCHEDULE = {
 };
 const r5 = v => Math.round(v / 5) * 5;
 let CAP_ON = true;
+// "Complete" rules: minimums by years of service, no-trade clauses. The
+// scale is a share of the cap, so the app passes the cap it's working with.
+let COMPLETE = true, MIN_CAP = 175;
+export function setComplete(on, cap) { COMPLETE = !!on; if (cap) MIN_CAP = cap; }
+export const completeOn = () => COMPLETE;
 export function setCapSystem(on) { CAP_ON = !!on; }
 export const capSystemOn = () => CAP_ON;
 export const seasonStart = league => league.season.currentYear - 1;
@@ -235,7 +240,7 @@ export function askFor(league, p, day, o = FA_DEFAULTS) {
   let a = baseAsk(league, p, o) * o.askDrop[Math.min(2, day - 1)];
   if (day >= 3 && isVet(p, o)) a *= o.vetAskDrop;
   // Veterans still open above the veterans' minimum; they can be talked down.
-  return Math.max(isVet(p, o) ? o.vetMin + 1 : o.minSalary, Math.round(a));
+  return Math.max(isVet(p, o) ? minFor(p, o) + 1 : minFor(p, o), Math.round(a));
 }
 
 // What a player wants most (stable per player and season).
@@ -308,7 +313,7 @@ export function seasonsWith(league, p, team) {
   const cur = league.season.currentYear;
   return (p.stats || []).filter(s => s.league === 0 && s.yr < cur && (s.season || []).some(x => x.tid === team.id)).length;
 }
-export const ntcEligible = (league, p, team) => !!team && (p.yrs || 0) >= 8 && seasonsWith(league, p, team) >= 4;
+export const ntcEligible = (league, p, team) => COMPLETE && !!team && (p.yrs || 0) >= 8 && seasonsWith(league, p, team) >= 4;
 export const wantsNtc = (league, p, team) => ntcEligible(league, p, team) && (tr(p, 'loyalty') >= 14 || tr(p, 'money') >= 15 || (p.age >= 30 && levelOf(p) >= 80));
 
 export function why(motive, offer, strength = 1) {
@@ -417,7 +422,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       let yrs = m.p.age >= 31 ? 1 + Math.floor(rng() * 2) : m.p.age <= 26 ? 3 + Math.floor(rng() * 3) : 2 + Math.floor(rng() * 3);
       let offer = { tid: team.id, sal, yrs, opt: rng() < 0.2 ? OPT_PLAYER : rng() < 0.2 ? OPT_TEAM : OPT_NONE, cpu: true };
       // A veteran who'll take the minimum gets the minimum.
-      if (day >= 3 && m.min === o.vetMin && isVet(m.p, o)) offer = { ...offer, sal: o.vetMin, yrs: 1, opt: OPT_NONE };
+      if (day >= 3 && m.min === minFor(m.p, o) && isVet(m.p, o)) offer = { ...offer, sal: minFor(m.p, o), yrs: 1, opt: OPT_NONE };
       else if (!bird && sal > budget) {
         // Fall back to an exception.
         const ml = mleFor(league, team, day, used, o);
@@ -482,7 +487,13 @@ export const isRookieScale = p => p.history?.draft?.rd === 1 && (p.yrs ?? 99) <=
 // any day, over the cap, as often as a team likes, for 1 or 2 years: $2M, or
 // the veterans' minimum ($3M) with 10+ years in the league.
 export const isVet = (p, o = FA_DEFAULTS) => (p.yrs ?? 0) >= o.vetYears;
-export const minFor = (p, o = FA_DEFAULTS) => isVet(p, o) ? o.vetMin : o.minSalary;
+// Minimum salary by years of service (the 2025-26 scale as a share of the
+// cap: $1.27M rookie up to $3.7M at 10+ years), never under the game's own
+// minimum. The simple rules keep the flat minimum and one vet minimum.
+export const MIN_PCT = [0.82, 1.32, 1.48, 1.54, 1.59, 1.73, 1.86, 1.99, 2.13, 2.26, 2.39];
+export const minFor = (p, o = FA_DEFAULTS) => COMPLETE
+  ? Math.max(o.minSalary, Math.round(MIN_PCT[Math.min(10, p.yrs ?? 0)] * MIN_CAP / 100))
+  : isVet(p, o) ? o.vetMin : o.minSalary;
 export const minYears = () => 2;
 export const minOk = p => p.status === STATUS_EXPIRING || p.status === STATUS_FREE;
 export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && ((p.yrs ?? 99) <= 3 || isRookieScale(p));
@@ -682,8 +693,8 @@ export function unsignPlayer(league, rec) {
 // money take the veterans' minimum rather than sit out the season, whatever
 // they were asking for.
 export function minAccept(p, ask, motive, day, o = FA_DEFAULTS) {
-  if (day >= 3 && isVet(p, o) && motive !== 'greed') return o.vetMin;
-  return Math.max(o.minSalary, Math.round(ask * o.acceptPct[Math.min(2, day - 1)]));
+  if (day >= 3 && isVet(p, o) && motive !== 'greed') return minFor(p, o);
+  return Math.max(minFor(p, o), Math.round(ask * o.acceptPct[Math.min(2, day - 1)]));
 }
 
 export function buildMarket(league, day, o = FA_DEFAULTS) {
