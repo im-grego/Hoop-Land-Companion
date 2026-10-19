@@ -21,6 +21,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
+import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
@@ -31,7 +32,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.92.1';
+const APP_VERSION = '0.93.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3897,13 +3898,22 @@ function ethicLine(p, flag) {
 }
 // One scout line for a flagged weakness: what the game sees, room to grow
 // (with his frame where size matters) and what his traits say about getting there.
+// Skills that help a weakness in each area.
+const SKILL_COVER = {
+  three: ['SPO', 'VOL', 'LIM'], mid: ['UNF', 'STE', 'SPO'], inside: ['CRA', 'SOF', 'TEA', 'BUL'], dunk: ['DUN', 'HIG', 'CRA'],
+  dribble: ['FOO', 'STE'], pass: ['DIM', 'CHE', 'HOT'], oreb: ['CLE', 'MAG'], dreb: ['MAG'], onball: ['CLA', 'LOC'], lanes: ['BAL', 'TWO'], block: ['SNA', 'CLA'],
+};
+// The skills a player has earned (beyond the free ones every player gets).
+const earnedSkills = p => (p.skills || []).filter(x => x.level >= 1 && !isFreeSkill(x.id) && SKILL_INFO[x.id])
+  .sort((a, b) => (isEliteSkill(b.id) - isEliteSkill(a.id)) || b.level - a.level);
 function fullTake(p, f) {
   const room = f.k && SKILL_ATTRS.includes(f.k) ? roomFor(p, f.k) : 0;
   const frame = frameRoom(p);
   let growth = room >= 4 ? 'with a lot of room to grow' : room >= 2 ? 'with some room to grow' : 'with little room left';
   if (f.size) growth = room >= 4 ? (frame >= 0.35 ? 'with a frame to build on and a high ceiling' : 'with a high ceiling but a frame that limits him') : growth;
   const eth = ethicLine(p, f);
-  return `${f.text}, ${growth}${eth ? `; ${eth}` : ''}`;
+  const sk = (SKILL_COVER[f.area] || []).find(id => (p.skills || []).some(x => x.id === id && x.level >= 1));
+  return `${f.text}, ${growth}${eth ? `; ${eth}` : ''}${sk ? `. On the plus side, he ${skillSays(sk)} (${skillName(sk)})` : ''}`;
 }
 const tendFlags = p => gameRead(p).filter(f => f.kind === 'weak').sort((a, b) => b.gap - a.gap).map(f => ({ ...f, quote: traitQuote(p, GROWTH[f.k] || 'game', f) || `I'm working on it.` }));
 function scoutTake(p, a, room, what) {
@@ -7246,6 +7256,8 @@ function playStyleBox(p) {
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(styleLine(p))}</p>
+    ${earnedSkills(p).length ? `<p class="note small">🎖️ ${esc(earnedSkills(p).slice(0, 2).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toUpperCase()))}.</p>
+      <details class="tend-wrap"><summary class="small">Skills</summary>${earnedSkills(p).map(x => `<div class="tend-row"><span class="small"><b>${esc(skillName(x.id))}</b>${isLeveled(x.id) ? ` ${x.level}` : ''}</span><span class="small muted">${esc(skillDoes(x.id))}</span></div>`).join('')}</details>` : ''}
     <details class="tend-wrap"><summary class="small">All tendencies</summary>
       ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
     </details></fieldset>`;
