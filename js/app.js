@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.81.1';
+const APP_VERSION = '0.82.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2370,7 +2370,7 @@ screens.report = (args) => {
 function reportRow(p, d) {
   const ups = Object.entries(d.attrs).map(([k, v]) => `<span class="${v > 0 ? 'up' : 'down'}">${k} ${v > 0 ? '+' : ''}${v}</span>`).join(' ');
   return `<div class="prow rrow">
-    <span class="name full"><span class="gold">${esc(playerName(p))}</span> ${lvTag(p, 'small')}</span>
+    <span class="name full">${esc(playerName(p))} ${lvTag(p)}</span>
     <span class="stars-line">${potStars(p)}</span>
     <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · ${p.yrs ? `${p.yrs} yr${p.yrs > 1 ? 's' : ''} exp` : 'Rookie'}</span>
     ${ups || d.potDelta || d.regDelta ? `<span class="chg">${ups}${longevityBadges(p, d)}</span>` : ''}
@@ -3491,15 +3491,24 @@ function outlookCard() {
   }).join('');
 }
 
+// Who's already gone in the live draft: pid -> { overall, team }.
+function goneMap() {
+  const L = league();
+  const m = new Map();
+  if (!liveReady(L) || !isStep('draft')) return m;
+  for (const [ov, sel] of Object.entries(liveState().sel)) m.set(sel.pid, { overall: +ov, team: L.teams.find(t => t.id === sel.to) });
+  return m;
+}
 const prospectRow = (p, extra = '', { mine = false } = {}) => {
+  const gone = goneMap().get(p.id);
   const star = onBoard(p.id) && !mine;
   const c = compsFor(p);
   const t = league().teams.find(isUserTeam);
   const fills = t ? fillsFor(t, p) : [];
   const comp = (label, x) => x ? `<span class="pr-comp"><span class="muted">${label}</span><span>${esc(x.name)}</span></span>` : '';
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
-  return `<button class="prow cprow ${star ? 'sel' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
-  <span class="name">${star ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</span>
+  return `<button class="prow cprow ${star ? 'sel' : ''} ${gone ? 'gone' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
+  <span class="name">${star ? '<span class="gold">★</span> ' : ''}<span class="nm">${esc(playerName(p))}</span>${gone ? ` <span class="small muted">#${gone.overall}${gone.team ? ` · ${esc(gone.team.shortName)}` : ''}</span>` : ''}</span>
   <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
@@ -5611,6 +5620,7 @@ screens.fa = (args = {}) => {
         return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBar(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
+      ${mine.length ? faRosterBox(s, mine) : ''}
       ${s.stage === 'done' ? faResults(s) : ''}
       <div class="stack">${stageBtn}</div>
       ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
@@ -5668,6 +5678,22 @@ function faResults(s) {
 }
 
 actions.faHome = () => goHome();
+// Your roster by guard / wing / big, with a team switch, without leaving
+// the market. Open state and team stick across tabs.
+function faRosterBox(s, mine) {
+  const t = mine.find(x => x.id === state.faTeam) || mine[0];
+  const ro = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a));
+  const grp = k => ro.filter(p => posGroup(p) === k);
+  const G = [['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']];
+  const sum = G.map(([k, l]) => `${l} ${grp(k).length}`).join(' · ');
+  return `<details class="frame fa-roster" ${state.faRosterOpen ? 'open' : ''}><summary data-act="faRosterToggle"><b>${esc(t.shortName)} roster</b> <span class="small muted">${sum}</span></summary>
+    ${mine.length > 1 ? `<div class="tabs fa-tabs">${mine.map(x => `<button class="btn ${x === t ? 'on focus' : 'off'}" data-act="faTeam" data-id="${x.id}">${esc(x.shortName)}</button>`).join('')}</div>` : ''}
+    ${G.map(([k, l]) => `<p class="note small" style="margin-top:6px"><b>${l}</b> <span class="muted">(${grp(k).length})</span></p>
+      ${grp(k).map(p => `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted">$${p.contract.sal}M × ${p.contract.yrs}</span></div>`).join('') || '<span class="small muted">None</span>'}`).join('')}
+  </details>`;
+}
+actions.faRosterToggle = () => { state.faRosterOpen = !state.faRosterOpen; replace('fa', state.stack[state.stack.length - 1].args); };
+actions.faTeam = d => { state.faTeam = +d.id; state.faRosterOpen = true; replace('fa', state.stack[state.stack.length - 1].args); };
 actions.faView = d => replace('fa', { view: d.v });
 actions.faAll = () => replace('fa', { ...state.stack[state.stack.length - 1].args, all: true });
 
