@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.90.1';
+const APP_VERSION = '0.91.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3817,6 +3817,31 @@ const GROWTH = {
   DRB: 'handle', PAS: 'passing', ORE: 'work on the offensive glass', DRE: 'rebounding', STL: 'hands on defense', BLK: 'rim protection',
   STR: 'strength', SPD: 'quickness', STM: 'conditioning', SCO: 'scoring', HT: 'frame',
 };
+// What a scout adds on a weakness: the room to grow, or the strength that
+// makes the weakness matter less (a handle that would make a mid-range shot
+// unfair, a finisher who doesn't need a jumper).
+const COVER = {
+  MID: [['DRB', 'with a handle like his, a pull-up would make him unfair'], ['LAY', 'he lives at the rim, so a mid-range game is a luxury'], ['TPT', 'he gets his shots from three; the middy is gravy']],
+  TPT: [['MID', 'the mid-range game is real, and it carries him until the three comes'], ['LAY', 'he scores where it matters, in the paint'], ['DNK', 'he\'s a rim-runner, spacing is not what he\'s for']],
+  FTS: [['TPT', 'a shooter\'s touch like that says the free throws will come'], ['MID', 'the touch is there, it\'s a matter of reps']],
+  LAY: [['DNK', 'he finishes above the rim, so the layup package is not a concern'], ['PAS', 'he beats you with the pass first, finishing is secondary']],
+  DNK: [['LAY', 'he finishes with touch, so the dunks aren\'t needed'], ['TPT', 'he wins from the perimeter, not above the rim']],
+  INS: [['MID', 'he\'s a face-up big, so back-to-the-basket work is optional'], ['TPT', 'he stretches the floor; the post game is optional'], ['DNK', 'he does his damage above the rim']],
+  DRB: [['PAS', 'he\'s a passer first, the dribble is a means to an end'], ['TPT', 'he\'s a spot-up weapon, he doesn\'t need the ball in his hands']],
+  PAS: [['LAY', 'he\'s a finisher, the playmaking is a bonus'], ['MID', 'he scores his own shots, the passing is a bonus'], ['TPT', 'he scores his own shots, the passing is a bonus']],
+  ORE: [['DRE', 'he\'s a defensive rebounder who gets back in transition, so the offensive glass is optional']],
+  DRE: [['ORE', 'he crashes the offensive glass, so the defensive boards will follow']],
+  STL: [['BLK', 'he protects the rim, so the steals aren\'t his job']],
+  BLK: [['STL', 'he plays the passing lanes, rim protection isn\'t his job'], ['DRE', 'he\'s a rebounder first; the blocks are not his job']],
+};
+function scoutTake(p, a, room, what) {
+  const hit = (COVER[a] || []).find(([k]) => p.attributes[k][0] >= 15);
+  if (hit) return `Scouts: ${hit[1]}.`;
+  const tail = room >= 4 ? vary2(p, 11, [`there's a lot of room to grow in his ${what}, and that's where the upside lives.`, `his ${what} has real room; with the right staff it becomes a strength.`])
+    : room >= 2 ? vary2(p, 12, [`his ${what} should tick up, but don't count on it becoming a weapon.`, `some room in his ${what}; it gets to average, not much more.`])
+    : vary2(p, 13, [`his ${what} is about what it'll be. Teams have to be comfortable with that.`, `don't expect his ${what} to change much; he'll have to win with the rest of his game.`]);
+  return `Scouts: ${tail}`;
+}
 const growthNote = (room, what) => room >= 4 ? `real room to grow in his ${what}.`
   : room >= 2 ? `his ${what} should get better, but not by a lot.`
   : `his ${what} is close to what it'll be.`;
@@ -3902,7 +3927,7 @@ function workoutAnswer(p, k) {
     if (PHYSICAL.includes(a)) return { quote: vary2(p, a.charCodeAt(0), ['I\'m living in the weight room this summer.', 'Give me a year with a real strength program.']), staff: frameNote(p) };
     const room = a === 'SCO' ? scoringRoom(p) : roomFor(p, a);
     return { quote: vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
-      staff: `Coaches: ${growthNote(room, what)}` };
+      staff: `Coaches: ${growthNote(room, what)}`, scout: scoutTake(p, a, room, what) };
   }
   if (k === 'best') {
     const st = r().strengths[0];
@@ -3980,7 +4005,7 @@ function idolFor(p) {
   }
   return best;
 }
-const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote">"${esc(a.quote)}"</span>${a.staff ? `<br><span class="muted">${esc(a.staff)}</span>` : ''}`;
+const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote">"${esc(a.quote)}"</span>${a.staff ? `<br><span class="muted">${esc(a.staff)}</span>` : ''}${a.scout ? `<br><span class="muted">${esc(a.scout)}</span>` : ''}`;
 
 function workoutResult(p) {
   if (!workoutDone(p.id)) return `<span class="muted">Workout in progress: the full read comes after the interview.</span>`;
