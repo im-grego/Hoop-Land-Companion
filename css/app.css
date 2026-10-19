@@ -1291,3 +1291,6 @@ button.hg-post:active { filter: brightness(1.15); }
 .pl-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; justify-content: center; }
 .pl-chips { justify-content: center; margin: 6px 0 2px; }
 .scout-p { line-height: 1.45; }
+h2.pl-name { font-size: 17px; justify-content: flex-start; text-align: left; gap: 8px; }
+h2.pl-name .lv, h2.pl-name .gold { font-size: 15px; }
+.pl-chips, .pl-tags { justify-content: flex-start; }
