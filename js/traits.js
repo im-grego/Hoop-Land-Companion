@@ -9,7 +9,7 @@
 export const TRAITS = [
   { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Ironman', loIcon: '🩹', hiIcon: '🦾', loSays: 'always seems to be hurting', hiSays: 'rarely misses time' },
   { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Indifferent', hi: 'Competitor', loIcon: '😐', hiIcon: '🏆', loSays: 'doesn\'t much care about the standings', hiSays: 'lives to win' },
-  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Wants the bag', loIcon: '🧢', hiIcon: '💰', loSays: 'plays for the team, not the contract', hiSays: 'follows the money' },
+  { k: 'money', label: 'Money', icon: '💰', lo: 'Team-friendly', hi: 'Bag-Chaser', loIcon: '🧢', hiIcon: '💰', loSays: 'plays for the team, not the contract', hiSays: 'follows the money' },
   { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Committed', loIcon: '🗡️', hiIcon: '🤝', loSays: 'goes where the offer is best', hiSays: 'stays where he\'s wanted' },
   { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'Relentless', loIcon: '😴', hiIcon: '🔋', loSays: 'coasts when he can', hiSays: 'never stops working' },
   { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', loIcon: '☣️', hiIcon: '🗣️', loSays: 'is a problem in the locker room', hiSays: 'sets the tone in the locker room' },

@@ -30,7 +30,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.76.0';
+const APP_VERSION = '0.77.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2613,6 +2613,7 @@ screens.player = (args) => {
         <p class="note"><span class="stars">${potStars(p)}</span>${archName(p) ? ` <b class="arch">${esc(archName(p))}</b>` : ''}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         ${p.contract?.sal ? `<p class="note small">${esc(contractText(p))}${contractBadge(p)}</p>` : ''}
       </div>
+      <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">✏️ Edit Ceilings${ceilMode ? ' · on' : ''}</button>
       ${rankBox(p, mpg)}
       <fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
@@ -2634,10 +2635,6 @@ screens.player = (args) => {
       ${playStyleBox(p)}
       ${traitsBox(p)}
       <fieldset class="frame"><legend>Ratings</legend>
-        <div class="row">
-          <p class="note grow">Rating changes: <span class="${d.points > 0 ? 'up' : d.points < 0 ? 'down' : ''}">${d.points > 0 ? '+' : ''}${d.points}</span></p>
-          <button class="btn small ${ceilMode ? 'on focus' : 'off'}" data-act="ceilMode">Edit Ceilings</button>
-        </div>
         <div class="stack">
           ${ATTRS.map(k => attrRow(p, snap, k, ceilMode)).join('')}
         </div>
