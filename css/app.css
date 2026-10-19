@@ -1333,8 +1333,8 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .cal-nav { margin: 2px 0 4px; }
 .cal-day { min-height: 38px; }
 
-/* Turning the page to the next month. */
-#cal-wrap.turn-out { transform-origin: left center; animation: calPageOut .42s ease-in forwards; }
-#cal-wrap.turn-in { transform-origin: right center; animation: calPageIn .5s ease-out; }
-@keyframes calPageOut { to { transform: perspective(900px) rotateY(-82deg); opacity: .1; } }
-@keyframes calPageIn { from { transform: perspective(900px) rotateY(82deg); opacity: .1; } to { transform: perspective(900px) rotateY(0); opacity: 1; } }
+/* Turning the page to the next month: a corner peel, bottom-right to top-left. */
+.peel-stage { position: relative; overflow: hidden; }
+.peel-new, .peel-old { background: var(--panel); }
+.peel-old, .peel-flap { position: absolute; inset: 0; }
+.peel-flap { background: linear-gradient(135deg, #4d8fe0 0%, #1b5fb8 60%, #0b3a7a 100%); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .15); filter: drop-shadow(-6px -6px 8px rgba(0, 0, 0, .35)); }

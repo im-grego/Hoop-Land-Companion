@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.107.3';
+const APP_VERSION = '0.107.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1075,30 @@ function calMonthHtml(cal, cur, mo, anim = null) {
 }
 // The calendar follows the current event: it shows that event's month by itself. When the event moves on,
 // the dates up to the next one cross off in turn (and the month turns over when the next event is in a later month).
+// The page turn: the old month lifts from its bottom-right corner and folds over to the top-left, and the new month is under it.
+function calPeel(w, newHtml, finalHtml = newHtml) {
+  const oldHtml = w.innerHTML, oldH = w.offsetHeight;
+  w.innerHTML = `<div class="peel-stage"><div class="peel-new">${newHtml}</div><div class="peel-old">${oldHtml}</div><div class="peel-flap"></div></div>`;
+  const stage = w.firstElementChild, nw = stage.children[0], old = stage.children[1], flap = stage.children[2];
+  stage.style.height = `${Math.max(oldH, nw.offsetHeight)}px`;
+  const poly = pts => `polygon(${pts.map(([x, y]) => `${(x * 100).toFixed(2)}% ${(y * 100).toFixed(2)}%`).join(',')})`;
+  const t0 = performance.now(), dur = 900;
+  const frame = now => {
+    if (!w.isConnected) return;
+    const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    const s = 2.05 - e * 2.25;                                   // the fold line x + y = s travels from beyond the corner to past the origin
+    if (s <= 0) { w.innerHTML = finalHtml; return; }
+    // The part of the old page still lying flat: x + y <= s, inside the unit square.
+    const keep = s > 1 ? [[0, 0], [1, 0], [1, s - 1], [s - 1, 1], [0, 1]] : [[0, 0], [s, 0], [0, s]];
+    // What folded over is the removed part reflected across the fold: (x, y) -> (s - y, s - x).
+    const gone = s > 1 ? [[1, s - 1], [1, 1], [s - 1, 1]] : [[s, 0], [1, 0], [1, 1], [0, 1], [0, s]];
+    const back = gone.map(([x, y]) => [s - y, s - x]);
+    old.style.clipPath = poly(keep);
+    flap.style.clipPath = poly(back);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
 function calendarGrid(cal, cur) {
   const months = [...new Set(cal.map(st => calPos(st)).filter(Boolean).map(p => p[0]))].sort((a, b) => a - b);
   if (!months.length) return '';
@@ -1089,18 +1113,10 @@ function calendarGrid(cal, cur) {
   }
   if (from && from[0] < mo) {
     const p1 = calMonthHtml(cal, cur, from[0], { fromDay: from[1] });
-    // After the dates cross off, the page turns to the new month.
+    // After the dates cross off, the page peels from the bottom-right corner up to the top-left, showing the new month.
     setTimeout(() => {
       const w = document.getElementById('cal-wrap');
-      if (!w) return;
-      w.classList.add('turn-out');
-      setTimeout(() => {
-        if (!w.isConnected) return;
-        w.innerHTML = calMonthHtml(cal, cur, mo, { fromDay: 1 }).html;
-        w.classList.remove('turn-out');
-        w.classList.add('turn-in');
-        setTimeout(() => w.classList.remove('turn-in'), 520);
-      }, 420);
+      if (w) calPeel(w, calMonthHtml(cal, cur, mo, null).html, calMonthHtml(cal, cur, mo, { fromDay: 1 }).html);
     }, p1.n * p1.per + 600);
     return `<div id="cal-wrap">${p1.html}</div>`;
   }
