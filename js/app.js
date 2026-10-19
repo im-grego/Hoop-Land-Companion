@@ -29,7 +29,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.68.0';
+const APP_VERSION = '0.69.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4945,9 +4945,11 @@ function liveUndo(t) {
     offSet('away', away);
   }
   for (const x of t.cash || []) {
-    const T = league().teams.find(y => y.id === x.tid);
+    const T = league().teams.find(y => y.id === x.tid), O = league().teams.find(y => y.id === x.to);
     if (T?.frontOffice) T.frontOffice.coins += x.c;
-    const used = offGet('cash'); used[x.tid] = Math.max(0, (used[x.tid] || 0) - x.m); offSet('cash', used);
+    if (O?.frontOffice && x.gain) O.frontOffice.coins = Math.max(0, O.frontOffice.coins - x.gain);
+    const sent = offGet('cash'); sent[x.tid] = Math.max(0, (sent[x.tid] || 0) - x.m); offSet('cash', sent);
+    const got = offGet('cashGot'); got[x.to] = Math.max(0, (got[x.to] || 0) - x.m); offSet('cashGot', got);
   }
   if (t.protAdded?.length) saveProt(protLedger().filter(e => !t.protAdded.some(x => x.otid === e.otid && x.yr === e.yr)));
 }
@@ -5053,9 +5055,14 @@ screens.liveTrade = (args) => {
   const adjust = tradeAdjust(A, B, aa.filter(x => selA.has(x.key)), bb.filter(x => selB.has(x.key)));
   const pv = x => pickItemValue(x, prot, adjust);
   const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + pv(x), 0);
-  const cashA = cashOf(A, args.cashA), cashB = cashOf(B, args.cashB);
+  const cashA = cashOf(A, B, args.cashA), cashB = cashOf(B, A, args.cashB);
   const vA = sum(aa, selA) + cashA * CASH_VALUE, vB = sum(bb, selB) + cashB * CASH_VALUE;
-  const cashRow = (T, side, cur) => !cashOf(T, 99) ? '' : `<div class="prot-row"><span class="grow small">${esc(T.shortName)} adds cash <span class="muted">(🪙${coinsOf(T)} · $${cashLimit() - cashUsed(T.id)}M left this season)</span></span><div class="seg">${CASH_STEPS.filter(m => m <= cashLimit() - cashUsed(T.id)).map(m => `<button class="btn ${cur === m ? 'on focus' : 'off'}" data-act="liveCash" data-side="${side}" data-v="${m}" ${coinCost(m) > coinsOf(T) ? 'disabled' : ''}>${m ? `$${m}M <span class="small">${coinTag(coinCost(m))}</span>` : 'None'}</button>`).join('')}</div></div>`;
+  const cashRow = (T, other, side, cur) => {
+    if (!cashOn()) return '';
+    const me = isUserTeam(T), room = Math.min(cashLimit() - cashSent(T.id), isUserTeam(other) ? cashLimit() - cashGot(other.id) : Infinity);
+    if (!me && !isUserTeam(other)) return '';
+    return `<div class="prot-row"><span class="grow small">${esc(T.shortName)} ${me ? 'adds' : 'sends'} cash <span class="muted">${me ? `(🪙${coinsOf(T)}` : '(you get coins at half rate'} · $${Math.max(0, room)}M left this season)</span></span><div class="seg">${CASH_STEPS.filter(m => m <= room).map(m => `<button class="btn ${cur === m ? 'on focus' : 'off'}" data-act="liveCash" data-side="${side}" data-v="${m}" ${me && coinCost(m) > coinsOf(T) ? 'disabled' : ''}>${m ? `<span style="display:block;text-align:center">$${m}M<span class="small" style="display:block">${me ? coinTag(coinCost(m)) : `+${coinTag(cashGain(m))}`}</span></span>` : 'None'}</button>`).join('')}</div></div>`;
+  };
   // Future firsts being sent can carry a protection.
   const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
   const protRows = !isComplete() ? [] : firsts.map(x => protOf(x.pick)
@@ -5082,7 +5089,7 @@ screens.liveTrade = (args) => {
         <div class="list">${list(bb, selB, 'b')}</div>
       </div>
       ${protRows ? `<fieldset class="frame"><legend>Protections</legend><p class="note small muted">Lands in the protection: it goes back and they get that year's 2nd.</p>${protRows}</fieldset>` : ''}
-      ${cashRow(A, 'a', cashA) || cashRow(B, 'b', cashB) ? `<fieldset class="frame"><legend>Cash</legend>${cashRow(A, 'a', cashA)}${cashRow(B, 'b', cashB)}</fieldset>` : ''}
+      ${cashRow(A, B, 'a', cashA) || cashRow(B, A, 'b', cashB) ? `<fieldset class="frame"><legend>Cash</legend>${cashRow(A, B, 'a', cashA)}${cashRow(B, A, 'b', cashB)}</fieldset>` : ''}
       ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
         <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
@@ -5092,13 +5099,20 @@ screens.liveTrade = (args) => {
   slideTradeBar();
 };
 
-// ---- Cash in trades (Complete rules): you can sweeten a deal with cash
-// paid from your coins, up to 5.15% of the cap a season.
+// ---- Cash in trades (Complete rules): either side can add cash to sweeten a
+// deal, up to 5.15% of the cap a season sent and the same received. Cash you
+// send costs coins (the other team doesn't get any); cash you ask for pays
+// you coins at half the rate, so it can't be farmed. It counts as trade
+// value for whoever sends it.
 const CASH_STEPS = [0, 2, 4, 6, 8];
 const CASH_VALUE = 2.4;                                          // trade points per $1M
 const cashLimit = () => Math.round(FA.capLines(league()).cap * 0.0515);
-const cashUsed = tid => (offGet('cash')[tid] || 0);
-const cashOf = (t, m) => (isComplete() && isUserTeam(t) && FA.capSystemOn() ? Math.max(0, Math.min(+m || 0, cashLimit() - cashUsed(t.id))) : 0);
+const cashOn = () => isComplete() && FA.capSystemOn();
+const cashSent = tid => (offGet('cash')[tid] || 0);
+const cashGot = tid => (offGet('cashGot')[tid] || 0);
+const cashGain = m => Math.round(m * coinRate() * 0.5);
+// How much of `m` team T can send to `other` (under both limits).
+const cashOf = (T, other, m) => !cashOn() ? 0 : Math.max(0, Math.min(+m || 0, cashLimit() - cashSent(T.id), isUserTeam(other) ? cashLimit() - cashGot(other.id) : Infinity));
 actions.liveCash = d => { const a = tradeArgs(); replace('liveTrade', { ...a, [d.side === 'a' ? 'cashA' : 'cashB']: +d.v }); };
 
 // ---- Three-team trades
@@ -5346,9 +5360,9 @@ actions.liveTradeGo = async d => {
   const sa = pickSide(A, a.selA || []), sb = pickSide(B, a.selB || []);
   const adjust = tradeAdjust(A, B, sa.items, sb.items);
   const pv = x => pickItemValue(x, a.prot || {}, adjust);
-  const cashA = cashOf(A, a.cashA), cashB = cashOf(B, a.cashB);
+  const cashA = cashOf(A, B, a.cashA), cashB = cashOf(B, A, a.cashB);
   if (!sa.items.length && !sb.items.length && !cashA && !cashB) { toast('Tap something on either side first'); return; }
-  for (const [T, m] of [[A, cashA], [B, cashB]]) if (m && coinCost(m) > coinsOf(T)) { toast(`${T.shortName} can't cover that cash`, '', 2400, true); return; }
+  for (const [T, m] of [[A, cashA], [B, cashB]]) if (m && isUserTeam(T) && coinCost(m) > coinsOf(T)) { toast(`${T.shortName} can't cover that cash`, '', 2400, true); return; }
   const vA = sa.items.reduce((s, x) => s + pv(x), 0) + cashA * CASH_VALUE, vB = sb.items.reduce((s, x) => s + pv(x), 0) + cashB * CASH_VALUE;
   if (d.force !== '1' || !state.params.commissioner) {
     const no = [[A, vA, vB], [B, vB, vA]].find(([t, give, get]) => !isUserTeam(t) && !cpuAccepts(give, get));
@@ -5365,12 +5379,14 @@ actions.liveTradeGo = async d => {
   saveProt(led);
   const entry = liveExecute(sa, sb);
   entry.cash = [];
-  for (const [T, m] of [[A, cashA], [B, cashB]]) if (m) {
-    const c = coinCost(m);
-    spendCoins(T, c);
-    const used = offGet('cash'); used[T.id] = (used[T.id] || 0) + m; offSet('cash', used);
-    entry.cash.push({ tid: T.id, m, c });
-    entry.text += ` · ${T.shortName} add $${m}M cash`;
+  for (const [T, O, m] of [[A, B, cashA], [B, A, cashB]]) if (m) {
+    const c = isUserTeam(T) ? coinCost(m) : 0, gain = isUserTeam(O) ? cashGain(m) : 0;
+    if (c) spendCoins(T, c);
+    if (gain && O.frontOffice) { O.frontOffice.coins += gain; state.dirty = true; }
+    const sent = offGet('cash'); sent[T.id] = (sent[T.id] || 0) + m; offSet('cash', sent);
+    const got = offGet('cashGot'); got[O.id] = (got[O.id] || 0) + m; offSet('cashGot', got);
+    entry.cash.push({ tid: T.id, to: O.id, m, c, gain });
+    entry.text += ` · ${T.shortName} ${isUserTeam(T) ? 'add' : 'send'} $${m}M cash`;
   }
   entry.protAdded = led.filter(e => !e.done && (sa.items.concat(sb.items)).some(x => x.pick && x.pick.otid === e.otid && x.pick.yr === e.yr && prot[x.key]));
   back();
