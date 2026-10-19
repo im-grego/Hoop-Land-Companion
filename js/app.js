@@ -20,6 +20,7 @@ import * as FX from './facilities.js';
 import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
+import { regressed } from './regression.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
@@ -30,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.82.4';
+const APP_VERSION = '0.82.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2296,35 +2297,6 @@ const potStars = p => stars(p.pot,
   starsOfTotal(totalOf(p, k => p.attributes[k][0])));
 const levelStarsOf = lv => Math.max(1, Math.min(10, Math.round((5 - (100 - lv) / 14) * 2)));
 
-// In-game regression: the save keeps a player's peak ratings, and the game
-// shows them minus a drop that grows each year past his regression age
-// (same points off any rating, measured on a 20/20 player). Retired players
-// show their peak again, so the app never writes this to the save.
-// Total drop by decline year, LAY → STM (ATTRS order).
-const REG_DROP = {
-  1: [1, 3, 2, 1, 1, 1, 1, 1, 2, 2, 2, 3, 2, 1, 2],
-  2: [2, 5, 3, 1, 1, 1, 2, 1, 4, 3, 3, 5, 3, 2, 3],
-  3: [3, 7, 5, 2, 2, 2, 3, 2, 6, 5, 5, 7, 5, 3, 5],
-  4: [4, 9, 6, 2, 2, 2, 4, 2, 7, 6, 6, 9, 6, 4, 6],
-};
-// Past year 4: keep adding the year 3 → 4 step.
-function regDrop(year, i) {
-  if (year <= 0) return 0;
-  if (REG_DROP[year]) return REG_DROP[year][i];
-  return REG_DROP[4][i] + (REG_DROP[4][i] - REG_DROP[3][i]) * (year - 4);
-}
-// The rating the game shows. Skills never go below 1; physicals fall at
-// half pace once they're under 8 (4 in the game's 10-point display).
-function regressed(p, k) {
-  const core = p.attributes[k][0];
-  const y = regressionYear(p);
-  if (!(y > 0)) return core;
-  const drop = regDrop(y, ATTRS.indexOf(k));
-  if (!PHYSICAL.includes(k)) return Math.max(1, core - drop);
-  if (core - drop >= 8) return core - drop;
-  const above = Math.max(0, core - 8);
-  return Math.max(1, Math.min(core, 8) - Math.floor((drop - above) / 2));
-}
 // Level as the game shows it (from the regressed ratings).
 function shownLevel(p) {
   if (!declining(p)) return levelOf(p);

@@ -3,12 +3,15 @@
 // in the save, with their own lean, and can't vote for their own team or
 // players. Results are vote shares; last year's winner is kept per save.
 
-import { playerName, POSITIONS, levelOf, injuryHistory, leagueRookies } from './savefile.js';
+import { playerName, POSITIONS, levelOf as rawLevel, injuryHistory, leagueRookies } from './savefile.js';
+import { regressed, shownLevel } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
 import { mulberry32 } from './progression.js';
 import { teamSituation } from './presser.js';
 
-const A = (p, k) => p.attributes?.[k]?.[0] ?? 0;
+// The ratings the game shows (regressed), not the peak the save keeps.
+const levelOf = shownLevel;
+const A = (p, k) => (p.attributes?.[k] ? regressed(p, k) : 0);
 const mean = a => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
 const skillLv = (p, id) => (p.skills || []).find(s => s.id === id && s.level >= 1)?.level || 0;
 
