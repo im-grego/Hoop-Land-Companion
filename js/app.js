@@ -22,6 +22,7 @@ import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rook
 import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
 import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
+import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -33,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.96.0';
+const APP_VERSION = '0.97.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -629,6 +630,26 @@ actions.download = async () => {
   o.remove();
   state.dirty = false;
   toast('Season file saved');
+};
+
+// A franchise save back into a league file, to start new saves from it.
+actions.downloadLeague = async () => {
+  const L = league();
+  if (L.season.phase !== BUMP_PHASES[0] && !(await confirmBox('A league file should start after the draft and free agency. This save is at ' + esc(phaseName(L.season)) + '. Convert it anyway?', 'Convert'))) return;
+  const o = overlay('<div class="spinner"></div><p class="note">Building league file…</p>');
+  await nextFrame();
+  if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
+  const C = saveToLeague(L, FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {});
+  const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
+  const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
+  o.remove();
+  if (inArtifact()) { if (await artifactSave(file.name, file)) toast('League file saved. Remove .json from the name.'); return; }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement('a');
+  a.href = url; a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast('League file saved', 'Start a new franchise from it in the game.');
 };
 
 actions.share = async () => {
@@ -8708,6 +8729,9 @@ screens.export = () => {
         ${inArtifact() ? `<p class="note gold small">Saves as <b>${esc(artifactName(state.fileName))}</b>: rename it to <b>${esc(state.fileName)}</b> (remove ".json") so Hoop Land can load it.</p>` : ''}
         <p class="note muted small">Load it in Hoop Land and start the season. Keep a backup of the original.</p>
       </fieldset>
+      ${isCollege() ? '' : `<fieldset class="frame"><legend>League File (experimental)</legend>
+        <p class="note small">Turns this save into a league file: rosters, contracts, ratings, tendencies, coaches, picks and history as they stand, with the season reset so you can start a brand new franchise from it.</p>
+        <button class="btn" data-act="downloadLeague">🌐 Download League File</button></fieldset>`}
       ${inArtifact() ? '' : dropboxFrame()}`,
   });
 };

@@ -127,7 +127,8 @@ export function fillTraits(L) {
   let n = 0;
   const everyone = [...L.teams.flatMap(t => t.roster.map(p => [p, t.id])), ...(L.freeAgents || []).map(p => [p, 0]), ...(L.draftClass || []).map(p => [p, 0])];
   for (const [p, tid] of everyone) {
-    if (!p.traits) continue;
+    // Saves from the newer game builds drop the traits block; make one so the app can keep its own.
+    if (!p.traits) p.traits = Object.fromEntries(TRAIT_KEYS.map(k => [k, 0]));
     // Values written on a 0-100 scale (an edited player) come down to 1-20.
     if (TRAIT_KEYS.some(k => p.traits[k] > 20)) {
       for (const k of TRAIT_KEYS) if (p.traits[k] > 0) p.traits[k] = clamp20(p.traits[k] / 5);
