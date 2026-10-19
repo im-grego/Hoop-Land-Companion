@@ -34,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.99.1';
+const APP_VERSION = '0.99.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6057,7 +6057,7 @@ function cpuBlockDeals(day) {
       for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
       markAway(rec.moved);
       if (p.season) p.season.onTradeBlock = 0;
-      const back = [...best.B.players.map(playerName), ...best.B.picks.map(pickLabel)].join(', ');
+      const back = [...best.B.players.map(playerName), ...best.B.picks.map(pk => pickLabel(pk))].join(', ');
       done.push(`${best.A.team.shortName} send ${playerName(p)} to ${best.B.team.shortName} for ${back}`);
     }
   }

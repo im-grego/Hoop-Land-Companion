@@ -96,12 +96,16 @@ export function generateTraits(p, teamId = p.tid) {
   const cs = p.careerStats?.season || {}, po = p.careerStats?.playoffs || {};
   const seasons = proSeasons(p);
   const yrs = Math.max(seasons.length, p.yrs || 0);
-  const inj = (p.history?.injuries || []).filter(i => i.gamesOut > 0);
-  const major = inj.filter(i => i.majorSeverity > 0).length;
-  const missed = inj.reduce((a, i) => a + i.gamesOut, 0);
-  const gpPer = yrs ? (cs.GP || 0) / yrs : 65;
-  const durability = 13 - major * 3 - (inj.length - major) * 0.8 - missed / 40 + (yrs >= 3 ? (gpPer - 62) / 8 : 0) - Math.max(0, p.age - 32) * 0.6 + n('durability');
   const t = p.tendencies || {};
+  // Durability reads the body and the game, not injury history (leagues
+  // here carry only a little): frame and strain on it, how much contact his
+  // style invites, conditioning, and age.
+  const ht = p.ht || 78, wt = p.wt || 210;
+  const bmi = wt / (ht * ht) * 703;
+  const strain = Math.max(0, bmi - 26) * 0.7 + Math.max(0, ht - 82) * 0.5 + Math.max(0, 74 - ht) * 0.15;
+  const contact = ((t.dunk || 0) + (t.post || 0) + (t.hook || 0) + (t.floater || 0) + (t.takeCharge || 0) + (t.offReb || 0) + (t.block || 0)) * 0.12;
+  const body = (att(p, 'STR') - 10) * 0.15 + (att(p, 'STM') - 10) * 0.2 + (att(p, 'SPD') > 16 ? -0.5 : 0);
+  const durability = 10 + body - strain - contact - Math.max(0, p.age - 29) * 0.45 + (p.age <= 24 ? 0.8 : 0) + n('durability', 2);
   const min36 = (cs.MIN?.[0] || 0) / 60 / 36;
   const hustle = min36 > 5 ? ((cs.ORB || 0) + (cs.STL || 0) * 1.5) / min36 : 3;
   const motor = 3 + att(p, 'STM') * 0.45 + ((t.offReb || 0) + (t.takeCharge || 0) + (t.stealOffBall || 0)) * 0.25 + Math.min(4, hustle * 0.6) + n('motor', 2);
