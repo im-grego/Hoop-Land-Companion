@@ -1287,3 +1287,5 @@ button.hg-post:active { filter: brightness(1.15); }
 .stat-table td:nth-child(2), .stat-table th:nth-child(2) { text-align: left; }
 .stat-table tr.tot td { border-top: 2px solid var(--gold); font-weight: 800; }
 .pl-tabs .btn { padding-left: 2px; padding-right: 2px; font-size: 11px; letter-spacing: 0; }
+
+.pl-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; justify-content: center; }

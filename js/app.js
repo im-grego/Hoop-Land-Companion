@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.100.1';
+const APP_VERSION = '0.100.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2686,6 +2686,28 @@ actions.openLeaders = d => {
 };
 actions.leadersAll = () => { const a = state.stack[state.stack.length - 1].args || {}; replace('leaders', { ...a, all: true }); };
 
+// Tags for the top of a player's profile: what's true of him right now.
+function playerTags(p) {
+  const c = p.contract || {}, t = [];
+  const add = (label, cls = '') => t.push(`<span class="badge ${cls}">${label}</span>`);
+  if (c.sal && c.yrs) { add(esc(contractText(p))); const v = contractBadge(p).trim(); if (v) t.push(v); }
+  if (p.yrs === 0) add('Rookie', 'new');
+  if (declining(p)) add('Declining', 'down-b');
+  const inj = p.season?.injury?.gamesOut > 0 ? p.season.injury.gamesOut : 0;
+  if (inj) add(`Injured · ${inj} g`, 'down-b');
+  if (p.status === 4) add('Expiring', 'lvl');
+  else if (c.yrs === 1 && c.sal) add('Final Year', 'lvl');
+  if (c.opt === 1) add('Team Option');
+  if (c.opt === 2) add('Player Option');
+  if (c.noTrd) add('No-Trade');
+  if (c.ext?.yrs > 0) add(`Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');
+  else if (c.canExt) add('Extension Eligible', 'new');
+  if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
+  if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');
+  if (traitsSet(p)) { const d = tr(p, 'durability'); if (d <= 6) add('Injury-Prone', 'down-b'); else if (d >= 16) add('Ironman', 'new'); }
+  if (p.season && isComplete() && !isCollege()) t.push(moraleTag(p));
+  return t.join('');
+}
 screens.player = (args) => {
   const e = findPlayer(args.id);
   if (!e) { back(); return; }
@@ -2763,7 +2785,8 @@ screens.player = (args) => {
       <div>
         <h2 class="team-title">${team ? logoImg(team) : ''}${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb</p>
-        <p class="note small pl-meta">${[`<span class="stars">${potStars(p)}</span>`, archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>', p.contract?.sal && `${esc(contractText(p))}${contractBadge(p)}`, p.season && isComplete() && !isCollege() && moraleTag(p)].filter(Boolean).join(' · ')}</p>
+        <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
+        ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
       </div>
       ${tabsRow}
       ${content}`,
