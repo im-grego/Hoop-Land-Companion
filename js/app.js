@@ -34,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.99.5';
+const APP_VERSION = '0.99.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -639,11 +639,16 @@ actions.downloadLeague = async () => {
   // (who re-signs, and for how much), so finish free agency here first if you
   // want your own deals in the file.
   const open = L.teams.flatMap(t => t.roster).filter(p => p.status === FA.STATUS_EXPIRING).length;
-  if (open && (await choiceBox(`<b>${open} players</b> still have expiring contracts. The game will re-sign or release them on its own when the league loads, and it also builds its own extensions. Finish free agency here first to keep your deals.`, [['no', 'Cancel', 'off'], ['go', 'Export Anyway', 'focus']])) !== 'go') return;
+  let settle = false;
+  if (open) {
+    const pick = await choiceBox(`<b>${open} players</b> still have expiring contracts. The game will re-sign or release them on its own when the league loads, and builds its own extensions. Finish free agency here first to keep your own deals, or let the app estimate who re-signs.`, [['no', 'Cancel', 'off'], ['go', 'Leave to the game', ''], ['settle', 'Estimate re-signings', 'focus']]);
+    if (pick !== 'go' && pick !== 'settle') return;
+    settle = pick === 'settle';
+  }
   const o = overlay('<div class="spinner"></div><p class="note">Building league file…</p>');
   await nextFrame();
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
-  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, ...(FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {}) });
+  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {}) });
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
   o.remove();

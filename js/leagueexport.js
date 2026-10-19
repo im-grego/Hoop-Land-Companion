@@ -7,10 +7,11 @@
 import { parseSave, serializeSave } from './savefile.js';
 import { BLANK_GAME, BLANK_CAREER } from './leaguetemplate.js';
 import { fillTraits } from './traits.js';
+import { settleExpiring } from './settle.js';
 
 const TRAIT_KEYS = ['durability', 'winning', 'money', 'loyalty', 'motor', 'lockerRoom', 'playoffRiser', 'roadWarrior'];
 
-export function saveToLeague(L, { suffix = true, cap = null, maxContract = null, keepDraft = false } = {}) {
+export function saveToLeague(L, { suffix = true, cap = null, maxContract = null, keepDraft = false, settle = false } = {}) {
   const C = parseSave(serializeSave(L));          // a copy; the open save is left alone
   const Y = C.season.currentYear;
   const S = C.season;
@@ -23,6 +24,7 @@ export function saveToLeague(L, { suffix = true, cap = null, maxContract = null,
   C.contractOffers = [];
   C.currentGame = structuredClone(BLANK_GAME);
   C.career = structuredClone(BLANK_CAREER);
+  if (settle) settleExpiring(C);
   fillTraits(C);                                   // judged from careers (known players) or generated, so the new league starts with them
   const people = [...C.teams.flatMap(t => t.roster), ...(C.freeAgents || [])];
   for (const t of C.teams.concat(C.starTeams || [])) {
