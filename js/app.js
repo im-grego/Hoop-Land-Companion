@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.86.0';
+const APP_VERSION = '0.87.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -437,6 +437,7 @@ async function loadFile(file) {
     const reopened = reopenOptions();
     const reext = reopenExtensions();
     settlePromises();
+    settleIncentives();
     state.dirty = reopened > 0 || reext > 0;
     const held = holdCpuOffers();
     recordSalaries();
@@ -5721,6 +5722,10 @@ actions.faDecide = async () => {
   }
   s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
   for (const x of s.signings) { if (x.kind !== 'snt') lockSigning(x.p, signingLock(x)); contractMorale(x.p, x.team, x.from); }
+  {
+    const inc = s.signings.filter(x => x.offer?.inc && isUserTeam(x.team));
+    if (inc.length) saveIncStore([...incStore().filter(r => !inc.some(x => x.p.id === r.pid && !r.done)), ...inc.map(x => ({ pid: x.p.id, tid: x.team.id, base: lastSeasonYear(), ...x.offer.inc, done: false }))]);
+  }
   // Last day: anyone still without a deal leaves their old team.
   if (s.day >= (L.season.signingDays || 3)) s.released = FA.releaseUnsigned(L, { qoFor: qoAmount, day: s.day });
   // The calendar shows the best player signed and the biggest contract.
@@ -5818,6 +5823,78 @@ function prodBoxes(p) {
   return `<div class="prod-boxes">${cells.map(([k, v]) => `<span><b>${(v ?? 0).toFixed(1)}</b><small>${k}</small></span>`).join('')}</div>
     <p class="note small muted center">${l.gp} games${l.mpg != null ? ` · ${l.mpg.toFixed(1)} MPG` : ''}</p>`;
 }
+// ---------------------------------------------------------------------------
+// Incentives (Complete rules). The game keeps one salary per player, so the
+// app remembers the bonus: a player who hits it has his salary raised by the
+// bonus the next offseason. He values it at the chance he hits it, shaded by
+// what he cares about (money-minded players discount it hard).
+const INCENTIVES = {
+  playoffs: { label: 'Playoff run', text: 'team reaches the conference finals' },
+  title: { label: 'Title', text: 'team wins the title' },
+  allnba: { label: 'All-NBA', text: 'makes All-NBA' },
+  prod: { label: 'Scoring', text: null },
+  games: { label: 'Durability', text: 'plays 65+ games' },
+};
+const incStore = () => { try { return JSON.parse(localStorage.getItem(`hlc:inc:${league().shortName}:${league().meta?.saveName || ''}`)) || []; } catch { return []; } };
+const saveIncStore = v => { try { localStorage.setItem(`hlc:inc:${league().shortName}:${league().meta?.saveName || ''}`, JSON.stringify(v)); } catch { /* ignore */ } };
+// Last year's scoring sets the bar for a points incentive.
+const incTarget = (p, kind) => {
+  if (kind !== 'prod') return 0;
+  const l = seasonLine(p, state.leagueIdx, lastSeasonYear());
+  return Math.max(8, Math.round((l?.ppg ?? 10) + 1));
+};
+const incText = (p, inc) => inc.kind === 'prod' ? `averages ${inc.target ?? incTarget(p, 'prod')}+ points` : INCENTIVES[inc.kind].text;
+function incOdds(p, team, kind) {
+  const st = teamStatus(league(), team), lv = shownLevel(p);
+  if (kind === 'playoffs') return st === 'contending' ? 0.5 : st === 'developing' ? 0.15 : 0.04;
+  if (kind === 'title') return st === 'contending' ? 0.12 : 0.01;
+  if (kind === 'allnba') return lv >= 92 ? 0.45 : lv >= 88 ? 0.25 : lv >= 84 ? 0.08 : 0.01;
+  if (kind === 'prod') return 0.45;
+  if (kind === 'games') return Math.max(0.15, 0.6 - (traitsSet(p) && tr(p, 'durability') <= 6 ? 0.3 : 0) - (p.age >= 33 ? 0.1 : 0));
+  return 0;
+}
+// What the incentive is worth to him, in $M: chance x bonus x how much it
+// speaks to him. Chasing money cheapens it; winning and work ethic help.
+function incWorth(p, team, inc) {
+  if (!inc?.bonus) return 0;
+  const win = kind => kind === 'playoffs' || kind === 'title';
+  let f = 0.55;
+  if (traitsSet(p)) {
+    f += win(inc.kind) ? (tr(p, 'winning') - 10) * 0.03 + (tr(p, 'playoffRiser') - 10) * 0.02 : (tr(p, 'motor') - 10) * 0.02;
+    f -= (tr(p, 'money') - 10) * 0.025;
+    if (tr(p, 'money') >= 17) f = Math.min(f, 0.25);
+  }
+  return Math.round(inc.bonus * incOdds(p, team, inc.kind) * Math.max(0.15, Math.min(1.1, f)) * 10) / 10;
+}
+// The first offseason after the season it covers: did he get there?
+function settleIncentives() {
+  const L = league();
+  if (!L || isCollege() || !isComplete() || ![2, 4, 5].includes(L.season.phase)) return;
+  const ly = lastSeasonYear(), hit = [];
+  const led = incStore();
+  for (const r of led.filter(x => !x.done && ly >= x.base + 1)) {
+    const p = L.teams.flatMap(t => t.roster).find(x => x.id === r.pid);
+    const team = p && L.teams.find(t => t.roster.includes(p));
+    r.done = true;
+    if (!p || !team) continue;
+    const yr = r.base + 1;
+    const l = seasonLine(p, state.leagueIdx, yr);
+    const row = (L.teams.find(t => t.id === r.tid) || team).season?.find(x => x.yr === yr);
+    const won = id => (p.awards || []).some(a => a.id === id && a.yearsWon?.includes(yr));
+    const ok = r.kind === 'playoffs' ? (row?.round || 0) >= 3 : r.kind === 'title' ? won(0) || (row?.round === 4 && row?.seriesWins === 4)
+      : r.kind === 'allnba' ? won(13) : r.kind === 'prod' ? !!l && l.ppg >= r.target : !!l && l.gp >= 65;
+    r.hit = !!ok;
+    if (ok && p.contract) {
+      p.contract.sal += r.bonus;
+      const stat = (p.stats || []).filter(s => s.yr === L.season.currentYear && s.league === 0).pop();
+      if (stat && stat.sal) stat.sal += r.bonus;
+      hit.push(`${playerName(p)} +$${r.bonus}M`);
+      state.dirty = true;
+    }
+  }
+  saveIncStore(led);
+  if (hit.length) setTimeout(() => toast(`💰 Incentives earned`, hit.join(' · '), 5200), 3600);
+}
 actions.faOffer = d => {
   const s = faState();
   const L = league();
@@ -5846,6 +5923,7 @@ actions.faOffer = d => {
   };
   const paint = () => {
     const team = L.teams.find(t => t.id === draft.tid);
+    if (draft.inc) { draft.inc.bonus = Math.min(draft.inc.bonus, Math.max(2, Math.round(draft.sal * 0.3))); draft.incEv = incWorth(m.p, team, draft.inc); }
     const err = FA.checkOffer(L, team, m.p, draft, s.day, s.used);
     const kind = err ? null : FA.offerKind(L, team, m.p, draft, s.day, s.used);
     const others = list().filter(b => b.tid !== draft.tid);
@@ -5867,6 +5945,8 @@ actions.faOffer = d => {
       <div class="pts-row"><span class="grow">Years</span><button class="btn square" data-k="yrs" data-d="-1">−</button><span class="pts-val">${draft.yrs}</span><button class="btn square" data-k="yrs" data-d="1">+</button></div>
       <div class="tabs">${[[1, 'Team opt'], [0, 'No option'], [2, 'Player opt']].map(([v, l]) => `<button class="btn ${draft.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
+      ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No incentive'], ...Object.entries(INCENTIVES).map(([k, v]) => [k, v.label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
+        ${draft.inc ? `<div class="pts-row"><span class="grow small">Bonus if ${esc(incText(m.p, draft.inc))} · <span class="muted">worth ~$${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</span></span><button class="btn square" data-k="incbonus" data-d="-1">−</button><span class="pts-val">$${draft.inc.bonus}M</span><button class="btn square" data-k="incbonus" data-d="1">+</button></div>` : ''}` : ''}
       <p class="note small">Total $${draft.sal * draft.yrs}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
@@ -5883,6 +5963,13 @@ actions.faOffer = d => {
     if (k === 'sal') draft.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, m.p, draft.tid === m.from?.id), draft.sal + +b.dataset.d));
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
+    else if (k === 'inckind' || k === 'incbonus') {
+      const tm = L.teams.find(t => t.id === draft.tid);
+      if (k === 'inckind') draft.inc = b.dataset.v ? { kind: b.dataset.v, bonus: draft.inc?.bonus || 2, target: incTarget(m.p, b.dataset.v) } : null;
+      else draft.inc = { ...draft.inc, bonus: Math.max(1, Math.min(Math.max(2, Math.round(draft.sal * 0.3)), draft.inc.bonus + +b.dataset.d)) };
+      draft.incEv = draft.inc ? incWorth(m.p, tm, draft.inc) : 0;
+      if (!draft.inc) delete draft.inc;
+    }
     else if (k === 'ntc') draft.ntc = !!+b.dataset.v;
     else if (k === 'mle') { const ml = mleOk(L.teams.find(t => t.id === draft.tid)); if (ml) { draft.sal = ml.sal; draft.yrs = ml.yrs; } }
     else if (k === 'snt') { box.remove(); sntBox(m, s).then(done => { if (done) render(); }); return; }

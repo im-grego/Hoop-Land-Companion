@@ -299,7 +299,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   // A veteran taking a discount cares about what they're chasing, not a
   // couple of million more.
   if (discounted) w.greed = 0.3;
-  const money = offer.sal / Math.max(1, ask);
+  const money = (offer.sal + (offer.incEv || 0)) / Math.max(1, ask);   // incEv: what he thinks his incentives are worth ($M)
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
