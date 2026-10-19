@@ -34,7 +34,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.99.4';
+const APP_VERSION = '0.99.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -635,6 +635,11 @@ actions.download = async () => {
 // A franchise save back into a league file, to start new saves from it.
 actions.downloadLeague = async () => {
   const L = league();
+  // Unsettled contracts: the game decides them itself when a new league loads
+  // (who re-signs, and for how much), so finish free agency here first if you
+  // want your own deals in the file.
+  const open = L.teams.flatMap(t => t.roster).filter(p => p.status === FA.STATUS_EXPIRING).length;
+  if (open && (await choiceBox(`<b>${open} players</b> still have expiring contracts. The game will re-sign or release them on its own when the league loads, and it also builds its own extensions. Finish free agency here first to keep your deals.`, [['no', 'Cancel', 'off'], ['go', 'Export Anyway', 'focus']])) !== 'go') return;
   const o = overlay('<div class="spinner"></div><p class="note">Building league file…</p>');
   await nextFrame();
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
