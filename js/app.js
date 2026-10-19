@@ -21,6 +21,7 @@ import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summ
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
+import { refitCeilings, autoTendencies } from './autoplay.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -32,7 +33,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.93.0';
+const APP_VERSION = '0.94.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1167,6 +1168,8 @@ function applyBump(seed) {
   // Start from the original file each time so re-rolls don't stack.
   for (const p of vetPlayers()) restore(p, snapOf(p));
   reapplyMentorship();
+  // Ceilings that are all used up get re-spread to the level his potential allows.
+  if (state.params.dynamicCeilings !== false) for (const p of vetPlayers()) refitCeilings(p);
   const devT = tierNow('dev');
   const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team),
     ...(() => {
@@ -1179,6 +1182,13 @@ function applyBump(seed) {
   applyCulture();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   state.potWhy = new Map(awards.why);
+  // Play styles follow the new ratings and ages (young players move most).
+  let tendMoved = 0;
+  if (state.params.autoTendencies !== false) {
+    const trng = mulberry32((seed ^ 0x7e4d) >>> 0);
+    for (const p of vetPlayers()) if (autoTendencies(p, trng)) tendMoved++;
+  }
+  state.tendMoved = tendMoved;
   let players = 0, points = 0, mine = 0;
   for (const [pid, n] of awards) {
     if (!n) continue;
@@ -1209,6 +1219,7 @@ actions.runAuto = async () => {
   applyBump(state.params.seed);
   o.remove();
   render();
+  if (state.tendMoved) toast(`🎛️ ${state.tendMoved} players' play styles shifted`, 'Tendencies follow ratings and age.', 3200);
 };
 
 actions.reroll = async () => {

@@ -268,6 +268,7 @@ export function snapshot(p) {
     ap: [...(p.season?.ap || [])],
     pot: p.pot,
     regressionAge: p.regressionAge,
+    tendencies: p.tendencies ? { ...p.tendencies } : null,
   };
 }
 
@@ -277,6 +278,7 @@ export function restore(p, snap) {
   if (p.season?.ap) p.season.ap = [...snap.ap];
   p.pot = snap.pot;
   p.regressionAge = snap.regressionAge;
+  if (snap.tendencies && p.tendencies) p.tendencies = { ...snap.tendencies };
 }
 
 export const heldPoints = p => (p.season?.ap || []).reduce((a, b) => a + b, 0);
