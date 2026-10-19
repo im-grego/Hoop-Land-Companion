@@ -227,7 +227,9 @@ export function runSurvey(L, li = 0, salt = 1) {
   }
 
   // ---- Offseason
-  const arrivals = t => sit.get(t.id).arrivals;
+  // Everyone who changed teams this summer, by trade or signing: his last
+  // stint was elsewhere (no minimum games, so an injured star counts).
+  const arrivals = t => t.roster.filter(p => !rookieIds.has(p.id) && L_(p) && L_(p).tid !== t.id);
   const departures = t => sit.get(t.id).departures;
   out.push(ask('moves', 'Offseason', 'Who made the best overall moves this offseason?',
     teams.map(t => T(t, arrivals(t).reduce((a, p) => a + levelOf(p), 0) * 0.08 - departures(t).reduce((a, p) => a + levelOf(p), 0) * 0.05 + arrivals(t).length * 0.3))));
