@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.90.0';
+const APP_VERSION = '0.90.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -447,6 +447,7 @@ async function loadFile(file) {
     preloadLogos(data);   // start the team logos downloading before the heavy setup
     installData(data);
     freshSaveCheck();
+    unstampDraftYear();
     const reopened = reopenOptions();
     const reext = reopenExtensions();
     settlePromises();
@@ -570,8 +571,10 @@ function buildExport() {
   // eligibility off; the next offseason reopens it (reopenExtensions).
   const shut = shutExtensions();
   clearSeasonPoints();
+  const stamped = stampDraftYear();
   const text = serializeSave(state.data);
   for (const p of shut) p.contract.canExt = true;
+  for (const p of stamped) p.history.draft.yr++;
   return new File([text], state.fileName, { type: 'application/octet-stream' });
 }
 
@@ -7262,6 +7265,35 @@ const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?
 function extLedger() { try { return JSON.parse(localStorage.getItem(extLedgerKey())) || []; } catch { return []; } }
 function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 
+// The game stamps this year's draftees with the save's year; franchise years
+// are the year the season ends, which is the year the draft happens, one
+// less. The file goes out with the draft year a year back (the app keeps the
+// save's year in memory so its own rookie logic still finds the class).
+const stampKey = () => `hlc:dstamp:${league().shortName}:${league().meta?.saveName || ''}`;
+function stampDraftYear() {
+  const L = league();
+  if (!L || isCollege()) return [];
+  const yr = L.season.currentYear;
+  const rookies = L.teams.flatMap(t => t.roster).concat(L.freeAgents || []).filter(p => p.history?.draft?.yr === yr && p.history.draft.rd > 0);
+  if (!rookies.length) return [];
+  try { localStorage.setItem(stampKey(), JSON.stringify({ yr, ids: rookies.map(p => p.id) })); } catch { /* ignore */ }
+  for (const p of rookies) p.history.draft.yr = yr - 1;
+  return rookies;
+}
+// On load: this year's class comes back to the save's year in memory.
+function unstampDraftYear() {
+  const L = league();
+  if (!L || isCollege()) return;
+  const yr = L.season.currentYear;
+  let rec; try { rec = JSON.parse(localStorage.getItem(stampKey())); } catch { rec = null; }
+  const ids = rec && rec.yr === yr ? new Set(rec.ids) : null;
+  for (const p of L.teams.flatMap(t => t.roster).concat(L.freeAgents || [])) {
+    const d = p.history?.draft;
+    if (!d || d.yr !== yr - 1 || !(d.rd > 0)) continue;
+    // Without a record: a rookie who hasn't played yet (years pro 0).
+    if (ids ? ids.has(p.id) : (p.yrs ?? 1) === 0) d.yr = yr;
+  }
+}
 // Heading into the new season, nobody carries over XP or unspent upgrade
 // points (with Upgrade Points mode on, the ones this offseason's bump just
 // awarded stay).
