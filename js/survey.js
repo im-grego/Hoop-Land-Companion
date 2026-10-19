@@ -333,7 +333,7 @@ export function runSurvey(L, li = 0, salt = 1) {
     teams.map(t => { const top = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 8);
       return T(t, top.filter(p => A(p, 'DNK') >= 16).length * 1.2 + top.filter(p => A(p, 'TPT') >= 16).length + top.filter(p => p.age <= 24 && levelOf(p) >= 75).length * 1.5 + mean(top.map(p => L_(p)?.ppg || 0)) * 0.2); })));
   out.push(ask('home', 'Other', 'Which team has the best home-court advantage?',
-    teams.map(t => T(t, (t.frontOffice?.fans ?? 3) * 1.4 + pct(t) * 5 + (t.championships?.yearsWon || []).filter(y => y >= yr - 5).length * 0.8 + (ALTITUDE.test(`${t.city} ${t.name}`) ? 0.6 : 0)))));
+    teams.map(t => T(t, ((t.frontOffice?.fans ?? 60) / 20) * 1.4 + pct(t) * 5 + (t.championships?.yearsWon || []).filter(y => y >= yr - 5).length * 0.8 + (ALTITUDE.test(`${t.city} ${t.name}`) ? 0.6 : 0)))));
   const winRank = new Map([...teams].sort((a, b) => pct(b) - pct(a)).map((t, i) => [t.id, i]));
   const strRank = new Map([...teams].sort((a, b) => now.get(b.id) - now.get(a.id)).map((t, i) => [t.id, i]));
   out.push(ask('unpredictable', 'Other', 'Which team\'s level of success is the toughest to predict?',

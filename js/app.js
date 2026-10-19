@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.84.1';
+const APP_VERSION = '0.85.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -546,6 +546,7 @@ function buildExport() {
   // don't want. A file leaving free agency goes out with everyone's extension
   // eligibility off; the next offseason reopens it (reopenExtensions).
   const shut = shutExtensions();
+  clearSeasonPoints();
   const text = serializeSave(state.data);
   for (const p of shut) p.contract.canExt = true;
   return new File([text], state.fileName, { type: 'application/octet-stream' });
@@ -4934,7 +4935,7 @@ function liveExecute(A, B, cpu = false) {
   const live = liveState();
   const L = league();
   const rec = executeTrade(A, B, L.season.currentYear);
-  for (const m of rec.moved) tradeMorale(L, m.p, m.to);
+  for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
   const awayAdded = markAway(rec.moved);
   const moves = [];
   for (const [from, to] of [[A, B], [B, A]]) {
@@ -4979,7 +4980,7 @@ function liveExecuteMulti(teams, items) {
     const players = mine.filter(i => i.x.player).map(i => i.x.player), picks = mine.filter(i => i.x.pick).map(i => i.x.pick);
     const rec = executeTrade({ team: from, players, picks }, { team: to, players: [], picks: [] }, L.season.currentYear);
     recs.push(rec);
-    for (const m of rec.moved) tradeMorale(L, m.p, m.to);
+    for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
     awayAdded = awayAdded.concat(markAway(rec.moved));
     for (const i of mine.filter(i => i.x.prospect)) { moves.push({ ov: i.x.prospect, from: from.id, to: to.id }); live.sel[i.x.prospect].to = to.id; }
     lines.push(`${from.shortName} → ${to.shortName}: ${mine.map(i => itemText(i.x, order)).join(', ')}`);
@@ -5764,7 +5765,7 @@ function cpuBlockDeals(day) {
       }
       if (!best) continue;
       const rec = executeTrade(best.A, best.B, yr);
-      for (const m of rec.moved) tradeMorale(L, m.p, m.to);
+      for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
       markAway(rec.moved);
       if (p.season) p.season.onTradeBlock = 0;
       const back = [...best.B.players.map(playerName), ...best.B.picks.map(pickLabel)].join(', ');
@@ -6475,7 +6476,19 @@ function moraleEvent(p, kind, n, why) {
   return lift;
 }
 const roleRank = (team, p) => 1 + FA.signedRoster(team).filter(x => x !== p && shownLevel(x) > shownLevel(p)).length;
-function tradeMorale(L, p, to) {
+// Fans follow stars: a team that lands one gains, the team that lets one go
+// loses some. Crowds in the game track the fan number (0-100).
+function fanEvent(team, delta) {
+  const fo = team?.frontOffice;
+  if (!fo || !isComplete() || isCollege() || !delta) return;
+  const was = fo.fans ?? 50;
+  fo.fans = Math.max(0, Math.min(100, Math.round(was + delta)));
+  if (fo.fans !== was && isUserTeam(team)) toast(`📣 ${team.shortName} fans ${fo.fans > was ? '+' : ''}${fo.fans - was}`, 'The crowd noticed.', 2600);
+}
+const fanGain = p => { const lv = shownLevel(p); const g = lv >= 92 ? 6 : lv >= 88 ? 4 : lv >= 84 ? 3 : lv >= 80 ? 2 : lv >= 76 ? 1 : 0; return g && p.age <= 24 && p.pot >= 9 ? g + 1 : g; };
+function tradeMorale(L, p, to, from) {
+  fanEvent(to, fanGain(p));
+  if (from) fanEvent(from, -Math.round(fanGain(p) * 0.6));
   let n = 7;
   const l = seasonLine(p, state.leagueIdx, lastSeasonYear());
   if (roleRank(to, p) <= 5 && (!l || l.mpg < 24)) n += 5;
@@ -6484,6 +6497,8 @@ function tradeMorale(L, p, to) {
 }
 function contractMorale(p, team, old) {
   const moved = old && old.id !== team.id;
+  if (moved) { fanEvent(team, fanGain(p)); fanEvent(old, -Math.round(fanGain(p) * 0.6)); }
+  else if (!old) fanEvent(team, Math.ceil(fanGain(p) / 2));
   moraleEvent(p, `deal:${team.id}`, 8 + (moved ? 4 : 0), moved ? `signed with ${team.shortName}` : 'new contract');
 }
 // Final cuts: a player who's now a projected starter after sitting last year
@@ -7033,6 +7048,20 @@ const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?
 function extLedger() { try { return JSON.parse(localStorage.getItem(extLedgerKey())) || []; } catch { return []; } }
 function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 
+// Heading into the new season, nobody carries over XP or unspent upgrade
+// points (with Upgrade Points mode on, the ones this offseason's bump just
+// awarded stay).
+function clearSeasonPoints() {
+  const L = league();
+  if (!L || isCollege() || L.season.phase !== BUMP_PHASES[0]) return;
+  const keepAp = state.params.bumpMode === 'points';
+  for (const p of [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || [])]) {
+    if (!p.season) continue;
+    if (p.season.xp) p.season.xp = p.season.xp.map(() => 0);
+    if (p.season.ap && !keepAp) p.season.ap = p.season.ap.map(() => 0);
+  }
+  state.dirty = true;
+}
 // Extension eligibility switched off in the exported file, by save.
 const extOffKey = () => `hlc:extoff:${league().shortName}:${league().meta?.saveName || ''}`;
 function shutExtensions() {
