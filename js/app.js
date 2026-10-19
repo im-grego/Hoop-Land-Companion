@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.103.0';
+const APP_VERSION = '0.103.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -664,6 +664,14 @@ actions.download = async () => {
   toast('Season file saved');
 };
 
+// The game's cap setting in a league file is this season's 2nd apron (the
+// highest line, room for in-season moves); the max contract tiers are scaled
+// so a max is still 25 / 30 / 35% of the real cap. Same as the season file.
+function leagueCapSettings(L) {
+  const C = FA.capLines(L);
+  return { cap: C.apron2, maxContract: [25, 30, 35].map(t => Math.round(t * C.cap / C.apron2)) };
+}
+
 // A franchise save back into a league file, to start new saves from it.
 actions.downloadLeague = async () => {
   const L = league();
@@ -680,7 +688,7 @@ actions.downloadLeague = async () => {
   const o = overlay('<div class="spinner"></div><p class="note">Building league file…</p>');
   await nextFrame();
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
-  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(FA.capSystemOn() ? { cap: FA.capLines(L).cap, maxContract: [25, 30, 35] } : {}) });
+  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(FA.capSystemOn() ? leagueCapSettings(L) : {}) });
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
   // The pack: traits, far-out traded picks, fans and tags, for giving back to a franchise started from this league.
