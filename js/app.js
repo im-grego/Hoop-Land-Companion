@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.91.1';
+const APP_VERSION = '0.92.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3834,30 +3834,81 @@ const COVER = {
   STL: [['BLK', 'he protects the rim, so the steals aren\'t his job']],
   BLK: [['STL', 'he plays the passing lanes, rim protection isn\'t his job'], ['DRE', 'he\'s a rebounder first; the blocks are not his job']],
 };
-// Where what he does doesn't match what he can do: tendencies (-5..+5) against
-// the ratings behind them. { k (skill it's about), gap, q, quote, text }.
-function tendFlags(p) {
+// The game's own read on a player: each skill group's ratings against its
+// tendencies (-5..+5), written the way the Tendency & Attribute guide does.
+// Single ratings are fine at 10+; combos (several ratings or tendencies) use
+// the average rating and the total tendency, break-even at 0. A negative
+// tendency on a rating under 5 isn't a weakness. Returns weaknesses and
+// strengths: { area, k, kind, label, gap, text, q }.
+const GAME_AREAS = [
+  { id: 'inside', k: 'INS', attrs: ['LAY', 'INS'], tend: t => t.floater + t.post + t.hook, strong: ['Inside Shooting', 'is a polished inside scorer'], sel: ['Inside Shot Selection', 'takes inside shots he can\'t finish yet', 'You take a lot of tough shots inside. Why?'], hes: ['Inside Shot Hesitance', 'can finish inside but passes up looks', 'You can score inside but you don\'t look for it. Why not?'], size: true },
+  { id: 'dunk', k: 'DNK', attrs: ['DNK'], tend: t => t.dunk, strong: ['Strong Finishing', 'finishes strong above the rim'], sel: ['Weak Finishing', 'goes up strong at the rim without the explosiveness to back it up', 'You go up strong at everyone. Is that smart?'], hes: ['Passive Finishing', 'has the hops but won\'t attack the rim', 'You have the athleticism but settle. Why not go at the rim?'] },
+  { id: 'mid', k: 'MID', attrs: ['MID'], tend: t => t.twoPoint, strong: ['Mid-Range Shooting', 'is a real mid-range threat'], sel: ['Mid-Range Shot Selection', 'settles for pull-up jumpers he doesn\'t make', 'Scouts say you settle for pull-up jumpers. Why?'], hes: ['Mid-Range Shot Hesitance', 'has a mid-range shot he doesn\'t trust', 'You\'re a good mid-range shooter but you rarely take it. Why?'] },
+  { id: 'three', k: 'TPT', attrs: ['TPT'], tend: t => t.threePoint, strong: ['3PT Shooting', 'is a legitimate three-point shooter'], sel: ['3PT Shot Selection', 'shoots way too many threes for his skill', 'Scouts say you take too many threes for your percentage. Why?'], hes: ['3PT Shot Hesitance', 'can shoot it but won\'t let it fly', 'You can shoot the three but you pass them up. Why?'] },
+  { id: 'dribble', k: 'DRB', attrs: ['DRB'], tend: t => t.cross + t.spin + t.step, strong: ['Ball Handling', 'has real ball handling'], over: ['Over Dribbling', 'over-dribbles and holds the ball too long', 'You put the ball on the floor a lot. Is that who you are?'] },
+  { id: 'pass', k: 'PAS', attrs: ['PAS'], tend: t => t.pass + t.lob, strong: ['Court Vision', 'sees the floor'], sel: ['Forcing Passes', 'forces passes he can\'t make', 'You force a lot of passes. Are you a passer?'], hes: ['Tunnel Vision', 'can pass but rarely looks for teammates', 'You can pass but you don\'t. Why not?'] },
+  { id: 'oreb', k: 'ORE', attrs: ['ORE'], tend: t => t.offReb, strong: ['Crashing Boards', 'crashes the offensive glass'], sel: ['Getting Back on D', 'gets involved on the glass, but needs more size to really dominate', 'You crash the glass a lot. Do you have the tools for it?'], hes: ['Soft on the Glass', 'has the tools for the offensive glass but won\'t crash it', 'You have the tools on the offensive glass but you don\'t crash. Why?'], size: true },
+  { id: 'dreb', k: 'DRE', attrs: ['DRE'], tend: t => t.defReb, strong: ['Defensive Rebounding', 'cleans the defensive glass'], sel: ['Chasing Rebounds', 'chases rebounds he can\'t get to; he needs more size to really dominate', 'You chase every rebound. Is that sustainable?'], hes: ['Soft on the Glass', 'is a good rebounder who doesn\'t go after it; he\'d love to see him try harder on the glass', 'You\'re a good rebounder but you don\'t chase them. Why?'], size: true },
+  { id: 'onball', k: 'STL', attrs: ['STL'], tend: t => t.stealOnBall, strong: ['On-Ball Defense', 'is a pest on the ball'], sel: ['Reaching In', 'reaches in and gambles; an undisciplined defender', 'You reach a lot. Is that a concern?'] },
+  { id: 'lanes', k: 'STL', attrs: ['STL'], tend: t => t.stealOffBall, strong: ['Passing Lane Defense', 'jumps the passing lanes'], sel: ['Gambling On Passes', 'gambles on passes and gets burned', 'You gamble on passes a lot. Is that smart?'] },
+  { id: 'block', k: 'BLK', attrs: ['BLK'], tend: t => t.block, strong: ['Shot Blocking', 'is a real shot blocker'], sel: ['Staying Grounded', 'chases blocks he doesn\'t get; an undisciplined defender who fouls', 'You go for a lot of blocks. Do you foul too much?'], size: true },
+];
+function gameRead(p) {
   const t = p.tendencies;
   if (!t) return [];
-  const A = k => p.attributes[k][0];
   const out = [];
-  const add = (k, gap, q, quote, text) => out.push({ k, gap, q, quote, text });
-  if (t.threePoint >= 2 && A('TPT') <= 10) add('TPT', t.threePoint + (10 - A('TPT')), 'Scouts say you take too many threes for your percentage. Why?', 'When I\'m open I\'m shooting. That\'s who I am.', 'he shoots way too many threes for his skill');
-  if (t.twoPoint >= 2 && A('MID') <= 9) add('MID', t.twoPoint + (9 - A('MID')), 'Scouts say you settle for pull-up jumpers. Why?', 'It\'s the shot I\'m comfortable with. I\'ll get it to fall.', 'he settles for pull-up jumpers he doesn\'t make');
-  if (t.dunk >= 3 && A('DNK') <= 9) add('DNK', t.dunk + (9 - A('DNK')), 'You go up strong at everyone. Is that smart?', 'I play with fire. I\'m not backing down from anybody.', 'he hunts dunks his athleticism doesn\'t back up');
-  if ((t.post >= 2 || t.hook >= 2) && A('INS') <= 9) add('INS', Math.max(t.post, t.hook) + (9 - A('INS')), 'You want it on the block a lot. Is the post game there?', 'I\'ve got moves, I just have to finish them.', 'he wants the post more than the post game justifies');
-  if (t.step >= 3 && A('DRB') <= 9) add('DRB', t.step + (9 - A('DRB')), 'You get fancy off the dribble. Do you have the handle for it?', 'I\'m working on it every day.', 'he tries to get fancy with a handle that isn\'t there yet');
-  if (t.pass >= 3 && A('PAS') <= 9) add('PAS', t.pass + (9 - A('PAS')), 'You force a lot of passes. Are you a passer?', 'I see things. Sometimes it\'s just a bad read.', 'he forces passes he can\'t make');
-  if (t.pass <= -3 && A('PAS') >= 14) add('PAS', -t.pass + (A('PAS') - 13), 'You can pass but you don\'t. Why not?', 'I was asked to score. Give me the freedom and you\'ll see.', 'he can pass better than he lets on and should do it more');
-  if (A('DRE') >= 13 && t.defReb <= -2) add('DRE', -t.defReb + (A('DRE') - 12), 'You\'re a good rebounder but you don\'t chase them. Why?', 'Honestly, I leak out in transition. I can go harder on the glass.', 'he\'s a good rebounder who doesn\'t go after it; he\'d love to see him try harder on the glass');
-  if (A('ORE') >= 13 && t.offReb <= -2) add('ORE', -t.offReb + (A('ORE') - 12), 'You\'re good on the offensive glass but you don\'t crash it. Why?', 'I\'m getting back on D. I can do both.', 'he has the tools to crash the offensive glass and doesn\'t');
-  if (t.stealOnBall >= 2 && A('STL') <= 9) add('STL', t.stealOnBall + (9 - A('STL')), 'You reach a lot. Is that a concern?', 'I\'m aggressive. I want to make plays.', 'he reaches in and gambles; an undisciplined defender');
-  if (t.block >= 2 && A('BLK') <= 9) add('BLK', t.block + (9 - A('BLK')), 'You go for a lot of blocks. Do you foul too much?', 'I want to protect the rim. That\'s how I help.', 'he chases blocks he doesn\'t get; an undisciplined defender who fouls');
-  return out.sort((a, b) => b.gap - a.gap);
+  for (const ar of GAME_AREAS) {
+    const v = ar.attrs.reduce((a, k) => a + p.attributes[k][0], 0) / ar.attrs.length;
+    const tv = ar.tend(t);
+    const add = (kind, [label, text, q], gap) => out.push({ area: ar.id, k: ar.k, kind, label, text, q, gap, size: !!ar.size });
+    if (v < 10 && tv > 0 && ar.sel) add('weak', ar.sel, tv + (10 - v));
+    else if (ar.over && tv >= 0 && p.attributes.PAS[0] < 10) add('weak', ar.over, tv + (10 - p.attributes.PAS[0]));
+    else if (v >= 12 && tv <= (ar.id === 'inside' ? -5 : ar.id === 'pass' ? -4 : -3) && ar.hes) add('weak', ar.hes, -tv + (v - 11));
+    else if (v >= 14 && tv >= 0 && ar.strong) add('strong', ar.strong, v - 13);
+  }
+  return out;
 }
+// How he answers, shaped by his personality: motor, drive, confidence, ego.
+function traitQuote(p, what, flag) {
+  if (!traitsSet(p)) return '';
+  const motor = tr(p, 'motor'), win = tr(p, 'winning'), riser = tr(p, 'playoffRiser'), room = tr(p, 'lockerRoom'), money = tr(p, 'money');
+  const hes = flag?.label?.includes('Hesitance') || flag?.label === 'Tunnel Vision' || flag?.label === 'Passive Finishing';
+  if (motor <= 5) return vary2(p, 21, [`I know I'll get there one day.`, `It'll come with time. I'm not stressing it.`, `I'll figure out my ${what} eventually.`]);
+  if (motor >= 16) return vary2(p, 22, [`I'm in the gym before anyone else. My ${what} is getting fixed.`, `That's what summers are for. I'll live in the gym on my ${what}.`]);
+  if (hes && riser <= 4) return vary2(p, 23, [`I get in my own head sometimes. I overthink it.`, `When the lights get bright I tighten up. I'm working on it.`]);
+  if (win <= 4) return vary2(p, 24, [`I just play my game. The rest takes care of itself.`, `I don't lose sleep over it.`]);
+  if (room <= 4) return vary2(p, 25, [`Honestly, that's on how I was coached.`, `Everybody has an opinion. I'll prove them wrong.`]);
+  if (money >= 16 && flag && !hes) return vary2(p, 26, [`I play to the numbers. That's what moves the needle.`]);
+  return '';
+}
+// The scouts' side of his work ethic and body, from the traits that bear on it.
+function ethicLine(p, flag) {
+  if (!traitsSet(p)) return '';
+  const motor = tr(p, 'motor'), win = tr(p, 'winning'), dur = tr(p, 'durability'), riser = tr(p, 'playoffRiser'), room = tr(p, 'lockerRoom');
+  const hes = flag?.label?.includes('Hesitance') || flag?.label === 'Tunnel Vision' || flag?.label === 'Passive Finishing';
+  if (motor <= 5) return 'his work ethic is a real question';
+  if (motor >= 16) return 'he\'ll put in the work to get there';
+  if (hes && riser <= 4) return 'he tightens up when it counts';
+  if (flag && (flag.area === 'dribble' || flag.label === 'Tunnel Vision' || flag.label === 'Forcing Passes') && room <= 4) return 'he plays for himself';
+  if (flag && (flag.area === 'dribble' || flag.label === 'Tunnel Vision') && room >= 16) return 'a natural leader, he\'ll learn to share it';
+  if (flag?.size && dur <= 4) return 'his body may limit how far it goes';
+  if (win <= 4 && flag && ['onball', 'lanes', 'block', 'oreb', 'dreb'].includes(flag.area)) return 'he doesn\'t seem bothered by it';
+  return '';
+}
+// One scout line for a flagged weakness: what the game sees, room to grow
+// (with his frame where size matters) and what his traits say about getting there.
+function fullTake(p, f) {
+  const room = f.k && SKILL_ATTRS.includes(f.k) ? roomFor(p, f.k) : 0;
+  const frame = frameRoom(p);
+  let growth = room >= 4 ? 'with a lot of room to grow' : room >= 2 ? 'with some room to grow' : 'with little room left';
+  if (f.size) growth = room >= 4 ? (frame >= 0.35 ? 'with a frame to build on and a high ceiling' : 'with a high ceiling but a frame that limits him') : growth;
+  const eth = ethicLine(p, f);
+  return `${f.text}, ${growth}${eth ? `; ${eth}` : ''}`;
+}
+const tendFlags = p => gameRead(p).filter(f => f.kind === 'weak').sort((a, b) => b.gap - a.gap).map(f => ({ ...f, quote: traitQuote(p, GROWTH[f.k] || 'game', f) || `I'm working on it.` }));
 function scoutTake(p, a, room, what) {
   const tf = tendFlags(p).find(f => f.k === a);
-  if (tf) return `Scouts: ${tf.text}.`;
+  if (tf) return `Scouts: ${fullTake(p, tf)}.`;
   const hit = (COVER[a] || []).find(([k]) => p.attributes[k][0] >= 15);
   if (hit) return `Scouts: ${hit[1]}.`;
   const tail = room >= 4 ? vary2(p, 11, [`there's a lot of room to grow in his ${what}, and that's where the upside lives.`, `his ${what} has real room; with the right staff it becomes a strength.`])
@@ -3910,7 +3961,7 @@ function workoutQs(p) {
     else if (x && x.bonus < -0.25) qs.push({ k: 'combine', q: 'The combine numbers weren\'t great. What did they get wrong?' });
   }
   const tf = tendFlags(p)[0];
-  if (tf) qs.push({ k: `t:${tf.k}`, q: tf.q });
+  if (tf) qs.push({ k: `t:${tf.area}`, q: tf.q });
   if (r.strengths.length) qs.push({ k: 'best', q: 'What\'s the best part of your game?' });
   return [...qs,
     { k: 'body', q: 'How\'s the body holding up?' },
@@ -3940,7 +3991,7 @@ function workoutAnswer(p, k) {
     const w = r().weaknesses;
     const firstPerson = t => t.toLowerCase().replace(/\bhim\b/g, 'me').replace(/\bhis\b/g, 'my').replace(/\bhe\b/g, 'I').replace(/\bhimself\b/g, 'myself');
     // The scouts' side: what the tape says (tendencies vs ratings), then room to grow or cover.
-    const takes = [...tendFlags(p).slice(0, 1).map(f => f.text), ...w.filter(x => SKILL_ATTRS.includes(x.k)).slice(0, 2).map(x => scoutTake(p, x.k, roomFor(p, x.k), GROWTH[x.k] || 'game').replace(/^Scouts: /, '').replace(/\.$/, ''))];
+    const takes = [...tendFlags(p).slice(0, 1).map(f => fullTake(p, f)), ...w.filter(x => SKILL_ATTRS.includes(x.k)).slice(0, 2).map(x => scoutTake(p, x.k, roomFor(p, x.k), GROWTH[x.k] || 'game').replace(/^Scouts: /, '').replace(/\.$/, ''))];
     const uniq = [...new Set(takes)].slice(0, 3);
     return { quote: w.length ? `Honestly? ${w.map(x => firstPerson(x.text)).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '', scout: uniq.length ? `Scouts: ${uniq.join('. ')}.` : '' };
   }
@@ -3949,8 +4000,8 @@ function workoutAnswer(p, k) {
       staff: frameNote(p, 'Trainers', 'motor') };
   }
   if (k.startsWith('t:')) {
-    const f = tendFlags(p).find(x => x.k === k.slice(2));
-    if (f) return { quote: f.quote, staff: '', scout: `Scouts: ${f.text}.` };
+    const f = tendFlags(p).find(x => x.area === k.slice(2));
+    if (f) return { quote: f.quote, staff: '', scout: `Scouts: ${fullTake(p, f)}.` };
   }
   if (k.startsWith('w:')) {
     const a = k.slice(2);
@@ -3958,7 +4009,7 @@ function workoutAnswer(p, k) {
     const what = GROWTH[a] || 'game';
     if (PHYSICAL.includes(a)) return { quote: vary2(p, a.charCodeAt(0), ['I\'m living in the weight room this summer.', 'Give me a year with a real strength program.']), staff: frameNote(p) };
     const room = a === 'SCO' ? scoringRoom(p) : roomFor(p, a);
-    return { quote: vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
+    return { quote: traitQuote(p, what, null) || vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
       staff: `Coaches: ${growthNote(room, what)}`, scout: scoutTake(p, a, room, what) };
   }
   if (k === 'best') {
