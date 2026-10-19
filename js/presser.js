@@ -118,7 +118,7 @@ export function presserQuestions(league, team, li = 0) {
     const x = big || kid || ((!c && !bt) ? any : null);
     if (x) out.push({
       key: 'expect', pid: x.id,
-      q: big ? `You brought in ${playerName(x)} this summer. What do you expect from him?` : `Scouts see ${playerName(x)} as ${/^[AEIOU]/.test(tierFor(x.pot || 0)) ? 'an' : 'a'} ${tierFor(x.pot || 0).replace('Hall of Fame', 'Hall of Famer')} down the road. What are the expectations?`,
+      q: big ? `You brought in ${playerName(x)} this summer. What do you expect from him?` : `Scouts see ${playerName(x)} as ${/^[AEIOU]/.test(tierFor(x.pot || 0)) ? 'an' : 'a'} ${tierFor(x.pot || 0).replace('Hall of Fame', 'Hall of Famer').replace('G-League', 'G-League player')} down the road. What are the expectations?`,
       options: big
         ? [{ v: 'star', label: 'He\'s the centerpiece' }, { v: 'fit', label: 'He fits in with the group' }, { v: 'time', label: 'He needs time to settle in' }]
         : [{ v: 'star', label: 'He\'s the future of this team' }, { v: 'fit', label: 'He\'ll earn his minutes' }, { v: 'time', label: 'No rush with him' }],

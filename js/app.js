@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.105.0';
+const APP_VERSION = '0.105.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2753,12 +2753,12 @@ function profileReport(p, team) {
   }
   if (traitsSet(p)) out.push(esc(personality(p)));
   // Where he's headed
-  const y = regressionYear(p), up = p.pot >= 9 ? 'star-level' : p.pot >= 7 ? 'starter-level' : p.pot >= 5 ? 'rotation-level' : 'limited';
+  const y = regressionYear(p), up = tierFor(p.pot);
   const z = bumpContext().production.get(p.id);
   const prod = z == null ? '' : z >= 1.5 ? ' Last season he out-produced his peers by a wide margin.' : z >= 0.5 ? ' Last season he produced above his peers.' : z <= -1.5 ? ' Last season he badly under-produced for his role.' : z <= -0.5 ? ' Last season he produced below his peers.' : '';
   const arc = declining(p) ? `He is in decline (age ${p.age}, regression age ${p.regressionAge}).`
     : y >= 0 ? `He is at the age where decline starts (regression age ${p.regressionAge}).`
-    : p.age <= 24 ? `He is still developing, with ${up} upside.`
+    : p.age <= 24 ? `He is still developing, with ${/^[AEIOU]/.test(up) ? 'an' : 'a'} ${up} ceiling.`
     : `Peak years: ${-y + 1} season${-y + 1 === 1 ? '' : 's'} before he starts to decline, ${up} ceiling.`;
   out.push(`${arc}${prod}`);
   // What he's paid
@@ -3340,7 +3340,7 @@ function compsFor(p) {
   return cache.get('class').get(p.id) || { floor: [], ceiling: [] };
 }
 
-const TIER_CLASS = { Legend: 't-legend', 'Hall of Fame': 't-hof', Superstar: 't-super', 'All-Star': 't-star', Starter: 't-start', 'Role Player': 't-role', 'Bench Depth': 't-bench', Project: 't-proj' };
+const TIER_CLASS = { Legend: 't-legend', 'Hall of Fame': 't-hof', Superstar: 't-super', 'All-Star': 't-star', 'Quality Starter': 't-start', 'Role Player': 't-role', 'Rotational Player': 't-bench', 'G-League': 't-proj' };
 const tierTag = tier => `<span class="tier ${TIER_CLASS[tier] || ''}">${esc(tier)}</span>`;
 const compLine = c => c.floor[0] || c.ceiling[0]
   ? `Floor: ${esc(c.floor[0]?.name || '—')} ${c.floor[0] ? tierTag(c.floor[0].tier) : ''} · Ceiling: <span class="up">${esc(c.ceiling[0]?.name || '—')}</span> ${c.ceiling[0] ? tierTag(c.ceiling[0].tier) : ''}`
@@ -3408,7 +3408,7 @@ function eliteBonus(p) {
   const f = c.floor[0]?.pot ?? 0, ce = c.ceiling[0]?.pot ?? 0;
   if (!f || !ce) return 0;
   // The comp tiers count directly (a Hall of Fame ceiling beats a
-  // Superstar one, a Starter floor beats Bench Depth)...
+  // Superstar one, a Quality Starter floor beats a Rotational Player)...
   const tiers = 0.9 * (ce - ALL_STAR) + 0.3 * (f - 6);
   // ...and All-Star-or-better on both ends goes to the top.
   return tiers + (f >= ALL_STAR && ce >= ALL_STAR ? 1.5 + (f - ALL_STAR) * 0.3 : 0);
@@ -3454,7 +3454,7 @@ function fillsFor(team, p) {
 // become (his ceiling and floor comps' tiers), so a deep class can have
 // several Locks or 20 lottery grades and a thin one none. Comp tiers by
 // potential: 11 Legend, 10 Hall of Fame, 9 Superstar, 8 All-Star,
-// 7 Starter, 6 Role Player, 5 Bench Depth.
+// 7 Quality Starter, 6 Role Player, 5 Rotational Player, below that G-League.
 const GRADES = [
   ['#1 Pick', 'g-one'], ['Top 5', 'g-top5'], ['Lottery', 'g-lot'], ['First Round', 'g-r1'],
   ['Second Round', 'g-r2'], ['UDFA', 'g-udfa'], ['N/A', 'g-na'],

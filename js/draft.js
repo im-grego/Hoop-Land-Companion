@@ -110,9 +110,11 @@ export function projectedCeiling(p, pot = p.pot) {
 // ---------------------------------------------------------------------------
 // Tiers (by potential) and comps
 
+// Potential on the star scale: 5 stars Hall of Fame ceiling, 4.5 Superstar, 4 All-Star,
+// 3.5 Quality Starter, 3 Role Player, 2.5 Rotational Player, 2 G-League.
 export const TIERS = [
-  [11, 'Legend'], [10, 'Hall of Fame'], [9, 'Superstar'], [8, 'All-Star'], [7, 'Starter'], [6, 'Role Player'],
-  [5, 'Bench Depth'], [0, 'Project'],
+  [11, 'Legend'], [10, 'Hall of Fame'], [9, 'Superstar'], [8, 'All-Star'], [7, 'Quality Starter'], [6, 'Role Player'],
+  [5, 'Rotational Player'], [0, 'G-League'],
 ];
 export const tierFor = pot => TIERS.find(([min]) => pot >= min)[1];
 
