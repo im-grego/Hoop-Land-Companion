@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.85.0';
+const APP_VERSION = '0.85.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -7072,18 +7072,22 @@ function shutExtensions() {
   for (const p of shut) p.contract.canExt = false;
   return shut;
 }
-// Next offseason (before free agency): the players whose window we closed
-// get it back, if they're still on that final year.
+// Next offseason (before free agency): anyone on a final year (no option,
+// not already extended) is extension-eligible again. If the app remembers
+// who it closed, only those players reopen; with no record (storage
+// cleared, another browser) every final-year player does.
 function reopenExtensions() {
   const L = league();
-  if (!L || isCollege()) return 0;
+  if (!L || isCollege() || ![2, 4, 5].includes(L.season.phase)) return 0;
   let rec; try { rec = JSON.parse(localStorage.getItem(extOffKey())); } catch { rec = null; }
-  if (!rec || ![2, 4, 5].includes(L.season.phase) || L.season.currentYear < rec.yr) return 0;
-  const ids = new Set(rec.ids);
+  if (rec && L.season.currentYear < rec.yr) return 0;
+  const ids = rec ? new Set(rec.ids) : null;
   let n = 0;
   for (const p of L.teams.flatMap(t => t.roster)) {
-    if (!ids.has(p.id) || p.contract?.canExt !== false || p.contract.yrs !== 1 || p.contract.ext?.yrs > 0) continue;
-    p.contract.canExt = true; n++;
+    const c = p.contract;
+    if (!c || p.status !== FA.STATUS_SIGNED || c.canExt !== false || c.yrs !== 1 || c.opt > 0 || c.ext?.yrs > 0) continue;
+    if (ids && !ids.has(p.id)) continue;
+    c.canExt = true; n++;
   }
   try { localStorage.removeItem(extOffKey()); } catch { /* ignore */ }
   if (n) state.dirty = true;
