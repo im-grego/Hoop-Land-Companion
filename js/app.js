@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.105.3';
+const APP_VERSION = '0.106.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1041,6 +1041,55 @@ function stepActions(key) {
   }
 }
 
+// ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
+// finished and passed dates crossed off, the current topic on top.
+const CAL_EMOJI = { office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+  departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
+const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const CAL_WEEKS = { 'Week 1': [6, 6], 'Week 2': [6, 13], 'Week 3': [6, 20] };           // free agency weeks sit in July
+function calPos(st) {
+  const m = /^([A-Z][a-z]{2}) (\d{1,2})$/.exec(st.date);
+  if (m) return [CAL_MONTHS.indexOf(m[1]), +m[2]];
+  return CAL_WEEKS[st.date] || null;
+}
+function calendarGrid(cal, cur) {
+  const L = league();
+  const yr = dispYr(L.season.currentYear);
+  const steps = cal.map(st => ({ st, pos: calPos(st) })).filter(x => x.pos);
+  if (!steps.length) return '';
+  const months = [...new Set(steps.map(x => x.pos[0]))].sort((a, b) => a - b);
+  const curPos = cur ? calPos(cur) : null;
+  let mo = state.calMonth;
+  if (mo == null || !months.includes(mo)) mo = curPos ? curPos[0] : months[months.length - 1];
+  const first = new Date(yr, mo, 1).getDay(), days = new Date(yr, mo + 1, 0).getDate();
+  const byDay = new Map();
+  for (const x of steps) if (x.pos[0] === mo) byDay.set(x.pos[1], [...(byDay.get(x.pos[1]) || []), x.st]);
+  const before = (m, d) => !cur ? true : curPos ? (m < curPos[0] || (m === curPos[0] && d < curPos[1])) : false;
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push('<span class="cal-day blank"></span>');
+  for (let d = 1; d <= days; d++) {
+    const here = byDay.get(d) || [];
+    const done = here.length && here.every(s => s.done());
+    const now = here.includes(cur);
+    const past = done || before(mo, d);
+    const em = here.length ? CAL_EMOJI[(here.find(s => s === cur) || here[0]).key] || '📅' : '';
+    cells.push(`<button class="cal-day ${here.length ? 'step' : ''} ${past ? 'past' : ''} ${done ? 'done' : ''} ${now ? 'now' : ''}" ${here.length ? `data-act="calPick" data-k="${here[0].key}"` : 'tabindex="-1"'} aria-label="${CAL_MONTHS[mo]} ${d}${here.length ? ': ' + esc(here.map(s => s.title).join(', ')) : ''}"><span class="n">${d}</span>${em ? `<span class="em">${em}</span>` : ''}${done ? '<span class="tick">✓</span>' : ''}</button>`);
+  }
+  const mi = months.indexOf(mo);
+  return `<div class="cal-top"><b class="cal-topic">${cur ? `${CAL_EMOJI[cur.key] || '📅'} ${esc(cur.title)}` : '🏁 Offseason complete'}</b><span class="small muted">${cur ? esc(cur.date) : ''}</span></div>
+    <div class="cal-nav"><button class="btn small off" data-act="calMonth" data-dir="-1" ${mi <= 0 ? 'disabled' : ''} aria-label="Previous month">◀</button><b>${CAL_MONTHS[mo].toUpperCase()} ${yr}</b><button class="btn small off" data-act="calMonth" data-dir="1" ${mi >= months.length - 1 ? 'disabled' : ''} aria-label="Next month">▶</button></div>
+    <div class="cal-grid">${['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(x => `<span class="cal-dow">${x}</span>`).join('')}${cells.join('')}</div>`;
+}
+actions.calMonth = d => {
+  const L = league(), cal = activeCal();
+  const months = [...new Set(cal.map(st => calPos(st)).filter(Boolean).map(p => p[0]))].sort((a, b) => a - b);
+  const cur = currentStep(), curPos = cur ? calPos(cur) : null;
+  const at = months.indexOf(state.calMonth ?? (curPos ? curPos[0] : months[months.length - 1]));
+  state.calMonth = months[Math.max(0, Math.min(months.length - 1, at + +d.dir))];
+  render();
+};
+actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st) toast(`${st.date} · ${st.title}`, st.done() ? 'Done.' : st.blurb, 3200); };
+
 function calendarCard() {
   const s = league().season;
   if (phaseRank(s) === 0 && !isCollege()) {
@@ -1048,6 +1097,7 @@ function calendarCard() {
   }
   const cur = currentStep();
   return `<fieldset class="frame"><legend>${dispYr(s.currentYear)} Offseason</legend>
+    ${calendarGrid(activeCal(), cur)}
     <ol class="calendar">${activeCal().map(st => {
       const state_ = st.done() ? 'done' : st === cur ? 'now' : 'locked';
       return `<li class="cal ${state_}">

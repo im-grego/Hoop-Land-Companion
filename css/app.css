@@ -1299,3 +1299,19 @@ h2.pl-name .lv, h2.pl-name .gold { font-size: 18px; }
 .trade-cap { margin-top: 6px; }
 .trade-cap .cap-legend { gap: 2px 6px; }
 .trade-cap-line { margin: 0 0 4px; }
+
+.cal-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.cal-topic { font-size: 18px; }
+.cal-nav { display: flex; align-items: center; justify-content: space-between; margin: 4px 0 6px; }
+.cal-nav .btn { min-width: 44px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-bottom: 10px; }
+.cal-dow { text-align: center; font-size: 11px; color: var(--dim); padding: 2px 0; }
+.cal-day { position: relative; min-height: 42px; padding: 2px; border: 2px solid transparent; background: color-mix(in srgb, var(--bg-dark) 60%, transparent); color: var(--text); font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+.cal-day.blank { background: none; }
+.cal-day .n { align-self: flex-start; font-size: 11px; line-height: 1; opacity: .85; }
+.cal-day .em { font-size: 17px; line-height: 1; }
+.cal-day.step { background: var(--btn); border-color: var(--btn-edge); cursor: pointer; }
+.cal-day.past .n { text-decoration: line-through; opacity: .45; }
+.cal-day.done .em { opacity: .45; }
+.cal-day .tick { position: absolute; right: 2px; top: 0; font-size: 11px; color: var(--up); }
+.cal-day.now { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
