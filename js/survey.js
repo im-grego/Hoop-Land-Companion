@@ -217,9 +217,13 @@ export function runSurvey(L, li = 0, salt = 1) {
     })));
   const POS_SETS = [['PG', [0, 1]], ['SG', [1, 2, 3]], ['SF', [3, 4, 5]], ['PF', [5, 6, 7]], ['C', [7, 8]]];
   const MAIN = { PG: 0, SG: 2, SF: 4, PF: 6, C: 8 };
+  // Winning one position takes a player out of the running at the rest.
+  const posWon = new Set();
   for (const [name, set] of POS_SETS) {
-    out.push(ask(`pos${name}`, 'Players', `Who is the best ${name} in the league?`,
-      ppl(p => levelOf(p) + gs(p) * 0.4 + (p.pos === MAIN[name] ? 2 : 0), p => set.includes(p.pos))));
+    const r = ask(`pos${name}`, 'Players', `Who is the best ${name} in the league?`,
+      ppl(p => levelOf(p) + gs(p) * 0.4 + (p.pos === MAIN[name] ? 2 : 0), p => set.includes(p.pos) && !posWon.has(p.id)));
+    if (r.results[0]) posWon.add(r.results[0].pid);
+    out.push(r);
   }
 
   // ---- Offseason
