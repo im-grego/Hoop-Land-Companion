@@ -35,7 +35,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.107.2';
+const APP_VERSION = '0.107.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1173,6 +1173,11 @@ actions.advLottery = async (opts = {}) => {
   const L = league();
   const P = state.params;
   checkpoint('Lottery');
+  // A new lottery starts a new draft cycle: whatever an earlier run of this offseason stored for the mocks, scouting,
+  // the combine and workouts is forgotten, so the steps after the lottery are really still to do.
+  (state.pre ||= {})[seasonKey()] = { steps: {}, workouts: {}, reveals: {} };
+  savePre();
+  state.compCache = {};
   const setup = lotterySetup(L, P.lotteryFormat, P.lotteryDraws);
   const order = preLotteryOrder(L);
   const drawn = drawLottery(order.slice(0, setup.lotteryTeams.length), setup.odds, setup.draws, mulberry32(Math.floor(Math.random() * 1e9)), setup.floor);
