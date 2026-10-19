@@ -31,7 +31,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.82.6';
+const APP_VERSION = '0.83.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1674,7 +1674,7 @@ actions.soFocus = d => soEdit(so => { const o = so[+d.i]; if (o) o.focus = +d.v;
 actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
 actions.soAdd = () => soEdit(so => {
   const t = myTeam(), used = new Set(so.map(o => o.pid));
-  const p = [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).find(x => !used.has(x.id));
+  const p = [...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).find(x => !used.has(x.id));
   if (p && so.length < 3) so.push({ pid: p.id, usageRate: [30, 20, 15][so.length], focus: 1, playSelection: 1 });
 });
 $app.addEventListener('change', e => {
@@ -2279,7 +2279,7 @@ screens.rookies = () => {
 // Bump report (all teams)
 
 // Stars for a player's current level (Lv 100 = 5, 93 = 4.5, 86 = 4).
-const levelStars = p => Math.max(1, Math.min(10, Math.round((5 - (100 - levelOf(p)) / 14) * 2)));
+const levelStars = p => Math.max(1, Math.min(10, Math.round((5 - (100 - shownLevel(p)) / 14) * 2)));
 // Declining players (past their regression age) lose the stars they've
 // slipped below: potential shows no higher than where they are now.
 // Potential stars; a declining player's show what age has taken in red:
@@ -2531,7 +2531,7 @@ function collegeLeaders(args) {
     return t ? (t.shortName || t.name) : '';
   };
   const rows = [...ranks].filter(([, r]) => r.qualified).map(([id, r]) => ({ p: pool.get(id), r }))
-    .filter(x => x.p).map(x => ({ ...x, v: x.r.pg[k], lv: levelOf(x.p) }))
+    .filter(x => x.p).map(x => ({ ...x, v: x.r.pg[k], lv: shownLevel(x.p) }))
     .sort((a, b) => b.v - a.v || b.lv - a.lv);
   const shown = args.all ? rows : rows.slice(0, 25);
   layout({
@@ -6509,6 +6509,12 @@ function presserEffects(L, t, ans) {
       if (a === 'commit') out.push(mood(P, 8), loyal(P, 1));
       if (a === 'focus' && q.ctx.kind === 'final') out.push(mood(P, -2));
       if (a === 'market') out.push(mood(P, -10), loyal(P, -2));
+    }
+    if (q.key === 'expect' && P) {
+      const arr = q.ctx.kind === 'arrival';
+      if (a === 'star') { out.push(mood(P, 5)); const old = presserStar(L, t); if (arr && old && old !== P) out.push(mood(old, -2)); }
+      if (a === 'fit') out.push(mood(P, 2));
+      if (a === 'time') out.push(mood(P, arr ? -3 : 3));
     }
     if (q.key === 'battle') {
       const A = find(q.pid), B = find(q.pid2);

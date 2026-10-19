@@ -3,7 +3,8 @@
 // contracts (final year / extension eligible), position battles, and how
 // the offseason went next to the team's star and stage.
 
-import { playerName, POSITIONS, levelOf } from './savefile.js';
+import { playerName, POSITIONS } from './savefile.js';
+import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
 import { seasonLine } from './storylines.js';
 
@@ -70,9 +71,12 @@ const yrsLeft = p => p.contract?.yrs ?? 0;
 // extension-eligible one.
 function contractTarget(team, sit) {
   const byStar = [...team.roster].filter(p => (p.status === 3 || p.contract?.tid === team.id) && !(p.contract?.ext?.yrs > 0)).sort((a, b) => sit.gs(b) - sit.gs(a));
-  const last = byStar.find(p => yrsLeft(p) === 1 && sit.gs(p) >= 8);
+  // Only someone worth building around: a starter-caliber level as the game
+  // shows it (regression included), not a declining veteran.
+  const core = p => levelOf(p) >= 74 && p.age <= (p.regressionAge || 32) + 1;
+  const last = byStar.find(p => yrsLeft(p) === 1 && sit.gs(p) >= 8 && core(p));
   if (last) return { p: last, kind: 'final' };
-  const ext = byStar.find(p => p.contract?.canExt && yrsLeft(p) <= 2 && sit.gs(p) >= 10);
+  const ext = byStar.find(p => p.contract?.canExt && yrsLeft(p) <= 2 && sit.gs(p) >= 10 && core(p));
   return ext ? { p: ext, kind: 'ext' } : null;
 }
 
@@ -104,6 +108,20 @@ export function presserQuestions(league, team, li = 0) {
     options: [{ v: 'commit', label: 'We want him here long-term' }, { v: 'focus', label: 'Our focus is on the season' }, { v: 'market', label: 'We\'ll see where things land' }],
     ctx: { kind: c.kind },
   });
+  // No contract talk to have: ask about the big arrival, else the 4-star kid.
+  if (!c) {
+    const big = sit.arrivals.filter(p => levelOf(p) >= 78).sort((a, b) => levelOf(b) - levelOf(a))[0];
+    const kid = [...team.roster].filter(p => (p.pot || 0) >= 8 && p.age <= 23 && levelOf(p) >= 60).sort((a, b) => (b.pot - a.pot) || (levelOf(b) - levelOf(a)))[0];
+    const x = big || kid;
+    if (x) out.push({
+      key: 'expect', pid: x.id,
+      q: big ? `You brought in ${playerName(x)} this summer. What do you expect from him?` : `${playerName(x)} has ${x.pot / 2}-star potential. What are the expectations?`,
+      options: big
+        ? [{ v: 'star', label: 'He\'s the centerpiece' }, { v: 'fit', label: 'He fits in with the group' }, { v: 'time', label: 'He needs time to settle in' }]
+        : [{ v: 'star', label: 'He\'s the future of this team' }, { v: 'fit', label: 'He\'ll earn his minutes' }, { v: 'time', label: 'No rush with him' }],
+      ctx: { kind: big ? 'arrival' : 'prospect' },
+    });
+  }
   const bt = positionBattle(team);
   if (bt) out.push({
     key: 'battle', pid: bt.a.id, pid2: bt.b.id,
@@ -145,6 +163,16 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
         market: [`${n}'s future in ${place(team)} is up in the air`, `"We'll see where things land." Not exactly a vote of confidence${fin ? `, with ${P.fn} a year from free agency` : ''}.`],
       }[a];
       out.push({ kind: 'presser-contract', score: 58, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'expect' && P) {
+      const n = playerName(P);
+      const arr = q.ctx.kind === 'arrival';
+      const t = {
+        star: [`${Place(team)} puts it on ${n}`, arr ? `"He's the centerpiece," the front office said of ${P.fn}. The expectations are sky high.` : `"He's the future of this team." ${P.fn} carries the hopes of ${place(team)}.`],
+        fit: [`${n} is one of the group`, `The front office kept the pressure off ${P.fn}: ${arr ? 'a piece, not the whole puzzle' : 'minutes have to be earned'}.`],
+        time: [`${Place(team)} will give ${n} time`, arr ? `"He needs time to settle in." Fans wanted a bigger statement on ${P.fn}.` : `No rush with ${P.fn}. Patience is the plan in ${place(team)}.`],
+      }[a];
+      out.push({ kind: 'presser-contract', score: 56, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
     }
     if (q.key === 'battle') {
       const A = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid), B = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid2);

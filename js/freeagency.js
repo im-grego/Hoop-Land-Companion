@@ -15,7 +15,7 @@ import { facilityFx } from './facilities.js';
 import { jerseyNumber, playerName } from './savefile.js';
 import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
-import { levelOf } from './savefile.js';
+import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
 
 export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRAFTED = 2;

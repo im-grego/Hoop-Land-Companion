@@ -2,7 +2,8 @@
 // (depth, upside, age and play style), its draft position; plus the league
 // rumor mill and play-style reads from the save's tendencies.
 
-import { levelOf, playerName } from './savefile.js';
+import { playerName } from './savefile.js';
+import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus, lotterySetup, lotteryOdds, seedOrder, standings } from './draft.js';
 import { seasonLine } from './storylines.js';
 import { tr, traitsSet } from './traits.js';

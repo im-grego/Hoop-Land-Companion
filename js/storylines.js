@@ -4,7 +4,8 @@
 // development the app applied this session, told without the internals
 // (no regression ages or potential numbers).
 
-import { playerName, injuryName, injuryHistory, skillName, leagueRookies, levelOf } from './savefile.js';
+import { playerName, injuryName, injuryHistory, skillName, leagueRookies } from './savefile.js';
+import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, standings, collegeLine } from './draft.js';
 import { injuryClass, DEFAULT_PARAMS } from './progression.js';
 

@@ -3,7 +3,8 @@
 
 import { pickValue, tradePicks, samePick } from './draft.js';
 import { seasonLine } from './storylines.js';
-import { jerseyNumber, levelOf } from './savefile.js';
+import { jerseyNumber } from './savefile.js';
+import { shownLevel as levelOf } from './regression.js';
 
 // Value of a pick in this draft by its overall slot (#1 ≈ 133, #10 ≈ 69,
 // #30 ≈ 17, #60 ≈ 4), on the same scale as future picks' pickValue.

@@ -1,6 +1,7 @@
 // Draft tools: prospect comps, lottery simulation, mock drafts, pick trades.
 
-import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr, levelOf } from './savefile.js';
+import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr } from './savefile.js';
+import { shownLevel as levelOf } from './regression.js';
 import { mulberry32 } from './progression.js';
 
 // The 12 skill ratings (physical ratings aren't kept for retirees).
