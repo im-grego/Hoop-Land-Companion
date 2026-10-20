@@ -4,8 +4,7 @@
 // - Jersey 1 and 2: white, unless the jersey is black.
 // - Jersey 3 and 4: black when the jersey is black or close to it, otherwise the
 //   jersey's own color, even one outside the team's main three.
-// Tattoos, bare skin, black leg sleeves (compression) and odd colors (a rubber
-// wristband) are left alone.
+// Tattoos, bare skin and odd wristband colors (a rubber band) are left alone.
 
 export const BLACK = '141020';
 const HEX = /^[0-9a-f]{6}$/i;
@@ -36,15 +35,15 @@ export function knownColors(league) {
 }
 
 const BODY = ['L_Shoulder', 'R_Shoulder', 'L_Elbow', 'R_Elbow', 'L_Wrist', 'R_Wrist', 'L_Knee', 'R_Knee', 'L_Shin', 'R_Shin'];
-const LEGS = new Set(['L_Knee', 'R_Knee', 'L_Shin', 'R_Shin']);
 
 // What a body or head slot holds: skin, a tattoo, team gear, or something odd.
-function kind(v, skin, tattoos, known) {
+function kind(v, skin, tattoos, known, own = new Set()) {
   const u = String(v || '').toUpperCase();
   if (!u) return 'skin';
   if (['PRI', 'SEC', 'TER'].includes(u)) return 'gear';
   if (u === String(skin).toUpperCase()) return 'skin';
-  if (tattoos?.includes(u)) return 'tattoo';
+  // A color on the tattoo list that is also one of his own team's colors reads as gear, not ink.
+  if (tattoos?.includes(u) && !own.has(u)) return 'tattoo';
   if (isBlackish(u) || isWhiteish(u)) return 'gear';
   if (known.has(u)) return 'gear';
   if (HEX.test(u) && skin && dist(u, String(skin).toUpperCase()) <= 110) return 'tattoo';
@@ -54,7 +53,7 @@ function kind(v, skin, tattoos, known) {
 // Recolor one team's players. `tattoos` maps a skin tone to its tattoo colors.
 // Returns [{ p, i, key, was }] for undo.
 export function matchTeam(team, known, tattoos = {}) {
-  const want = targets(team), log = [];
+  const want = targets(team), log = [], own = new Set([...(team.teamColors || []), ...(team.uniforms || []).flatMap(u => Object.values(u).map(v => resolve(team, v)))].map(x => String(x).toUpperCase()));
   const set = (p, a, i, key, val) => { if (a[key] !== val) { log.push({ p, i, key, was: a[key] }); a[key] = val; } };
   for (const p of team.roster) {
     const skin = p.appearance?.skinC, tat = (tattoos[skin] || tattoos[String(skin).toUpperCase()] || []).map(x => String(x).toUpperCase());
@@ -62,13 +61,12 @@ export function matchTeam(team, known, tattoos = {}) {
       const w = want[i];
       if (!w) return;
       // Head gear and sleeves in a color from some old team still count as team gear; only a wrist color can be a one-off.
-      const head = v => ['gear', 'odd'].includes(kind(v, skin, tat, known));
+      const head = v => ['gear', 'odd'].includes(kind(v, skin, tat, known, own));
       if (a.headAcc && a.headAcc !== 'none' && head(a.headAccC)) set(p, a, i, 'headAccC', w);
       if (a.headAcc2 && a.headAcc2 !== 'none' && head(a.headAcc2C)) set(p, a, i, 'headAcc2C', w);
       for (const k of BODY) {
-        const kd = kind(a[k], skin, tat, known);
+        const kd = kind(a[k], skin, tat, known, own);
         if (kd !== 'gear' && !(kd === 'odd' && !k.endsWith('Wrist'))) continue;
-        if (LEGS.has(k) && isBlackish(String(a[k]).toUpperCase())) continue;       // black compression sleeves stay
         set(p, a, i, k, w);
       }
       set(p, a, i, 'sockC', w);
