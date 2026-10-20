@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.142.1';
+const APP_VERSION = '0.143.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6482,7 +6482,7 @@ screens.liveTrade = (args) => {
   const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
   const protRows = !isComplete() ? [] : firsts.map(x => protOf(x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><span class="small muted">already protected</span></div>`
-    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
+    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${v === 1 ? '#1' : v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
   const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
       <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
   const select = (side, cur) => {
@@ -6615,7 +6615,7 @@ function liveTrade3(args, A, B, C, left) {
   const firsts = items.filter(i => i.x.pick && i.x.pick.rd === 1 && i.x.pick.yr > L.season.currentYear);
   const protRows = !isComplete() ? [] : firsts.map(i => protOf(i.x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><span class="small muted">already protected</span></div>`
-    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[i.x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${i.x.key}" data-v="${v}">${v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
+    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[i.x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${i.x.key}" data-v="${v}">${v === 1 ? '#1' : v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
   layout({
     title: '3-Team Trade',
     body: `
@@ -9970,10 +9970,34 @@ screens.cuts = () => {
     body: `<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${requestCard()}
       ${myCards}
-      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}</div>`
+      ${done ? waiverBox() : ''}
+      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`,
     action: done ? null : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
+};
+// After the cuts: the best players on the market, for any of your teams still short of a full roster.
+function waiverBox() {
+  const L = league(), O = FA.FA_DEFAULTS;
+  const short = L.teams.filter(isUserTeam).filter(t => FA.signedRoster(t).length < O.seasonMax);
+  if (!short.length) return '';
+  const pool = (L.freeAgents || []).filter(p => p.status === FA.STATUS_FREE).sort((x, y) => shownLevel(y) - shownLevel(x)).slice(0, 12);
+  return `<fieldset class="frame"><legend>Waiver Wire</legend>
+    <p class="note small muted">${short.map(t => `${esc(t.shortName)} ${FA.signedRoster(t).length}/${O.seasonMax}`).join(' · ')}. Players cut around the league and anyone unsigned, best first. Minimum deals.</p>
+    <div class="list">${pool.map(p => `<div class="prow rrow"><span class="name">${esc(playerName(p))} ${lvTag(p)}</span><span class="right xbtns"><button class="btn small focus" data-act="waiverSign" data-id="${p.id}">✍️ $${lateMin(p)}M × ${lateYears(p)}</button></span><span class="meta">${esc(posName(p))} · ${p.age}y</span></div>`).join('') || '<p class="note small muted">Nobody left.</p>'}</div></fieldset>`;
+}
+actions.waiverSign = d => {
+  const L = league(), O = FA.FA_DEFAULTS;
+  const p = (L.freeAgents || []).find(x => x.id === +d.id);
+  const t = L.teams.filter(isUserTeam).find(x => FA.signedRoster(x).length < O.seasonMax);
+  if (!p || !t) { toast('No open roster spot', '', 2400, true); return; }
+  if (FA.hasGrudge(p, t)) { toast(`${playerName(p)} refuses to meet with ${t.shortName}`, '', 2800, true); return; }
+  if (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2) { toast('That would put you over the 2nd apron', '', 2400, true); return; }
+  FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
+  lockSigning(p, 'Signed this offseason');
+  state.dirty = true;
+  render();
+  toast(`✍️ ${playerName(p)} signs with ${t.shortName}`, `$${lateMin(p)}M × ${lateYears(p)}`);
 };
 // Cuts still to pick (only as many as there are cuttable players).
 const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
@@ -10294,6 +10318,18 @@ actions.cutsFinish = async () => {
   }
   saveDead(ledger);
   state.buyoutSel = {};
+  // CPU teams short of a full roster pick up the best cut and unsigned players (minimum deals, nobody over the 2nd apron).
+  const waiver = [];
+  for (const t of L.teams.filter(x => !isUserTeam(x)).sort(() => Math.random() - 0.5)) {
+    while (FA.signedRoster(t).length < O.seasonMax) {
+      const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE).sort((x, y) => shownLevel(y) - shownLevel(x))[0];
+      if (!p || (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2)) break;
+      FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
+      lockSigning(p, 'Signed this offseason');
+      waiver.push({ team: t.shortName, name: playerName(p), lv: shownLevel(p) });
+    }
+  }
+  calFlags().waiverLog = waiver;
   roleMorale(L);
   syncScoringOptions(true);
   calFlags().cutLog = { n, mine: mineN, list };

@@ -49,7 +49,7 @@ export function touchErr(moves, teams) {
 // Pick protections: top-N protected; if it lands in the top N it goes back
 // to the team that protected it and the holder gets that team's 2nd that
 // year instead. Value to the holder drops with the protection.
-export const PROTECTIONS = [0, 4, 10, 14, 20];
+export const PROTECTIONS = [0, 1, 4, 8, 14];
 
 // Settle this year's protected picks once the order is set (pk.pk is the
 // 0-based slot). `ledger` is [{ otid, yr, top, from }]; returns what
