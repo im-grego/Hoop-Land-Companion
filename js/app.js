@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.141.1';
+const APP_VERSION = '0.141.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3550,7 +3550,7 @@ function playerTags(p) {
   const inj = p.season?.injury?.gamesOut > 0 ? p.season.injury.gamesOut : 0;
   if (inj) add(`Injured · ${inj} g`, 'down-b');
   if (p.status === 4) add('Expiring', 'lvl');
-  else if (c.yrs === 1 && c.sal) add('Final Year', 'lvl');
+  else if (c.yrs === 1 && c.sal && !t.some(x => /Final Year/.test(x))) add('Final Year', 'lvl');   // once: the value tag may already say it
   if (c.noTrd) add('No-Trade');
   if (c.ext?.yrs > 0) add(`Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');
   else if (c.canExt) add('Extension Eligible', 'new');
