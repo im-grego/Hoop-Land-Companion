@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.5';
+const APP_VERSION = '0.128.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -514,7 +514,7 @@ async function loadFile(file) {
     if (pack) { const n = applyPackTraits(pack, data.seasonLeagues[0]); if (n) toast(`Your traits restored for ${n} players`, pack.name); setTimeout(() => packPrompt(pack), 700); }
     const signedIn = isCollege() ? applyRecruiting() : 0;
     o.remove();
-    if (!isCollege() && !state.depth) setTimeout(depthPrompt, 400);
+    if (!ALWAYS_COMPLETE && !isCollege() && !state.depth) setTimeout(depthPrompt, 400);
     toast(`Loaded ${data.seasonLeagues[0].meta?.saveName || file.name}`, [held ? `${held} CPU contract offers held until the options deadline.` : '', kicked ? `${kicked} extension${kicked > 1 ? 's' : ''} signed last summer kicked in.` : '', filled ? `Traits set for ${filled} players.` : '', signedIn ? `${signedIn} recruiting signings written in.` : ''].filter(Boolean).join(' '));
     render();
   } catch (err) {
@@ -862,7 +862,9 @@ const saveFingerprint = (L = league()) => {
 // Simple or Complete rules, chosen when a save is first opened and kept
 // with the save's fingerprint. Simple: the offseason without aprons, tax,
 // pick protections, no-trade clauses or trade restrictions.
-const isComplete = () => state.depth !== 'simple';
+// Simple rules are parked for now: every offseason runs Complete. Flip to false to bring the choice back.
+const ALWAYS_COMPLETE = true;
+const isComplete = () => ALWAYS_COMPLETE || state.depth !== 'simple';
 const depthLast = () => { try { return localStorage.getItem('hlc:depth:last') || 'complete'; } catch { return 'complete'; } };
 function setDepth(d) {
   state.depth = d;
@@ -3697,7 +3699,7 @@ screens.settings = (args) => {
   if (tab === 'general') {
     body = `
       ${state.data && state.data.seasonLeagues.length > 1 ? setGroup('League', [`<div class="seg">${state.data.seasonLeagues.map((L, i) => `<button class="btn small ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}</div>`]) : ''}
-      ${state.data && !isCollege() ? setGroup('Rules', [`<div class="seg">${[['simple', 'Simple'], ['complete', 'Complete']].map(([k, l]) => `<button class="btn small ${(state.depth || 'complete') === k ? 'on focus' : 'off'}" data-act="setDepth" data-v="${k}">${l}</button>`).join('')}</div>`, '<span class="note muted small">Simple: no aprons, tax, pick protections, no-trade clauses or trade restrictions.</span>']) : ''}
+      ${!ALWAYS_COMPLETE && state.data && !isCollege() ? setGroup('Rules', [`<div class="seg">${[['simple', 'Simple'], ['complete', 'Complete']].map(([k, l]) => `<button class="btn small ${(state.depth || 'complete') === k ? 'on focus' : 'off'}" data-act="setDepth" data-v="${k}">${l}</button>`).join('')}</div>`, '<span class="note muted small">Simple: no aprons, tax, pick protections, no-trade clauses or trade restrictions.</span>']) : ''}
       ${state.data && !isCollege() ? setGroup('Offseason Progress', ['<button class="btn small" data-act="resetProgress">↺ Start This Offseason Over</button>', '<span class="note muted small">Clears the steps marked done (mocks, scouting, options, extensions, ...) for this save.</span>']) : ''}
       ${setGroup('Offseason Bump', [
         options('Bump gives', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']]),
