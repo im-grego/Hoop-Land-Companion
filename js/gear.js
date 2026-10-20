@@ -2,8 +2,9 @@
 // accessory color with each of the four jerseys.
 //
 // - Jersey 1 and 2: white, unless the jersey is black.
-// - Jersey 3 and 4: black when the jersey is black or close to it, otherwise the
-//   jersey's own color, even one outside the team's main three.
+// - Jersey 3 and 4: black when the jersey is black or close to it. Otherwise the jersey's own
+//   color, but only when that color is the team's 3rd color or one outside its main three;
+//   a jersey in the primary or secondary color keeps white accessories.
 // Tattoos, bare skin and rubber wristbands (one color on every jersey) are left alone.
 
 export const BLACK = '141020';
@@ -20,7 +21,8 @@ export function targets(team) {
   return (team.uniforms || []).map((u, i) => {
     const jersey = resolve(team, u.jersey);
     if (isBlackish(jersey)) return BLACK;
-    return i <= 1 ? 'FFFFFF' : jersey;
+    if (i <= 1 || jersey === resolve(team, 'PRI') || jersey === resolve(team, 'SEC')) return 'FFFFFF';
+    return jersey;
   });
 }
 
