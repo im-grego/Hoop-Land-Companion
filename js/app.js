@@ -36,7 +36,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.113.1';
+const APP_VERSION = '0.113.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1909,7 +1909,7 @@ screens.playbook = () => {
     title: 'Playbook',
     body: `<fieldset class="frame"><legend>${esc(t.shortName)} Playbook</legend><div class="stack">
         ${hasPlays(t) ? '' : '<p class="note small muted">No quick plays set for this team in this file.</p>'}
-        ${PRESETS.map((p, i) => `<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
+        ${PRESETS.map((p, i) => `${i === 0 || PRESETS[i - 1].group !== p.group ? `<p class="note small" style="margin:6px 0 0"><b class="gold">${esc(p.group)}</b></p>` : ''}<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
         ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b><span class="small muted">Your own playbook.</span>
           <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
         <button class="btn" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
