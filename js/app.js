@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.139.0';
+const APP_VERSION = '0.139.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2049,7 +2049,7 @@ screens.coaches = () => {
     const sec = securityOf(c, car);
     return `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}">
       <span class="coach-top">${t ? logoImg(t) : ''}<b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${t ? esc(t.shortName) : 'Available'}</span><span class="badge ${secCls(sec.tag)}">${sec.tag}</span></span>
-      <span class="small muted">${esc(coachArch(c))} · ${esc(coachGrade(c, field).tier)} · ${car.seasons ? `${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)})` : 'No record'}${car.titles ? ` · ${car.titles}× champion` : ''}${sec.yrs ? ` · $${sec.sal}M × ${sec.yrs}` : ''}</span>
+      <span class="small muted">${esc(coachArch(c))} · 📒 ${esc(signatureOf(c))} · ${esc(coachGrade(c, field).tier)} · ${car.seasons ? `${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)})` : 'No record'}${car.titles ? ` · ${car.titles}× champion` : ''}${sec.yrs ? ` · $${sec.sal}M × ${sec.yrs}` : ''}</span>
     </button>`;
   };
   layout({
@@ -2176,7 +2176,8 @@ screens.coach = args => {
         <p class="note"><b>${esc(g.tier)}</b> · ${esc(g.growth)}</p>
         <p class="note small muted">${esc(g.line)}</p>
         <p class="note">${esc(philosophyOf(c))}</p>
-        <p class="note small muted">Signature playbook: <b>${esc(signatureOf(c))}</b></p></div></fieldset>
+</div></fieldset>
+      ${(() => { const nm = signatureOf(c), pr = PRESETS.find(x => x.name === nm), cur = t ? styleOf(t) : null; return `<fieldset class="frame"><legend>Playbook</legend><div class="stack"><p class="note"><b>${esc(nm)}</b> <span class="muted small">his signature book, from his philosophy</span></p>${pr ? `<p class="note small muted">${esc(pr.blurb)}</p>` : ''}<p class="note small">${t ? (cur === nm ? `${esc(t.shortName)} run it now.` : `${esc(t.shortName)} run ${cur === 'Custom' ? 'a custom book' : cur === 'None' ? 'no set book' : `<b>${esc(cur)}</b>`} right now.`) : 'He installs it on arrival. Your players and the roster pull it from there, season by season.'}</p></div></fieldset>`; })()}
       ${t && schemeLogBox(t.id) ? `<fieldset class="frame"><legend>System History</legend>${schemeLogBox(t.id)}</fieldset>` : ''}
       <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
       <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
