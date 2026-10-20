@@ -156,11 +156,11 @@ function pick(pos, recipe) {
 }
 // Offensive styles: a few families blended into one way of playing.
 export const PRESETS = [
-  { name: 'Pace & Space', group: 'Guard-Led', blurb: 'Best for guard-led teams that want pick-and-rolls and pops with an iso as the release valve.', recipe: ['PNR', 'PNR', 'PNP', 'Iso'] },
-  { name: 'Iso & Spread', group: 'Guard-Led', blurb: 'Best for teams built around one or two elite scorers who need space and the ball.', recipe: ['Iso', 'Iso', 'Motion', 'Out5'] },
-  { name: 'Flow Offense', group: 'Ball Movement', blurb: 'Best for deep, unselfish teams that move the ball through motion and Horns, with a pop for the shooter.', recipe: ['Motion', 'Motion', 'Horns', 'PNP'] },
-  { name: 'Off-Ball Movement', group: 'Ball Movement', blurb: 'Best for teams of shooters and cutters who get open without the ball: corner pin-downs and wing screens off Horns, with 5-out spacing.', recipe: ['HornsPin', 'HornsWing', 'Motion', 'Out5'] },
-  { name: 'Inside-Out', group: 'Inside Game', blurb: 'Best for teams with a skilled big who can pass from the high post, backed by guards and shooters.', recipe: ['Post', 'Post', 'PNR', 'Horns'] },
-  { name: 'Half-Court Grind', group: 'Inside Game', blurb: 'Best for physical, defense-first teams that slow the game down and score through the post.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
+  { name: 'Pace & Space', group: 'Star Driven', blurb: 'Best for guard-led teams with a quick, shot-creating point guard and shooters around him. Pick-and-rolls and pick-and-pops pull the defense toward the ball handler, and an isolation play gives the offense a release valve when the screen is covered.', recipe: ['PNR', 'PNR', 'PNP', 'Iso'] },
+  { name: 'Iso & Spread', group: 'Star Driven', blurb: 'Best for teams built around one or two elite scorers who can win one-on-one. Isolations hand the star the ball with a clear lane, while motion and 5-out sets pull the defenders away from the help.', recipe: ['Iso', 'Iso', 'Motion', 'Out5'] },
+  { name: 'Flow Offense', group: 'Ball Movement', blurb: 'Best for deep, unselfish teams with several capable passers and shooters. Motion and Horns plays keep the ball and the players moving, which forces the defense to rotate, and a pick-and-pop gives the shooter a clean final look.', recipe: ['Motion', 'Motion', 'Horns', 'PNP'] },
+  { name: 'Off-Ball Movement', group: 'Ball Movement', blurb: 'Best for teams of shooters and cutters who can get open without the ball. Horns pin-downs and wing screens free shooters for catch-and-shoot looks, while motion and 5-out spacing keep the defense stretched.', recipe: ['HornsPin', 'HornsWing', 'Motion', 'Out5'] },
+  { name: 'Inside-Out', group: 'Post Game', blurb: 'Best for teams with a skilled big man who can score and pass from the high post. High-post entries draw the defense inward, and then the pick-and-roll and Horns plays kick the ball out to guards and shooters.', recipe: ['Post', 'Post', 'PNR', 'Horns'] },
+  { name: 'Half-Court Grind', group: 'Post Game', blurb: 'Best for physical, defense-first teams that want to slow the game down. High-post entries, Horns sets and pick-and-rolls create steady shots in the half court, and an isolation is the bailout when the shot clock runs down.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
 ];
 export const presetPlays = preset => ({ positions: [1, 2, 3, 4, 5].map(pos => ({ plays: pick(pos, preset.recipe) })) });
