@@ -25,7 +25,7 @@ import { regressed } from './regression.js';
 import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
-import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade } from './coachprofile.js';
+import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -37,7 +37,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.117.1';
+const APP_VERSION = '0.118.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1972,6 +1972,34 @@ screens.coaches = () => {
       ${pool.length ? `<fieldset class="frame"><legend>Available Coaches</legend><div class="stack">${pool.map(c => row({ ...c, car: careerOf(c.c) })).join('')}</div></fieldset>` : ''}`,
   });
 };
+
+// Hire an available coach as your head coach; the current one goes to the pool.
+function hireBox({ c, t }, staff) {
+  const mine = L_myTeam();
+  if (!mine) return '';
+  if (t === mine) return '<p class="note small muted">Your head coach.</p>';
+  if (t) return '';
+  const ask = askingContract(c, staff.map(x => x.c)), cur = CO.headCoach(mine);
+  return `<fieldset class="frame"><legend>Hire</legend><div class="stack">
+    <p class="note small">Asks <b>$${ask.sal}M for ${ask.yrs} years</b>. He replaces ${cur ? esc(`${cur.fn} ${cur.ln}`) : 'your head coach'}${cur?.contract?.yrs ? `, who has $${cur.contract.sal}M × ${cur.contract.yrs} left and goes to the available pool` : ''}.</p>
+    <button class="btn focus" data-act="hireCoach" data-arg="${c.id}">🤝 Make Head Coach</button></div></fieldset>`;
+}
+const L_myTeam = () => myTeam();
+actions.hireCoach = async d => {
+  const L = league(), mine = myTeam();
+  const c = (L.coaches || []).find(x => x.id === +d.arg);
+  if (!mine || !c) return;
+  const cur = CO.headCoach(mine);
+  if (!(await confirmBox(`Hire ${c.fn} ${c.ln} to replace ${cur ? `${cur.fn} ${cur.ln}` : 'your head coach'}?`, 'Hire'))) return;
+  checkpoint('Coach change');
+  const r = hireHeadCoach(L, mine, c);
+  if (!r) { toast('No head coach slot on this team'); return; }
+  const tr = treeStore();
+  if (tr.planOrig) delete tr.planOrig[r.old.id];
+  state.dirty = true;
+  toast(`${c.fn} ${c.ln} is your head coach`, `$${r.ask.sal}M for ${r.ask.yrs} years`);
+  replace('coach', { arg: String(c.id) });
+};
 actions.coachSort = d => { state.coachSort = d.k; render(); };
 
 const bar = (v, max, cls) => `<span class="co-bar"><span class="co-fill ${cls}" style="width:${Math.min(100, (v / Math.max(1, max)) * 100)}%"></span></span>`;
@@ -1994,6 +2022,7 @@ screens.coach = args => {
         <p class="note">${esc(philosophyOf(c))}</p></div></fieldset>
       <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
       <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
+      ${hireBox(hit, staff)}
       <fieldset class="frame"><legend>Job Security</legend><div class="stack">
         <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
         <p class="note small muted">${sec.yrs ? `Contract: $${sec.sal}M for ${sec.yrs} more year${sec.yrs > 1 ? 's' : ''}.` : 'No contract on file.'}</p></div></fieldset>
