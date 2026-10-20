@@ -25,6 +25,7 @@ import { regressed } from './regression.js';
 import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
+import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
@@ -35,7 +36,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.110.6';
+const APP_VERSION = '0.111.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1881,7 +1882,19 @@ const pbKey = 'hlc:playbooks';
 const loadBooks = () => { try { return JSON.parse(localStorage.getItem(pbKey)) || []; } catch { return []; } };
 const saveBooks = b => { try { localStorage.setItem(pbKey, JSON.stringify(b)); } catch { /* ignore */ } };
 const hasPlays = t => (t.quickPlays?.positions || []).some(x => x.plays?.length);
-const playsGrid = qp => `<div class="pb-grid">${POS5.map((pos, i) => `<span class="pb-pos">${pos}</span>${(qp?.positions?.[i]?.plays || []).map(n => `<span class="pb-play">#${n}</span>`).join('') || '<span class="muted small">—</span>'}`).join('')}</div>`;
+const playsGrid = qp => `<div class="pb-grid">${POS5.map((pos, i) => `<span class="pb-pos">${pos}</span>${(qp?.positions?.[i]?.plays || []).map(n => `<span class="pb-play" title="#${n}">${esc(playName(n))}</span>`).join('') || '<span class="muted small">—</span>'}`).join('')}</div>`;
+// One select per quick play, by position: only plays that involve that
+// position (as the game's tab lists them), grouped by type.
+const playOptions = (pos, cur) => {
+  const ids = new Set(playsFor(pos + 1)); ids.add(cur);
+  const groups = new Map();
+  for (const id of [...ids].sort((a, b) => a - b)) { const g = playType(id); (groups.get(g) || groups.set(g, []).get(g)).push(id); }
+  return [...groups].map(([g, list]) => `<optgroup label="${esc(g)}">${list.map(id => `<option value="${id}" ${id === cur ? 'selected' : ''}>${esc(playName(id))} (${PLAYS[id][2]})</option>`).join('')}</optgroup>`).join('');
+};
+const playsEditor = (qp, can) => POS5.map((pos, i) => `<div class="pb-edit"><span class="pb-pos">${pos}</span><div class="pb-sel">${[0, 1, 2, 3].map(k => {
+  const cur = qp?.positions?.[i]?.plays?.[k] ?? playsFor(i + 1)[k];
+  return `<select class="sel-team" data-change="pbSlot" data-pos="${i}" data-slot="${k}" ${can ? '' : 'disabled'}>${playOptions(i, cur)}</select>`;
+}).join('')}</div></div>`).join('');
 
 screens.playbook = () => {
   const t = myTeam();
@@ -1893,9 +1906,14 @@ screens.playbook = () => {
   layout({
     title: 'Playbook',
     body: `<fieldset class="frame"><legend>${esc(t.shortName)} Quick Plays</legend>
-        ${hasPlays(t) ? playsGrid(t.quickPlays) : '<p class="note small muted">No quick plays set for this team in this file.</p>'}
-        <p class="note small muted" style="margin-top:6px">Plays show by the game's play number.</p>
+        ${hasPlays(t) ? '' : '<p class="note small muted">No quick plays set for this team in this file. Pick any below to start a playbook.</p>'}
+        ${playsEditor(t.quickPlays, sch >= 1)}
+        <p class="note small muted" style="margin-top:6px">${sch >= 1 ? 'Pick a play for each slot.' : '🔒 Scheme 1 lets you change plays.'} (n) is the ball handler's position.</p>
         ${hasPlays(t) ? '<button class="btn small" data-act="savePlaybook">💾 Save as a playbook</button>' : ''}</fieldset>
+      <fieldset class="frame"><legend>Presets</legend><div class="stack">
+        ${PRESETS.map((p, i) => `<div class="pb-book"><b>${esc(p.name)}</b>${playsGrid(presetPlays(p))}
+          <button class="btn small ${sch >= 1 ? 'focus' : ''}" data-act="installPreset" data-i="${i}" ${sch >= 1 ? '' : 'disabled'}>${sch >= 1 ? '📥 Install' : '🔒 Scheme 1'}</button></div>`).join('')}
+      </div></fieldset>
       <fieldset class="frame"><legend>Saved Playbooks</legend><div class="stack">
         ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b>${playsGrid(b.quickPlays)}
           <div class="grid2"><button class="btn small ${sch >= 1 ? 'focus' : ''}" data-act="installPlaybook" data-i="${i}" ${sch >= 1 ? '' : 'disabled'}>${sch >= 1 ? '📥 Install' : '🔒 Scheme 1'}</button><button class="btn small off" data-act="deletePlaybook" data-i="${i}">Delete</button></div></div>`).join('') || '<p class="note small muted">None yet. Load a file where your team has quick plays set and save them here.</p>'}
@@ -1921,6 +1939,13 @@ actions.savePlaybook = () => {
   saveBooks(books);
   render();
 };
+actions.installPreset = d => {
+  const t = myTeam(), p = PRESETS[+d.i];
+  if (!t || !p || tierNow('scheme') < 1) return;
+  t.quickPlays = presetPlays(p);
+  state.dirty = true;
+  render();
+};
 actions.installPlaybook = d => {
   const t = myTeam(), b = loadBooks()[+d.i];
   if (!t || !b || tierNow('scheme') < 1) return;
@@ -1943,6 +1968,16 @@ actions.soAdd = () => soEdit(so => {
   const t = myTeam(), used = new Set(so.map(o => o.pid));
   const p = [...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).find(x => !used.has(x.id));
   if (p && so.length < 3) so.push({ pid: p.id, usageRate: [30, 20, 15][so.length], focus: 1, playSelection: 1 });
+});
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'pbSlot') return;
+  const t = myTeam(), d = e.target.dataset, id = +e.target.value;
+  if (!t || tierNow('scheme') < 1 || !(id >= 0 && id <= MAX_PLAY)) return;
+  const qp = t.quickPlays ||= { positions: [] };
+  for (let i = 0; i < 5; i++) qp.positions[i] ||= { plays: playsFor(i + 1).slice(0, 4) };
+  qp.positions[+d.pos].plays[+d.slot] = id;
+  state.dirty = true;
+  render();
 });
 $app.addEventListener('change', e => {
   if (e.target.dataset.change !== 'soPlayer') return;

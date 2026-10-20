@@ -1357,3 +1357,7 @@ main.panel.bare { margin-top: 10px; }
   .marquee-track span { font-size: 24px; letter-spacing: 3px; }
   .header .back, .nav-btn { width: 72px; }
 }
+
+.pb-edit { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.pb-sel { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.pb-sel select { width: 100%; font-size: 13px; }

@@ -239,13 +239,85 @@
   "name": "Flex 5-2 PNP",
   "ball": 5
  },
+ "60": {
+  "name": "Flex 5-3 PNR",
+  "ball": 5
+ },
+ "61": {
+  "name": "Flex 5-3 PNP",
+  "ball": 5
+ },
+ "62": {
+  "name": "Horns 4",
+  "ball": 1
+ },
+ "63": {
+  "name": "Horns 5",
+  "ball": 1
+ },
+ "64": {
+  "name": "Horns 1",
+  "ball": 2
+ },
+ "65": {
+  "name": "Horns 3",
+  "ball": 2
+ },
  "66": {
   "name": "Horns 4",
+  "ball": 2
+ },
+ "67": {
+  "name": "Horns 5",
   "ball": 2
  },
  "68": {
   "name": "Horns 1",
   "ball": 3
+ },
+ "69": {
+  "name": "Horns 2",
+  "ball": 3
+ },
+ "70": {
+  "name": "Horns 4",
+  "ball": 3
+ },
+ "71": {
+  "name": "Horns 5",
+  "ball": 3
+ },
+ "72": {
+  "name": "Horns 1",
+  "ball": 4
+ },
+ "73": {
+  "name": "Horns 2",
+  "ball": 4
+ },
+ "74": {
+  "name": "Horns 3",
+  "ball": 4
+ },
+ "75": {
+  "name": "Horns 5",
+  "ball": 4
+ },
+ "76": {
+  "name": "Horns 1",
+  "ball": 5
+ },
+ "77": {
+  "name": "Horns 2",
+  "ball": 5
+ },
+ "78": {
+  "name": "Horns 3",
+  "ball": 5
+ },
+ "79": {
+  "name": "Horns 4",
+  "ball": 5
  },
  "80": {
   "name": "High Post 2",
