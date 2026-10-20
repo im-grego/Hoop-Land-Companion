@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.2';
+const APP_VERSION = '0.134.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -8592,7 +8592,8 @@ function playStyleBox(p) {
     <details class="tend-wrap"><summary class="small">All tendencies</summary>
       ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
     </details>
-    ${earnedSkills(p).length ? `<details class="tend-wrap"><summary class="small">All skills</summary>${earnedSkills(p).map(x => `<div class="tend-row"><span class="small"><b>${esc(skillName(x.id))}</b>${isLeveled(x.id) ? ` (${x.level})` : ''}</span></div>`).join('')}</details>` : ''}</fieldset>`;
+  </fieldset>
+  ${earnedSkills(p).length ? `<fieldset class="frame"><legend>Skills</legend>${earnedSkills(p).map(x => `<div class="tend-row"><span class="small"><b>${esc(skillName(x.id))}</b>${isLeveled(x.id) ? ` (${x.level})` : ''}</span></div>`).join('')}</fieldset>` : ''}`;
 }
 
 // ---------------------------------------------------------------------------
