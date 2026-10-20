@@ -1,4 +1,4 @@
-# Hoop Land Companion
+# Hoop Land+
 
 An installable web app (PWA) for running an **offseason development phase** on Hoop Land season files.
 

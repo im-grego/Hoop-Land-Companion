@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.136.0';
+const APP_VERSION = '0.136.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1076,7 +1076,7 @@ function stepActions(key) {
       // Trades open after the July moratorium (week 1).
       return day >= 2 && isComplete() ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
-    case 'meeting': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="meeting">🗣️ Hold the Meeting</button><button class="btn" data-act="meetingSkip">⏭ Skip</button></div>`;
+    case 'meeting': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="meeting">🗣️ Begin</button><button class="btn" data-act="meetingSkip">⏭ Skip</button></div>`;
     case 'dev': return `${calFlags().meetingList ? '<button class="btn small off" data-act="nav" data-to="meeting" style="margin-bottom:8px">🗣️ Meeting Results</button>' : ''}<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
@@ -1336,7 +1336,7 @@ screens.main = () => {
       title: 'Import File',
       body: `
         <img class="hero" src="icons/banner.jpg" alt="Hoop Land">
-        <fieldset class="frame"><legend>Hoop Land Companion</legend>
+        <fieldset class="frame"><legend>Hoop Land+</legend>
           <div class="stack">
             <p class="note">Load a save from the start of the offseason (Pre-Lottery) and run the whole offseason here: the lottery, the draft, summer league, free agency and player development. Export once at the end and load it in the game. Saves from later in the offseason pick up from where they are.</p>
             <label class="btn big focus"><span class="ico">📂</span> Load Season File
@@ -1715,8 +1715,11 @@ function coachCard() {
     <p class="note small" style="margin:4px 0 0"><b class="gold">Strategy</b></p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
     <div class="grid2"><button class="btn" data-act="nav" data-to="scoring">🏀 Scoring Options</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
-    ${isComplete() && !isCollege() ? `<p class="note small" style="margin:4px 0 0"><b class="gold">Arena</b></p><button class="btn" data-act="nav" data-to="facilities">🏟️ Facilities Upgrades · ${coinTag(coinsOf(t))}</button>` : ''}
-  </div></fieldset>`;
+  </div></fieldset>
+  ${isComplete() && !isCollege() ? `<fieldset class="frame"><legend>Arena</legend><div class="stack">
+    <p class="note small">Coins buy facility upgrades here. Each one keeps its effect in the game, and the app adds much more on top.</p>
+    <button class="btn" data-act="nav" data-to="facilities">🏟️ Facilities Upgrades · ${coinTag(coinsOf(t))}</button>
+  </div></fieldset>` : ''}`;
 }
 
 // Effects of the extra tree nodes (Complete rules, pros only).
@@ -8021,8 +8024,8 @@ screens.options = () => {
           : `<div class="full"><p class="note small muted">Make him a promise to stay (one try):</p><span class="opt-btns">${Object.entries(PITCHES).map(([k, v]) => `<button class="btn small" data-act="optPitch" data-id="${x.p.id}" data-v="${k}">${esc(v.label)} · ${Math.round(pitchOdds(x.p, x.team, k, x.c.reason) * 100)}%</button>`).join('')}</span></div>`) : ''}</div>`).join('') || '<p class="note muted small">No player options this year.</p>'}</div>
         ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy. Promises are remembered next season.</p>' : ''}</fieldset>
       <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
-        <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Extend')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Skip')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
-        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Extend: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Skip: he\'s unrestricted.</p>' : ''}</fieldset>
+        <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Make Offer')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Let Walk')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
+        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Make Offer: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Let Walk: he\'s unrestricted.</p>' : ''}</fieldset>
       <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
     action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
