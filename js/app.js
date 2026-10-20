@@ -26,6 +26,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
+import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
@@ -38,7 +39,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.123.0';
+const APP_VERSION = '0.124.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1165,7 +1166,7 @@ actions.calCamp = async () => {
   state.undo = null;
   render();
 };
-actions.calDev = () => { calFlags().dev = true; render(); };
+actions.calDev = () => { calFlags().dev = true; applySchemeEvolution(); render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
@@ -1646,7 +1647,7 @@ function coachCard() {
   return `<fieldset class="frame"><legend>Coaching Staff</legend><div class="stack">
     <p class="note"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b> <span class="muted small">Development ${r('development')} · Motivation ${r('motivation')} · Leadership ${r('leadership')}</span></p>
     <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${tokTag(coachPoints())}</b> to spend</p>
-    <p class="note small muted">${CO.BRANCHES.map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
+    <p class="note small muted">${CO.BRANCHES.filter(b => b.tiers.length).map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
     <button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button>
@@ -1737,7 +1738,8 @@ screens.coachtree = () => {
       ${CO.BRANCHES.map(b => {
         const nodes = CO.NODES[b.k].filter(n => n.spine || extras);
         const row = r => nodes.filter(n => n.row === r);
-        const rows = [1, 2, 3, 4].filter(r => row(r).length);
+        const rows = [1, 2, 3, 4, 5].filter(r => row(r).length);
+        if (!rows.length) return '';
         return `<fieldset class="frame"><legend>${b.icon} ${b.label}</legend><div class="tree">
           ${rows.map((r, i) => `${i ? link : ''}<div class="tree-row2 ${row(r).length === 1 ? 'one' : ''}">${row(r).map(n => nodeBtn(b, n, nodes)).join('')}</div>`).join('')}
         </div></fieldset>`;
@@ -1910,7 +1912,7 @@ screens.playbook = () => {
   const inst = (act, i, on) => `<button class="btn small ${on ? 'off' : sch >= 1 ? 'focus' : ''}" data-act="${act}" data-i="${i}" ${sch >= 1 && !on ? '' : 'disabled'}>${on ? '✓ Installed' : sch >= 1 ? '📥 Use This Playbook' : '🔒 Scheme 1'}</button>`;
   layout({
     title: 'Playbook',
-    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Playbook</legend><div class="stack">
+    body: `${proposalBox()}<fieldset class="frame"><legend>${esc(t.shortName)} Playbook</legend><div class="stack">
         ${hasPlays(t) ? '' : '<p class="note small muted">No quick plays set for this team in this file.</p>'}
         ${PRESETS.map((p, i) => `${i === 0 || PRESETS[i - 1].group !== p.group ? `<p class="note small" style="margin:6px 0 0"><b class="gold">${esc(p.group)}</b></p>` : ''}<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
         ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b><span class="small muted">Your own playbook.</span>
@@ -1970,6 +1972,7 @@ screens.coaches = () => {
     title: 'Coaches',
     body: `<div class="opts">${Object.entries(COACH_SORTS).map(([k, l]) => `<button class="btn small ${sort === k ? 'on focus' : 'off'}" data-act="coachSort" data-k="${k}">${l}</button>`).join('')}</div>
       ${coachChangesBox()}
+      ${schemeLogBox(null, 8) ? `<fieldset class="frame"><legend>Scheme Shifts</legend>${schemeLogBox(null, 8)}</fieldset>` : ''}
       <div class="stack">${rows.map(row).join('')}</div>
       ${pool.length ? `<fieldset class="frame"><legend>Available Coaches</legend><div class="stack">${pool.map(c => row({ ...c, car: careerOf(c.c) })).join('')}</div></fieldset>` : ''}`,
   });
@@ -2058,12 +2061,13 @@ actions.hireCoach = async d => {
   checkpoint('Coach change');
   const r = hireHeadCoach(L, mine, c);
   if (!r) { toast('No head coach slot on this team'); return; }
+  const book = installSignature(mine, c);
   const tr = treeStore();
   if (tr.planOrig) delete tr.planOrig[r.old.id];
   const m = coachChangeMorale(L, mine, r.old, c);
   applyCoachFriction();
   state.dirty = true;
-  toast(`${c.fn} ${c.ln} is your head coach`, `$${r.ask.sal}M × ${r.ask.yrs} · players ${m.avg > 0 ? '+' : ''}${m.avg}, fans ${m.fans > 0 ? '+' : ''}${m.fans}: ${m.text}`, 4800);
+  toast(`${c.fn} ${c.ln} is your head coach`, `$${r.ask.sal}M × ${r.ask.yrs} · ${book} playbook · players ${m.avg > 0 ? '+' : ''}${m.avg}, fans ${m.fans > 0 ? '+' : ''}${m.fans}: ${m.text}`, 4800);
   replace('coach', { arg: String(c.id) });
 };
 actions.coachSort = d => { state.coachSort = d.k; render(); };
@@ -2085,7 +2089,9 @@ screens.coach = args => {
         <p class="note small">${strengthName(c.pri) ? `<b>${esc(strengthName(c.pri))}</b> primary` : ''}${strengthName(c.sec) ? ` · <b>${esc(strengthName(c.sec))}</b> secondary` : ''}</p>
         <p class="note"><b>${esc(g.tier)}</b> · ${esc(g.growth)}</p>
         <p class="note small muted">${esc(g.line)}</p>
-        <p class="note">${esc(philosophyOf(c))}</p></div></fieldset>
+        <p class="note">${esc(philosophyOf(c))}</p>
+        <p class="note small muted">Signature playbook: <b>${esc(signatureOf(c))}</b></p></div></fieldset>
+      ${t && schemeLogBox(t.id) ? `<fieldset class="frame"><legend>System History</legend>${schemeLogBox(t.id)}</fieldset>` : ''}
       <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
       <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
       ${fitBox(hit)}
@@ -6684,10 +6690,12 @@ function applyCoachFriction() {
     if (!c) continue;
     for (const p of FA.signedRoster(t)) {
       if (!isStarPlayer(p)) continue;
-      const r = playerCoachFit(p, t, c), key = String(p.id);
+      const r = playerCoachFit(p, t, c), key = String(p.id), fx = isUserTeam(t) && isComplete() ? fxNow() : {};
       if (led[key] && led[key].coach !== c.id) { delete led[key]; changed = true; }   // a new coach starts fresh
+      if (led['s' + key] && led['s' + key].coach !== c.id) { delete led['s' + key]; changed = true; }
+      if (!r.clash && r.fit >= 0.7 && fx.holdBonus && !led['s' + key]) { moraleEvent(p, `sync:${c.id}`, fx.holdBonus, `thrives in ${c.ln}'s system`); led['s' + key] = { coach: c.id }; changed = true; }
       if (r.clash && !led[key]) {
-        const d = -Math.round(3 + 6 * r.severity);
+        const d = Math.min(-1, -Math.round(3 + 6 * r.severity) + (fx.clashEase || 0));
         moraleEvent(p, `clash:${c.id}`, d, `clashing with ${c.ln}'s system`);
         const room = r.severity > 0.6 ? 2 : 1;
         for (const m of FA.signedRoster(t).filter(x => x !== p)) moraleEvent(m, `room:${key}:${c.id}`, -room, 'locker room tension');
@@ -6702,6 +6710,110 @@ function applyCoachFriction() {
     }
   }
   if (changed) { offSet('friction', led); state.dirty = true; }
+}
+
+
+// ---------------------------------------------------------------------------
+// Coach systems: each coach installs his own playbook, then the roster pulls on it.
+
+const schemeStore = () => { const s = offGet('scheme'); s.ledger ||= {}; s.log ||= []; s.props ||= {}; s.declined ||= {}; return s; };
+const saveScheme = s => offSet('scheme', s);
+function useStyle(team, coach, preset, focusId, hybrid) {
+  const next = presetPlays(preset);
+  const old = team.quickPlays?.positions;
+  if (hybrid && old?.length === 5) next.positions.forEach((q, i) => { q.plays = [...q.plays.slice(0, 2), ...(old[i]?.plays || q.plays).slice(2, 4)]; });
+  team.quickPlays = next;
+  if (focusId != null && coach?.tendencies) {
+    coach.tendencies.offFocus = focusId;
+    const o = treeStore().planOrig?.[coach.id];
+    if (o) o.offFocus = focusId;
+  }
+  state.dirty = true;
+}
+// A new head coach installs his own playbook the day he arrives.
+function installSignature(team, coach) {
+  const S = schemeStore(), name = signatureOf(coach), preset = PRESETS.find(p => p.name === name);
+  const from = styleOf(team);
+  useStyle(team, coach, preset, null, false);
+  S.ledger[team.id] = { coach: coach.id, yr: league().season.currentYear };
+  S.log.push({ yr: league().season.currentYear, tid: team.id, kind: 'install', coach: `${coach.fn} ${coach.ln}`, from, to: name, why: ['his own philosophy'] });
+  saveScheme(S);
+  return name;
+}
+// Once per offseason, after free agency: the roster pulls on every system.
+function applySchemeEvolution() {
+  if (isCollege()) return;
+  const L = league(), S = schemeStore(), yr = L.season.currentYear;
+  if (S.done === yr) return;
+  const signed = new Set(Object.keys(offGet('signed')).map(Number));
+  for (const t of L.teams) {
+    const c = headCoachOf(t);
+    if (!c) continue;
+    const mine = isUserTeam(t), yrsWith = careerOf(c).rows.filter(r => r.tid === t.id).length;
+    const fx = mine && isComplete() ? fxNow() : {};
+    const led = S.ledger[t.id], fresh = !led || led.coach !== c.id;
+    const res = evolve(L, t, c, { first: fresh && yrsWith === 0 && !mine, yrsWith, signed, fx });
+    const cur = styleOf(t), preset = PRESETS.find(p => p.name === res.style);
+    if (mine) {
+      if (fresh) { S.ledger[t.id] = { coach: c.id, yr }; continue; }
+      if ((res.style !== cur || res.focus) && res.w >= 0.2 && res.reasons.length && !S.declined[`${t.id}:${yr}`]) S.props[t.id] = { ...res, from: cur, yr, coach: `${c.fn} ${c.ln}` };
+    } else if (res.style !== cur || res.focus) {
+      useStyle(t, c, preset, res.focusId, false);
+      S.log.push({ yr, tid: t.id, kind: fresh ? 'install' : 'shift', coach: `${c.fn} ${c.ln}`, from: cur, to: res.style, focus: res.focus, why: res.reasons });
+    }
+    S.ledger[t.id] = { coach: c.id, yr };
+  }
+  S.done = yr;
+  saveScheme(S);
+  applyCoachFriction();
+  state.dirty = true;
+}
+actions.schemeAccept = () => {
+  const t = myTeam(), c = t && headCoachOf(t), S = schemeStore(), pr = t && S.props[t.id];
+  if (!t || !c || !pr) return;
+  checkpoint('Scheme change');
+  const preset = PRESETS.find(p => p.name === pr.style);
+  useStyle(t, c, preset, pr.focusId, !!fxNow().hybrid);
+  S.log.push({ yr: pr.yr, tid: t.id, kind: 'shift', coach: pr.coach, from: pr.from, to: pr.style, focus: pr.focus, why: pr.reasons });
+  delete S.props[t.id];
+  saveScheme(S);
+  applyCoachFriction();
+  toast(`${pr.style} installed`, pr.focus ? `${pr.focus} offense now` : '');
+  render();
+};
+actions.schemeDecline = () => {
+  const t = myTeam(), S = schemeStore(), pr = t && S.props[t.id];
+  if (!pr) return;
+  S.declined[`${t.id}:${pr.yr}`] = true;
+  delete S.props[t.id];
+  saveScheme(S);
+  render();
+};
+// His own team's sync: the average fit of the best players, with a playbook and focus (what-if).
+function teamSync(t, c, qp, focusId) {
+  const keep = { qp: t.quickPlays, f: c.tendencies?.offFocus };
+  t.quickPlays = qp;
+  if (focusId != null && c.tendencies) c.tendencies.offFocus = focusId;
+  const top = [...t.roster].sort((x, y) => shownLevel(y) - shownLevel(x)).slice(0, 6).map(p => playerCoachFit(p, t, c)).filter(r => r.styles.length);
+  t.quickPlays = keep.qp;
+  if (c.tendencies) c.tendencies.offFocus = keep.f;
+  return top.length ? Math.round(100 * top.reduce((s, r) => s + r.fit, 0) / top.length) : null;
+}
+function proposalBox() {
+  const t = myTeam(), c = t && headCoachOf(t), pr = t && schemeStore().props[t.id];
+  if (!pr || !c) return '';
+  const film = isComplete() && fxNow().filmRoom;
+  const now = teamSync(t, c, t.quickPlays, null), then = film ? teamSync(t, c, presetPlays(PRESETS.find(p => p.name === pr.style)), pr.focusId) : null;
+  return `<fieldset class="frame"><legend>📋 Staff Proposal</legend><div class="stack">
+    <p class="note"><b>${esc(pr.coach)}</b> wants to move from <b>${esc(pr.from)}</b> to <b>${esc(pr.style)}</b>${pr.focus ? ` and shift to ${/^[aeiou]/i.test(pr.focus) ? 'an' : 'a'} ${esc(pr.focus.toLowerCase())}-focused offense` : ''}.</p>
+    ${film ? `<p class="note small muted">Why: ${esc(pr.reasons.join('; '))}. Group fit ${now ?? '—'}% → ${then ?? '—'}%.</p>` : '<p class="note small muted">The roster has pulled on his system. A Film Room in the skill tree shows why and what it would do to the group.</p>'}
+    <div class="grid2"><button class="btn focus" data-act="schemeAccept">✅ Install It</button><button class="btn off" data-act="schemeDecline">Not This Year</button></div></div></fieldset>`;
+}
+function schemeLogBox(tid, limit = 6) {
+  const rows = schemeStore().log.filter(x => tid == null || x.tid === tid).slice(-limit).reverse();
+  if (!rows.length) return '';
+  const L = league(), nm = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  return `<div class="stack">${rows.map(x => `<p class="note small" style="margin:0">${x.kind === 'install' ? '📥' : '🔀'} ${tid == null ? `<b>${esc(nm(x.tid))}</b> ` : ''}${x.yr}: ${esc(x.coach)} ${x.kind === 'install' ? 'installed' : 'moved to'} <b>${esc(x.to)}</b>${x.from && x.from !== x.to ? ` <span class="muted">(from ${esc(x.from)})</span>` : ''}${x.focus ? `, ${esc(x.focus.toLowerCase())} offense` : ''}. <span class="muted">${esc((x.why || []).join('; '))}.</span></p>`).join('')}</div>`;
 }
 
 // A new head coach: players and fans react to losing the old one and to the hire.
@@ -6734,7 +6846,7 @@ function cpuCoachMoves() {
     if (!d) continue;
     if (d.kind === 'fire' && fired < 6) {
       const r = hireHeadCoach(L, t, d.cand);
-      if (r) { fired++; const m = coachChangeMorale(L, t, d.cur, d.cand); list.push({ kind: 'hire', tid: t.id, out: `${d.cur.fn} ${d.cur.ln}`, in: `${d.cand.fn} ${d.cand.ln}`, why: d.why, gap: Math.round(d.pr.gap * 100), mood: m.text, avg: m.avg, fans: m.fans }); }
+      if (r) { fired++; installSignature(t, d.cand); const m = coachChangeMorale(L, t, d.cur, d.cand); list.push({ kind: 'hire', tid: t.id, out: `${d.cur.fn} ${d.cur.ln}`, in: `${d.cand.fn} ${d.cand.ln}`, why: d.why, gap: Math.round(d.pr.gap * 100), mood: m.text, avg: m.avg, fans: m.fans }); }
     } else if (d.kind === 'extend') {
       d.cur.contract.ext = { yrs: d.offer.yrs, sal: d.offer.sal, opt: 0, noTrd: 0 };
       list.push({ kind: 'extend', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: `$${d.offer.sal}M × ${d.offer.yrs}` });

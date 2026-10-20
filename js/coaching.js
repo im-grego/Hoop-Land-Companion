@@ -16,6 +16,8 @@ export const BRANCHES = [
     tiers: ['+1 Locker Room and Loyalty (up to 14) · +10% recruiting pull', '+2 (up to 16) · +20% recruiting pull', '+3 (up to 18) · +30% recruiting pull'] },
   { k: 'scheme', label: 'Leadership', icon: '🧠', rating: 'leadership',
     tiers: ['2 influence per player · game plan: offense', '3 influence per player · game plan: defense', '4 influence per player; a tendency can move 3 · game plan: rotation'] },
+  // No coach rating opens this one: every node is bought with tokens (Complete rules).
+  { k: 'system', label: 'System', icon: '🧩', rating: null, tiers: [] },
 ];
 export const TIER_COST = [1, 2, 3];
 export const MAX_TIER = 3;
@@ -57,14 +59,20 @@ export const NODES = {
     { id: 's4', row: 5, col: 0, wide: true, label: 'Franchise Voice', text: 'One more influence for every player · promises believed another +10%', pts: 6, req: ['sC', 'sD'] },
   ],
 };
+NODES.system = [
+  { id: 'x1', row: 1, col: 0, wide: true, label: 'Film Room', text: 'Staff proposals show why the system should change, and the fit it would create', pts: 2, req: [] },
+  { id: 'x2', row: 2, col: 0, label: 'Adaptable System', text: 'Your coach adjusts 25% more to the roster · clash morale hits cut by 1', pts: 3, req: ['x1'] },
+  { id: 'x3', row: 2, col: 1, label: 'Core Identity', text: 'Your coach holds his ground: roster pull 30% weaker · stars in his system gain +2 morale', pts: 3, req: ['x1'] },
+  { id: 'x4', row: 3, col: 0, wide: true, label: 'Hybrid Systems', text: 'Accepting a proposal installs two plays per position from the new style and keeps two of the old', pts: 5, req: ['x2', 'x3'] },
+];
 export const EXTRA_IDS = Object.values(NODES).flat().filter(n => !n.spine).map(n => n.id);
 
 export const headCoach = team => (team?.frontOffice?.staff || []).find(s => s.pos === 1) || null;
 
 // Tiers the coach brings: a rating of 13+ is tier 1, 17+ tier 2.
 export function coachTiers(coach) {
-  const out = {};
-  for (const b of BRANCHES) {
+  const out = Object.fromEntries(BRANCHES.map(b => [b.k, 0]));
+  for (const b of BRANCHES.filter(x => x.rating)) {
     const v = coach?.attributes?.[b.rating]?.[0] ?? 0;
     out[b.k] = v >= 17 ? 2 : v >= 13 ? 1 : 0;
   }
@@ -95,6 +103,12 @@ export function effects(tree, coach, on) {
     motorPlus: has('sC') ? 2 : 0,
     nudgeAll: has('s4') ? 1 : 0,
     promiseBonus: (has('sD') ? 0.1 : 0) + (has('s4') ? 0.1 : 0),
+    filmRoom: has('x1'),
+    adapt: has('x2') ? 1.25 : 1,
+    hold: has('x3') ? 0.7 : 1,
+    holdBonus: has('x3') ? 2 : 0,
+    clashEase: has('x2') ? 1 : 0,
+    hybrid: has('x4'),
   };
 }
 
