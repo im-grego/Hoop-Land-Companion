@@ -26,6 +26,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
+import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -37,7 +38,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.118.0';
+const APP_VERSION = '0.119.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1968,10 +1969,62 @@ screens.coaches = () => {
   layout({
     title: 'Coaches',
     body: `<div class="opts">${Object.entries(COACH_SORTS).map(([k, l]) => `<button class="btn small ${sort === k ? 'on focus' : 'off'}" data-act="coachSort" data-k="${k}">${l}</button>`).join('')}</div>
+      ${coachChangesBox()}
       <div class="stack">${rows.map(row).join('')}</div>
       ${pool.length ? `<fieldset class="frame"><legend>Available Coaches</legend><div class="stack">${pool.map(c => row({ ...c, car: careerOf(c.c) })).join('')}</div></fieldset>` : ''}`,
   });
 };
+
+
+const coachOffer = c => {
+  const o = (state.coachOffer ||= {});
+  if (o.id !== c.id) { const y = c.age >= 58 ? 2 : c.age >= 50 ? 3 : 4; Object.assign(o, { id: c.id, yrs: y, sal: marketSalary(c, league()) }); }
+  return o;
+};
+// How well he suits a roster: his own team's, or yours for an available coach.
+function fitBox({ c, t }) {
+  const team = t || myTeam();
+  if (!team) return '';
+  const f = schemeFit(c, team, league());
+  const pct = Math.round(f.fit * 100);
+  return `<fieldset class="frame"><legend>Roster Fit${t ? '' : ` · ${esc(team.shortName)}`}</legend><div class="stack">
+    <p class="note"><b>${pct}%</b> <span class="small muted">${pct >= 65 ? 'a strong fit' : pct >= 45 ? 'a workable fit' : 'a poor fit'}</span></p>
+    ${f.why.length ? `<p class="note small muted">${esc(f.why.join('; ').replace(/^./, m => m.toUpperCase()))}.</p>` : ''}</div></fieldset>`;
+}
+// Extension for your head coach in his final year.
+function extBox({ c, t }) {
+  const mine = myTeam();
+  if (!mine || t !== mine || (c.contract?.yrs ?? 0) > 1) return '';
+  if (c.contract?.ext?.yrs > 0) return `<fieldset class="frame"><legend>Extension</legend><p class="note up">Signed: $${c.contract.ext.sal}M × ${c.contract.ext.yrs} after this season.</p></fieldset>`;
+  const o = coachOffer(c), w = coachWillingness(league(), mine, c, { yrs: o.yrs, sal: o.sal });
+  return `<fieldset class="frame"><legend>Extension</legend><div class="stack">
+    <p class="note small">${esc(`${c.fn} ${c.ln}`)} is in the final year of his deal.</p>
+    <div class="so-ctl"><span class="small">Years</span><button class="btn tiny" data-act="coachOfferAdj" data-k="yrs" data-d="-1" ${o.yrs > 1 ? '' : 'disabled'}>−</button><b>${o.yrs}</b><button class="btn tiny" data-act="coachOfferAdj" data-k="yrs" data-d="1" ${o.yrs < 5 ? '' : 'disabled'}>+</button>
+      <span class="small" style="margin-left:10px">Pay</span><button class="btn tiny" data-act="coachOfferAdj" data-k="sal" data-d="-1" ${o.sal > 1 ? '' : 'disabled'}>−</button><b>$${o.sal}M</b><button class="btn tiny" data-act="coachOfferAdj" data-k="sal" data-d="1">+</button></div>
+    ${w.factors.map(x => `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(x.label)} <span class="muted">${esc(x.note)}</span></span><b class="${x.val > 0 ? 'up' : x.val < 0 ? 'down' : ''}">${x.val > 0 ? '+' : ''}${x.val}</b></div>`).join('')}
+    <p class="note"><b>${w.score}</b> <span class="small muted">needs 60 to sign</span></p>
+    <button class="btn ${w.accept ? 'focus' : ''}" data-act="coachExtend" ${w.accept ? '' : 'disabled'}>${w.accept ? '🖊️ Offer Extension' : 'He would refuse'}</button></div></fieldset>`;
+}
+actions.coachOfferAdj = d => { const o = state.coachOffer; if (!o) return; o[d.k] = Math.max(d.k === 'yrs' ? 1 : 1, Math.min(d.k === 'yrs' ? 5 : 40, o[d.k] + +d.d)); render(); };
+actions.coachExtend = () => {
+  const mine = myTeam(), c = mine && headCoachOf(mine), o = state.coachOffer;
+  if (!c || !o || o.id !== c.id) return;
+  const w = coachWillingness(league(), mine, c, { yrs: o.yrs, sal: o.sal });
+  if (!w.accept) { toast('He would refuse'); return; }
+  checkpoint('Coach extension');
+  c.contract.ext = { yrs: o.yrs, sal: o.sal, opt: 0, noTrd: 0 };
+  state.dirty = true;
+  toast(`${c.fn} ${c.ln} extended`, `$${o.sal}M for ${o.yrs} years`);
+  render();
+};
+// What the CPU did this offseason.
+function coachChangesBox() {
+  const list = offGet('coachMoves').list || [];
+  if (!list.length) return '';
+  const L = league(), nm = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  const ico = { hire: '🔁', extend: '🖊️', keep: '⏳' };
+  return `<fieldset class="frame"><legend>Coaching Changes</legend><div class="stack">${list.map(x => `<p class="note small" style="margin:0">${ico[x.kind]} <b>${esc(nm(x.tid))}</b> ${x.kind === 'hire' ? `replaced ${esc(x.out)} with ${esc(x.in)}: ${esc(x.why)}.` : x.kind === 'extend' ? `extended ${esc(x.in)} (${esc(x.why)}).` : `kept ${esc(x.in)} another year: ${esc(x.why)}.`}</p>`).join('')}</div></fieldset>`;
+}
 
 // Hire an available coach as your head coach; the current one goes to the pool.
 function hireBox({ c, t }, staff) {
@@ -2022,7 +2075,9 @@ screens.coach = args => {
         <p class="note">${esc(philosophyOf(c))}</p></div></fieldset>
       <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
       <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
+      ${fitBox(hit)}
       ${hireBox(hit, staff)}
+      ${extBox(hit)}
       <fieldset class="frame"><legend>Job Security</legend><div class="stack">
         <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
         <p class="note small muted">${sec.yrs ? `Contract: $${sec.sal}M for ${sec.yrs} more year${sec.yrs > 1 ? 's' : ''}.` : 'No contract on file.'}</p></div></fieldset>
@@ -6596,6 +6651,35 @@ function proactiveFrontOffice() {
   if (Object.keys(why).length) state.dirty = true;
   return why;
 }
+
+// CPU coaching decisions, once per offseason: extend a worthwhile coach in his
+// final year, replace one under heavy pressure when a better (or younger,
+// higher-upside) coach is available, or give him another year when nobody is.
+function cpuCoachMoves() {
+  const L = league();
+  const store = offGet('coachMoves');
+  if (store.done || !(L.coaches || []).some(c => c.attributes)) return store.list || [];
+  const list = [];
+  const cpu = L.teams.filter(t => !isUserTeam(t) && headCoachOf(t));
+  const order = cpu.map(t => ({ t, p: pressureOn(L, t, headCoachOf(t)).pressure })).sort((x, y) => y.p - x.p);
+  let fired = 0;
+  for (const { t } of order) {
+    const d = coachDecision(L, t);
+    if (!d) continue;
+    if (d.kind === 'fire' && fired < 6) {
+      const r = hireHeadCoach(L, t, d.cand);
+      if (r) { fired++; list.push({ kind: 'hire', tid: t.id, out: `${d.cur.fn} ${d.cur.ln}`, in: `${d.cand.fn} ${d.cand.ln}`, why: d.why, gap: Math.round(d.pr.gap * 100) }); }
+    } else if (d.kind === 'extend') {
+      d.cur.contract.ext = { yrs: d.offer.yrs, sal: d.offer.sal, opt: 0, noTrd: 0 };
+      list.push({ kind: 'extend', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: `$${d.offer.sal}M × ${d.offer.yrs}` });
+    } else if ((d.kind === 'keep' || d.kind === 'fire') && d.pr.pressure >= 0.45) {
+      list.push({ kind: 'keep', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: d.why });
+    }
+  }
+  offSet('coachMoves', { done: true, list });
+  if (list.length) state.dirty = true;
+  return list;
+}
 // A player with a 9 or 10 potential traded for a lot usually signs long term with the team that gets him.
 function extendAfterTrade(p, team, ratio) {
   const L = league();
@@ -6613,6 +6697,7 @@ function cpuBlockDeals(day) {
   const cpu = L.teams.filter(t => !isUserTeam(t));
   const done = [];
   const why = proactiveFrontOffice();
+  cpuCoachMoves();
   for (const t of cpu) {
     // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
     for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {

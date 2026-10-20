@@ -41,7 +41,7 @@ export function careerOf(c) {
 // Job security from the deal and the last full season. A coach on a long deal
 // or a winner is safe; a short deal after a losing year is the hot seat.
 export function securityOf(c, car = careerOf(c)) {
-  const yrs = c.contract?.yrs ?? 0, last = car.last, lastPct = last ? last.W / (last.W + last.L) : null;
+  const yrs = (c.contract?.yrs ?? 0) + (c.contract?.ext?.yrs ?? 0), last = car.last, lastPct = last ? last.W / (last.W + last.L) : null;
   let tag, why;
   if (!yrs) { tag = 'Unsigned'; why = 'No contract.'; }
   else if (lastPct != null && lastPct < 0.4 && yrs <= 2) { tag = 'Hot Seat'; why = `A ${last.W}-${last.L} season with ${yrs === 1 ? 'one year' : 'two years'} left.`; }
