@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.3';
+const APP_VERSION = '0.134.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3062,7 +3062,7 @@ screens.roster = (args) => {
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
       </div>
       ${movesBox(L, t)}
-      ${others ? '' : `<p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>`}
+      ${others ? '' : (state.auto[state.leagueIdx] ? `<p class="note">Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.</p>` : '')}
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
 };
@@ -3437,11 +3437,7 @@ screens.player = (args) => {
       </fieldset>`;
   const tabsRow = `<div class="tabs pl-tabs">${[['scout', 'Overview'], ['traits', 'Traits'], ['attributes', 'Attributes'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const personality = traitsBox(p) || '<p class="note muted">Personality isn\'t set for this player yet. Reload the file and it fills in.</p>';
-  const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}
-      <div class="grid2">
-        <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
-        <button class="btn" data-act="revertOne">↺ Revert</button>
-      </div>`
+  const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}`
     : tab === 'traits' ? (personality + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
     : tab === 'stats' ? statsTab(p, args)
     : `${rankBox(p, mpg)}
@@ -3513,7 +3509,7 @@ function statsTab(p, args) {
     <fieldset class="frame"><legend>${sv === 'playoffs' ? 'Playoffs' : 'Regular Season'} by Year</legend>${table}</fieldset>
     ${rows.length ? `<fieldset class="frame"><legend>Season Highs</legend>
       ${avgLine(topOf(rows, sv === 'playoffs' ? 5 : 20))}
-      <p class="note small" style="margin-top:8px">${n(tot.PTS)} points · ${n(tot.REB)} rebounds · ${n(tot.AST)} assists · ${n(tot.STL)} steals · ${n(tot.BLK)} blocks</p>
+      <p class="note small" style="margin-top:8px">${n(tot.PTS)} points · ${n(tot.REB)} rebounds · ${n(tot.AST)} assists · ${n(tot.STL)} steals · ${n(tot.BLK)} blocks · ${n(tot.TO)} turnovers</p>
     </fieldset>` : ''}`;
 }
 
@@ -8588,12 +8584,11 @@ function playStyleBox(p) {
   const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
-    <p class="note small">${esc(styleSentence(p))}${earnedSkills(p).length ? ` ${esc(`He ${earnedSkills(p).slice(0, 2).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toLowerCase())}.`)}` : ''}</p>
+    <p class="note small">${esc(styleSentence(p))}${earnedSkills(p).length ? ` ${esc(`He ${earnedSkills(p).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toLowerCase())}.`)}` : ''}</p>
     <details class="tend-wrap"><summary class="small">All tendencies</summary>
       ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
     </details>
-  </fieldset>
-  ${earnedSkills(p).length ? `<fieldset class="frame"><legend>Skills</legend>${earnedSkills(p).map(x => `<div class="tend-row"><span class="small"><b>${esc(skillName(x.id))}</b>${isLeveled(x.id) ? ` (${x.level})` : ''}</span></div>`).join('')}</fieldset>` : ''}`;
+  </fieldset>`;
 }
 
 // ---------------------------------------------------------------------------
