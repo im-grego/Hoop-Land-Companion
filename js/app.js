@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.144.0';
+const APP_VERSION = '0.144.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2691,7 +2691,9 @@ function collegeNumber(p) {
 }
 // Team's full name for the draft screens: city + name (teams saved without
 // a city fall back to their name).
-const teamFull = t => (t ? (t.city && !String(t.name || '').startsWith(t.city) ? `${t.city} ${t.name || ''}` : t.name || t.city || t.shortName || '').trim() : '');
+// A file can leave a team's city blank (both Los Angeles teams); the name alone then gets its city back.
+const CITY_FALLBACK = { Clippers: 'Los Angeles', Lakers: 'Los Angeles' };
+const teamFull = t => { if (!t) return ''; const city = t.city || CITY_FALLBACK[t.name] || ''; return (city && !String(t.name || '').startsWith(city) ? `${city} ${t.name || ''}` : t.name || city || t.shortName || '').trim(); };
 const teamTint = t => {
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
   return c1 ? `--tc1:${c1};--tc2:${c2 || c1}` : '';
