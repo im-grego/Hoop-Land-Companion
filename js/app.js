@@ -24,6 +24,7 @@ import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
 import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
 import { saveToLeague } from './leagueexport.js';
+import * as RP from './realpicks.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
@@ -44,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.143.0';
+const APP_VERSION = '0.144.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4027,7 +4028,8 @@ screens.settings = (args) => {
         options('Game option decisions', 'redoOptions', [[true, 'Re-run here'], [false, 'Keep the game\'s']], 'The game decides options before it exports; Re-run reopens them so you and the app decide.'),
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
-      ]);
+      ]) +
+      (isCollege() ? '' : setGroup('Draft Picks', ['<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 1, 4, 8 and 14 protections are added where the real deal has one. Swaps and rollovers are left to the app.</span>']));
   } else {
     body = setGroup('Skills From the Bump', [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
   }
@@ -6795,7 +6797,7 @@ function draftTrades(args) {
     .filter(pk => pk.yr >= L.season.currentYear)
     .sort((x, y) => x.yr - y.yr || x.rd - y.rd)
     .map(pk => { const fz = FA.pickFrozen(L, T, pk) || lotteryLocked(pk); return `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''} ${fz ? 'locked' : ''}" ${fz ? 'disabled' : `data-act="togglePick" data-side="${side}" data-k="${key(pk)}"`}>
-      <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}${fz ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}</span>
+      <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}${protOf(pk) ? ` <span class="badge new">top-${protOf(pk).top} prot.</span>` : ''}${fz ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}</span>
       <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`; }).join('') || '<p class="note muted">No picks.</p>';
   const valueOf = (T, sel) => T.draftPicks.filter(pk => sel.has(key(pk))).reduce((a, pk) => a + pickValue(L, pk), 0);
   const vA = valueOf(A, selA), vB = valueOf(B, selB);
@@ -9933,6 +9935,21 @@ function buyoutOffer(p) {
 }
 // Dead money after a set of cuts: what's on the books now plus each cut (full salary, or the buyout price).
 const deadAfter = (t, list, buy) => deadFor(t.id) + list.reduce((s, p) => { const c = p.contract || {}; if ((c.yrs || 0) <= 1) return s; const bo = buy[p.id] ? buyoutOffer(p) : null; return s + (bo ? bo.price : c.sal || 0); }, 0);
+actions.applyRealPicks = async () => {
+  if (!state.data || isCollege()) return;
+  const L = league();
+  if (!(await confirmBox('Apply the real picks (2027-2033)? A pick still with its original team moves to its real holder. A pick that is anywhere else was traded in the game and stays as it is.', 'Apply'))) return;
+  checkpoint('Real picks');
+  const r = RP.applyRealPicks(L);
+  if (isComplete()) {
+    const led = protLedger();
+    for (const e of r.protections) if (!led.some(x => x.otid === e.otid && x.yr === e.yr && !x.done)) led.push(e);
+    saveProt(led);
+  }
+  state.dirty = true;
+  render();
+  toast('Real picks applied', `${r.moved} moved · ${r.kept} already traded in the game stayed · ${isComplete() ? r.protections.length : 0} protections`);
+};
 actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[+d.id]; render(); };
 
 const cutSel = () => (state.cutSel ||= {});
