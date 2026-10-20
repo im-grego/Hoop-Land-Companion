@@ -149,9 +149,9 @@ export const PLAN_NAMES = {
   defFocus: ['Balanced', 'Interior', 'Perimeter'],
   defAggression: ['Average', 'Physical', 'Conservative'],
   defRebounding: ['Balanced', 'Crash Boards', 'Fast Break'],
-  benchDepth: ['Short', 'Average', 'Deep'],
+  benchDepth: ['Short', 'Deep', 'Average'],
   benchUtilization: ['Low', 'Medium', 'High'],
-  closingLineup: ['Performance', 'Starters'],
+  closingLineup: ['Starters', 'Performance'],
 };
 // Coach archetypes (the save's `arc`) and the strengths a coach can have (`pri`, `sec`).
 export const COACH_ARCHETYPES = ['Balanced', 'Inside Offense', 'Midrange Offense', 'Outside Offense', 'Defensive Minded'];

@@ -36,7 +36,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.114.0';
+const APP_VERSION = '0.114.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1640,7 +1640,7 @@ function coachCard() {
   if (!t) return '';
   earnCoachPoints();
   const c = myCoach(), yr = league().season.currentYear, e = treeStore().earned[yr];
-  const r = k => c?.attributes?.[k]?.[0] ?? '—';
+  const r = k => (c?.attributes?.[k]?.[0] != null ? c.attributes[k][0] / 2 : '—');   // the game shows half the saved rating
   return `<fieldset class="frame"><legend>Coaching Staff</legend><div class="stack">
     <p class="note"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b> <span class="muted small">Development ${r('development')} · Motivation ${r('motivation')} · Leadership ${r('leadership')}</span></p>
     <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${tokTag(coachPoints())}</b> to spend</p>
