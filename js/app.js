@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.133.2';
+const APP_VERSION = '0.133.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -682,10 +682,13 @@ function leagueCapSettings(L) {
   if (isCollege()) return null;
   const C = FA.capLinesFor(FA.seasonStart(L)), real = FA.capSystemOn() ? FA.capLines(L) : C;
   if (FA.capSystemOn()) return { cap: real.apron2, maxContract: [25, 30, 35].map(t => Math.round(t * real.cap / real.apron2)) };
-  // Simple rules: the game's cap is the 1st apron line (room to go past the first number without knowing the rest),
-  // and the top annual salary stays $50M, with the other tiers in step (the game's own $28M / $36M / $50M).
-  // The file stores whole percents of the cap, so each lands within about half a percent of its dollar figure.
-  return { cap: C.apron1, maxContract: [28, 36, 50].map(d => Math.round(d * 100 / C.apron1)) };
+  // Simple rules: max contracts of $50M / $40M / $30M (a 25-20-15 split, $50M on top). The file stores whole percents of
+  // the cap, so they only come out exact on a $200M or $250M cap: an apron line that is one of those is used as is,
+  // otherwise the first of them at or above the 1st apron (still past the first number, so nothing is cut short).
+  const want = [30, 40, 50];
+  const exact = cap => want.every(d => (d * 100) % cap === 0);
+  const line = [C.apron1, C.apron2].find(exact) ?? [200, 250, 500].find(c => c >= C.apron1);
+  return { cap: line, maxContract: want.map(d => Math.round(d * 100 / line)) };
 }
 
 // A franchise save back into a league file, to start new saves from it.
