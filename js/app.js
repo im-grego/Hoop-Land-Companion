@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.139.1';
+const APP_VERSION = '0.140.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1947,7 +1947,7 @@ actions.resetPlan = () => {
 // Playbook: the team's quick plays (4 per position, by the game's play
 // number) and scoring options (up to 3 players with usage and focus).
 // Playbooks are saved on this device by name and can be installed on your
-// team in any file. Scheme 1 installs playbooks; Scheme 2 edits scoring
+// team in any file. Any playbook can be installed; Scheme 1 makes your own; Scheme 2 edits scoring
 // options.
 const POS5 = ['PG', 'SG', 'SF', 'PF', 'C'];
 const pbKey = 'hlc:playbooks';
@@ -1977,7 +1977,7 @@ screens.playbook = () => {
   const so = (t.scoringOptions || []);
   const rosterIds = new Set(t.roster.map(p => p.id));
   const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
-  const inst = (act, i, on) => `<button class="btn small ${on ? 'off' : sch >= 1 ? 'focus' : ''}" data-act="${act}" data-i="${i}" ${sch >= 1 && !on ? '' : 'disabled'}>${on ? '✓ Installed' : sch >= 1 ? '📥 Use This Playbook' : '🔒 Scheme 1'}</button>`;
+  const inst = (act, i, on) => `<button class="btn small ${on ? 'off' : 'focus'}" data-act="${act}" data-i="${i}" ${on ? 'disabled' : ''}>${on ? '✓ Installed' : '📥 Use This Playbook'}</button>`;
   layout({
     title: 'Playbook',
     body: `${proposalBox()}<fieldset class="frame"><legend>${esc(t.shortName)} Playbook</legend><div class="stack">
@@ -1985,7 +1985,7 @@ screens.playbook = () => {
         ${PRESETS.map((p, i) => `${i === 0 || PRESETS[i - 1].group !== p.group ? `<p class="note small" style="margin:6px 0 0"><b class="gold">${esc(p.group)}</b></p>` : ''}<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
         ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b><span class="small muted">Your own playbook.</span>
           <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
-        <button class="btn" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
+        <button class="btn" data-act="nav" data-to="playbookEdit" ${sch >= 1 ? '' : 'disabled'}>✏️ Make Your Own${sch >= 1 ? '' : ' · 🔒 Scheme 1'}</button>
         <button class="btn off" data-act="nav" data-to="teamBooks">👥 Team Playbooks</button>
       </div></fieldset>`,
   });
@@ -2271,7 +2271,7 @@ actions.savePlaybook = () => {
 };
 actions.installPreset = d => {
   const t = myTeam(), p = PRESETS[+d.i];
-  if (!t || !p || tierNow('scheme') < 1) return;
+  if (!t || !p) return;
   t.quickPlays = presetPlays(p);
   state.dirty = true;
   applyCoachFriction();
@@ -2279,7 +2279,7 @@ actions.installPreset = d => {
 };
 actions.installPlaybook = d => {
   const t = myTeam(), b = loadBooks()[+d.i];
-  if (!t || !b || tierNow('scheme') < 1) return;
+  if (!t || !b) return;
   t.quickPlays = JSON.parse(JSON.stringify(b.quickPlays));
   state.dirty = true;
   applyCoachFriction();
@@ -2423,17 +2423,13 @@ actions.strRun = async () => {
 
 screens.offseason = (args = {}) => {
   const auto = state.auto[state.leagueIdx];
-  const tab = ['prog', 'influence', 'mentor', 'strength'].includes(args.tab) ? args.tab : 'prog';
-  const show = k => isCollege() || tab === k;
-  const tabs = isCollege() ? '' : `<div class="tabs pl-tabs">${[['prog', 'Progression'], ['influence', 'Influence'], ['mentor', 'Mentorship'], ['strength', 'Strength']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="campTab" data-v="${k}">${l}</button>`).join('')}</div>`;
   const P = state.params;
   const bands = P.ageBands;
   layout({
     title: isCollege() ? 'Summer Development' : 'Training Camp',
     body: `
-      ${tabs}
-      ${isCollege() || tab !== 'mentor' ? '' : mentorCard()}
-      ${show('prog') ? `<fieldset class="frame"><legend>Off-season Progression</legend>
+      ${isCollege() ? '' : ''}
+      <fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
           ${auto ? `
             <dl class="info tight">
@@ -2452,19 +2448,80 @@ screens.offseason = (args = {}) => {
             <p class="note"><b>Trainer:</b> last season's production is weighed against players in the same role and age. Standouts can gain potential, or push their regression age back a year if they're at it (or a year away). Poor seasons and injuries can cost potential or bring regression a year sooner, but never for a player who's already declining.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
-      </fieldset>` : ''}
-      ${show('strength') ? strengthCard() : ''}
-      ${isCollege() || tab !== 'prog' ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
+      </fieldset>
+      ${isCollege() ? '' : influenceBox(auto)}
+      ${isCollege() ? '' : mentorCard()}
+      ${strengthCard()}
+      ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
       ${isCollege() ? coachCard() : ''}
-      ${isCollege() || tab !== 'influence' ? '' : (calFlags().meetingList ? meetingResultsBox() : `<fieldset class="frame"><legend>Influence</legend><div class="stack">
-        <p class="note small">After the off-season program, the coach talks to the group and every player's game and makeup shift a little, with his new ratings in play.</p>
-        <button class="btn ${auto ? 'focus' : 'off'}" data-act="nav" data-to="meeting" ${auto ? '' : 'disabled'}>🗣️ Begin Team Meeting</button></div></fieldset>`)}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
 
+// The team meeting, simulated for the whole league with one formula: every head coach talks to his group and
+// each player's tendencies and makeup shift. Yours runs on your coaching tree; the rest on their coach's own ratings.
+function simMeetings() {
+  const L = league(), ts = tendStore(), sch = tierNow('scheme'), fx = fxNow();
+  const rng = mulberry32((saveSalt() ^ 0x3ee7) >>> 0);
+  const rows = [], mine = [], all = [];
+  for (const t of L.teams) {
+    const row = { tid: t.id, n: 0, moves: 0, tUp: 0, tDn: 0, rUp: 0, rDn: 0 };
+    rows.push(row);
+    const c = headCoachOf(t);
+    if (!c) continue;
+    const user = isUserTeam(t), cs = user ? sch : CO.coachTiers(c).scheme, f = user ? fx : {};
+    const dev = (c.attributes?.development?.[0] ?? 0) / 2;
+    for (const p of t.roster) {
+      if (!p.tendencies && !p.traits) continue;
+      if (user && p.tendencies && !ts.orig[p.id]) ts.orig[p.id] = { ...p.tendencies };
+      const r = runMeeting(p, c, { base: CO.nudgesFor(p, cs, f), lim: CO.maxShift(cs, f) + 1 + (dev >= 8 ? 1 : 0), rng });
+      if (!r.moves) continue;
+      row.n++; row.moves += r.moves;
+      for (const [, d] of r.tend) { if (d > 0) row.tUp++; else row.tDn++; }
+      for (const [, d] of r.traits) { if (d > 0) row.rUp++; else row.rDn++; }
+      const rec = { pid: p.id, tid: t.id, ...r };
+      all.push(rec);
+      if (user) mine.push(rec);
+    }
+  }
+  saveTend();
+  mine.sort((x, y) => y.moves - x.moves);
+  all.sort((x, y) => y.moves - x.moves);
+  const f = calFlags();
+  f.meeting = true;
+  f.meetingList = mine;
+  f.meetingAll = { rows, top: all.slice(0, 5) };
+  f.meetingLeague = { moved: all.length - mine.length, top: all.slice(0, 5) };
+  state.dirty = true;
+}
+function influenceBox(auto) {
+  const L = league();
+  if (!calFlags().meetingAll) {
+    return `<fieldset class="frame"><legend>Influence</legend><div class="stack">
+      <p class="note small">After the off-season program, every head coach talks to his group and each player's game and makeup shift a little, with his new ratings in play. All 30 teams run the same meeting; yours uses your coaching tree.</p>
+      <button class="btn ${auto ? 'focus' : 'off'}" data-act="runMeetings" ${auto ? '' : 'disabled'}>🗣️ Run Team Meeting</button></div></fieldset>`;
+  }
+  const A = calFlags().meetingAll, rows = A.rows, sum = k => rows.reduce((s, r) => s + r[k], 0);
+  const mine = rows.filter(r => isUserTeam(L.teams.find(t => t.id === r.tid)));
+  const my = k => mine.reduce((s, r) => s + r[k], 0);
+  const max = Math.max(1, ...rows.map(r => r.n));
+  const name = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  return `<fieldset class="frame"><legend>Influence</legend><div class="stack">
+    <dl class="info tight">
+      <dt>Players influenced</dt><dd class="up">${sum('n')}</dd>
+      <dt>Tendencies</dt><dd><span class="up">▲ ${sum('tUp')}</span> · <span class="down">▼ ${sum('tDn')}</span></dd>
+      <dt>Traits</dt><dd><span class="up">▲ ${sum('rUp')}</span> · <span class="down">▼ ${sum('rDn')}</span></dd>
+      <dt>Your team</dt><dd class="up">${my('n')} players · ${my('moves')} moves</dd>
+      <dt>Your tendencies</dt><dd><span class="up">▲ ${my('tUp')}</span> · <span class="down">▼ ${my('tDn')}</span></dd>
+      <dt>Your traits</dt><dd><span class="up">▲ ${my('rUp')}</span> · <span class="down">▼ ${my('rDn')}</span></dd>
+    </dl>
+    <p class="note small muted">Players influenced, by team</p>
+    <div class="infl-chart">${[...rows].sort((x, y) => y.n - x.n).map(r => `<div class="infl-row ${mine.includes(r) ? 'mine' : ''}"><span class="small">${esc(name(r.tid))}</span><span class="infl-bar"><i style="width:${r.n / max * 100}%"></i></span><span class="small">${r.n}</span></div>`).join('')}</div>
+  </div></fieldset>${meetingResultsBox()}`;
+}
+actions.runMeetings = () => { if (calFlags().meetingAll) return; simMeetings(); toast('The meeting breaks up', `${calFlags().meetingList.length} of your players shifted`); render(); };
 // Your draft picks sign first: first-rounders take their scale deal,
 // second-rounders get 2 or 4 years at the minimum (team option either way).
 function rookieDealsCard() {
@@ -7273,9 +7330,7 @@ function runCpuMeetings(rng) {
 // Every other coach holds his meeting whether or not yours does, after the off-season program.
 function ensureMeetings() {
   if (calFlags().meeting || isCollege()) return;
-  calFlags().meeting = true;
-  calFlags().meetingLeague = runCpuMeetings(mulberry32((saveSalt() ^ 0xc9e7) >>> 0));
-  state.dirty = true;
+  simMeetings();
 }
 actions.meetingSkip = () => { calFlags().meeting = true; calFlags().meetingLeague = runCpuMeetings(mulberry32((saveSalt() ^ 0xc9e7) >>> 0)); state.dirty = true; state.undo = null; render(); };
 actions.meetingEnd = () => {

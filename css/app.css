@@ -1413,3 +1413,9 @@ main.panel.bare { margin-top: 10px; }
 .tx-block { background: var(--btn); border: 3px solid var(--btn-edge); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
 .tx-block .tx-head { display: flex; justify-content: space-between; gap: 8px; }
 .tx-block .linkish { text-align: left; }
+.infl-chart { display: flex; flex-direction: column; gap: 2px; }
+.infl-row { display: grid; grid-template-columns: 44px 1fr 28px; gap: 6px; align-items: center; }
+.infl-bar { height: 8px; background: var(--bg-dark); border: 2px solid var(--btn-edge); position: relative; }
+.infl-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); }
+.infl-row.mine .infl-bar i { background: var(--cyan); }
+.infl-row.mine { font-weight: 800; }
