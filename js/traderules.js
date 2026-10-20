@@ -49,7 +49,7 @@ export function touchErr(moves, teams) {
 // Pick protections: top-N protected; if it lands in the top N it goes back
 // to the team that protected it and the holder gets that team's 2nd that
 // year instead. Value to the holder drops with the protection.
-export const PROTECTIONS = [0, 1, 4, 8, 14];
+export const PROTECTIONS = [0, 4, 8, 14];
 
 // Settle this year's protected picks once the order is set (pk.pk is the
 // 0-based slot). `ledger` is [{ otid, yr, top, from }]; returns what
@@ -74,6 +74,31 @@ export function settleProtections(league, ledger) {
     e.done = true;
     e.result = kept ? 'kept' : 'conveyed';
     out.push({ entry: e, kept, holder, from, back, slot: pk.pk + 1 });
+  }
+  return out;
+}
+
+// Pick swaps: { yr, rd, a, b, x, y, mode } - team a holds pick x, team b holds pick y; once the order is set,
+// a gets the better ('best') or worse ('worst') of the two and b gets the other.
+export function settleSwaps(league, ledger) {
+  const yr = league.season.currentYear;
+  const out = [];
+  for (const e of ledger.filter(v => v.yr === yr && !v.done)) {
+    const find = otid => { for (const t of league.teams) { const pk = t.draftPicks.find(q => q.yr === yr && q.rd === e.rd && q.otid === otid); if (pk) return { t, pk }; } return null; };
+    const X = find(e.x), Y = find(e.y);
+    const a = league.teams.find(t => t.id === e.a), b = league.teams.find(t => t.id === e.b);
+    e.done = true;
+    if (!X || !Y || !a || !b) continue;
+    const better = X.pk.pk <= Y.pk.pk ? X : Y, worse = better === X ? Y : X;
+    const gets = e.mode === 'best' ? better : worse, other = gets === X ? Y : X;
+    // team a ends up with `gets`, team b with `other`
+    const give = [[gets, a], [other, b]];
+    let swapped = false;
+    for (const [it, to] of give) if (it.t !== to) swapped = true;
+    if (swapped) for (const [it, to] of give) { it.t.draftPicks.splice(it.t.draftPicks.indexOf(it.pk), 1); }
+    if (swapped) for (const [it, to] of give) { it.pk.tid = to.id; to.draftPicks.push(it.pk); }
+    e.result = swapped ? 'swapped' : 'stayed';
+    out.push({ entry: e, a, b, swapped, got: gets.pk, slotA: gets.pk.pk + 1, slotB: other.pk.pk + 1 });
   }
   return out;
 }

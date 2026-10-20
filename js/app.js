@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.144.2';
+const APP_VERSION = '0.145.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5995,7 +5995,7 @@ const dispYr = y => (isCollege() ? y : y - 1);
 const pickLabel = (pk, L = league()) => {
   const t = L.teams.find(x => x.id === pk.otid);
   const pr = protOf(pk);
-  return `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}${pr ? ` · top-${pr.top} prot.` : ''}`;
+  return `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}${pr ? ` · top-${pr.top} prot.` : ''}${(() => { const w = swapOf(pk); if (!w) return ''; const o = L.teams.find(x => x.id === (w.x === pk.otid ? w.y : w.x)); return ` · ⇄ ${o?.shortName || '?'} swap`; })()}`;
 };
 
 // ---- Trade rules (CBA)
@@ -6005,6 +6005,10 @@ const pickLabel = (pk, L = league()) => {
 const protKey = () => `hlc:prot:${league().shortName}:${league().meta?.saveName || ''}`;
 function protLedger() { try { return JSON.parse(localStorage.getItem(protKey())) || []; } catch { return []; } }
 function saveProt(v) { try { localStorage.setItem(protKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+const swapKey = () => `hlc:swap:${league().shortName}:${league().meta?.saveName || ''}`;
+function swapLedger() { try { return JSON.parse(localStorage.getItem(swapKey())) || []; } catch { return []; } }
+function saveSwaps(v) { try { localStorage.setItem(swapKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+const swapOf = pk => swapLedger().find(e => !e.done && e.yr === pk.yr && e.rd === pk.rd && (e.x === pk.otid || e.y === pk.otid));
 const protOf = pk => (pk.rd === 1 ? protLedger().find(x => !x.done && x.otid === pk.otid && x.yr === pk.yr) : null);
 const isProt = pk => !!protOf(pk);
 // This offseason's ledgers: signings that can't be traded yet
@@ -6100,6 +6104,12 @@ async function physicals(L, A, B) {
 }
 // Lottery night: protected picks that land in their protection go back.
 function settleProt(L) {
+  const sw = swapLedger();
+  if (sw.some(x => !x.done && x.yr === L.season.currentYear)) {
+    const res = TR.settleSwaps(L, sw);
+    saveSwaps(sw);
+    for (const r of res) if (isUserTeam(r.a) || isUserTeam(r.b)) toast('⇄ Pick swap', `${r.a.shortName} get the ${r.entry.mode === 'best' ? 'better' : 'worse'} of the two ${dispYr(r.entry.yr)} R${r.entry.rd} picks (#${r.slotA}); ${r.b.shortName} take #${r.slotB}`);
+  }
   const led = protLedger();
   if (!led.some(x => !x.done && x.yr === L.season.currentYear)) return;
   const res = TR.settleProtections(L, led);
@@ -6458,6 +6468,24 @@ function tradeCap(t, outP, inP, label = false) {
     <p class="small muted trade-cap-line">${d ? `$${pay}M → <b class="${d > 0 ? 'down' : 'up'}">$${after}M</b> (${d > 0 ? '+' : '−'}$${Math.abs(d)}M)` : `Payroll $${pay}M`}</p></div>`;
 }
 
+// Two teams, one future pick each of the same round and year: the pair that can be swapped instead of traded.
+function swapPair(itemsA, itemsB) {
+  const pa = itemsA.filter(x => x.pick), pb = itemsB.filter(x => x.pick);
+  if (pa.length !== 1 || pb.length !== 1) return null;
+  const [xa] = pa, [xb] = pb;
+  const yr = league().season.currentYear;
+  if (!xa.key.startsWith('f:') || !xb.key.startsWith('f:') || xa.locked || xb.locked) return null;
+  if (xa.pick.yr !== xb.pick.yr || xa.pick.rd !== xb.pick.rd || xa.pick.yr <= yr || xa.pick.otid === xb.pick.otid) return null;
+  if (swapOf(xa.pick) || swapOf(xb.pick)) return null;
+  return { xa, xb };
+}
+// What the swap is worth as trade-bar sides: A hands over its pick (A's pick value), B hands over
+// what A ends up with: the pair's average, a fifth of the gap better or worse.
+function swapValues(sw, mode, pv) {
+  const a = pv(sw.xa), b = pv(sw.xb), m = (a + b) / 2, d = Math.abs(a - b);
+  return [a, mode === 'best' ? m + 0.2 * d : m - 0.2 * d];
+}
+
 screens.liveTrade = (args) => {
   const L = league();
   const teams = [...L.teams].sort((a, b) => a.shortName.localeCompare(b.shortName));
@@ -6480,13 +6508,18 @@ screens.liveTrade = (args) => {
   // Picks are valued off each team's roster as it would be after this deal.
   const adjust = tradeAdjust(A, B, aa.filter(x => selA.has(x.key)), bb.filter(x => selB.has(x.key)));
   const pv = x => pickItemValue(x, prot, adjust);
-  const sum = (list, sel) => list.filter(x => sel.has(x.key)).reduce((s, x) => s + pv(x), 0);
-  const vA = sum(aa, selA), vB = sum(bb, selB);
+  const sw = swapPair(aa.filter(x => selA.has(x.key)), bb.filter(x => selB.has(x.key)));
+  if (!sw) args.swap = null;
+  const mode = sw && args.swap;
+  const inSw = x => !!mode && (x === sw.xa || x === sw.xb);
+  const sum = (list, sel) => list.filter(x => sel.has(x.key) && !inSw(x)).reduce((s, x) => s + pv(x), 0);
+  let vA = sum(aa, selA), vB = sum(bb, selB);
+  if (mode) { const [ca, cb] = swapValues(sw, mode, pv); vA += ca; vB += cb; }
   // Future firsts being sent can carry a protection.
-  const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
+  const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => !inSw(x)).filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
   const protRows = !isComplete() ? [] : firsts.map(x => protOf(x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><span class="small muted">already protected</span></div>`
-    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${v === 1 ? '#1' : v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
+    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
   const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
       <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
   const select = (side, cur) => {
@@ -6507,6 +6540,8 @@ screens.liveTrade = (args) => {
         <div class="list">${list(aa, selA, 'a')}</div>
         <div class="list">${list(bb, selB, 'b')}</div>
       </div>
+      ${sw ? `<fieldset class="frame"><legend>Swap</legend><p class="note small muted">Instead of trading the two ${dispYr(sw.xa.pick.yr)} R${sw.xa.pick.rd} picks, each team keeps its own and the order decides who gets which.</p>
+        <div class="seg">${[[null, 'No swap'], ['best', `${esc(A.shortName)} get best`], ['worst', `${esc(A.shortName)} get worst`]].map(([v, t]) => `<button class="btn ${(mode || null) === v ? 'on focus' : 'off'}" data-act="liveSwap" data-v="${v || ''}">${t}</button>`).join('')}</div></fieldset>` : ''}
       ${protRows ? `<fieldset class="frame"><legend>Protections</legend><p class="note small muted">Lands in the protection: it goes back and they get that year's 2nd.</p>${protRows}</fieldset>` : ''}
       ${commish ? `<div class="grid2">
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
@@ -6619,7 +6654,7 @@ function liveTrade3(args, A, B, C, left) {
   const firsts = items.filter(i => i.x.pick && i.x.pick.rd === 1 && i.x.pick.yr > L.season.currentYear);
   const protRows = !isComplete() ? [] : firsts.map(i => protOf(i.x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><span class="small muted">already protected</span></div>`
-    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[i.x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${i.x.key}" data-v="${v}">${v === 1 ? '#1' : v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
+    : `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[i.x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${i.x.key}" data-v="${v}">${v ? `Top ${v}` : 'None'}</button>`).join('')}</div></div>`).join('');
   layout({
     title: '3-Team Trade',
     body: `
@@ -6743,6 +6778,7 @@ actions.liveCycle = d => {
   }
   replace('liveTrade', upd);
 };
+actions.liveSwap = d => { const a = tradeArgs(); replace('liveTrade', { ...a, swap: d.v || null }); };
 actions.liveProt = d => { const a = tradeArgs(); replace('liveTrade', { ...a, prot: { ...(a.prot || {}), [d.k]: +d.v } }); };
 actions.liveToggle = d => {
   const a = tradeArgs();
@@ -6764,7 +6800,13 @@ actions.liveTradeGo = async d => {
   const adjust = tradeAdjust(A, B, sa.items, sb.items);
   const pv = x => pickItemValue(x, a.prot || {}, adjust);
   if (!sa.items.length && !sb.items.length) { toast('Tap something on either side first'); return; }
-  const vA = sa.items.reduce((s, x) => s + pv(x), 0), vB = sb.items.reduce((s, x) => s + pv(x), 0);
+  // A swap keeps both picks where they are and settles on lottery night.
+  const sw = a.swap ? swapPair(sa.items, sb.items) : null;
+  const swapMode = sw ? a.swap : null;
+  let vA = sa.items.filter(x => x !== sw?.xa).reduce((s, x) => s + pv(x), 0), vB = sb.items.filter(x => x !== sw?.xb).reduce((s, x) => s + pv(x), 0);
+  if (sw) { const [ca, cb] = swapValues(sw, swapMode, pv); vA += ca; vB += cb; }
+  const swapOut = sw ? { ...sw } : null;
+  if (sw) for (const [sd, x] of [[sa, sw.xa], [sb, sw.xb]]) { sd.items = sd.items.filter(i => i !== x); sd.picks = sd.picks.filter(pk => pk !== x.pick); }
   if (d.force !== '1' || !state.params.commissioner) {
     const no = [[A, vA, vB], [B, vB, vA]].find(([t, give, get]) => !isUserTeam(t) && !cpuAccepts(give, get));
     if (no) { toast(`${no[0].shortName} decline: they want more back`); return; }
@@ -6778,6 +6820,12 @@ actions.liveTradeGo = async d => {
   const led = protLedger();
   for (const sd of [sa, sb]) for (const x of sd.items) if (x.pick && prot[x.key] && !protOf(x.pick)) led.push({ otid: x.pick.otid, yr: x.pick.yr, top: prot[x.key], from: sd.team.id });
   saveProt(led);
+  if (swapOut) {
+    const sl = swapLedger();
+    sl.push({ yr: swapOut.xa.pick.yr, rd: swapOut.xa.pick.rd, a: A.id, b: B.id, x: swapOut.xa.pick.otid, y: swapOut.xb.pick.otid, mode: swapMode });
+    saveSwaps(sl);
+    if (!sa.items.length && !sb.items.length) { toast('⇄ Swap set', `${A.shortName} get the ${swapMode === 'best' ? 'better' : 'worse'} of the two ${dispYr(swapOut.xa.pick.yr)} R${swapOut.xa.pick.rd} picks`); back(); return; }
+  }
   const entry = liveExecute(sa, sb);
   entry.protAdded = led.filter(e => !e.done && (sa.items.concat(sb.items)).some(x => x.pick && x.pick.otid === e.otid && x.pick.yr === e.yr && prot[x.key]));
   back();
@@ -9947,10 +9995,13 @@ actions.applyRealPicks = async () => {
     const led = protLedger();
     for (const e of r.protections) if (!led.some(x => x.otid === e.otid && x.yr === e.yr && !x.done)) led.push(e);
     saveProt(led);
+    const sl = swapLedger();
+    for (const e of r.swaps) if (!sl.some(x => !x.done && x.yr === e.yr && x.rd === e.rd && x.x === e.x && x.y === e.y)) sl.push(e);
+    saveSwaps(sl);
   }
   state.dirty = true;
   render();
-  toast('Real picks applied', `${r.moved} moved · ${r.kept} already traded in the game stayed · ${r.voided} forfeited removed · ${isComplete() ? r.protections.length : 0} protections`);
+  toast('Real picks applied', `${r.moved} moved · ${r.kept} already traded in the game stayed · ${r.voided} forfeited removed · ${isComplete() ? `${r.protections.length} protections · ${r.swaps.length} swaps` : 'protections and swaps need Complete mode'}`);
 };
 actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[+d.id]; render(); };
 
