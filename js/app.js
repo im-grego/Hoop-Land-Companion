@@ -13,7 +13,7 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
-import { setTradeHook, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
+import { setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
 import * as TR from './traderules.js';
 import * as FX from './facilities.js';
@@ -36,7 +36,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.112.0';
+const APP_VERSION = '0.113.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4692,7 +4692,7 @@ function frontOfficeOffers(team, { only = null, max = 3 } = {}) {
   const ly = lastYear();
   const others = L.teams.filter(t => !isUserTeam(t)).sort(() => rng() - 0.5);
   const text = x => x.pick ? (x.key.startsWith('c:') ? `#${x.key.slice(2)}` : pickLabel(x.pick))
-    : `${playerName(x.player)} (Lv ${shownLevel(x.player)}${contractText(x.player) ? `, ${contractText(x.player)}` : ''}${contractValue(x.player).tag ? `, ${contractValue(x.player).tag}` : ''})`;
+    : `${playerName(x.player)} (Lv ${shownLevel(x.player)}${contractText(x.player) ? `, ${contractText(x.player)}` : ''}${isCornerstone(x.player) ? ', Cornerstone' : ''}${contractValue(x.player).tag ? `, ${contractValue(x.player).tag}` : ''})`;
   for (const want of onBlock) {
     let n = 0;
     for (const t of others) {
@@ -5693,7 +5693,8 @@ function contractText(p) {
 }
 function contractBadge(p) {
   const { tag } = contractValue(p);
-  return tag ? ` <span class="badge ${tag === 'Overpaid' ? 'down-b' : tag === 'Bargain' ? 'lvl' : 'new'}">${tag}</span>` : '';
+  const star = isCornerstone(p) ? ' <span class="badge corner">Cornerstone</span>' : '';
+  return star + (tag ? ` <span class="badge ${tag === 'Overpaid' ? 'down-b' : tag === 'Bargain' ? 'lvl' : 'new'}">${tag}</span>` : '');
 }
 // Archetype: a custom name from the save (built-in names wait on the game's list).
 const archName = p => (p.arc && !/^custom( archetype)?$/i.test(p.arc.trim()) ? p.arc.trim() : '');

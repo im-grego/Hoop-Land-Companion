@@ -1361,3 +1361,5 @@ main.panel.bare { margin-top: 10px; }
 .pb-edit { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
 .pb-sel { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 .pb-sel select { width: 100%; font-size: 13px; }
+
+.badge.corner { background: var(--gold); color: var(--marquee); border-color: var(--gold); }
