@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.1';
+const APP_VERSION = '0.134.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3323,7 +3323,7 @@ function profileReport(p, team) {
   const rk = levelRanks(p, team);
   if (rk) {
     const nm = team ? teamFull(team) : '';
-    out.push(`He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}, ${rk.team <= 5 ? 'a starter' : rk.team <= 9 ? 'a rotation piece' : 'on the fringe of the rotation'}` : ''}.`);
+    out.push(`He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}` : ''}.`);
   }
   if (p.tendencies) {
     out.push(esc(styleSentence(p)));
