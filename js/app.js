@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.138.1';
+const APP_VERSION = '0.138.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3101,7 +3101,7 @@ screens.roster = (args) => {
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
       </div>
       ${movesBox(L, t)}
-      ${others ? '' : (state.auto[state.leagueIdx] ? `<p class="note">Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.</p>` : '')}
+      ${rosterBreakdownBox(t)}
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
 };
@@ -3197,6 +3197,17 @@ screens.rumors = () => {
   });
 };
 actions.txTab = d => replace('transactions', { tab: d.v });
+// The roster by position group, best first, as a dropdown (same breakdown as in free agency).
+function rosterBreakdownBox(t) {
+  const ro = [...t.roster].filter(p => p.status !== 4).sort((a, b) => shownLevel(b) - shownLevel(a));
+  const G = [['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']];
+  const grp = k => ro.filter(p => posGroup(p) === k);
+  return `<details class="frame fa-roster" data-anchor="rbox" style="margin-top:10px" ${state.rbOpen ? 'open' : ''}><summary data-act="rbToggle"><b>Roster</b> <span class="small muted">${G.map(([k, l]) => `${l} ${grp(k).length}`).join(' · ')}</span></summary>
+    ${G.map(([k, l]) => `<p class="note small" style="margin-top:6px"><b>${l}</b> <span class="muted">(${grp(k).length})</span></p>
+      ${grp(k).map(p => `<div class="small mv-row"><span class="mv-l">${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted mv-r">${p.contract?.sal ? `$${p.contract.sal}M × ${p.contract.yrs}` : ''}</span></div>`).join('') || '<span class="small muted">None</span>'}`).join('')}
+  </details>`;
+}
+actions.rbToggle = (d, el, e) => { e?.preventDefault(); state.rbOpen = !state.rbOpen; replace('roster', state.stack[state.stack.length - 1].args); };
 actions.movesToggle = () => { state.movesOpen = !state.movesOpen; replace('roster', state.stack[state.stack.length - 1].args); };
 
 // ---------------------------------------------------------------------------
