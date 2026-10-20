@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.131.0';
+const APP_VERSION = '0.131.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4769,21 +4769,22 @@ const SKILL_COVER = {
 // The skills a player has earned (beyond the free ones every player gets).
 const earnedSkills = p => (p.skills || []).filter(x => x.level >= 1 && !isFreeSkill(x.id) && SKILL_INFO[x.id])
   .sort((a, b) => (isEliteSkill(b.id) - isEliteSkill(a.id)) || b.level - a.level);
-function fullTake(p, f) {
+function fullTake(p, f, noGrowth = false) {
   const room = f.k && SKILL_ATTRS.includes(f.k) ? roomFor(p, f.k) : 0;
   const frame = frameRoom(p);
   let growth = room >= 4 ? 'with a lot of room to grow' : room >= 2 ? 'with some room to grow' : 'with little room left';
   if (f.size) growth = room >= 4 ? (frame >= 0.35 ? 'with a frame to build on and a high ceiling' : 'with a high ceiling but a frame that limits him') : growth;
   const eth = ethicLine(p, f);
   const sk = (SKILL_COVER[f.area] || []).find(id => (p.skills || []).some(x => x.id === id && x.level >= 1));
-  return `${f.text}, ${growth}${eth ? `; ${eth}` : ''}${sk ? `. On the plus side, he ${skillSays(sk)} (${skillName(sk)})` : ''}`;
+  return `${f.text}${noGrowth ? '' : `, ${growth}`}${eth ? `${noGrowth ? '; ' : '; '}${eth}` : ''}${sk ? `. On the plus side, he ${skillSays(sk)} (${skillName(sk)})` : ''}`;
 }
 const tendFlags = p => gameRead(p).filter(f => f.kind === 'weak').sort((a, b) => b.gap - a.gap).map(f => ({ ...f, quote: traitQuote(p, GROWTH[f.k] || 'game', f) || `I'm working on it.` }));
-function scoutTake(p, a, room, what) {
+function scoutTake(p, a, room, what, coachSpeaks = false) {
   const tf = tendFlags(p).find(f => f.k === a);
-  if (tf) return `Scouts: ${fullTake(p, tf)}.`;
+  if (tf) return `Scouts: ${fullTake(p, tf, coachSpeaks)}.`;
   const hit = (COVER[a] || []).find(([k]) => p.attributes[k][0] >= 15);
   if (hit) return `Scouts: ${hit[1]}.`;
+  if (coachSpeaks) return '';   // the coaches already covered his room to grow
   const tail = room >= 4 ? vary2(p, 11, [`there's a lot of room to grow in his ${what}, and that's where the upside lives.`, `his ${what} has real room; with the right staff it becomes a strength.`])
     : room >= 2 ? vary2(p, 12, [`his ${what} should tick up, but don't count on it becoming a weapon.`, `some room in his ${what}; it gets to average, not much more.`])
     : vary2(p, 13, [`his ${what} is about what it'll be. Teams have to be comfortable with that.`, `don't expect his ${what} to change much; he'll have to win with the rest of his game.`]);
@@ -4848,17 +4849,49 @@ function workoutQs(p) {
 const OLD_Q = { work: 'What do you need to work on?' };
 const qText = (p, k) => workoutQs(p).find(x => x.k === k)?.q || OLD_Q[k] || '';
 
+// His body's injury profile beyond what's on record: the durability trait,
+// stamina against his position, how he plays and his frame.
+// risk: -1 (rock) .. 3 (flag it); notes: the reasons in plain words.
+function bodyRead(p) {
+  const notes = [];
+  let risk = 0;
+  const dur = p.traits?.durability || 10;
+  if (dur >= 16) { risk -= 1; notes.push('his durability grades as a strength'); }
+  else if (dur <= 5) { risk += 2; notes.push('durability grades poorly and his body has a history of wearing down'); }
+  else if (dur <= 8) { risk += 1; notes.push('durability grades a little below average'); }
+  // Prospects' physicals run on a different scale from pros', so they're judged against their own class.
+  const pool = p.status === 1 ? (league().draftClass || []) : league().teams.flatMap(t => t.roster);
+  const peers = pool.filter(x => Math.abs(x.pos - p.pos) <= 1);
+  const stm = peers.length ? peers.reduce((s, x) => s + x.attributes.STM[0], 0) / peers.length : 14;
+  const mine = p.attributes.STM[0];
+  if (mine >= stm + 2) { risk -= 1; notes.push('his stamina is a plus, and fresh legs hold up'); }
+  else if (mine <= stm - 2) { risk += 1; notes.push('his stamina is low for his position, and tired legs are where injuries come from'); }
+  const ks = new Set(playStyles(p, 4).map(s => s.k));
+  if (ks.has('rim') || ks.has('post') || ks.has('charge') || ks.has('glass')) { risk += 1; notes.push('he lives in the paint and takes a pounding on every possession'); }
+  else if ((p.attributes.SPD?.[0] || 0) >= 15 && (p.attributes.DNK?.[0] || 0) >= 14) { risk += 1; notes.push('he\'s an explosive athlete, and that puts the load on his knees and ankles'); }
+  const avgWt = peers.length ? peers.reduce((s, x) => s + x.wt, 0) / peers.length : p.wt;
+  if (p.wt && p.wt < avgWt - 15 && (ks.has('rim') || ks.has('post') || p.pos >= 4)) { risk += 1; notes.push('he\'s light for the contact he\'ll see'); }
+  return { risk: Math.max(-1, Math.min(3, risk)), notes };
+}
 // { quote: his words, staff: what our people think }.
 function workoutAnswer(p, k) {
   const r = () => scoutingReport(p, league(), p.pot, state.data.seasonLeagues);
   if (k === 'body') {
-    const m = medicalFlag(p);
-    if (!m) return { quote: vary2(p, 1, ['I feel great. Haven\'t missed time and I don\'t plan to.', 'Never been healthier. I take care of my body.']), staff: 'Doctors: clean bill of health.' };
+    const m = medicalFlag(p), b = bodyRead(p);
+    const verdict = b.risk >= 2 ? 'Worth planning around.' : b.risk === 1 ? 'Manageable.' : b.risk === 0 ? 'Nothing that worries them.' : 'A good bet to stay on the floor.';
+    if (!m) {
+      const quote = b.risk >= 2 ? vary2(p, 1, ['I\'ve been lucky so far. I know people look at my body type, and I\'m working on it.', 'Healthy now. I\'ve heard the questions about my body, and I have a plan for that.'])
+        : b.risk === 1 ? vary2(p, 1, ['I\'m healthy. I know the minutes pile up at this level, so I\'m taking care of it.', 'No injuries to speak of. I stretch, I eat right, I listen to my body.'])
+        : b.risk === 0 ? vary2(p, 1, ['Healthy. Haven\'t missed time and I don\'t plan to.', 'I feel good. Nothing nagging.'])
+        : vary2(p, 1, ['Never been healthier. My body holds up.', 'I don\'t get hurt. I play every game I can.']);
+      const why = b.notes.length ? ` ${b.notes.slice(0, 2).join('; ').replace(/^./, c => c.toUpperCase())}.` : '';
+      return { quote, staff: `Doctors: no injury history${b.notes.length ? '' : vary2(p, 21, [', clean bill of health', ', nothing on his chart', ', and the physical checks out fine'])}.${why} ${verdict}` };
+    }
     const last = m.major || m.list[m.list.length - 1];
     const part = (injuryName(last).split(' ').pop() || 'injury').replace(/^([A-Z]{2,})$/, '$1');
     const quote = m.level === 'red' ? `The ${part.length <= 3 ? part : part.toLowerCase()} was the hardest thing I've been through. I'm stronger for it, and I'm 100% now.`
       : m.level === 'yellow' ? `The ${part.toLowerCase()} acts up sometimes, but I play through it. It's not a concern.` : 'Nothing serious. A little thing here and there, like everybody.';
-    return { quote, staff: `Doctors: ${m.list.map(i => `${injuryName(i)} (${i.yr}, ${i.gamesOut} games)`).join('; ')}. ${m.level === 'red' ? 'They flag it.' : m.level === 'yellow' ? 'Worth watching.' : 'Nothing to worry about.'}` };
+    return { quote, staff: `Doctors: ${m.list.map(i => `${injuryName(i)} (${i.yr}, ${i.gamesOut} games)`).join('; ')}. ${m.level === 'red' ? 'They flag it.' : m.level === 'yellow' ? 'Worth watching.' : 'Nothing to worry about.'}${b.notes.length ? ` ${b.notes[0][0].toUpperCase()}${b.notes[0].slice(1)}.` : ''}` };
   }
   if (k === 'work') {
     const w = r().weaknesses;
@@ -4883,7 +4916,7 @@ function workoutAnswer(p, k) {
     if (PHYSICAL.includes(a)) return { quote: vary2(p, a.charCodeAt(0), ['I\'m living in the weight room this summer.', 'Give me a year with a real strength program.']), staff: frameNote(p) };
     const room = a === 'SCO' ? scoringRoom(p) : roomFor(p, a);
     return { quote: traitQuote(p, what, null) || vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
-      staff: `Coaches: ${growthNote(room, what)}`, scout: scoutTake(p, a, room, what) };
+      staff: `Coaches: ${growthNote(room, what)}`, scout: scoutTake(p, a, room, what, true) };
   }
   if (k === 'best') {
     const st = r().strengths[0];
