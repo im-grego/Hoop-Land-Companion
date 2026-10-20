@@ -8,7 +8,7 @@
 const SKILL_KEYS = ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE', 'DRE', 'STL', 'BLK'];
 const CAP20 = k => (k === 'FTS' ? 16 : 20);
 // Which rating each tendency is about (pump fake, run play, take charge are gameplay-only).
-const TEND_ATTR = {
+export const TEND_ATTR = {
   dunk: 'DNK', floater: 'LAY', post: 'INS', hook: 'INS', twoPoint: 'MID', fades: 'MID', threePoint: 'TPT',
   cross: 'DRB', spin: 'DRB', step: 'DRB', pass: 'PAS', lob: 'PAS', offReb: 'ORE', defReb: 'DRE',
   stealOnBall: 'STL', stealOffBall: 'STL', block: 'BLK',

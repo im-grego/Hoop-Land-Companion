@@ -27,6 +27,7 @@ import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
+import { runMeeting, traitName } from './influence.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
@@ -42,7 +43,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.126.2';
+const APP_VERSION = '0.127.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -786,6 +787,8 @@ const CALENDAR = [
     done: () => faDone(2) },
   { key: 'fa3', date: 'Jul 20', title: 'Free Agency · Week 3', blurb: 'Last call: asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
+  { key: 'meeting', date: 'Sep 14', title: 'Team Meeting', blurb: 'Your coaching staff and system in one place. The coach talks to the group, then every player\'s game and makeup shift a little.',
+    done: () => !!calFlags().meeting || !!calFlags().dev || !!calFlags().survey || !!calFlags().media },
   { key: 'dev', date: 'Sep 21', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
   { key: 'survey', date: 'Sep 25', title: 'GM Survey', blurb: 'Every GM in the league weighs in: predictions, players, the offseason, rookies, defense and more.',
@@ -1033,7 +1036,8 @@ function stepActions(key) {
       // Trades open after the July moratorium (week 1).
       return day >= 2 && isComplete() ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
-    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
+    case 'meeting': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="meeting">🗣️ Hold the Meeting</button><button class="btn" data-act="meetingSkip">⏭ Skip</button></div>`;
+    case 'dev': return `${calFlags().meetingList ? '<button class="btn small off" data-act="nav" data-to="meeting" style="margin-bottom:8px">🗣️ Meeting Results</button>' : ''}<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
     case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Late Free Agency</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>`;
@@ -1045,7 +1049,7 @@ function stepActions(key) {
 
 // ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
 // finished and passed dates crossed off, the current topic on top.
-const CAL_EMOJI = { office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1175,7 +1179,8 @@ actions.calDev = () => { calFlags().dev = true; applySchemeEvolution(); render()
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
+  meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
+  dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
 const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
@@ -2360,7 +2365,7 @@ screens.offseason = () => {
       ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
-      ${coachCard()}
+      ${isCollege() ? coachCard() : ''}
       ${contractCard()}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
@@ -6879,6 +6884,63 @@ function schemeLogBox(tid, limit = 6) {
   const L = league(), nm = id => L.teams.find(t => t.id === id)?.shortName || '?';
   return `<div class="stack">${rows.map(x => `<p class="note small" style="margin:0">${x.kind === 'install' ? '📥' : '🔀'} ${tid == null ? `<b>${esc(nm(x.tid))}</b> ` : ''}${x.yr}: ${esc(x.coach)} ${x.kind === 'install' ? 'installed' : 'moved to'} <b>${esc(x.to)}</b>${x.from && x.from !== x.to ? ` <span class="muted">(from ${esc(x.from)})</span>` : ''}${x.focus ? `, ${esc(x.focus.toLowerCase())} offense` : ''}. <span class="muted">${esc((x.why || []).join('; '))}.</span></p>`).join('')}</div>`;
 }
+
+
+// ---------------------------------------------------------------------------
+// Team Meeting (pros): the coaching hub, then the influence simulation.
+
+const sgn = n => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n)}`;
+const GOOD_TRAIT_DOWN = new Set(['money']);
+function meetingResultsBox() {
+  const list = calFlags().meetingList;
+  if (!list) return '';
+  const L = league(), find = id => L.teams.flatMap(t => t.roster).find(p => p.id === id);
+  const rows = list.map(x => ({ x, p: find(x.pid) })).filter(r => r.p);
+  const moves = rows.reduce((s, r) => s + r.x.moves, 0);
+  return `<fieldset class="frame"><legend>🗣️ Meeting Results</legend><div class="stack">
+    <p class="note">${rows.length ? `<b>${rows.length}</b> player${rows.length > 1 ? 's' : ''} shifted · ${moves} moves in all, biggest first.` : 'Nobody moved this time.'}</p>
+    ${rows.map(({ x, p }) => `<div class="pq"><p class="note small" style="margin:0"><b>${esc(playerName(p))}</b> <span class="gold">Lv ${shownLevel(p)}</span></p>
+      <p class="note small pq-fx">${[...x.tend.map(([k, d]) => `<span class="${d > 0 ? 'up' : 'down'}">${esc(TEND_LABELS[k] || k)} ${sgn(d)}</span>`),
+        ...x.traits.map(([k, d]) => `<span class="${(GOOD_TRAIT_DOWN.has(k) ? -d : d) > 0 ? 'up' : 'down'}">${esc(traitName(k))} ${sgn(d)}</span>`)].join(' · ')}</p></div>`).join('')}
+  </div></fieldset>`;
+}
+screens.meeting = () => {
+  const done = !!calFlags().meeting;
+  const c = myCoach();
+  layout({
+    title: 'Team Meeting',
+    body: `${done ? meetingResultsBox() : `<p class="note small">${c ? `${esc(`${c.fn} ${c.ln}`)} gathers the group.` : 'Your coach gathers the group.'} Set the staff and the system first. When the meeting ends, every player shifts a little: how he plays follows his ratings and the coach's scheme, and his makeup follows the coach (leadership for winning, locker room, playoff and loyalty; motivation for motor, durability and money). A good development coach, a coachable player and young age all give more room to move.</p>`}
+      ${proposalBox()}
+      ${coachCard()}`,
+    action: done ? null : { act: 'meetingEnd', label: 'End the Meeting' },
+  });
+};
+actions.meetingSkip = () => { calFlags().meeting = true; state.undo = null; render(); };
+actions.meetingEnd = () => {
+  const L = league();
+  if (calFlags().meeting) return;
+  checkpoint('Team meeting');
+  const rng = mulberry32((saveSalt() ^ 0x3ee7) >>> 0), ts = tendStore();
+  const sch = tierNow('scheme'), fx = fxNow(), list = [];
+  for (const t of L.teams.filter(isUserTeam)) {
+    const c = headCoachOf(t);
+    if (!c) continue;
+    const dev = (c.attributes?.development?.[0] ?? 0) / 2;
+    for (const p of t.roster) {
+      if (!p.tendencies && !p.traits) continue;
+      if (p.tendencies && !ts.orig[p.id]) ts.orig[p.id] = { ...p.tendencies };
+      const r = runMeeting(p, c, { base: CO.nudgesFor(p, sch, fx), lim: CO.maxShift(sch, fx) + 1 + (dev >= 8 ? 1 : 0), rng });
+      if (r.moves) list.push({ pid: p.id, tid: t.id, ...r });
+    }
+  }
+  saveTend();
+  list.sort((a, b) => b.moves - a.moves);
+  calFlags().meeting = true;
+  calFlags().meetingList = list;
+  state.dirty = true;
+  toast('The meeting breaks up', `${list.length} players shifted`);
+  render();
+};
 
 // A new head coach: players and fans react to losing the old one and to the hire.
 function coachChangeMorale(L, team, old, next) {
