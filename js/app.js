@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.142.0';
+const APP_VERSION = '0.142.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3195,7 +3195,7 @@ function teamMoves(L, t) {
     const h = injuryHistory(p, yr, 1);
     if (h && h.games >= L.season.totalGames / 5 && shownLevel(p) >= 75) ins.push({ p, from: `Healthy (${h.games})`, back: true });
   }
-  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at === 'Free agency' ? 'Cut' : at });
+  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at === 'Free agency' ? (offGet('buyouts')[p.id]?.tid === t.id ? 'Buyout' : 'Cut') : at });
   if (isCollege()) {
     for (const p of L.retirees || []) if ((p.yrs ?? 0) >= 4 && line(p)?.tid === t.id) outs.push({ p, to: 'Graduated' });
     for (const x of draftDepartures(state.data, state.leagueIdx)) if (x.school === t) outs.push({ p: x.p, to: x.pick ? `Drafted #${x.pick.pk}` : 'Left for the pros' });
@@ -10284,7 +10284,7 @@ actions.cutsFinish = async () => {
     for (const x of go) {
       const c = x.p.contract || {};
       const bo = user ? (buy[x.p.id] ? buyoutOffer(x.p) : null) : (buys.includes(x.p) ? buyoutOffer(x.p) : null);
-      if (bo) { bookDead(t, x.p, bo.price, bo.yrs); bought.push(`${playerName(x.p)} ($${bo.price}M × ${bo.yrs}, was $${bo.sal}M)`); }
+      if (bo) { bookDead(t, x.p, bo.price, bo.yrs); const bl = offGet('buyouts'); bl[x.p.id] = { tid: t.id, price: bo.price, yrs: bo.yrs }; offSet('buyouts', bl); bought.push(`${playerName(x.p)} ($${bo.price}M × ${bo.yrs}, was $${bo.sal}M)`); }
       else bookDead(t, x.p, c.sal || 0, c.yrs || 0);
       FA.cutPlayer(L, t, x.p);
     }
