@@ -1378,3 +1378,7 @@ main.panel.bare { margin-top: 10px; }
 .pb-diagram { width: 100%; height: auto; display: block; image-rendering: pixelated; border: 2px solid var(--btn-edge); background: var(--bg-dark); }
 
 .gear-sw { display: inline-block; width: 18px; height: 18px; margin-left: 4px; border: 2px solid var(--btn-edge); vertical-align: middle; }
+
+.so-lab { text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+.so-focus { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+.so-focus .btn { padding: 8px 0; font-size: 12px; min-width: 0; }

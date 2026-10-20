@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.0';
+const APP_VERSION = '0.128.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -967,7 +967,7 @@ function stepSummary(key) {
   if (key === 'camp') { const r = state.summerTour[state.leagueIdx]?.result; return r?.mvp ? `Summer League MVP: ${mvpName(L, r.mvp)} (${L.teams.find(t => t.id === r.mvp.tid)?.shortName || '?'}).` : 'Summer League is a wrap.'; }
   if (key.startsWith('fa')) {
     const log = calFlags().faLog?.[+key[2]];
-    return log ? (log.best || log.big ? [log.best && `⭐ ${log.best}`, log.big && log.big !== log.best && `💰 ${log.big}`].filter(Boolean).join('\n') : `${log.n} signings.`) : 'Done in the game.';
+    return log ? (log.best || log.big ? [log.best && `⭐ ${log.best}`, log.big && log.big !== log.best && `💵 ${log.big}`].filter(Boolean).join('\n') : `${log.n} signings.`) : 'Done in the game.';
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
@@ -1050,7 +1050,7 @@ function stepActions(key) {
 
 // ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
 // finished and passed dates crossed off, the current topic on top.
-const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💵', fa2: '💵', fa3: '💵', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1180,7 +1180,7 @@ actions.calDev = () => { calFlags().dev = true; applySchemeEvolution(); render()
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
-  meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
+  meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
@@ -1684,10 +1684,12 @@ function coachCard() {
     <p class="note"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b> <span class="muted small">Development ${r('development')} · Motivation ${r('motivation')} · Leadership ${r('leadership')}</span></p>
     <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${tokTag(coachPoints())}</b> to spend</p>
     <p class="note small muted">${CO.BRANCHES.filter(b => b.tiers.length).map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
-    <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
+    <p class="note small" style="margin:4px 0 0"><b class="gold">Staff</b></p>
+    <div class="grid2"><button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button></div>
+    <p class="note small" style="margin:4px 0 0"><b class="gold">Strategy</b></p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
-    <button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button>
-    ${isComplete() && !isCollege() ? `<button class="btn" data-act="nav" data-to="facilities">🏟️ Facilities · ${coinTag(coinsOf(t))}</button>` : ''}
+    <div class="grid2"><button class="btn" data-act="nav" data-to="scoring">🏀 Scoring Options</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
+    ${isComplete() && !isCollege() ? `<p class="note small" style="margin:4px 0 0"><b class="gold">Arena</b></p><button class="btn" data-act="nav" data-to="facilities">🏟️ Facilities Upgrades · ${coinTag(coinsOf(t))}</button>` : ''}
   </div></fieldset>`;
 }
 
@@ -1956,15 +1958,26 @@ screens.playbook = () => {
           <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
         <button class="btn" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
         <button class="btn off" data-act="nav" data-to="teamBooks">👥 Team Playbooks</button>
-      </div></fieldset>
-      <fieldset class="frame"><legend>Scoring Options</legend><div class="stack">
+      </div></fieldset>`,
+  });
+};
+screens.scoring = () => {
+  const t = myTeam();
+  if (!t) { layout({ title: 'Scoring Options', body: '<p class="note">Pick your team first.</p>' }); return; }
+  const sch = tierNow('scheme');
+  const so = (t.scoringOptions || []);
+  const rosterIds = new Set(t.roster.map(p => p.id));
+  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
+  layout({
+    title: 'Scoring Options',
+    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Scoring Options</legend><div class="stack">
         <p class="note small muted">Up to three players your offense runs through. Usage moves in 5% steps and the rest goes to your other starters. Every option runs the playbook, never auto play calling.</p>
         ${so.map((o, i) => `<div class="so-row ${sch >= 2 ? '' : 'plan-locked'}">
           <b class="small gold">${['1st', '2nd', '3rd'][i]} Option</b>
           <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
-          <div class="so-ctl"><span class="small">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > MIN_USAGE ? '' : 'disabled'}>−</button><b>${o.usageRate}%</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
+          <div class="so-ctl"><span class="small muted so-lab">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > MIN_USAGE ? '' : 'disabled'}>−</button><b>${o.usageRate}%</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
             <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div>
-          <div class="tabs fa-tabs fa-tabs6">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
+          <span class="small muted so-lab">Focus</span><div class="so-focus">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
         ${so.length ? `<p class="note small">${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.</p>` : ''}
         ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</button>` : ''}
         <button class="btn" data-act="soAssist">🧑‍🏫 Use the Assistant Coach's Picks</button>
@@ -7255,7 +7268,7 @@ function settleIncentives() {
     }
   }
   saveIncStore(led);
-  if (hit.length) setTimeout(() => toast(`💰 Incentives earned`, hit.join(' · '), 5200), 3600);
+  if (hit.length) setTimeout(() => toast(`💵 Incentives earned`, hit.join(' · '), 5200), 3600);
 }
 actions.faOffer = d => {
   const s = faState();
@@ -8266,7 +8279,7 @@ function focusCalls(L, t, st, books, needs, rumors) {
   }
   const po = books.options.find(o => o.kind === 'player' && o.worth >= o.sal * 1.4);
   if (po) calls.push(`⚠️ ${playerName(po.p)} can beat his $${po.sal}M player option on the market. Expect an opt-out unless you make a promise.`);
-  if (books.space >= 15) calls.push(`💰 About $${books.space}M of cap space projected for July.`);
+  if (books.space >= 15) calls.push(`💵 About $${books.space}M of cap space projected for July.`);
   const ext = books.ext[0];
   if (ext && ext.level >= 78) calls.push(`🖊️ Extension: ${playerName(ext.p)} enters his final year. Lock him up in the extension window.`);
   const target = rumors.find(r => r.kind === 'star' && st.status === 'contending') || rumors.find(r => r.kind === 'vet' && st.status === 'contending');
@@ -9283,7 +9296,7 @@ screens.recruitee = ({ id }) => {
         <p class="note small">${myNil !== undefined ? `Offered: <b>$${myNil}M</b> NIL with a scholarship.` : 'No offer yet.'} $${left.toFixed(1).replace('.0', '')}M available.</p>
         <div class="grid2">${amounts.map(v => `<button class="btn ${v === myNil ? 'on focus' : ''}" data-act="recruitOffer" data-id="${id}" data-amt="${v}" ${v > left + 1e-9 ? 'disabled' : ''}>$${v}M</button>`).join('')}
           ${myNil !== undefined && com !== t.id ? `<button class="btn" data-act="recruitPull" data-id="${id}">Pull Offer</button>` : ''}</div></fieldset>
-      <fieldset class="frame"><legend>This Week</legend><p class="note small muted">Pick a pitch: 💰 NIL · 🏆 Winning · 📍 Close to home · ⏱️ Playing time.</p>
+      <fieldset class="frame"><legend>This Week</legend><p class="note small muted">Pick a pitch: 💵 NIL · 🏆 Winning · 📍 Close to home · ⏱️ Playing time.</p>
         ${pitchRow('call', `📞 Call (${RC.LIMITS.calls - u.calls} left)`, a.call, u.calls < RC.LIMITS.calls)}
         ${pitchRow('home', `🏠 Home visit (${RC.LIMITS.homes - u.homes} left)`, a.home, myNil !== undefined && u.homes < RC.LIMITS.homes)}
         ${pitchRow('official', `🏟️ Official visit (${RC.LIMITS.officials - u.officials} left)`, offi && (a.official || 'done'), myNil !== undefined && u.officials < RC.LIMITS.officials)}
