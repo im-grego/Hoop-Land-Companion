@@ -1388,3 +1388,6 @@ main.panel.bare { margin-top: 10px; }
 .team-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 6px; padding: 6px; background: var(--btn); border: 3px solid var(--btn-edge); }
 .team-bar h2.team-title { justify-content: center; text-align: center; font-size: 20px; }
 .team-bar .nav-btn { width: 44px; min-height: 44px; padding: 0; font-size: 20px; }
+.mv-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; white-space: nowrap; }
+.mv-l { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.mv-r { flex: none; }

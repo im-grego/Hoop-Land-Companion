@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.129.0';
+const APP_VERSION = '0.129.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3088,7 +3088,7 @@ function teamMoves(L, t) {
   for (const p of t.roster) {
     if (gone.has(p.id) || (p.season?.injury?.gamesOut || 0) > 0) continue;
     const h = injuryHistory(p, yr, 1);
-    if (h && h.games >= L.season.totalGames / 5) ins.push({ p, from: `Back healthy · missed ${h.games} games`, back: true });
+    if (h && h.games >= L.season.totalGames / 5 && shownLevel(p) >= 75) ins.push({ p, from: `Healthy (${h.games} missed)`, back: true });
   }
   for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at });
   if (isCollege()) {
@@ -3101,9 +3101,9 @@ function teamMoves(L, t) {
 function movesBox(L, t) {
   const { ins, outs } = teamMoves(L, t);
   if (!ins.length && !outs.length) return '';
-  const row = (p, tag, arrow) => `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted">${arrow} ${esc(tag)}${arrow === '←' && p.contract?.sal ? ` · $${p.contract.sal}M × ${p.contract.yrs}` : ''}</span></div>`;
+  const row = (p, tag, arrow) => `<div class="small mv-row"><span class="mv-l">${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted mv-r">${arrow} ${esc(tag)}${arrow === '←' && p.contract?.sal && !tag.startsWith('Healthy') ? ` · $${p.contract.sal}M×${p.contract.yrs}` : ''}</span></div>`;
   return `<details class="frame" style="margin-top:10px" ${state.movesOpen ? 'open' : ''}><summary data-act="movesToggle"><b>Moves</b> <span class="small muted">In ${ins.length} · Out ${outs.length}</span></summary>
-    <p class="note small" style="margin-top:6px"><b>In</b></p>${ins.map(m => m.back ? row(m.p, m.from, '🩹') : row(m.p, m.from, '←')).join('') || '<span class="small muted">None</span>'}
+    <p class="note small" style="margin-top:6px"><b>In</b></p>${ins.map(m => row(m.p, m.from, '←')).join('') || '<span class="small muted">None</span>'}
     <p class="note small" style="margin-top:6px"><b>Out</b></p>${outs.map(m => row(m.p, m.to, '→')).join('') || '<span class="small muted">None</span>'}
   </details>`;
 }
