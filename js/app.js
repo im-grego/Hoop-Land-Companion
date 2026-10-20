@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.6';
+const APP_VERSION = '0.128.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3051,9 +3051,9 @@ screens.roster = (args) => {
         <h2 class="team-title">${esc(teamFull(t))}</h2>
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
       </div>
+      ${movesBox(L, t)}
       ${others ? '' : `<p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>`}
-      <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>
-      ${movesBox(L, t)}`,
+      <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
 };
 
@@ -3061,7 +3061,8 @@ screens.roster = (args) => {
 // each player's last stats line.
 function teamMoves(L, t) {
   const yr = lastYear(), cur = L.season.currentYear, li = state.leagueIdx;
-  const line = p => seasonLine(p, li, yr);
+  // His team last season, even if he never played (injured or an expiring deal): that's still his team.
+  const line = p => { const s = (p.stats || []).find(x => x.league === li && x.yr === yr), r = s?.season?.[s.season.length - 1]; return r ? { tid: r.tid } : null; };
   const nameOf = id => L.teams.find(x => x.id === id)?.shortName;
   const rookie = p => p.history?.draft?.yr === cur || p.history?.yearDeclared === cur;
   const everyone = new Map([...L.teams.flatMap(x => x.roster.map(p => [p.id, { p, at: x.shortName }])), ...(L.freeAgents || []).map(p => [p.id, { p, at: 'Free agency' }])]);
