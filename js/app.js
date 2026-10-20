@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.129.1';
+const APP_VERSION = '0.130.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3088,7 +3088,7 @@ function teamMoves(L, t) {
   for (const p of t.roster) {
     if (gone.has(p.id) || (p.season?.injury?.gamesOut || 0) > 0) continue;
     const h = injuryHistory(p, yr, 1);
-    if (h && h.games >= L.season.totalGames / 5 && shownLevel(p) >= 75) ins.push({ p, from: `Healthy (${h.games} missed)`, back: true });
+    if (h && h.games >= L.season.totalGames / 5 && shownLevel(p) >= 75) ins.push({ p, from: `Healthy (${h.games})`, back: true });
   }
   for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at });
   if (isCollege()) {
@@ -3341,7 +3341,6 @@ function playerTags(p) {
   if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
   if (isComplete() && p.tid != null && frictionFor(p)?.clash) add('Clashing With Coach', 'down-b');
   if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');
-  if (p.season && isComplete() && !isCollege()) t.push(moraleTag(p));
   return t.join('');
 }
 screens.player = (args) => {
@@ -3366,10 +3365,9 @@ screens.player = (args) => {
           </div>`; }).join('')}
         </div>
       </fieldset>` : '';
-  const tab = ['overview', 'attributes', 'personality', 'stats'].includes(args.tab) ? args.tab : 'overview';
+  const tab = ['scout', 'style', 'personality', 'attributes', 'stats'].includes(args.tab) ? args.tab : 'scout';
   const trainer = `<fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
-          ${productionText(p)}
           <div class="pts-row">
             <span class="grow">Regression age<br><span class="muted small">${regressionText(p)}</span></span>
             <button class="btn square" data-act="regAge" data-dir="-1" aria-label="Earlier regression">−</button>
@@ -3395,7 +3393,7 @@ screens.player = (args) => {
         <div class="stack">
           ${p.skills.map((s, i) => s.level < 1 ? '' : `
             <div class="skill ${ownedOrig.has(s.id) ? '' : 'added'}">
-              <div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">Lv ${s.level}</span>` : ''}</div>
+              <div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">(${s.level})</span>` : ''}</div>
               <div class="ctrls">
                 ${isLeveled(s.id) ? `<button class="btn" data-act="skillLv" data-i="${i}" data-dir="-1" aria-label="Level down" ${s.level <= 1 ? 'disabled' : ''}>−</button><button class="btn" data-act="skillLv" data-i="${i}" data-dir="1" aria-label="Level up" ${s.level >= SKILL_MAX_LEVEL ? 'disabled' : ''}>+</button>` : ''}
                 <button class="btn" data-act="skillDel" data-i="${i}" aria-label="Remove skill">✕</button>
@@ -3405,26 +3403,27 @@ screens.player = (args) => {
           <button class="btn" data-act="addSkill">＋ Add Skill</button>
         </div>
       </fieldset>`;
-  const tabsRow = `<div class="tabs pl-tabs">${[['overview', 'Overview'], ['attributes', 'Attributes'], ['personality', 'Personality'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
-  const personality = (playStyleBox(p) + traitsBox(p)) || '<p class="note muted">Personality isn\'t set for this player yet. Reload the file and it fills in.</p>';
-  const content = tab === 'attributes' ? `${ratings}${skills}${apCard}`
+  const tabsRow = `<div class="tabs pl-tabs">${[['scout', 'Scouting'], ['style', 'Play Style'], ['personality', 'Personality'], ['attributes', 'Attributes'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  const personality = traitsBox(p) || '<p class="note muted">Personality isn\'t set for this player yet. Reload the file and it fills in.</p>';
+  const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}
+      <div class="grid2">
+        <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
+        <button class="btn" data-act="revertOne">↺ Revert</button>
+      </div>`
+    : tab === 'style' ? (playStyleBox(p) || '<p class="note muted">No play style on file for this player.</p>')
     : tab === 'personality' ? personality
     : tab === 'stats' ? statsTab(p, args)
     : `<fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
       </fieldset>
-      ${rankBox(p, mpg)}${trainer}
-      <div class="grid2">
-        <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
-        <button class="btn" data-act="revertOne">↺ Revert</button>
-      </div>`;
+      ${rankBox(p, mpg)}`;
   layout({
     title: 'Player Profile',
     body: `
       <div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
-        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb</p>
+        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
       </div>
@@ -3442,31 +3441,49 @@ const STAT_COLS = [['GP', r => r.GP], ['MPG', r => r.MIN[0] / 60 / r.GP], ['PTS'
 const sumRows = rows => rows.reduce((t, r) => { for (const k of ['GP', 'GS', 'PTS', 'FGM', 'FGA', 'TPM', 'TPA', 'FTM', 'FTA', 'REB', 'ORB', 'AST', 'STL', 'BLK', 'TO', 'PF', 'DD', 'TD', 'POTG']) t[k] = (t[k] || 0) + (r[k] || 0); t.MIN = [(t.MIN?.[0] || 0) + (r.MIN?.[0] || 0)]; return t; }, {});
 function statsTab(p, args) {
   const L = league();
-  const sv = args.sv === 'playoffs' ? 'playoffs' : 'season';
+  const sv = ['playoffs', 'highs'].includes(args.sv) ? args.sv : 'season';
   const teamOf = id => L.teams.find(t => t.id === id)?.shortName || '—';
   const years = (p.stats || []).filter(x => x.league === state.leagueIdx);
-  const rows = years.flatMap(y => (y[sv] || []).filter(r => r.GP > 0).map(r => ({ yr: y.yr, r })));
+  const rowsOf = k => years.flatMap(y => (y[k] || []).filter(r => r.GP > 0).map(r => ({ yr: y.yr, r })));
   const f = (v, dp = 1) => (v == null || !Number.isFinite(v) ? '—' : v.toFixed(dp));
-  const line = (label, team, r, cls = '') => `<tr class="${cls}"><td class="yr">${label}</td><td>${team}</td>${STAT_COLS.map(([k, g]) => `<td>${k === 'GP' ? r.GP : f(g(r), k.endsWith('%') ? 1 : 1)}</td>`).join('')}</tr>`;
+  const line = (label, team, r, cls = '') => `<tr class="${cls}"><td class="yr">${label}</td><td>${team}</td>${STAT_COLS.map(([k, g]) => `<td>${k === 'GP' ? r.GP : f(g(r), 1)}</td>`).join('')}</tr>`;
+  // Best season averages (20+ games, 5+ in the playoffs).
+  const topOf = (rows, minGp) => {
+    const best = rows.filter(x => x.r.GP >= minGp);
+    return (label, g) => { const x = [...best].sort((a, b) => g(b.r) - g(a.r))[0]; return x ? `<div><span class="muted small">${label}</span><b>${f(g(x.r))}</b><span class="small muted">${x.yr}</span></div>` : ''; };
+  };
+  const avgLine = top => `<div class="statline">${top('PPG', r => r.PTS / r.GP)}${top('RPG', r => r.REB / r.GP)}${top('APG', r => r.AST / r.GP)}${top('SPG', r => r.STL / r.GP)}${top('BPG', r => r.BLK / r.GP)}</div>`;
+  const tabs = `<div class="tabs fa-tabs">${[['season', 'Regular'], ['playoffs', 'Playoffs'], ['highs', 'Highs']].map(([k, l]) => `<button class="btn small ${k === sv ? 'on focus' : 'off'}" data-act="plStats" data-v="${k}">${l}</button>`).join('')}</div>`;
+  const prod = productionText(p);
+  const head = prod;
+  if (sv === 'highs') {
+    // The save keeps each player's best single game per category for the regular season, playoffs and finals.
+    const cs = p.careerStats || {};
+    const games = [['seasonHighs', 'Regular Season'], ['playoffHighs', 'Playoffs'], ['finalsHighs', 'Finals']].map(([k, label]) => {
+      const h = cs[k];
+      if (!h || !h.PTS) return '';
+      return `<div class="note small"><b>${label}</b></div><div class="statline">${[['PTS', 'PTS'], ['REB', 'REB'], ['AST', 'AST'], ['STL', 'STL'], ['BLK', 'BLK']].map(([c, n]) => `<div><span class="muted small">${n}</span><b>${h[c] || 0}</b></div>`).join('')}</div>`;
+    }).join('');
+    const reg = rowsOf('season'), po = rowsOf('playoffs');
+    return `${head}${tabs}
+      <fieldset class="frame"><legend>Single-Game Highs</legend>${games || '<p class="note muted small">No game highs on record.</p>'}</fieldset>
+      <fieldset class="frame"><legend>Season Average Highs</legend>
+        ${reg.length ? `<p class="note small"><b>Regular Season</b></p>${avgLine(topOf(reg, 20))}` : ''}
+        ${po.length ? `<p class="note small"><b>Playoffs</b></p>${avgLine(topOf(po, 5))}` : ''}
+        ${reg.length || po.length ? '' : '<p class="note muted small">No seasons on record.</p>'}
+      </fieldset>`;
+  }
+  const rows = rowsOf(sv);
   const table = rows.length ? `<div class="stat-wrap"><table class="stat-table"><thead><tr><th>Yr</th><th>Tm</th>${STAT_COLS.map(([k]) => `<th>${k}</th>`).join('')}</tr></thead><tbody>
       ${rows.map(({ yr, r }) => line(yr, teamOf(r.tid), r)).join('')}
       ${line('Career', '', sumRows(rows.map(x => x.r)), 'tot')}</tbody></table></div>` : `<p class="note muted">No ${sv === 'playoffs' ? 'playoff' : 'regular season'} games on record.</p>`;
-  // Highs: best season averages (20+ games, 5+ in the playoffs), counting stats, and what the game keeps.
-  const minGp = sv === 'playoffs' ? 5 : 20;
-  const best = rows.filter(x => x.r.GP >= minGp);
-  const top = (label, g) => { const x = [...best].sort((a, b) => g(b.r) - g(a.r))[0]; return x ? `<div><span class="muted small">${label}</span><b>${f(g(x.r))}</b><span class="small muted">${x.yr}</span></div>` : ''; };
   const tot = sumRows(rows.map(x => x.r));
-  const recs = ['season', 'playoffs', 'finals'].flatMap(kind => Object.entries(L.records?.[kind] || {}).flatMap(([stat, list]) => (list || []).map((x, i) => ({ kind, stat, v: x.value, yr: x.yr, rank: i + 1, pid: x.pid })))).filter(x => x.pid === p.id);
-  const g = p.gameStats;
-  const recent = g && g.GP ? `${g.PTS} pts · ${g.REB} reb · ${g.AST} ast · ${g.STL} stl · ${g.BLK} blk (${g.FGM}/${g.FGA} FG)` : '';
-  return `<div class="tabs fa-tabs">${[['season', 'Regular Season'], ['playoffs', 'Playoffs']].map(([k, l]) => `<button class="btn small ${k === sv ? 'on focus' : 'off'}" data-act="plStats" data-v="${k}">${l}</button>`).join('')}</div>
+  const n = v => (v || 0).toLocaleString();
+  return `${head}${tabs}
     <fieldset class="frame"><legend>${sv === 'playoffs' ? 'Playoffs' : 'Regular Season'} by Year</legend>${table}</fieldset>
-    ${rows.length ? `<fieldset class="frame"><legend>Highs</legend>
-      <div class="statline">${top('PPG', r => r.PTS / r.GP)}${top('RPG', r => r.REB / r.GP)}${top('APG', r => r.AST / r.GP)}${top('SPG', r => r.STL / r.GP)}${top('BPG', r => r.BLK / r.GP)}</div>
-      <p class="note small" style="margin-top:8px">${tot.PTS?.toLocaleString() || 0} points · ${tot.REB?.toLocaleString() || 0} rebounds · ${tot.AST?.toLocaleString() || 0} assists · ${tot.DD || 0} double-doubles · ${tot.TD || 0} triple-doubles · ${tot.POTG || 0} player-of-the-game awards</p>
-      ${recent ? `<p class="note small muted">Last game: ${esc(recent)}</p>` : ''}
-      ${recs.length ? `<p class="note small gold">${recs.map(x => `🏅 ${x.kind === 'season' ? '' : x.kind === 'playoffs' ? 'Playoff ' : 'Finals '}${esc(x.stat)} ${x.v} in a game (${x.yr}), No. ${x.rank} all-time`).join('<br>')}</p>` : ''}
-      <p class="note muted small">The game keeps season totals and league records; it doesn't store each player's game highs, so highs here are his best season averages and any record he holds.</p>
+    ${rows.length ? `<fieldset class="frame"><legend>Season Highs</legend>
+      ${avgLine(topOf(rows, sv === 'playoffs' ? 5 : 20))}
+      <p class="note small" style="margin-top:8px">${n(tot.PTS)} points · ${n(tot.REB)} rebounds · ${n(tot.AST)} assists · ${n(tot.STL)} steals · ${n(tot.BLK)} blocks</p>
     </fieldset>` : ''}`;
 }
 
@@ -8449,7 +8466,7 @@ function traitsBox(p, prospect = false) {
   const seen = k => !prospect || k === 'durability' || k === 'motor' || workoutDone(p.id);
   const known = TRAITS.filter(t => seen(t.k));
   const tags = known.map(t => traitTag(t, p.traits[t.k] || 0)).filter(Boolean);
-  return `<fieldset class="frame"><legend>Personality${isReal(p) ? ' <span class="muted small">· real-life read</span>' : ''}</legend>
+  return `<fieldset class="frame"><legend>Personality</legend>
     ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
     <details class="tend-wrap"><summary class="small">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
@@ -8477,11 +8494,11 @@ function playStyleBox(p) {
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(styleLine(p))}</p>
-    ${earnedSkills(p).length ? `<p class="note small">🎖️ ${esc(earnedSkills(p).slice(0, 2).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toUpperCase()))}.</p>
-      <details class="tend-wrap"><summary class="small">Skills</summary>${earnedSkills(p).map(x => `<div class="tend-row"><span class="small"><b>${esc(skillName(x.id))}</b>${isLeveled(x.id) ? ` ${x.level}` : ''}</span><span class="small muted">${esc(skillDoes(x.id))}</span></div>`).join('')}</details>` : ''}
+    ${earnedSkills(p).length ? `<p class="note small">🎖️ ${esc(earnedSkills(p).slice(0, 2).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toUpperCase()))}.</p>` : ''}
     <details class="tend-wrap"><summary class="small">All tendencies</summary>
       ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
-    </details></fieldset>`;
+    </details>
+    ${earnedSkills(p).length ? `<details class="tend-wrap"><summary class="small">All skills</summary>${earnedSkills(p).map(x => `<div class="tend-row"><span class="small"><b>${esc(skillName(x.id))}</b>${isLeveled(x.id) ? ` (${x.level})` : ''}</span></div>`).join('')}</details>` : ''}</fieldset>`;
 }
 
 // ---------------------------------------------------------------------------
