@@ -13,7 +13,7 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
-import { slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
+import { setTradeHook, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
 import * as TR from './traderules.js';
 import * as FX from './facilities.js';
@@ -36,7 +36,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.111.0';
+const APP_VERSION = '0.111.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1911,7 +1911,7 @@ screens.playbook = () => {
         <p class="note small muted" style="margin-top:6px">${sch >= 1 ? 'Pick a play for each slot.' : '🔒 Scheme 1 lets you change plays.'} (n) is the ball handler's position.</p>
         ${hasPlays(t) ? '<button class="btn small" data-act="savePlaybook">💾 Save as a playbook</button>' : ''}</fieldset>
       <fieldset class="frame"><legend>Presets</legend><div class="stack">
-        ${PRESETS.map((p, i) => `<div class="pb-book"><b>${esc(p.name)}</b>${playsGrid(presetPlays(p))}
+        ${PRESETS.map((p, i) => `<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${playsGrid(presetPlays(p))}
           <button class="btn small ${sch >= 1 ? 'focus' : ''}" data-act="installPreset" data-i="${i}" ${sch >= 1 ? '' : 'disabled'}>${sch >= 1 ? '📥 Install' : '🔒 Scheme 1'}</button></div>`).join('')}
       </div></fieldset>
       <fieldset class="frame"><legend>Saved Playbooks</legend><div class="stack">
@@ -2727,14 +2727,24 @@ function teamMoves(L, t) {
   const line = p => seasonLine(p, li, yr);
   const nameOf = id => L.teams.find(x => x.id === id)?.shortName;
   const rookie = p => p.history?.draft?.yr === cur || p.history?.yearDeclared === cur;
-  const ins = [], outs = [];
+  const everyone = new Map([...L.teams.flatMap(x => x.roster.map(p => [p.id, { p, at: x.shortName }])), ...(L.freeAgents || []).map(p => [p.id, { p, at: 'Free agency' }])]);
+  // Trades first: a player's net trip through the ledger (first team he left, last he reached).
+  const trail = new Map();
+  for (const x of offGet('moves').list || []) { const r = trail.get(x.pid) || { from: x.from, to: x.to }; r.to = x.to; trail.set(x.pid, r); }
+  const ins = [], outs = [], traded = new Set();
+  for (const [pid, r] of trail) {
+    const e = everyone.get(pid);
+    if (!e || r.from === r.to) continue;
+    if (r.to === t.id) { traded.add(pid); ins.push({ p: e.p, from: `Trade · ${nameOf(r.from) || '?'}` }); }
+    else if (r.from === t.id) { traded.add(pid); outs.push({ p: e.p, to: `Trade · ${nameOf(r.to) || '?'}` }); }
+  }
   for (const p of t.roster) {
+    if (traded.has(p.id)) continue;
     const l = line(p);
     if (l && l.tid === t.id) continue;
     ins.push({ p, from: rookie(p) ? 'Draft' : l ? (nameOf(l.tid) || 'Free agency') : 'Signed' });
   }
-  const pool = [...L.teams.filter(x => x !== t).flatMap(x => x.roster.map(p => ({ p, to: x.shortName }))), ...(L.freeAgents || []).map(p => ({ p, to: 'Free agency' }))];
-  for (const { p, to } of pool) if (line(p)?.tid === t.id) outs.push({ p, to });
+  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: at });
   const byLv = (a, b) => shownLevel(b.p) - shownLevel(a.p);
   return { ins: ins.sort(byLv), outs: outs.sort(byLv) };
 }
@@ -5290,6 +5300,17 @@ const isProt = pk => !!protOf(pk);
 const offKey = name => `hlc:${name}:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
 function offGet(name) { try { return JSON.parse(localStorage.getItem(offKey(name))) || {}; } catch { return {}; } }
 function offSet(name, v) { try { localStorage.setItem(offKey(name), JSON.stringify(v)); } catch { /* ignore */ } }
+// Every player trade this offseason, in order: { pid, from, to } by team id.
+setTradeHook((kind, rec) => {
+  try {
+    const led = offGet('moves'), list = Array.isArray(led.list) ? led.list : [];
+    for (const m of rec.moved) {
+      if (kind === 'do') list.push({ pid: m.p.id, from: m.from.id, to: m.to.id });
+      else { const i = list.map(x => x.pid === m.p.id && x.from === m.from.id && x.to === m.to.id).lastIndexOf(true); if (i >= 0) list.splice(i, 1); }
+    }
+    offSet('moves', { list });
+  } catch { /* the ledger is a convenience */ }
+});
 function lockSigning(p, why) {
   if (!isComplete()) return; const m = offGet('signed'); m[p.id] = { why, tid: p.tid }; offSet('signed', m); }
 // Why an FA signing can't be traded yet.

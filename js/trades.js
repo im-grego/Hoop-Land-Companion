@@ -96,15 +96,22 @@ export function movePlayer(p, from, to, year) {
 
 // Execute a two-team trade. side = { team, picks, players }.
 // Returns a record that undoTrade() reverses.
+// The app logs every player trade (for the team page's Moves list).
+let tradeHook = null;
+export const setTradeHook = f => { tradeHook = f; };
+
 export function executeTrade(A, B, year) {
   tradePicks(A.team, B.team, A.picks || [], B.picks || []);
   const moved = [];
   for (const p of A.players || []) { moved.push({ p, from: A.team, to: B.team, num: p.num, linePos: p.linePos, idx: A.team.roster.indexOf(p) }); movePlayer(p, A.team, B.team, year); }
   for (const p of B.players || []) { moved.push({ p, from: B.team, to: A.team, num: p.num, linePos: p.linePos, idx: B.team.roster.indexOf(p) }); movePlayer(p, B.team, A.team, year); }
-  return { A: A.team, B: B.team, picksA: A.picks || [], picksB: B.picks || [], moved, year };
+  const rec = { A: A.team, B: B.team, picksA: A.picks || [], picksB: B.picks || [], moved, year };
+  tradeHook?.('do', rec);
+  return rec;
 }
 
 export function undoTrade(rec) {
+  tradeHook?.('undo', rec);
   tradePicks(rec.A, rec.B, rec.picksB, rec.picksA);
   for (const m of [...rec.moved].reverse()) {
     movePlayer(m.p, m.to, m.from, rec.year);

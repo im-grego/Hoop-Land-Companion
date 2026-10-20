@@ -124,24 +124,40 @@ export function involves(id, pos) {
 }
 export const playsFor = pos => PLAYS.map(p => p[0]).filter(id => involves(id, pos));
 
-// Four plays per position from a filter: plays run by that position first,
-// then ones that just involve it; padded from the position's other plays.
-function pick(pos, test, pad = () => false) {
+// Play families a style is built from.
+const FAMILY = {
+  PNR: p => p.name.endsWith('PNR'),
+  PNP: p => p.name.endsWith('PNP'),
+  Motion: p => p.name.startsWith('Motion'),
+  Iso: p => p.name.startsWith('Iso'),
+  Horns: p => p.name.startsWith('Horns'),
+  Post: p => p.name.startsWith('High Post'),
+  Out5: p => p.name.startsWith('5-Out'),
+};
+// Four plays per position from a recipe like ['PNR', 'PNP', 'Iso']: each
+// step takes the next unused play of that family involving the position,
+// ones built around him first (he has the ball in a Flex, or is the one the
+// set is called for: Iso 3, Horns 3); padded from his other plays.
+function pick(pos, recipe) {
   const mine = playsFor(pos);
-  const rank = id => (BY_ID.get(id).ball === pos ? 0 : 1);
-  const hit = mine.filter(id => test(BY_ID.get(id))).sort((a, b) => rank(a) - rank(b) || a - b);
-  const rest = mine.filter(id => !hit.includes(id)).sort((a, b) => rank(a) - rank(b) || a - b);
-  const padded = rest.filter(id => pad(BY_ID.get(id)));
-  return [...hit, ...padded, ...rest.filter(id => !padded.includes(id))].slice(0, 4);
+  const rank = id => { const p = BY_ID.get(id); return (p.name.startsWith('Flex') ? p.ball : +p.name.match(/\d$/)[0]) === pos ? 0 : p.ball === pos ? 1 : 2; };
+  const order = [...mine].sort((a, b) => rank(a) - rank(b) || a - b);
+  const out = [];
+  for (const key of recipe) {
+    const id = order.find(x => !out.includes(x) && FAMILY[key](BY_ID.get(x)));
+    if (id !== undefined) out.push(id);
+  }
+  for (const id of order) if (out.length < 4 && !out.includes(id)) out.push(id);
+  return out.slice(0, 4);
 }
-const has = s => p => p.name.includes(s);
+// Offensive styles: a few families blended into one way of playing.
 export const PRESETS = [
-  { name: 'Pick and Roll', test: has('PNR') },
-  { name: 'Pick and Pop', test: has('PNP') },
-  { name: 'Motion', test: has('Motion') },
-  { name: 'Isolation', test: has('Iso') },
-  { name: 'Horns', test: has('Horns') },
-  { name: 'High Post', test: has('High Post') },
-  { name: 'Spread (5-Out)', test: p => p.name.startsWith('5-Out'), pad: p => p.name.startsWith('Iso') },
+  { name: 'Pace and Space', blurb: 'Pick-and-rolls and pops that open the floor, with an iso when the screen is blown up. Guard-led.', recipe: ['PNR', 'PNR', 'PNP', 'Iso'] },
+  { name: 'Flow Offense', blurb: 'Motion and Horns keep the ball moving; a pick-and-pop gives a shooter the final look. Ball movement teams.', recipe: ['Motion', 'Motion', 'Horns', 'PNP'] },
+  { name: 'Iso and Spread', blurb: 'Hand the ball to your best scorers and clear the floor, with 5-out looks to space it. Star-driven teams.', recipe: ['Iso', 'Iso', 'Motion', 'Out5'] },
+  { name: 'Inside-Out', blurb: 'Run it through the high post, add a pick-and-roll for the guards and a Horns set to free the shooters. Big-man hub.', recipe: ['Post', 'Post', 'PNR', 'Horns'] },
+  { name: 'Shooters\' Horns', blurb: 'Horns sets that screen for shooters, a pop for the big man, and 5-out spacing. Floor-spacing teams.', recipe: ['Horns', 'Horns', 'PNP', 'Out5'] },
+  { name: 'Half-Court Grind', blurb: 'Slow it down: post entries, Horns and a pick-and-roll, with one iso for a bailout. Physical, defensive teams.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
+  { name: 'Balanced Attack', blurb: 'One of everything: pick-and-roll, motion, Horns and an iso. A safe default.', recipe: ['PNR', 'Motion', 'Horns', 'Iso'] },
 ];
-export const presetPlays = preset => ({ positions: [1, 2, 3, 4, 5].map(pos => ({ plays: pick(pos, preset.test, preset.pad) })) });
+export const presetPlays = preset => ({ positions: [1, 2, 3, 4, 5].map(pos => ({ plays: pick(pos, preset.recipe) })) });
