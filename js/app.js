@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.4';
+const APP_VERSION = '0.134.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3326,7 +3326,7 @@ function profileReport(p, team) {
     out.push(`He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}` : ''}.`);
   }
   if (p.tendencies) {
-    out.push(esc(styleSentence(p)));
+    esc(styleSentence(p)).split(/(?<=\.) /).forEach(s => out.push(s));
     const sk = earnedSkills(p)[0];
     if (sk) { const w = skillSays(sk.id); out.push(`He ${esc(w.charAt(0).toLowerCase() + w.slice(1))}.`); }
   }
@@ -3343,7 +3343,8 @@ function profileReport(p, team) {
     : left <= 3 ? 'He has a few good years left before he starts to regress.'
     : left <= 6 ? 'He is still in his prime.'
     : 'He can play at this level for a very long time.';
-  out.push(`${p.age <= 24 && !declining(p) ? `He is still developing. ${can}` : `${can} ${timing}`}${prod}`);
+  if (p.age <= 24 && !declining(p)) out.push('He is still developing.', can); else out.push(can, timing);
+  if (prod) out.push(prod.trim());
   // What he's paid
   const c = p.contract;
   if (c?.sal && c.yrs) {
@@ -3352,7 +3353,16 @@ function profileReport(p, team) {
     const opt = c.opt === 1 ? ', with a team option on the last year' : c.opt === 2 ? ', with a player option on the last year' : '';
     out.push(`He is ${worth} for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}${opt}.`);
   }
-  return out.join(' ');
+  // Back-to-back "He ..." sentences become one: "He is still developing and has the potential to be ...".
+  const merged = [];
+  out.forEach((s, i) => {
+    const last = merged[merged.length - 1];
+    if (i > (rk ? 1 : 0) && last && /^He /.test(last.t) && /^He /.test(s) && !last.joined && last.t.length + s.length < 240) {
+      last.t = `${last.t.replace(/\.$/, '')} and ${s.slice(3)}`;
+      last.joined = true;
+    } else merged.push({ t: s });
+  });
+  return merged.map(x => x.t).join(' ');
 }
 // Status tags: what's true of him right now (contract, options, injury, trade block, ...).
 function playerTags(p) {
