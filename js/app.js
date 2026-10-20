@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.138.0';
+const APP_VERSION = '0.138.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1078,7 +1078,7 @@ function stepActions(key) {
     case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
-    case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Late Free Agency</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>`;
+    case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Begin</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div><button class="btn big focus" data-act="lateFinish" style="margin-top:8px">⏭ Advance</button>`;
     case 'cuts': return `<button class="btn big focus" data-act="nav" data-to="cuts">✂️ Final Cuts</button>`;
     case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
     default: return '';
@@ -3129,7 +3129,7 @@ function teamMoves(L, t) {
     if (traded.has(p.id)) continue;
     const l = line(p);
     if (l && l.tid === t.id) continue;
-    ins.push({ p, from: isCollege() ? (l ? `Transfer · ${nameOf(l.tid) || 'portal'}` : 'High school') : rookie(p) ? 'Draft' : l ? (nameOf(l.tid) || 'Free agency') : 'Signed' });
+    ins.push({ p, from: isCollege() ? (l ? `Transfer · ${nameOf(l.tid) || 'portal'}` : 'High school') : rookie(p) ? 'Draft' : 'FA' });
   }
   // Back from a long injury: out a fifth of last season or more and healthy now, so he's like a new addition.
   const gone = new Set(ins.map(x => x.p.id));
@@ -3138,7 +3138,7 @@ function teamMoves(L, t) {
     const h = injuryHistory(p, yr, 1);
     if (h && h.games >= L.season.totalGames / 5 && shownLevel(p) >= 75) ins.push({ p, from: `Healthy (${h.games})`, back: true });
   }
-  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at });
+  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at === 'Free agency' ? 'Cut' : at });
   if (isCollege()) {
     for (const p of L.retirees || []) if ((p.yrs ?? 0) >= 4 && line(p)?.tid === t.id) outs.push({ p, to: 'Graduated' });
     for (const x of draftDepartures(state.data, state.leagueIdx)) if (x.school === t) outs.push({ p: x.p, to: x.pick ? `Drafted #${x.pick.pk}` : 'Left for the pros' });
