@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.2';
+const APP_VERSION = '0.128.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3075,9 +3075,13 @@ function teamMoves(L, t) {
     if (traded.has(p.id)) continue;
     const l = line(p);
     if (l && l.tid === t.id) continue;
-    ins.push({ p, from: rookie(p) ? 'Draft' : l ? (nameOf(l.tid) || 'Free agency') : 'Signed' });
+    ins.push({ p, from: isCollege() ? (l ? `Transfer · ${nameOf(l.tid) || 'portal'}` : 'High school') : rookie(p) ? 'Draft' : l ? (nameOf(l.tid) || 'Free agency') : 'Signed' });
   }
-  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: at });
+  for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at });
+  if (isCollege()) {
+    for (const p of L.retirees || []) if ((p.yrs ?? 0) >= 4 && line(p)?.tid === t.id) outs.push({ p, to: 'Graduated' });
+    for (const x of draftDepartures(state.data, state.leagueIdx)) if (x.school === t) outs.push({ p: x.p, to: x.pick ? `Drafted #${x.pick.pk}` : 'Left for the pros' });
+  }
   const byLv = (a, b) => shownLevel(b.p) - shownLevel(a.p);
   return { ins: ins.sort(byLv), outs: outs.sort(byLv) };
 }
@@ -9269,11 +9273,30 @@ screens.recruitee = ({ id }) => {
   // Strengths and weaknesses against college players at his position;
   // before a visit scouts his potential, his star rating stands in for it.
   const rep = scoutingReport(p, league(), scouted ? p.pot : ({ 5: 9, 4: 8, 3: 7, 2: 5 }[x.stars] || 6), x.transfer ? state.data.seasonLeagues : null);
-  const repHtml = `<fieldset class="frame"><legend>Scouting Report</legend><ul class="scout">
+  // The blurb: how he plays, what he's like, where he's headed. Before a visit
+  // scouts him it leans on his star rating, and it firms up as the weeks go.
+  const acc = Math.min(100, 35 + 15 * (Math.min(M.week, RC.WEEKS) - 1) + (scouted ? 25 : 0));
+  const potEst = scouted ? p.pot : ({ 5: 9, 4: 8, 3: 7, 2: 5 }[x.stars] || 6);
+  const POTW = { Legend: 'an all-time great', 'Hall of Fame': 'a Hall of Famer', Superstar: 'a superstar', 'All-Star': 'an All-Star', 'Quality Starter': 'a quality starter', 'Role Player': 'a role player', 'Rotational Player': 'a rotational player' };
+  const upT = tierFor(potEst);
+  const blurb = [
+    `Level ${x.lv}: ${x.transfer ? `No. ${x.rank} in the transfer pool` : `No. ${x.rank} in the class`}, ${x.stars >= 5 ? 'an immediate star' : x.stars >= 4 ? 'a likely starter' : x.stars >= 3 ? 'a rotation piece' : 'a developmental player'}.`,
+    p.tendencies ? esc(styleLine(p)) : '',
+    traitsSet(p) ? esc(personality(p)) : '',
+    `${acc >= 75 ? 'He has' : 'Early reports say he has'} the potential to be ${POTW[upT] || 'a ' + upT}.${x.transfer ? '' : ` ${p.age <= 18 ? 'He is young and still developing.' : ''}`}`,
+  ].filter(Boolean).join(' ');
+  const blurbHtml = `<fieldset class="frame"><legend>Scouting Report</legend>
+    <p class="note small scout-p">${blurb}</p>
+    ${identityChips(p) ? `<div class="pl-tags style-chips">${identityChips(p)}</div>` : ''}
+    <p class="note muted small" style="margin-top:6px">Report accuracy ${acc}%${acc < 100 ? ' · sharper each week, and a visit scouts his potential.' : '.'}</p>
+    <ul class="scout">
     ${rep.strengths.map(r => `<li class="plus"><b>${esc(r.text)}</b><span class="muted small"> · ${esc(r.detail)}</span></li>`).join('')}
     ${rep.weaknesses.map(r => `<li class="minus"><b>${esc(r.text)}</b><span class="muted small"> · ${esc(r.detail)}</span></li>`).join('')}
     ${rep.defense ? `<li class="${rep.defense.tone}"><b>${esc(rep.defense.text)}</b><span class="muted small"> · ${esc(rep.defense.detail)}</span></li>` : ''}
   </ul></fieldset>`;
+  const ratingsHtml = `<fieldset class="frame"><legend>Ratings</legend>
+    ${[...SKILL_ATTRS, ...PHYSICAL].map(k => { const now = p.attributes[k][0]; return `<div class="rk rk2" style="grid-template-columns:1fr 44px"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${now}</span><div class="${barClass(k)}"><div class="fill" style="width:${now / ATTR_MAX * 100}%"></div></div></div>`; }).join('')}
+  </fieldset>`;
   layout({
     title: playerName(p),
     left: navBtn(prevId, -1),
@@ -9282,9 +9305,8 @@ screens.recruitee = ({ id }) => {
         <p class="note"><b>${esc(playerName(p))}</b> ${rStars(x.stars, x.lv)}${isAllAmerican(p) ? ' <span class="small gold">⭐ All-American</span>' : ''}</p>
         <p class="note small">${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lbs · ${p.age}y · ${x.transfer ? `${classOf(p.yrs ?? 0)}, ${Math.max(1, 4 - (p.yrs ?? 0))} yr${4 - (p.yrs ?? 0) > 1 ? 's' : ''} left` : `${esc(x.city)}, ${x.st}`} · ${Math.round(RC.miles(p.loc, t.location))} mi from campus</p>
         <p class="note small">Lv ${x.lv} now · Potential ${scouted ? `<span class="stars">${stars(p.pot)}</span>` : '<span class="muted">? (a visit scouts him)</span>'}</p>
-        <p class="note small muted">${line}</p>
-        <div class="stat-grid cat-grid" style="margin-top:6px;grid-template-columns:repeat(6,1fr)">${SKILL_ATTRS.map(k => `<div class="c-${RATING_GROUP[k]}"><b>${p.attributes[k][0]}</b><span>${k}</span></div>`).join('')}</div></fieldset>
-      ${repHtml}
+        <p class="note small muted">${line}</p></fieldset>
+      ${blurbHtml}
       ${com !== undefined ? `<p class="note ${com === t.id ? 'up' : ''}">✍️ ${com === t.id ? 'Committed to you.' : `Committed to ${esc(sch(com)?.city || '?')}.`}${!done && com !== t.id ? ' A big push can still flip him.' : ''}</p>` : ''}
       <fieldset class="frame"><legend>What He Wants</legend>
         ${known ? `<div class="stack">${mot.map(([k, v]) => `<div class="need-row"><span class="small grow"><b>${dots(v)}</b> ${MOTIVE[k]}</span><span class="small">${esc(t.shortName)}: ${word(comps[k])}</span></div>`).join('')}</div>
@@ -9292,6 +9314,7 @@ screens.recruitee = ({ id }) => {
           : '<p class="note small muted">Call him to find out what matters to him.</p>'}</fieldset>
       <fieldset class="frame"><legend>The Race</legend><p class="note small muted" style="margin-bottom:6px">Every school with an offer fills its own bar. The first to 100% gets his commitment${x.stars >= 4 ? '; the best recruits take the most winning over' : ''}.</p><div class="stack">${rc.slice(0, 5).map(e => `<div class="race-row ${e.s.t === t ? 'mine' : ''}">${logoImg(e.s.t)}<b class="small">${esc(e.s.t.shortName)}</b><span class="race-bar"><i style="width:${e.pct}%" class="${e.pct >= 100 ? 'full' : ''}"></i></span><span class="small">${e.pct}%</span></div>`).join('') || '<p class="note small muted">No offers yet.</p>'}</div>
         ${rc.length > 5 ? `<p class="note small muted">${rc.length - 5} more offer${rc.length > 6 ? 's' : ''}.</p>` : ''}</fieldset>
+      ${ratingsHtml}
       ${done ? '' : `<fieldset class="frame"><legend>Your Offer</legend>
         <p class="note small">${myNil !== undefined ? `Offered: <b>$${myNil}M</b> NIL with a scholarship.` : 'No offer yet.'} $${left.toFixed(1).replace('.0', '')}M available.</p>
         <div class="grid2">${amounts.map(v => `<button class="btn ${v === myNil ? 'on focus' : ''}" data-act="recruitOffer" data-id="${id}" data-amt="${v}" ${v > left + 1e-9 ? 'disabled' : ''}>$${v}M</button>`).join('')}
