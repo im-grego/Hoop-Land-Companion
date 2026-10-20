@@ -33,13 +33,15 @@ import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, trait
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
 import { leagueLook, generateName } from './recruits.js';
+import { isForeign, nameFor, lookFor } from './names.js';
+import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.124.1';
+const APP_VERSION = '0.125.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4109,7 +4111,7 @@ function looksCard() {
     <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players, and spread their regression ages, stamina and tendencies to match them. Names, stats and ratings stay.'}</p>
     ${done ? '<button class="btn small off" data-act="looksUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="looksMatch">Match My League</button>'}
   </div><div class="row" style="margin-top:8px">
-    <p class="note small grow">${named ? `✓ ${named.length} prospects renamed.` : 'Give the whole class new names, drawn from the same pool as the recruiting classes. Nobody in the league shares a name.'}</p>
+    <p class="note small grow">${named ? `✓ ${named.length} prospects renamed.` : 'Give the whole class new names. Players from abroad get names and a skin tone that fit their country; the rest come from the recruiting name pool. Nobody in the league shares a name.'}</p>
     ${named ? '<button class="btn small off" data-act="namesUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="namesMake">Generate Names</button>'}
   </div></fieldset>`;
 }
@@ -4177,10 +4179,18 @@ actions.namesMake = () => {
   for (const p of cls) used.delete(`${p.fn} ${p.ln}`.toLowerCase());
   const before = [];
   for (const p of cls) {
-    const n = generateName(rng, used);
+    const abroad = isForeign(p);
+    const n = (abroad && nameFor(rng, p.ctry, used)) || generateName(rng, used);
     used.add(`${n.fn} ${n.ln}`.toLowerCase());
-    before.push({ p, fn: p.fn, ln: p.ln });
+    before.push({ p, fn: p.fn, ln: p.ln, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories) });
     p.fn = n.fn; p.ln = n.ln;
+    // A player from abroad gets a skin tone (and matching eye, brow and hair colors) that fits his country.
+    const look = abroad ? lookFor(rng, p.ctry, APPEARANCE_POOL.players) : null;
+    if (look) {
+      const was = p.appearance?.skinC;
+      p.appearance = { ...p.appearance, ...look };
+      if (Array.isArray(p.accessories) && was) p.accessories = p.accessories.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === was ? look.skinC : v])));
+    }
   }
   (state.names ||= {})[seasonKey()] = before;
   state.dirty = true;
@@ -4188,7 +4198,7 @@ actions.namesMake = () => {
   render();
 };
 actions.namesUndo = () => {
-  for (const x of state.names?.[seasonKey()] || []) { x.p.fn = x.fn; x.p.ln = x.ln; }
+  for (const x of state.names?.[seasonKey()] || []) { x.p.fn = x.fn; x.p.ln = x.ln; if (x.appearance) x.p.appearance = x.appearance; if (x.accessories) x.p.accessories = x.accessories; }
   delete state.names[seasonKey()];
   state.dirty = true;
   render();
