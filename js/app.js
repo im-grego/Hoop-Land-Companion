@@ -12,7 +12,7 @@ import {
 } from './draft.js';
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
-import { applyDraft, rookieContractTargets, applyRookieContracts, undoRookieContracts, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
+import { applyDraft, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
 import { setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
 import * as TR from './traderules.js';
@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.133.1';
+const APP_VERSION = '0.133.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1248,6 +1248,9 @@ actions.advLottery = async (opts = {}) => {
   }
 };
 
+// Second-round rookie deals are the user's call for their own picks (Summer League); a CPU team gives a
+// prospect with real upside four years and the rest two.
+const cpuR2Years = p => ((p.pot || 0) >= 7 ? 4 : 2);
 actions.advFreeAgency = async () => {
   const L = league();
   if (!optStore().done && (optionPlayers(L).length || L.teams.some(t => t.roster.some(p => FA.qoEligible(L, p))))) {
@@ -1255,7 +1258,7 @@ actions.advFreeAgency = async () => {
     if (!(await confirmBox(`The options deadline hasn't been run${mine ? `: you have ${mine} option or qualifying-offer decision${mine > 1 ? 's' : ''} waiting` : ''}. Open free agency anyway? Undecided options stay in the save.`, 'Open Anyway'))) { go('options'); return; }
   }
   checkpoint('Open Free Agency');
-  const signed = startFreeAgency(L, { r2Years: state.params.rookieR2Years });
+  const signed = startFreeAgency(L, { r2Years: cpuR2Years });
   state.dirty = true;
   go('fa');
   toast(`Free agency is open: ${signed.length} rookies signed`);
@@ -1534,25 +1537,6 @@ const awardOf = p => state.awards[state.leagueIdx]?.get(p.id) || 0;
 // ---------------------------------------------------------------------------
 // Offseason hub
 
-// Second-round rookie deals: the game gives them 4 years; shorten to
-// `rookieR2Years` (team option kept). Free agency, once the game has
-// signed the rookies (Day 1+).
-function contractCard() {
-  const L = league();
-  if (L.season.phase !== BUMP_PHASES[0]) return '';
-  const li = state.leagueIdx;
-  const done = state.contracts?.[li];
-  const yrs = state.params.rookieR2Years;
-  const targets = rookieContractTargets(L, yrs);
-  if (!done && !targets.length) return '';
-  return `<fieldset class="frame"><legend>Rookie Contracts</legend><div class="stack">
-    ${done ? `<p class="note"><span class="up">${done.length}</span> second-round rookies now on ${yrs}-year deals with a team option.</p>
-      <button class="btn small" data-act="undoContracts">↺ Undo</button>`
-    : `<p class="note">The game signed ${targets.length} second-round picks to 4-year deals. Shorten them to ${yrs} years with a team option (first-rounders keep their 4-year scale deal and team option).</p>
-      <button class="btn focus" data-act="rookieContracts">✍️ Apply ${yrs}-Year Deals</button>`}
-  </div></fieldset>`;
-}
-
 // Duplicate or retired jersey numbers (the game allows them).
 function jerseyCard() {
   const li = state.leagueIdx;
@@ -1593,17 +1577,6 @@ actions.undoGear = () => { GEAR.undoMatch(state.gear?.[state.leagueIdx] || []); 
 
 actions.fixJerseys = () => { (state.jerseys ||= {})[state.leagueIdx] = fixJerseyNumbers(league()); state.dirty = true; render(); };
 actions.undoJerseys = () => { undoJerseyNumbers(state.jerseys[state.leagueIdx] || []); delete state.jerseys[state.leagueIdx]; render(); };
-
-actions.rookieContracts = () => {
-  (state.contracts ||= {})[state.leagueIdx] = applyRookieContracts(league(), state.params.rookieR2Years);
-  state.dirty = true;
-  render();
-};
-actions.undoContracts = () => {
-  undoRookieContracts(state.contracts[state.leagueIdx] || []);
-  delete state.contracts[state.leagueIdx];
-  render();
-};
 
 // ---------------------------------------------------------------------------
 // Strength program (Training Camp). Physical ratings don't move after the
@@ -2434,7 +2407,6 @@ screens.offseason = () => {
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
       ${isCollege() ? coachCard() : ''}
-      ${contractCard()}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
@@ -3841,7 +3813,6 @@ screens.settings = (args) => {
       setGroup('Contracts', [
         options('Game option decisions', 'redoOptions', [[true, 'Re-run here'], [false, 'Keep the game\'s']], 'The game decides options before it exports; Re-run reopens them so you and the app decide.'),
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
-        options('2nd-round deals (CPU)', 'rookieR2Years', [[2, '2 yrs'], [3, '3 yrs'], [4, '4 yrs']]),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
       ]);
   } else {

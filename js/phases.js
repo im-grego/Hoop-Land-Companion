@@ -76,6 +76,7 @@ export function signRookie(league, team, p, yrs, minSalary = 2) {
 }
 
 // Open free agency: sign this year's draft picks and move to Day 1.
+// `r2Years` is a number or a function (player, team) => years for second-rounders.
 // Returns the signings [{ p, team, sal, yrs }].
 export function startFreeAgency(league, { r2Years = 2, rosterMax = 18, minSalary = 2 } = {}) {
   if (league.season.phase !== PHASE_POST_DRAFT) throw new Error('The save must be at the Post-Draft phase.');
@@ -88,7 +89,7 @@ export function startFreeAgency(league, { r2Years = 2, rosterMax = 18, minSalary
     for (const p of rookies) {
       const d = p.history.draft;
       if (d.rd !== 1 && signed() >= rosterMax) continue;
-      out.push(signRookie(league, team, p, d.rd === 1 ? 4 : r2Years, minSalary));
+      out.push(signRookie(league, team, p, d.rd === 1 ? 4 : typeof r2Years === 'function' ? r2Years(p, team) : r2Years, minSalary));
     }
   }
   league.season.phase = PHASE_FREE_AGENCY;
