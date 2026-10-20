@@ -1404,3 +1404,6 @@ main.panel.bare { margin-top: 10px; }
   background: linear-gradient(105deg, transparent 30%, rgba(255, 215, 90, .5) 50%, transparent 70%); background-size: 250% 100%; background-position: 130% 0;
   animation: calShimmer .9s ease-in-out forwards; }
 @keyframes calShimmer { to { background-position: -30% 0; } }
+.exp-deals .prow { cursor: default; }
+.xbtns { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+.xbtns .btn { min-width: 96px; padding: 6px 8px; }

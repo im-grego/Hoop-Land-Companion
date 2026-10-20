@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.135.0';
+const APP_VERSION = '0.136.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1066,9 +1066,9 @@ function stepActions(key) {
     case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
       <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
     case 'draft': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Begin</button><button class="btn" data-act="homeSimDraft">⏭ Sim</button></div>`;
-    case 'options': return `<button class="btn big focus" data-act="nav" data-to="options">📝 Options Deadline</button>`;
-    case 'ext': return `<button class="btn big focus" data-act="nav" data-to="extensions">🖊️ Extension Window</button>`;
-    case 'camp': return `<button class="btn big focus" data-act="nav" data-to="camp">🏀 Summer League</button>`;
+    case 'options': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="options">📃 Begin</button><button class="btn" data-act="homeSimOptions">⏭ Sim</button></div>`;
+    case 'ext': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="extensions">✍️ Begin</button><button class="btn" data-act="homeSimExt">⏭ Sim</button></div>`;
+    case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🌴 Begin</button><button class="btn" data-act="homeSimCamp">⏭ Sim</button></div>`;
     case 'fa1': case 'fa2': case 'fa3': {
       const day = +key[2];
       if (s.phase === 5) return `<button class="btn big focus" data-act="advFreeAgency">✍️ Open Free Agency</button>`;
@@ -2789,10 +2789,10 @@ async function revealSummer() {
   toast(`🏆 ${champ.shortName} win Summer League`, mine ? (mine === champ ? 'Your rookies earned a boost!' : 'You reached the championship.') : '');
 }
 
-actions.runTour = () => {
+function simTour() {
   const L = league();
   const li = state.leagueIdx;
-  if (state.summerTour[li]) return;
+  if (state.summerTour[li]) return false;
   const result = runSummerLeague(L, state.data.seasonLeagues, Math.floor(Math.random() * 1e9) >>> 0);
   const mine = result.final.teams.map(id => L.teams.find(x => x.id === id)).find(isUserTeam);
   const reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
@@ -2800,10 +2800,23 @@ actions.runTour = () => {
   numsState().locked = true;
   state.compCache = {};
   state.dirty = true;
+  return true;
+}
+actions.runTour = () => {
+  if (!simTour()) return;
   state.summerReveal = true;
   render();
   state.summerReveal = false;
   revealSummer();
+};
+// Sim Summer League from the calendar: the age adjustment, the numbers as they stand, the tournament, wrap up.
+actions.homeSimCamp = () => {
+  if (!(state.summer[state.leagueIdx] || summerDone())) { const { players, points } = ageAdjust(); state.compCache = {}; toast(`Age adjustment: +${points} points back across ${players} rookies`); }
+  simTour();
+  calFlags().camp = true;
+  state.undo = null;
+  state.dirty = true;
+  render();
 };
 
 // ---- Mentorship
@@ -6763,13 +6776,13 @@ screens.fa = (args = {}) => {
   // Your own players with expiring deals live under Your Books.
   // By the level he plays at now (a declining veteran sorts by his regressed level).
   let rows = [...s.market].sort((a, b) => shownLevel(b.p) - shownLevel(a.p) || faValue(b.p) - faValue(a.p));
-  if (view === 'mine') rows = rows.filter(m => isUserTeam(m.from) || (s.bids.get(m.p.id) || []).some(b => isUserTeam({ id: b.tid })));
-  else rows = rows.filter(m => !isUserTeam(m.from));
+  rows = rows.filter(m => !isUserTeam(m.from));   // your own expiring deals sit at the top
   if (['guards', 'wings', 'bigs'].includes(view)) rows = rows.filter(m => posGroup(m.p) === view);
   if (view === 'vets') rows = rows.filter(m => m.p.age >= 30);
+  if (view === 'young') rows = rows.filter(m => m.p.age <= 24);
   const total = rows.length;
   rows = rows.slice(0, args.all ? 400 : 25);
-  const views = [['top', 'Best'], ['vets', 'Vets'], ['mine', 'Yours'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']];
+  const views = [['top', 'Best'], ['young', 'Young'], ['vets', 'Vets'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']];
   const O = FA.FA_DEFAULTS;
   const stageBtn = s.stage === 'open'
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
@@ -6825,16 +6838,17 @@ function expiringSection(s) {
     .sort((a, b) => b.ask - a.ask || shownLevel(b.p) - shownLevel(a.p));
   if (!rows.length) return '';
   const locked = s.stage === 'done';
-  return `<fieldset class="frame exp-deals"><legend>Your Expiring Deals (${rows.length})</legend><div class="list">${rows.map(m => {
+  return `<h4 class="ov-h">Your Expiring Deals (${rows.length})</h4><div class="list exp-deals">${rows.map(m => {
     const list = s.bids.get(m.p.id) || [];
     const mineBid = list.find(b => isUserTeam({ id: b.tid }));
     const others = list.filter(b => !isUserTeam({ id: b.tid })).length;
-    return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>
+    return `<div class="prow rrow ${mineBid ? 'sel' : ''}">
       <span class="name">${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
-      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${mineBid ? ` · <span class="up">your offer ${offerText(mineBid)}</span>` : ''}${others ? ` · <span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>
-      <span class="meta">Asks $${m.ask}M × ${askYears(m)}</span>
-    </button>`;
-  }).join('')}</div></fieldset>`;
+      <span class="right xbtns"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Make Offer</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Let Walk</button></span>
+      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y · Asks $${m.ask}M × ${askYears(m)}</span>
+      ${mineBid || others ? `<span class="meta">${mineBid ? `<span class="up">your offer ${offerText(mineBid)}</span>` : ''}${mineBid && others ? ' · ' : ''}${others ? `<span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>` : ''}
+    </div>`;
+  }).join('')}</div>`;
 }
 
 actions.faWalk = async d => {
@@ -7525,10 +7539,9 @@ ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load &
       <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
-      <div class="${ownExpiring ? 'grid3' : 'grid2'}">
+      <div class="grid2">
         <button class="btn off" data-k="close">${existing ? 'Withdraw' : 'Cancel'}</button>
         <button class="btn focus" data-k="submit" ${err ? 'disabled' : ''}>${existing ? 'Update Offer' : 'Make Offer'}</button>
-        ${ownExpiring ? '<button class="btn off" data-k="walk">Let Walk</button>' : ''}
       </div>`;
   };
   box.addEventListener('click', e => {
@@ -8015,6 +8028,15 @@ screens.options = () => {
     action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
   });
 };
+// Sim the deadline: your open team options and qualifying offers get the same call a CPU team would make.
+actions.homeSimOptions = async () => {
+  const L = league(), st = optStore();
+  for (const x of optionPlayers(L)) if (isUserTeam(x.team) && x.p.contract.opt === 1 && !st.team[x.p.id]) { const c = optionCall(L, x.p, x.team); st.team[x.p.id] = c.worth >= c.sal * 0.75 ? 'ex' : 'dec'; }
+  for (const t of L.teams.filter(isUserTeam)) for (const p of t.roster.filter(q => FA.qoEligible(L, q))) if (st.qo[p.id] == null) st.qo[p.id] = qoCall(L, p, t);
+  saveOptStore();
+  await actions.optFinish({ auto: true });
+};
+actions.homeSimExt = async () => { await actions.extClose({ auto: true }); };
 actions.optTeam = d => { const st = optStore(); st.team[+d.id] = d.v; if (st.deals) delete st.deals[+d.id]; saveOptStore(); render(); };
 // Negotiate: decline the option and work out a longer deal now, before
 // anyone else can bid. Same give-and-take as an extension (three offers);
@@ -8084,7 +8106,7 @@ actions.optPitch = d => {
   toast(ok ? `${playerName(x.p)} is opting in` : `${playerName(x.p)} isn't convinced`, ok ? `You promised ${PITCHES[d.v].promise}.` : 'He\'s testing free agency.');
 };
 actions.optQO = d => { optStore().qo[+d.id] = d.v === '1'; saveOptStore(); render(); };
-actions.optFinish = async () => {
+actions.optFinish = async (d = {}) => {
   const L = league();
   const st = optStore();
   const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
@@ -8092,7 +8114,7 @@ actions.optFinish = async () => {
   if (list.some(x => isUserTeam(x.team) && x.c.kind === 'team' && !x.c.choice) || qoList.some(x => isUserTeam(x.team) && st.qo[x.p.id] == null)) {
     toast('Decide every team option and qualifying offer first'); return;
   }
-  if (!(await confirmBox('Finalize every option and qualifying offer? Picked-up options are written to the save.', 'Finalize'))) return;
+  if (!d.auto && !(await confirmBox('Finalize every option and qualifying offer? Picked-up options are written to the save.', 'Finalize'))) return;
   checkpoint('Options deadline');
   const yr = L.season.currentYear;
   let exercised = 0, out = 0;
@@ -8738,8 +8760,8 @@ function capBarOf(pay, dead, compact = false) {
   const tier = C.off ? (free >= 0 ? 'under' : 'over') : total < C.cap ? 'under' : total < C.tax ? 'over' : total < C.apron1 ? 'tax' : total < C.apron2 ? 'apron1' : 'apron2';
   const next = lines.find(([, v]) => v > total);
   const zones = C.off ? '' : `background:linear-gradient(90deg, #2f6b4a 0 ${pct(C.cap)}%, #24507a ${pct(C.cap)}% ${pct(C.tax)}%, #6b5a1e ${pct(C.tax)}% ${pct(C.apron1)}%, #7a4a1e ${pct(C.apron1)}% ${pct(C.apron2)}%, #7a2430 ${pct(C.apron2)}%)`;
-  return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}</div>
-    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
+  return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${C.off ? '' : lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}</div>
+    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
 }
 
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;
@@ -9082,9 +9104,9 @@ actions.extOffer = d => {
   saveExtStore();
   if (talk.signed || talk.tries >= 3) render();
 };
-actions.extClose = async () => {
+actions.extClose = async (d = {}) => {
   const L = league(), st = extStore();
-  if (!(await confirmBox('Close the extension window?', 'Close'))) return;
+  if (!d.auto && !(await confirmBox('Close the extension window?', 'Close'))) return;
   const rng = mulberry32((saveSalt() ^ 0xe7e1) >>> 0);
   // "An extension next summer" has to be delivered by now.
   for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.v === 'commit' && (x.kind === 'ext' || x.kind === 'pay') && x.src === 'option')) {
