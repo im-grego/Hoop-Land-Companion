@@ -6,6 +6,9 @@ import { shownLevel } from './regression.js';
 import * as FA from './freeagency.js';
 import { coachLevel, coachCeiling, askingContract, careerOf, securityOf } from './coachprofile.js';
 import { planOption } from './coaching.js';
+import { playStyles } from './overview.js';
+import { POSITIONS } from './savefile.js';
+import { PLAYS } from './plays.js';
 
 export const headCoachOf = team => (team?.frontOffice?.staff || []).find(s => s.pos === 1) || null;
 
@@ -186,3 +189,60 @@ export function playerSwing(r, loyalty = 10, winning = 10) {
   return clamp(Math.round(r.belief * 6 * (1 + (winning - 10) / 20) - r.like * 6 * (1 + (loyalty - 10) / 20)), -10, 10);
 }
 export const fanSwing = r => clamp(Math.round(r.belief * 7 - r.like * 4), -9, 9);
+
+// ---------------------------------------------------------------------------
+// Stars and the system: a star whose play style the playbook and scheme don't
+// feature clashes with his coach.
+
+// A star: Lv 86+, or Lv 79+ with a 9 or better potential.
+export const isStarPlayer = p => { const lv = shownLevel(p); return lv >= 86 || (lv >= 79 && p.pot >= 9); };
+const SLOTS = { PG: [1], G: [1, 2], SG: [2], GF: [2, 3], SF: [3], F: [3, 4], PF: [4], FC: [4, 5], C: [5] };
+export const slotsOf = p => SLOTS[POSITIONS[p.pos]] || [3];
+const OFF_STYLES = ['creator', 'shooter', 'rim', 'mid', 'post', 'playmaker', 'lob'];
+const WANTS = {
+  creator: 'isolation or pick-and-roll plays with him on the ball', shooter: 'Horns, motion or 5-out plays to shoot off', rim: 'isolation or pick-and-roll plays to attack the rim',
+  mid: 'high-post or isolation plays to pull up from', post: 'high-post plays to work on the block', playmaker: 'plays that start with the ball in his hands', lob: 'pick-and-roll plays where he rolls to the rim',
+};
+function playInfo(id) {
+  const pl = PLAYS[id];
+  if (!pl) return null;
+  const name = pl[1], nums = name.match(/\d/g).map(Number), flex = name.startsWith('Flex');
+  return { iso: name.startsWith('Iso'), pnr: flex && name.endsWith('PNR'), pnp: flex && name.endsWith('PNP'), hp: name.startsWith('High Post'), hn: name.startsWith('Horns'), mo: name.startsWith('Motion'), fo: name.startsWith('5-Out'), ball: pl[2], a: nums[0], b: nums[1], t: flex ? null : nums[0] };
+}
+function suits(style, s, q) {
+  switch (style) {
+    case 'creator': return (q.iso && q.t === s) || (q.pnr && q.a === s);
+    case 'rim': return (q.iso && q.t === s) || (q.pnr && (q.a === s || q.b === s));
+    case 'shooter': return ((q.hn || q.mo || q.fo) && (q.t === s || q.ball === s)) || (q.pnp && q.b === s);
+    case 'mid': return ((q.iso || q.hp || q.mo) && q.t === s) || (q.pnp && q.b === s);
+    case 'post': return (q.hp && q.t === s) || (q.iso && q.t === s && s >= 4);
+    case 'playmaker': return q.ball === s && !q.iso;
+    case 'lob': return q.pnr && q.b === s;
+    default: return false;
+  }
+}
+const FOCUS_STYLES = { Inside: ['rim', 'post', 'lob'], Midrange: ['mid', 'creator'], Outside: ['shooter'] };
+
+// How his game sits with the playbook and the coach's offense: fit 0-1, a
+// clash below 0.35, and what's missing.
+export function playerCoachFit(p, team, coach) {
+  const star = isStarPlayer(p);
+  const styles = playStyles(p, 3).filter(s => OFF_STYLES.includes(s.k));
+  if (!styles.length || !coach) return { star, fit: 0.6, clash: false, severity: 0, styles: [], why: [], fix: '' };
+  const slots = slotsOf(p);
+  const ids = [...new Set(slots.flatMap(s => team.quickPlays?.positions?.[s - 1]?.plays || []))];
+  const plays = ids.map(playInfo).filter(Boolean);
+  let book = null;
+  if (plays.length) {
+    const w = styles.map((_, i) => (i === 0 ? 0.65 : 0.35)), tot = w.reduce((a, b) => a + b, 0);
+    book = styles.reduce((a, st, i) => { const n = plays.filter(q => slots.some(s => suits(st.k, s, q))).length; return a + w[i] * (n >= 2 ? 1 : n === 1 ? 0.6 : 0.1); }, 0) / tot;
+  }
+  const focus = planOption('offFocus', coach.tendencies?.offFocus ?? 0), fav = FOCUS_STYLES[focus];
+  const scheme = fav ? (fav.includes(styles[0].k) ? 0.9 : 0.35) : 0.6;
+  const fit = book == null ? scheme : 0.65 * book + 0.35 * scheme;
+  const clash = star && fit < 0.35;
+  const why = [];
+  if (book != null && book < 0.4) why.push(`his quick plays have nothing for a ${styles[0].label.toLowerCase()}`);
+  if (fav && !fav.includes(styles[0].k)) why.push(`${coach.ln}'s ${focus.toLowerCase()}-focused offense doesn't suit a ${styles[0].label.toLowerCase()}`);
+  return { star, fit, clash, severity: clash ? Math.min(1, (0.35 - fit) / 0.35) : 0, styles, why, fix: `Give him ${WANTS[styles[0].k]}.` };
+}

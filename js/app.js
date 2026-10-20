@@ -26,7 +26,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
-import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing } from './coachmarket.js';
+import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -38,7 +38,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.121.2';
+const APP_VERSION = '0.122.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2026,6 +2026,17 @@ function coachChangesBox() {
   return `<fieldset class="frame"><legend>Coaching Changes</legend><div class="stack">${list.map(x => `<p class="note small" style="margin:0">${ico[x.kind]} <b>${esc(nm(x.tid))}</b> ${x.kind === 'hire' ? `replaced ${esc(x.out)} with ${esc(x.in)}: ${esc(x.why)}. ${x.mood ? `Locker room: ${esc(x.mood)} (players ${x.avg > 0 ? '+' : ''}${x.avg}, fans ${x.fans > 0 ? '+' : ''}${x.fans}).` : ''}` : x.kind === 'extend' ? `extended ${esc(x.in)} (${esc(x.why)}).` : `kept ${esc(x.in)} another year: ${esc(x.why)}.`}</p>`).join('')}</div></fieldset>`;
 }
 
+
+// His stars against his system: who is in sync and who is butting heads.
+function starsBox({ c, t }) {
+  if (!t) return '';
+  const rows = FA.signedRoster(t).filter(isStarPlayer).map(p => ({ p, r: playerCoachFit(p, t, c) })).filter(x => x.r.styles.length).sort((x, y) => x.r.fit - y.r.fit).slice(0, 5);
+  if (!rows.length) return '';
+  const tag = f => (f.clash ? '<span class="badge down-b">Clashing</span>' : f.fit >= 0.7 ? '<span class="badge lvl">In Sync</span>' : '<span class="badge">Some Tension</span>');
+  return `<fieldset class="frame"><legend>Stars &amp; System</legend><div class="stack">${rows.map(({ p, r }) => `<div class="small"><div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span></b>${tag(r)}</div>
+    <span class="muted">${esc(r.styles.slice(0, 2).map(s => s.label).join(' · '))}${r.clash ? ` — ${esc(r.why[0] || '')}. ${esc(r.fix)}` : ''}</span></div>`).join('')}</div></fieldset>`;
+}
+
 // Hire an available coach as your head coach; the current one goes to the pool.
 function hireBox({ c, t }, staff) {
   const mine = L_myTeam();
@@ -2050,6 +2061,7 @@ actions.hireCoach = async d => {
   const tr = treeStore();
   if (tr.planOrig) delete tr.planOrig[r.old.id];
   const m = coachChangeMorale(L, mine, r.old, c);
+  applyCoachFriction();
   state.dirty = true;
   toast(`${c.fn} ${c.ln} is your head coach`, `$${r.ask.sal}M × ${r.ask.yrs} · players ${m.avg > 0 ? '+' : ''}${m.avg}, fans ${m.fans > 0 ? '+' : ''}${m.fans}: ${m.text}`, 4800);
   replace('coach', { arg: String(c.id) });
@@ -2077,6 +2089,7 @@ screens.coach = args => {
       <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
       <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
       ${fitBox(hit)}
+      ${starsBox(hit)}
       ${hireBox(hit, staff)}
       ${extBox(hit)}
       <fieldset class="frame"><legend>Job Security</legend><div class="stack">
@@ -2135,7 +2148,7 @@ screens.teamBooks = () => {
       }).join('')}</div>`,
   });
 };
-const setTeamStyle = (t, p) => { t.quickPlays = presetPlays(p); state.dirty = true; };
+const setTeamStyle = (t, p) => { t.quickPlays = presetPlays(p); state.dirty = true; applyCoachFriction(); };
 actions.suggestAll = async d => {
   const L = league();
   const todo = L.teams.filter(t => !isUserTeam(t) && (d.mode === 'all' || !hasPlays(t)));
@@ -2168,6 +2181,7 @@ actions.installPreset = d => {
   if (!t || !p || tierNow('scheme') < 1) return;
   t.quickPlays = presetPlays(p);
   state.dirty = true;
+  applyCoachFriction();
   render();
 };
 actions.installPlaybook = d => {
@@ -2175,6 +2189,7 @@ actions.installPlaybook = d => {
   if (!t || !b || tierNow('scheme') < 1) return;
   t.quickPlays = JSON.parse(JSON.stringify(b.quickPlays));
   state.dirty = true;
+  applyCoachFriction();
   render();
 };
 actions.deletePlaybook = async d => {
@@ -2201,6 +2216,7 @@ $app.addEventListener('change', e => {
   for (let i = 0; i < 5; i++) qp.positions[i] ||= { plays: playsFor(i + 1).slice(0, 4) };
   qp.positions[+d.pos].plays[+d.slot] = id;
   state.dirty = true;
+  applyCoachFriction();
   render();
 });
 $app.addEventListener('change', e => {
@@ -3185,6 +3201,7 @@ function playerTags(p) {
   if (c.ext?.yrs > 0) add(`Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');
   else if (c.canExt) add('Extension Eligible', 'new');
   if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
+  if (isComplete() && p.tid != null && frictionFor(p)?.clash) add('Clashing With Coach', 'down-b');
   if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');
   if (p.season && isComplete() && !isCollege()) t.push(moraleTag(p));
   return t.join('');
@@ -6654,6 +6671,36 @@ function proactiveFrontOffice() {
 }
 
 
+
+// Stars whose play style the playbook and scheme don't feature clash with the coach:
+// a morale hit when it starts, some of it back when it's fixed, and an ask-out risk.
+const frictionFor = p => { const t = league().teams.find(x => x.id === p.tid), c = t && headCoachOf(t); return c ? playerCoachFit(p, t, c) : null; };
+function applyCoachFriction() {
+  if (!isComplete() || isCollege()) return;
+  const L = league(), led = offGet('friction');
+  let changed = false;
+  for (const t of L.teams) {
+    const c = headCoachOf(t);
+    if (!c) continue;
+    for (const p of FA.signedRoster(t)) {
+      if (!isStarPlayer(p)) continue;
+      const r = playerCoachFit(p, t, c), key = String(p.id);
+      if (led[key] && led[key].coach !== c.id) { delete led[key]; changed = true; }   // a new coach starts fresh
+      if (r.clash && !led[key]) {
+        const d = -Math.round(3 + 6 * r.severity);
+        moraleEvent(p, `clash:${c.id}`, d, `clashing with ${c.ln}'s system`);
+        led[key] = { coach: c.id, d };
+        changed = true;
+      } else if (!r.clash && led[key]) {
+        moraleEvent(p, `clashfix:${c.id}`, Math.round(-led[key].d / 2), 'his role fits again');
+        delete led[key];
+        changed = true;
+      }
+    }
+  }
+  if (changed) { offSet('friction', led); state.dirty = true; }
+}
+
 // A new head coach: players and fans react to losing the old one and to the hire.
 function coachChangeMorale(L, team, old, next) {
   const r = coachReaction(L, team, old, next);
@@ -6714,6 +6761,7 @@ function cpuBlockDeals(day) {
   const done = [];
   const why = proactiveFrontOffice();
   cpuCoachMoves();
+  applyCoachFriction();
   for (const t of cpu) {
     // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
     for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {
@@ -9216,6 +9264,7 @@ const demandsHelp = (p, t) => { const lv = shownLevel(p), min = t && isUserTeam(
 // it's the one or two years left that hope to hash out a new deal with whoever picks them up.
 const canAskOut = p => !FA.isRookieScale(p) && (p.contract?.yrs ?? 0) >= 1 && (p.contract?.yrs ?? 0) <= 2;
 function requestsState() {
+  applyCoachFriction();
   const L = league();
   const st = offGet('req');
   if (st.list || !isComplete() || isCollege()) return st;
@@ -9256,6 +9305,18 @@ function requestsState() {
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 11, 2654435761) ^ 0x2b7) >>> 0)() >= odds) continue;
       if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
       list.push({ pid: p.id, tid: t.id, why: 'in the last year of his deal and wants a new opportunity', status: isUserTeam(t) ? 'open' : 'cpu' });
+    }
+  }
+  // A star whose game the coach's system doesn't feature can ask out too.
+  for (const t of L.teams) {
+    for (const p of FA.signedRoster(t).filter(x => offGet('friction')[x.id] && canAskOut(x) && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
+      const morale = p.season?.morale ?? 60;
+      if (morale >= 50 || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
+      const fr = frictionFor(p), c = headCoachOf(t);
+      const odds = (0.12 + 0.3 * (fr?.severity || 0.5)) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
+      if (mulberry32((saveSalt() ^ Math.imul(p.id + 17, 2654435761) ^ 0x4c1) >>> 0)() >= odds) continue;
+      if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
+      list.push({ pid: p.id, tid: t.id, why: `his game doesn't fit ${c ? c.ln + "'s" : 'the'} system`, status: isUserTeam(t) ? 'open' : 'cpu' });
     }
   }
   st.list = list;
