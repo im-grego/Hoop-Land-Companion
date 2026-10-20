@@ -109,11 +109,12 @@ export function coachGrade(c, field = []) {
   return { now, ceil, room, tier, growth, rank, of: lv.length, line };
 }
 
-// What a free-agent coach asks for: three years, $5M to $15M by how his level
-// ranks among head coaches.
+// What a free-agent coach asks for: three years, priced on the real market:
+// about $3M at the bottom, $8M to $10M for the going rate, $17M for the best.
 export function askingContract(c, field = []) {
   const g = coachGrade(c, field), pct = field.length ? (g.of - (g.rank || 1)) / Math.max(1, g.of - 1) : 0.5;
-  return { yrs: 3, sal: Math.round(5 + 10 * Math.max(0, Math.min(1, pct))) };
+  const q = Math.max(0, Math.min(1, pct));
+  return { yrs: 3, sal: Math.round(3 + 12 * q + 2 * q * q) };
 }
 
 // Swap the pool coach in as the team's head coach; the old one goes to the pool.

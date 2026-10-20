@@ -118,6 +118,11 @@ export function pressureOn(league, team, coach, map = profiles(league)) {
   if (actual < 0.3) p += 0.2;
   if (mediocre) p += 0.15;
   if (sec.yrs >= 3) p -= 0.25; else if (sec.yrs === 2) p -= 0.1;
+  // A cheap coach is hard to let go: a deal well under the market is a saving, and
+  // a team already over the tax line has even more reason to keep it.
+  const mkt = marketSalary(coach, league), pay = coach.contract?.sal || 0;
+  if (pay && pay <= mkt * 0.5) p -= 0.18; else if (pay && pay <= mkt * 0.75) p -= 0.08;
+  if (FA.capSystemOn() && FA.payroll(team) > FA.capLines(league).tax) p -= 0.1;
   const st = teamStatus(league, team);
   if (st === 'rebuilding') p -= 0.12;
   return { pressure: p, actual, expected, gap, mediocre, sec, st };
@@ -139,7 +144,9 @@ export function coachDecision(league, team, map = profiles(league)) {
   const cur = headCoachOf(team);
   if (!cur) return null;
   const pr = pressureOn(league, team, cur, map), curV = coachValue(cur, team, league, map), cand = bestCandidate(league, team, map);
-  const gain = cand ? cand.v - curV : -1;
+  // A new coach costs more than the one being replaced; each extra $10M a year takes 0.1 off the upgrade.
+  const extra = cand ? Math.max(0, marketSalary(cand.c, league) - (cur.contract?.sal || 0)) : 0;
+  const gain = cand ? cand.v - curV - extra / 100 : -1;
   if (pr.pressure >= 0.45 && cand) {
     const younger = cand.c.age <= cur.age - 8 && coachCeiling(cand.c) >= coachCeiling(cur) + 1;
     if (gain >= 0.08) return { kind: 'fire', cur, cand: cand.c, pr, why: `${gain >= 0.15 ? 'a clear upgrade is available' : 'a better fit is available'}` };
