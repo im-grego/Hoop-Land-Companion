@@ -38,7 +38,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.122.0';
+const APP_VERSION = '0.123.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6689,10 +6689,13 @@ function applyCoachFriction() {
       if (r.clash && !led[key]) {
         const d = -Math.round(3 + 6 * r.severity);
         moraleEvent(p, `clash:${c.id}`, d, `clashing with ${c.ln}'s system`);
-        led[key] = { coach: c.id, d };
+        const room = r.severity > 0.6 ? 2 : 1;
+        for (const m of FA.signedRoster(t).filter(x => x !== p)) moraleEvent(m, `room:${key}:${c.id}`, -room, 'locker room tension');
+        led[key] = { coach: c.id, d, room };
         changed = true;
       } else if (!r.clash && led[key]) {
         moraleEvent(p, `clashfix:${c.id}`, Math.round(-led[key].d / 2), 'his role fits again');
+        for (const m of FA.signedRoster(t).filter(x => x !== p)) moraleEvent(m, `roomfix:${key}:${c.id}`, led[key].room || 1, 'the room settles down');
         delete led[key];
         changed = true;
       }
@@ -7772,6 +7775,10 @@ function presserEffects(L, t, ans) {
       if (a === 'commit') out.push(mood(P, 8), loyal(P, 1));
       if (a === 'focus' && q.ctx.kind === 'final') out.push(mood(P, -2));
       if (a === 'market') out.push(mood(P, -10), loyal(P, -2));
+    }
+    if (q.key === 'lockerroom') {
+      const c = headCoachOf(t), hot = c ? t.roster.filter(p => isStarPlayer(p) && playerCoachFit(p, t, c).clash) : [];
+      for (const p of hot) out.push(mood(p, a === 'fine' ? -3 : a === 'handled' ? 2 : 4));
     }
     if (q.key === 'goal') {
       if (a === 'title' && P) out.push(mood(P, 3));

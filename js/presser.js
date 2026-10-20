@@ -3,6 +3,7 @@
 // contracts (final year / extension eligible), position battles, and how
 // the offseason went next to the team's star and stage.
 
+import { headCoachOf, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { playerName, POSITIONS } from './savefile.js';
 import { shownLevel as levelOf } from './regression.js';
 import { tierFor } from './draft.js';
@@ -99,6 +100,11 @@ function positionBattle(team) {
 }
 
 // Questions for one of your teams: [{ key, q, options: [{ v, label }], ... }].
+// Stars whose game the coach's system doesn't feature.
+export function starClashes(league, team) {
+  const c = headCoachOf(team);
+  return c ? team.roster.filter(isStarPlayer).filter(p => playerCoachFit(p, team, c).clash).sort((a, b) => levelOf(b) - levelOf(a)) : [];
+}
 export function presserQuestions(league, team, li = 0) {
   const sit = teamSituation(league, team, li);
   const out = [];
@@ -131,6 +137,18 @@ export function presserQuestions(league, team, li = 0) {
     ctx: { slot: bt.slot },
     options: [{ v: 'a', label: playerName(bt.a) }, { v: 'b', label: playerName(bt.b) }, { v: 'open', label: 'It\'s an open competition' }],
   });
+  // Stars butting heads with the coach: the room hears about it.
+  const hot = starClashes(league, team);
+  if (hot.length) {
+    const [A, B] = hot;
+    out.push({
+      key: 'lockerroom', pid: A.id, pid2: B?.id,
+      q: B ? `There are reports of a players-only meeting and friction between ${playerName(A)}, ${playerName(B)} and the coaching staff. Is there a problem in the locker room?`
+        : `There are reports of a players-only meeting and friction between ${playerName(A)} and the coaching staff. Is there a problem in the locker room?`,
+      options: [{ v: 'fine', label: 'Everyone is on the same page' }, { v: 'handled', label: 'We handled it in-house' }, { v: 'role', label: 'Roles will be sorted out' }],
+      ctx: { n: hot.length },
+    });
+  }
   // Three questions every time: if the roster gave too little to ask about,
   // ask what the season's goal is.
   if (out.length < 2) out.push({
@@ -183,6 +201,15 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
         time: [`${Place(team)} will give ${n} time`, arr ? `"He needs time to settle in." Fans wanted a bigger statement on ${P.fn}.` : `No rush with ${P.fn}. Patience is the plan in ${place(team)}.`],
       }[a];
       out.push({ kind: 'presser-contract', score: 56, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'lockerroom' && P) {
+      const n = playerName(P), two = q.ctx?.n > 1;
+      const t = {
+        fine: [`${Place(team)} denies locker room trouble`, `"Everyone is on the same page." With ${two ? `${P.fn} and others` : P.fn} reportedly frustrated, not everyone in ${place(team)} sees it that way.`],
+        handled: [`${Place(team)} says the air was cleared`, `"We handled it in-house." A players-only meeting reportedly cleared the air, for now.`],
+        role: [`${Place(team)} promises ${P.fn} a bigger role`, `"Roles will be sorted out." ${n} wants to see it in the game plan, not hear it in the press room.`],
+      }[a];
+      out.push({ kind: 'presser-lockerroom', score: 62, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
     }
     if (q.key === 'goal') {
       const t = {
