@@ -1363,3 +1363,13 @@ main.panel.bare { margin-top: 10px; }
 .pb-sel select { width: 100%; font-size: 13px; }
 
 .badge.corner { background: var(--gold); color: var(--marquee); border-color: var(--gold); }
+
+.coach-row { text-align: left; width: 100%; color: var(--text); }
+.coach-top { display: flex; align-items: center; gap: 8px; }
+.coach-top img { width: 24px; height: 24px; }
+.coach-top .badge { margin-left: auto; }
+.co-att { display: grid; grid-template-columns: 96px 1fr 30px 34px; align-items: center; gap: 6px; }
+.co-bar { height: 10px; background: var(--bg-dark); border: 2px solid var(--btn-edge); display: block; }
+.co-fill { display: block; height: 100%; background: var(--cyan); }
+.co-fill.a-motivation { background: var(--up); }
+.co-fill.a-leadership { background: var(--gold); }

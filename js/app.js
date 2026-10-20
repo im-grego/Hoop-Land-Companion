@@ -25,6 +25,7 @@ import { regressed } from './regression.js';
 import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
+import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf } from './coachprofile.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -36,7 +37,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.114.2';
+const APP_VERSION = '0.115.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1172,7 +1173,7 @@ const STEP_SCREENS = {
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1647,6 +1648,7 @@ function coachCard() {
     <p class="note small muted">${CO.BRANCHES.map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
+    <button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button>
     ${isComplete() && !isCollege() ? `<button class="btn" data-act="nav" data-to="facilities">🏟️ Facilities · ${coinTag(coinsOf(t))}</button>` : ''}
   </div></fieldset>`;
 }
@@ -1936,6 +1938,69 @@ screens.playbookEdit = () => {
         ${hasPlays(t) ? '<button class="btn small" data-act="savePlaybook">💾 Save as a playbook</button>' : ''}</fieldset>`,
   });
 };
+
+// ---------------------------------------------------------------------------
+// Coach profiles: every head coach with scheme, career and job security.
+
+const allCoaches = () => {
+  const L = league();
+  const out = L.teams.map(t => ({ c: CO.headCoach(t), t })).filter(x => x.c);
+  const pool = (L.coaches || []).filter(c => c.fn).map(c => ({ c, t: null }));
+  return { staff: out, pool };
+};
+const secCls = tag => (tag === 'Hot Seat' ? 'down-b' : tag === 'Secure' ? 'lvl' : tag === 'Final Year' ? 'new' : '');
+const COACH_SORTS = { team: 'Team', record: 'Record', titles: 'Titles', pay: 'Pay' };
+screens.coaches = () => {
+  const { staff, pool } = allCoaches();
+  const sort = state.coachSort || 'team';
+  const rows = staff.map(x => ({ ...x, car: careerOf(x.c) }));
+  const by = { team: (a, b) => a.t.shortName.localeCompare(b.t.shortName), record: (a, b) => b.car.pct - a.car.pct, titles: (a, b) => b.car.titles - a.car.titles || b.car.pct - a.car.pct, pay: (a, b) => (b.c.contract?.sal || 0) - (a.c.contract?.sal || 0) };
+  rows.sort(by[sort] || by.team);
+  const row = ({ c, t, car }) => {
+    const sec = securityOf(c, car);
+    return `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}">
+      <span class="coach-top">${t ? logoImg(t) : ''}<b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${t ? esc(t.shortName) : 'Available'}</span><span class="badge ${secCls(sec.tag)}">${sec.tag}</span></span>
+      <span class="small muted">${esc(coachArch(c))} · ${car.seasons ? `${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)})` : 'No record'}${car.titles ? ` · ${car.titles}× champion` : ''}${sec.yrs ? ` · $${sec.sal}M × ${sec.yrs}` : ''}</span>
+    </button>`;
+  };
+  layout({
+    title: 'Coaches',
+    body: `<div class="opts">${Object.entries(COACH_SORTS).map(([k, l]) => `<button class="btn small ${sort === k ? 'on focus' : 'off'}" data-act="coachSort" data-k="${k}">${l}</button>`).join('')}</div>
+      <div class="stack">${rows.map(row).join('')}</div>
+      ${pool.length ? `<fieldset class="frame"><legend>Available Coaches</legend><div class="stack">${pool.map(c => row({ ...c, car: careerOf(c.c) })).join('')}</div></fieldset>` : ''}`,
+  });
+};
+actions.coachSort = d => { state.coachSort = d.k; render(); };
+
+const bar = (v, max, cls) => `<span class="co-bar"><span class="co-fill ${cls}" style="width:${Math.min(100, (v / Math.max(1, max)) * 100)}%"></span></span>`;
+screens.coach = args => {
+  const { staff, pool } = allCoaches();
+  const hit = [...staff, ...pool].find(x => x.c.id === +args.arg);
+  if (!hit) { layout({ title: 'Coach', body: '<p class="note">Coach not found.</p>' }); return; }
+  const { c, t } = hit, car = careerOf(c), sec = securityOf(c, car);
+  const stars = potentialStars(c);
+  const star = '★'.repeat(Math.floor(stars)) + (stars % 1 ? '½' : '');
+  const att = [['development', 'Development'], ['motivation', 'Motivation'], ['leadership', 'Leadership']];
+  const lastRows = car.rows.slice(-6).reverse();
+  layout({
+    title: `${c.fn} ${c.ln}`,
+    body: `<fieldset class="frame"><legend>${t ? esc(`${t.city} ${t.name}`) : 'Available'}</legend><div class="stack">
+        <p class="note"><b>${esc(coachArch(c))}</b> · <span class="gold">${star}</span> potential · ${c.age}y${c.yrs ? ` · ${c.yrs} yrs experience` : ''}</p>
+        <p class="note small">${strengthName(c.pri) ? `<b>${esc(strengthName(c.pri))}</b> primary` : ''}${strengthName(c.sec) ? ` · <b>${esc(strengthName(c.sec))}</b> secondary` : ''}</p>
+        <p class="note">${esc(philosophyOf(c))}</p></div></fieldset>
+      <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
+      <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
+      <fieldset class="frame"><legend>Job Security</legend><div class="stack">
+        <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
+        <p class="note small muted">${sec.yrs ? `Contract: $${sec.sal}M for ${sec.yrs} more year${sec.yrs > 1 ? 's' : ''}.` : 'No contract on file.'}</p></div></fieldset>
+      <fieldset class="frame"><legend>Career</legend><div class="stack">
+        ${car.seasons ? `<p class="note">${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)}) career${car.poW + car.poL ? `, playoffs ${car.poW}-${car.poL}` : ''}</p>` : '<p class="note small muted">No games coached yet.</p>'}
+        ${car.titles ? `<p class="note"><span class="gold">🏆 ${car.titles}× champion</span> <span class="muted small">${car.titleYears.join(', ')}</span></p>` : ''}
+        ${lastRows.map(r => `<div class="small" style="display:flex;justify-content:space-between"><span>${r.yr}${r.tid != null ? ` · ${esc(league().teams.find(x => x.id === r.tid)?.shortName || '')}` : ''}</span><span>${r.W}-${r.L}${r.po ? ` · playoffs ${r.po.W}-${r.po.L}` : ''}</span></div>`).join('')}
+      </div></fieldset>`,
+  });
+};
+
 actions.savePlaybook = () => {
   const t = myTeam();
   if (!t || !hasPlays(t)) return;
