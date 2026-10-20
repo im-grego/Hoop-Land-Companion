@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.133.3';
+const APP_VERSION = '0.134.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -373,7 +373,12 @@ function render() {
   const y = window.scrollY;
   $app.dataset.screen = top.name;
   screens[top.name](top.args);
-  const target = view === lastView ? y : top.y ?? 0;
+  let target = view === lastView ? y : top.y ?? 0;
+  if (view === lastView && state.anchor) {
+    const n = document.querySelector(`[data-anchor="${state.anchor.key}"]`);
+    if (n) target = Math.max(0, n.getBoundingClientRect().top + window.scrollY - state.anchor.top);
+  }
+  state.anchor = null;
   window.scrollTo(0, target);
   // iOS can drop a scroll made while it's still finishing a tap; put it
   // back once the redraw has settled.
@@ -403,6 +408,9 @@ function runAct(el, e) {
   const act = el.dataset.act;
   if (act === 'back') return back();
   const fn = actions[act];
+  // Keep the card you tapped where it is on screen through the redraw.
+  const box = el.closest('[data-anchor]');
+  state.anchor = box ? { key: box.dataset.anchor, top: box.getBoundingClientRect().top } : null;
   if (fn) fn(el.dataset, el, e);
 }
 // Touch taps run on finger-up: iOS sometimes spends the first tap on a
@@ -3809,7 +3817,7 @@ screens.settings = (args) => {
       setGroup('Age Adjustment', P.recoveryBands.map((b, i) => setStep(`Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}: points back`, 'recBand', `data-i="${i}"`, `+${b[1]}`))) +
       setGroup('Scouting & Draft', [
         options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]),
-        options('Private workouts', 'workoutSlots', [[3, '3'], [6, '6'], [9, '9'], [12, '12']]),
+        options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']]),
         options('CPU draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]),
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
       ]) +
@@ -4657,7 +4665,7 @@ function combineBox(p) {
 // every rating's ceiling) is revealed once the interview is done.
 
 const interviewQs = () => 3;
-const workoutSlots = () => (state.params.workoutSlots ?? 6) * Math.max(1, state.userTeams.size) + FX.facilityFx(myTeam()).workouts;
+const workoutSlots = () => (state.params.workoutSlots ?? 4) * Math.max(1, state.userTeams.size) + FX.facilityFx(myTeam()).workouts;
 const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= interviewQs();
 const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
 const myTeam = () => league().teams.find(isUserTeam);
@@ -5041,14 +5049,24 @@ screens.workouts = (args) => {
   const byId = new Map(L.draftClass.map(p => [p.id, p]));
   const cap = workoutSlots();
   const left = cap - ids.length;
-  const inGym = ids.map(id => byId.get(id)).filter(Boolean).map(p => {
+  // In the order they came in. Once the next interview is started, a finished one folds up (tap to read it again).
+  const order = ids.map(id => byId.get(id)).filter(Boolean).sort((x, y) => (pre.workouts[x.id].n || 0) - (pre.workouts[y.id].n || 0));
+  const lastId = order.length ? order[order.length - 1].id : null;
+  const open = (state.wkOpen ||= new Set());
+  const inGym = order.map(p => {
     const w = pre.workouts[p.id];
     const more = interviewQs() - w.qs.length;
-    return `<div class="workout">
-      <div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>
-      <p class="note small">${workoutResult(p)}</p>
-      ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}
-      ${w.qs.length >= interviewQs() && FX.facilityFx(myTeam()).goodCop && w.qs.length < 6 ? `<p class="note muted small">Good cop, bad cop: ask the rest.</p>${interviewPairs(p).flat().filter(x => !w.qs.includes(x.k)).map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
+    const done = w.qs.length >= interviewQs();
+    const head = `<div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>`;
+    const answers = `<p class="note small">${workoutResult(p)}</p>
+      ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}`;
+    if (done && p.id !== lastId) {
+      return `<details class="workout wk-fold" data-anchor="wk-${p.id}" ${open.has(p.id) ? 'open' : ''}><summary data-act="wkFold" data-id="${p.id}"><b>${esc(playerName(p))}</b> <span class="small muted">${esc(posName(p))} · ${p.age}y · interview done ✓</span></summary>${answers}</details>`;
+    }
+    return `<div class="workout" data-anchor="wk-${p.id}">
+      ${head}
+      ${answers}
+      ${done && FX.facilityFx(myTeam()).goodCop && w.qs.length < 6 ? `<p class="note muted small">Good cop, bad cop: ask the rest.</p>${interviewPairs(p).flat().filter(x => !w.qs.includes(x.k)).map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
       ${more > 0 && interviewPairs(p)[w.qs.length] ? `<p class="note muted small">Question ${w.qs.length + 1} of ${interviewQs()}: pick one.</p>${interviewPairs(p)[w.qs.length].map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
     </div>`;
   }).join('');
@@ -5056,10 +5074,10 @@ screens.workouts = (args) => {
   const shown = args.all ? pool : pool.slice(0, 40);
   layout({
     title: 'Private Workouts',
-    body: `<p class="note small">Bring prospects in to work out. Three rounds of questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''} After the interview you'll know his true ceiling and every rating's ceiling. <b>${left} of ${cap}</b> slots left.</p>
+    body: `<p class="note small">Bring prospects in to work out. Three rounds of questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''} <b>${left} of ${cap}</b> workouts left.</p>
       ${inGym ? `<fieldset class="frame"><legend>In the Gym</legend><div class="stack">${inGym}</div></fieldset>` : ''}
       <fieldset class="frame"><legend>Invite</legend>
-        <p class="note muted small" style="margin-bottom:6px">Your board first, then the rest of the class.</p>
+        <p class="note small" style="margin-bottom:6px"><b class="gold">Choosing a player fully scouts him</b>: his true potential and every rating's ceiling, once his interview is done. Your board first, then the rest of the class.</p>
         <div class="stack">${shown.map(p => `<div class="drill-row">
           <span class="grow"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b> ${valueChip(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)} · ${heightStr(p.ht)}</span></span>
           <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`).join('')}</div>
@@ -5071,8 +5089,10 @@ screens.workouts = (args) => {
 actions.invite = d => {
   const pre = preStore();
   if (Object.keys(pre.workouts).length >= workoutSlots()) return;
-  pre.workouts[+d.id] = { qs: [] };
+  pre.workouts[+d.id] = { qs: [], n: Date.now() };
   savePre();
+  state.wkOpen = new Set();
+  state.anchor = { key: `wk-${+d.id}`, top: 90 };   // bring the new interview into view
   render();
 };
 actions.askQ = d => {
@@ -5091,6 +5111,12 @@ actions.askQ = d => {
     const p = league().draftClass.find(x => x.id === +d.id);
     if (p) toast(`Workout done: ${playerName(p)}`, 'His ceiling and every rating\'s ceiling are on his page.');
   }
+  render();
+};
+actions.wkFold = (d, el, e) => {
+  e?.preventDefault();
+  const open = (state.wkOpen ||= new Set()), id = +d.id;
+  if (open.has(id)) open.delete(id); else open.add(id);
   render();
 };
 actions.workoutAll = () => replace('workouts', { all: true });

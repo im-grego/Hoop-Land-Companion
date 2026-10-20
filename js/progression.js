@@ -119,7 +119,7 @@ export const DEFAULT_PARAMS = {
   recoveryBands: [[19, 0], [21, 1], [99, 2]],
   // Draft room: % of scouting reports that read potential one step off
   scoutVariance: 25,
-  workoutSlots: 6,        // private workouts before the draft, per team you run
+  workoutSlots: 4,        // private workouts before the draft, per team you run
   lotteryFormat: 'auto',  // auto (from the league's settings) | 321 | top4 | old
   lotteryDraws: 4,        // unused (old setting)
   draftRounds: 2,

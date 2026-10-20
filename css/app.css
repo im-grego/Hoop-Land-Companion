@@ -1391,3 +1391,8 @@ main.panel.bare { margin-top: 10px; }
 .mv-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; white-space: nowrap; }
 .mv-l { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .mv-r { flex: none; }
+.wk-fold { background: var(--btn); border: 3px solid var(--btn-edge); padding: 6px 8px; }
+.wk-fold > summary { cursor: pointer; list-style: none; }
+.wk-fold > summary::-webkit-details-marker { display: none; }
+.wk-fold > summary::after { content: ' ▾'; color: var(--cyan); }
+.wk-fold[open] > summary::after { content: ' ▴'; }

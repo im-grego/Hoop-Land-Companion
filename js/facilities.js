@@ -20,15 +20,15 @@ export const FACILITIES = [
   ] },
   { k: 'scouting', type: 2, label: 'Scouting', icon: '🔭', tiers: [
     { name: 'Local Scouts', lines: ['Standard issue, no bonuses'] },
-    { name: 'Regional Network', lines: ['Instant read: confirm the true potential of 2 prospects', 'Potential reads 10% tighter'] },
-    { name: 'National Network', lines: ['Instant read on 4 prospects', 'Potential reads 25% tighter', '50% more rating ceilings known before a workout'] },
-    { name: 'Global Network', lines: ['Instant read on 8 prospects', 'Potential reads 40% tighter', 'Double the rating ceilings known before a workout', 'Good cop, bad cop: ask all six interview questions'] },
+    { name: 'Regional Network', lines: ['Instant read: confirm the true potential of 2 prospects', 'Potential reads 10% tighter', 'One more private workout slot'] },
+    { name: 'National Network', lines: ['Instant read on 4 prospects', 'Potential reads 25% tighter', '50% more rating ceilings known before a workout', 'Two more private workout slots'] },
+    { name: 'Global Network', lines: ['Instant read on 8 prospects', 'Potential reads 40% tighter', 'Double the rating ceilings known before a workout', 'Three more private workout slots', 'Good cop, bad cop: ask all six interview questions'] },
   ] },
   { k: 'arena', type: 3, label: 'Arena', icon: '🏟️', tiers: [
     { name: 'Neighborhood Arena', lines: ['Standard issue, no bonuses'] },
-    { name: 'Modern Arena', lines: ['Game: coin income +5%', 'Free agents like your offers a bit more (+3%)', '+1 morale for every player each summer', 'One more private workout slot'] },
-    { name: 'Showcase Arena', lines: ['Game: coin income +10%', 'Free agents like your offers more (+6%)', '+2 morale each summer', 'Two more private workout slots', 'Your players re-sign for 3% less', 'Stars ask out 10% less often', 'Tax and teardown morale hits 25% smaller'] },
-    { name: 'Landmark Arena', lines: ['Game: coin income +25%', 'Free agents like your offers much more (+12%)', '+3 morale each summer', 'Three more private workout slots', 'Your players re-sign for 6% less', 'Stars ask out 20% less often', 'Tax and teardown morale hits 50% smaller'] },
+    { name: 'Modern Arena', lines: ['Game: coin income +5%', 'Free agents like your offers a bit more (+3%)', '+1 morale for every player each summer'] },
+    { name: 'Showcase Arena', lines: ['Game: coin income +10%', 'Free agents like your offers more (+6%)', '+2 morale each summer', 'Your players re-sign for 3% less', 'Stars ask out 10% less often', 'Tax and teardown morale hits 25% smaller'] },
+    { name: 'Landmark Arena', lines: ['Game: coin income +25%', 'Free agents like your offers much more (+12%)', '+3 morale each summer', 'Your players re-sign for 6% less', 'Stars ask out 20% less often', 'Tax and teardown morale hits 50% smaller'] },
   ] },
 ];
 export const MAX_FAC_TIER = 4;
@@ -62,7 +62,7 @@ export function facilityFx(team) {
     goodCop: s >= 4,
     fa: at([0, 0.03, 0.06, 0.12], a),
     morale: at([0, 1, 2, 3], a),
-    workouts: at([0, 1, 2, 3], a),
+    workouts: at([0, 1, 2, 3], s),
     askMult: at([1, 1, 0.97, 0.94], a),
     requestCut: at([0, 0, 0.1, 0.2], a),
     taxCut: at([0, 0, 0.25, 0.5], a),
