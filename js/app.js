@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.6';
+const APP_VERSION = '0.134.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3347,7 +3347,13 @@ function profileReport(p, team) {
     : left <= 3 ? 'He has a few good years left before he starts to regress.'
     : left <= 6 ? 'He is still in his prime.'
     : 'He can play at this level for a very long time.';
-  if (p.age <= 24 && !declining(p)) add('dev', 'He is still developing.', can); else add('dev', can, timing);
+  // How far he is from his ceilings (rating points left to gain across his skills).
+  const room = SKILL_ATTRS.reduce((s, k) => s + Math.max(0, (p.attributes[k]?.[1] || 0) - (p.attributes[k]?.[0] || 0)), 0);
+  const phrase = POT_PHRASE[up] || 'a ' + up, young = p.age <= 24 && !declining(p);
+  const reached = room <= 0, near = room <= 13;
+  const lines = reached ? [`He is ${phrase}.`] : near ? ['He is close to his ceiling.', can] : young ? ['He is still developing.', can] : [can];
+  if (!(young && !reached && !near)) lines.push(timing);
+  add('dev', ...lines);
   if (prod) add('prod', prod.trim());
   // What he's paid
   const c = p.contract;
@@ -3373,15 +3379,13 @@ function profileReport(p, team) {
 function playerTags(p) {
   const c = p.contract || {}, t = [];
   const add = (label, cls = '') => t.push(`<span class="badge ${cls}">${label}</span>`);
-  if (c.sal && c.yrs) { add(esc(contractText(p))); const v = contractBadge(p).trim(); if (v) t.push(v); }
+  if (c.sal && c.yrs) { add(esc(contractText(p, true))); const v = contractBadge(p).trim(); if (v) t.push(v); }
   if (p.yrs === 0) add('Rookie', 'new');
   if (declining(p)) add('Declining', 'down-b');
   const inj = p.season?.injury?.gamesOut > 0 ? p.season.injury.gamesOut : 0;
   if (inj) add(`Injured · ${inj} g`, 'down-b');
   if (p.status === 4) add('Expiring', 'lvl');
   else if (c.yrs === 1 && c.sal) add('Final Year', 'lvl');
-  if (c.opt === 1) add('Team Option');
-  if (c.opt === 2) add('Player Option');
   if (c.noTrd) add('No-Trade');
   if (c.ext?.yrs > 0) add(`Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');
   else if (c.canExt) add('Extension Eligible', 'new');
@@ -6211,10 +6215,10 @@ actions.liveFinish = async () => {
 // ---- Live trade builder
 
 // "$24M · 3 yrs" and a value tag (Final Year / Overpaid / Bargain).
-function contractText(p) {
+function contractText(p, withOpt = false) {
   const c = p.contract || {};
   if (!c.sal || !c.yrs) return p.status === 4 ? 'Pending FA' : '';
-  return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}`;
+  return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}${withOpt && c.opt === 1 ? ' · TO' : withOpt && c.opt === 2 ? ' · PO' : ''}`;
 }
 function contractBadge(p) {
   const { tag } = contractValue(p);
