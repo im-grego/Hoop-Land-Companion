@@ -152,12 +152,15 @@ function pick(pos, recipe) {
 }
 // Offensive styles: a few families blended into one way of playing.
 export const PRESETS = [
-  { name: 'Pace and Space', blurb: 'Pick-and-rolls and pops that open the floor, with an iso when the screen is blown up. Guard-led.', recipe: ['PNR', 'PNR', 'PNP', 'Iso'] },
-  { name: 'Flow Offense', blurb: 'Motion and Horns keep the ball moving; a pick-and-pop gives a shooter the final look. Ball movement teams.', recipe: ['Motion', 'Motion', 'Horns', 'PNP'] },
-  { name: 'Iso and Spread', blurb: 'Hand the ball to your best scorers and clear the floor, with 5-out looks to space it. Star-driven teams.', recipe: ['Iso', 'Iso', 'Motion', 'Out5'] },
-  { name: 'Inside-Out', blurb: 'Run it through the high post, add a pick-and-roll for the guards and a Horns set to free the shooters. Big-man hub.', recipe: ['Post', 'Post', 'PNR', 'Horns'] },
-  { name: 'Shooters\' Horns', blurb: 'Horns sets that screen for shooters, a pop for the big man, and 5-out spacing. Floor-spacing teams.', recipe: ['Horns', 'Horns', 'PNP', 'Out5'] },
-  { name: 'Half-Court Grind', blurb: 'Slow it down: post entries, Horns and a pick-and-roll, with one iso for a bailout. Physical, defensive teams.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
-  { name: 'Balanced Attack', blurb: 'One of everything: pick-and-roll, motion, Horns and an iso. A safe default.', recipe: ['PNR', 'Motion', 'Horns', 'Iso'] },
+  { name: 'Pace and Space', blurb: 'Best for guard-led teams that want pick-and-rolls and pops with an iso as the release valve.', recipe: ['PNR', 'PNR', 'PNP', 'Iso'] },
+  { name: 'Flow Offense', blurb: 'Best for deep, unselfish teams that move the ball through motion and Horns, with a pop for the shooter.', recipe: ['Motion', 'Motion', 'Horns', 'PNP'] },
+  { name: 'Iso and Spread', blurb: 'Best for teams built around one or two elite scorers who need space and the ball.', recipe: ['Iso', 'Iso', 'Motion', 'Out5'] },
+  { name: 'Inside-Out', blurb: 'Best for teams with a skilled big who can pass from the high post, backed by guards and shooters.', recipe: ['Post', 'Post', 'PNR', 'Horns'] },
+  { name: 'Shooters\' Horns', blurb: 'Best for teams loaded with shooters who can come off Horns screens and spot up in a spread floor.', recipe: ['Horns', 'Horns', 'PNP', 'Out5'] },
+  { name: 'Half-Court Grind', blurb: 'Best for physical, defense-first teams that slow the game down and score through the post.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
+  { name: 'Run and Gun', blurb: 'Best for young, athletic teams that want quick pops and isos before the defense sets.', recipe: ['PNP', 'PNP', 'Iso', 'Motion'] },
+  { name: 'Post Up', blurb: 'Best for teams with a dominant big man who should touch the ball every trip.', recipe: ['Post', 'Post', 'Post', 'Horns'] },
+  { name: 'Corner Horns', blurb: 'Best for teams short on playmakers but long on shooters, using Horns and 5-out spacing.', recipe: ['Horns', 'Horns', 'Out5', 'Out5'] },
+  { name: 'Balanced Attack', blurb: 'Best when your roster has no clear identity yet: a bit of everything.', recipe: ['PNR', 'Motion', 'Horns', 'Iso'] },
 ];
 export const presetPlays = preset => ({ positions: [1, 2, 3, 4, 5].map(pos => ({ plays: pick(pos, preset.recipe) })) });

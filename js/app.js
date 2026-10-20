@@ -36,7 +36,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.111.1';
+const APP_VERSION = '0.112.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1169,10 +1169,10 @@ actions.calDev = () => { calFlags().dev = true; render(); };
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
-  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
+  dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1896,6 +1896,7 @@ const playsEditor = (qp, can) => POS5.map((pos, i) => `<div class="pb-edit"><spa
   return `<select class="sel-team" data-change="pbSlot" data-pos="${i}" data-slot="${k}" ${can ? '' : 'disabled'}>${playOptions(i, cur)}</select>`;
 }).join('')}</div></div>`).join('');
 
+const samePlays = (x, y) => JSON.stringify((x?.positions || []).map(q => q.plays)) === JSON.stringify((y?.positions || []).map(q => q.plays));
 screens.playbook = () => {
   const t = myTeam();
   if (!t) { layout({ title: 'Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
@@ -1903,20 +1904,15 @@ screens.playbook = () => {
   const so = (t.scoringOptions || []);
   const rosterIds = new Set(t.roster.map(p => p.id));
   const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
+  const inst = (act, i, on) => `<button class="btn small ${on ? 'off' : sch >= 1 ? 'focus' : ''}" data-act="${act}" data-i="${i}" ${sch >= 1 && !on ? '' : 'disabled'}>${on ? '✓ Installed' : sch >= 1 ? '📥 Use This Playbook' : '🔒 Scheme 1'}</button>`;
   layout({
     title: 'Playbook',
-    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Quick Plays</legend>
-        ${hasPlays(t) ? '' : '<p class="note small muted">No quick plays set for this team in this file. Pick any below to start a playbook.</p>'}
-        ${playsEditor(t.quickPlays, sch >= 1)}
-        <p class="note small muted" style="margin-top:6px">${sch >= 1 ? 'Pick a play for each slot.' : '🔒 Scheme 1 lets you change plays.'} (n) is the ball handler's position.</p>
-        ${hasPlays(t) ? '<button class="btn small" data-act="savePlaybook">💾 Save as a playbook</button>' : ''}</fieldset>
-      <fieldset class="frame"><legend>Presets</legend><div class="stack">
-        ${PRESETS.map((p, i) => `<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${playsGrid(presetPlays(p))}
-          <button class="btn small ${sch >= 1 ? 'focus' : ''}" data-act="installPreset" data-i="${i}" ${sch >= 1 ? '' : 'disabled'}>${sch >= 1 ? '📥 Install' : '🔒 Scheme 1'}</button></div>`).join('')}
-      </div></fieldset>
-      <fieldset class="frame"><legend>Saved Playbooks</legend><div class="stack">
-        ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b>${playsGrid(b.quickPlays)}
-          <div class="grid2"><button class="btn small ${sch >= 1 ? 'focus' : ''}" data-act="installPlaybook" data-i="${i}" ${sch >= 1 ? '' : 'disabled'}>${sch >= 1 ? '📥 Install' : '🔒 Scheme 1'}</button><button class="btn small off" data-act="deletePlaybook" data-i="${i}">Delete</button></div></div>`).join('') || '<p class="note small muted">None yet. Load a file where your team has quick plays set and save them here.</p>'}
+    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Playbook</legend><div class="stack">
+        ${hasPlays(t) ? '' : '<p class="note small muted">No quick plays set for this team in this file.</p>'}
+        ${PRESETS.map((p, i) => `<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
+        ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b><span class="small muted">Your own playbook.</span>
+          <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
+        <button class="btn" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
       </div></fieldset>
       <fieldset class="frame ${sch >= 2 ? '' : 'plan-locked'}"><legend>Scoring Options${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</legend><div class="stack">
         ${so.map((o, i) => `<div class="so-row">
@@ -1928,11 +1924,24 @@ screens.playbook = () => {
       </div></fieldset>`,
   });
 };
+screens.playbookEdit = () => {
+  const t = myTeam();
+  if (!t) { layout({ title: 'Your Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
+  const sch = tierNow('scheme');
+  layout({
+    title: 'Your Playbook',
+    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Quick Plays</legend>
+        ${playsEditor(t.quickPlays, sch >= 1)}
+        <p class="note small muted" style="margin-top:6px">${sch >= 1 ? 'Pick a play for each slot.' : '🔒 Scheme 1 lets you change plays.'} (n) is the ball handler's position.</p>
+        ${hasPlays(t) ? '<button class="btn small" data-act="savePlaybook">💾 Save as a playbook</button>' : ''}</fieldset>`,
+  });
+};
 actions.savePlaybook = () => {
   const t = myTeam();
   if (!t || !hasPlays(t)) return;
   const books = loadBooks();
-  const name = `${t.city} ${t.name} · ${league().season.currentYear}`;
+  const name = (window.prompt('Name this playbook', `${t.city} ${t.name} · ${league().season.currentYear}`) || '').trim();
+  if (!name) return;
   const i = books.findIndex(b => b.name === name);
   const book = { name, quickPlays: JSON.parse(JSON.stringify(t.quickPlays)) };
   if (i >= 0) books[i] = book; else books.push(book);
