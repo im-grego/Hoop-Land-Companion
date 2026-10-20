@@ -159,8 +159,6 @@ export const PRESETS = [
   { name: 'Shooters\' Horns', blurb: 'Best for teams loaded with shooters who can come off Horns screens and spot up in a spread floor.', recipe: ['Horns', 'Horns', 'PNP', 'Out5'] },
   { name: 'Half-Court Grind', blurb: 'Best for physical, defense-first teams that slow the game down and score through the post.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
   { name: 'Run and Gun', blurb: 'Best for young, athletic teams that want quick pops and isos before the defense sets.', recipe: ['PNP', 'PNP', 'Iso', 'Motion'] },
-  { name: 'Post Up', blurb: 'Best for teams with a dominant big man who should touch the ball every trip.', recipe: ['Post', 'Post', 'Post', 'Horns'] },
-  { name: 'Corner Horns', blurb: 'Best for teams short on playmakers but long on shooters, using Horns and 5-out spacing.', recipe: ['Horns', 'Horns', 'Out5', 'Out5'] },
-  { name: 'Balanced Attack', blurb: 'Best when your roster has no clear identity yet: a bit of everything.', recipe: ['PNR', 'Motion', 'Horns', 'Iso'] },
+  { name: 'Off-Ball Movement', blurb: 'Best for high-IQ teams of cutters and shooters who get open without the ball, off Horns screens and 5-out spacing.', recipe: ['Horns', 'Motion', 'Horns', 'Out5'] },
 ];
 export const presetPlays = preset => ({ positions: [1, 2, 3, 4, 5].map(pos => ({ plays: pick(pos, preset.recipe) })) });
