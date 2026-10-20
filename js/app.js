@@ -28,6 +28,7 @@ import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
 import { runMeeting, traitName } from './influence.js';
+import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, assistantOptions, fixOptions } from './scoring.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
@@ -43,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.127.1';
+const APP_VERSION = '0.128.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1938,6 +1939,7 @@ const playsEditor = (qp, can) => POS5.map((pos, i) => `<div class="pb-edit"><spa
 
 const samePlays = (x, y) => JSON.stringify((x?.positions || []).map(q => q.plays)) === JSON.stringify((y?.positions || []).map(q => q.plays));
 screens.playbook = () => {
+  syncScoringOptions();
   const t = myTeam();
   if (!t) { layout({ title: 'Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
   const sch = tierNow('scheme'), books = loadBooks();
@@ -1955,13 +1957,18 @@ screens.playbook = () => {
         <button class="btn" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
         <button class="btn off" data-act="nav" data-to="teamBooks">👥 Team Playbooks</button>
       </div></fieldset>
-      <fieldset class="frame ${sch >= 2 ? '' : 'plan-locked'}"><legend>Scoring Options${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</legend><div class="stack">
-        ${so.map((o, i) => `<div class="so-row">
+      <fieldset class="frame"><legend>Scoring Options</legend><div class="stack">
+        <p class="note small muted">Up to three players your offense runs through. Usage moves in 5% steps and the rest goes to your other starters. Every option runs the playbook, never auto play calling.</p>
+        ${so.map((o, i) => `<div class="so-row ${sch >= 2 ? '' : 'plan-locked'}">
+          <b class="small gold">${['1st', '2nd', '3rd'][i]} Option</b>
           <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
-          <div class="so-ctl"><span class="small">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > 5 ? '' : 'disabled'}>−</button><b>${o.usageRate}%</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < 40 ? '' : 'disabled'}>+</button>
-            <span class="small">Focus</span>${[1, 2, 3, 4].map(f => `<button class="btn tiny ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${f}</button>`).join('')}
-            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
-        ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option</button>` : ''}
+          <div class="so-ctl"><span class="small">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > MIN_USAGE ? '' : 'disabled'}>−</button><b>${o.usageRate}%</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
+            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div>
+          <div class="tabs fa-tabs fa-tabs6">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
+        ${so.length ? `<p class="note small">${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.</p>` : ''}
+        ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</button>` : ''}
+        <button class="btn" data-act="soAssist">🧑‍🏫 Use the Assistant Coach's Picks</button>
+        ${sch >= 2 ? '' : '<p class="note small muted">Choosing players, usage and focus yourself opens with Scheme 2. The assistant\'s picks are always open.</p>'}
       </div></fieldset>`,
   });
 };
@@ -2242,15 +2249,40 @@ actions.deletePlaybook = async d => {
   saveBooks(books);
   render();
 };
-const soEdit = fn => { const t = myTeam(); if (!t || tierNow('scheme') < 2) return; fn(t.scoringOptions ||= []); state.dirty = true; render(); };
-actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (o) o[d.k] = Math.max(5, Math.min(40, o[d.k] + +d.d)); });
+const soTotal = so => so.reduce((s, o) => s + (o.usageRate || 0), 0);
+const soEdit = fn => { const t = myTeam(); if (!t || tierNow('scheme') < 2) return; fn(t.scoringOptions ||= []); for (const o of t.scoringOptions) o.playSelection = 1; state.dirty = true; render(); };
+actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (!o) return; const room = MAX_TOTAL - (soTotal(so) - o.usageRate); o[d.k] = Math.max(MIN_USAGE, Math.min(MAX_USAGE, room, o[d.k] + +d.d)); });
 actions.soFocus = d => soEdit(so => { const o = so[+d.i]; if (o) o.focus = +d.v; });
 actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
 actions.soAdd = () => soEdit(so => {
-  const t = myTeam(), used = new Set(so.map(o => o.pid));
-  const p = [...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).find(x => !used.has(x.id));
-  if (p && so.length < 3) so.push({ pid: p.id, usageRate: [30, 20, 15][so.length], focus: 1, playSelection: 1 });
+  const t = myTeam();
+  if (so.length >= 3) return;
+  const pick = assistantOptions(t, headCoachOf(t), { exclude: so.map(o => o.pid), count: 1 })[0];
+  if (pick) so.push({ ...pick, usageRate: Math.max(MIN_USAGE, Math.min(pick.usageRate, MAX_TOTAL - soTotal(so))) });
 });
+actions.soAssist = () => {
+  const t = myTeam();
+  if (!t) return;
+  t.scoringOptions = assistantOptions(t, headCoachOf(t));
+  state.dirty = true;
+  toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? `${p.ln} ${o.usageRate}%` : ''; }).join(' · '));
+  render();
+};
+// Every team's options stay valid: players still on the roster, play selection 1.
+// A CPU team whose formula breaks (a trade, a cut) gets a new one; yours only
+// replaces the missing player, and fills in at the end if you never set any.
+function syncScoringOptions(final = false) {
+  const L = league();
+  let changed = 0;
+  for (const t of L.teams) {
+    const c = headCoachOf(t), user = isUserTeam(t);
+    if (!c && !user) continue;
+    if (user && !final && !(t.scoringOptions || []).length) continue;
+    if (fixOptions(t, c, { user, fill: true })) changed++;
+  }
+  if (changed) state.dirty = true;
+  return changed;
+}
 $app.addEventListener('change', e => {
   if (e.target.dataset.change !== 'pbSlot') return;
   const t = myTeam(), d = e.target.dataset, id = +e.target.value;
@@ -2264,7 +2296,7 @@ $app.addEventListener('change', e => {
 });
 $app.addEventListener('change', e => {
   if (e.target.dataset.change !== 'soPlayer') return;
-  soEdit(so => { const o = so[+e.target.dataset.i]; if (o) o.pid = +e.target.value; });
+  soEdit(so => { const o = so[+e.target.dataset.i]; if (o) { o.pid = +e.target.value; const p = myTeam().roster.find(x => x.id === o.pid); if (p) o.focus = focusFor(p); } });
 });
 
 // Culture: once per offseason, your players' Locker Room and Loyalty come up
@@ -5634,6 +5666,7 @@ setTradeHook((kind, rec) => {
       else { const i = list.map(x => x.pid === m.p.id && x.from === m.from.id && x.to === m.to.id).lastIndexOf(true); if (i >= 0) list.splice(i, 1); }
     }
     offSet('moves', { list });
+    if (kind === 'do') syncScoringOptions();
   } catch { /* the ledger is a convenience */ }
 });
 function lockSigning(p, why) {
@@ -6837,12 +6870,14 @@ function applySchemeEvolution() {
       if ((res.style !== cur || res.focus) && res.w >= 0.2 && res.reasons.length && !S.declined[`${t.id}:${yr}`]) S.props[t.id] = { ...res, from: cur, yr, coach: `${c.fn} ${c.ln}` };
     } else if (res.style !== cur || res.focus) {
       useStyle(t, c, preset, res.focusId, false);
+      t.scoringOptions = [];
       S.log.push({ yr, tid: t.id, kind: fresh ? 'install' : 'shift', coach: `${c.fn} ${c.ln}`, from: cur, to: res.style, focus: res.focus, why: res.reasons });
     }
     S.ledger[t.id] = { coach: c.id, yr };
   }
   S.done = yr;
   saveScheme(S);
+  syncScoringOptions();
   applyCoachFriction();
   state.dirty = true;
 }
@@ -7030,6 +7065,7 @@ function cpuBlockDeals(day) {
   const why = proactiveFrontOffice();
   cpuCoachMoves();
   applyCoachFriction();
+  syncScoringOptions();
   for (const t of cpu) {
     // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
     for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {
@@ -9799,6 +9835,7 @@ actions.cutsFinish = async () => {
     list.push({ team: t.shortName, names: go.map(x => playerName(x.p)) });
   }
   roleMorale(L);
+  syncScoringOptions(true);
   calFlags().cutLog = { n, mine: mineN, list };
   {
     const rq = offGet('req');
@@ -9831,6 +9868,7 @@ actions.cutsFinish = async () => {
 };
 
 screens.export = () => {
+  syncScoringOptions(true);
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
     navigator.canShare({ files: [new File(['x'], 'x', { type: 'application/octet-stream' })] });
   layout({
