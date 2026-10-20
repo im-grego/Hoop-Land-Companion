@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.132.0';
+const APP_VERSION = '0.133.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -598,17 +598,22 @@ function spendAllPoints(L) {
   for (const p of [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || [])]) n += spendHeldPoints(p, state.params, rng);
   return n;
 }
+let restoreCap = null;
 function buildExport() {
+  restoreCap = null;
   if (state.leagueFile) return buildLeagueExport();
   state.data.seasonLeagues.forEach((L, li) => { if (state.summer[li]) markSummerDone(L); });
   if (!isCollege() && league().season.phase === BUMP_PHASES[0]) spendAllPoints(league());
   // The game's cap becomes this season's 2nd apron (room for in-season
   // moves), with the max contract tiers scaled so a max is still 25 / 30 /
   // 35% of the real cap.
-  if (!isCollege() && FA.capSystemOn()) {
-    const L = league(), C = FA.capLines(L);
-    L.season.salaryCap = C.apron2;
-    L.season.maxContract = [25, 30, 35].map(t => Math.round(t * C.cap / C.apron2));
+  if (!isCollege()) {
+    const L = league(), cs = leagueCapSettings(L);
+    if (cs) {
+      // Simple rules read the save's own cap in the app, so it's put back after the file is built.
+      if (!FA.capSystemOn()) restoreCap = [L.season.salaryCap, L.season.maxContract];
+      L.season.salaryCap = cs.cap; L.season.maxContract = cs.maxContract;
+    }
   }
   // College: once Signing Day is written in, the file goes out on the last
   // day of the signing period (like pro free agency), so one more advance
@@ -625,6 +630,7 @@ function buildExport() {
   clearSeasonPoints();
   const stamped = stampDraftYear();
   const text = serializeSave(state.data);
+  if (restoreCap) { [league().season.salaryCap, league().season.maxContract] = restoreCap; restoreCap = null; }
   for (const p of shut) p.contract.canExt = true;
   for (const p of stamped) p.history.draft.yr++;
   return new File([text], state.fileName, { type: 'application/octet-stream' });
@@ -673,8 +679,13 @@ actions.download = async () => {
 // highest line, room for in-season moves); the max contract tiers are scaled
 // so a max is still 25 / 30 / 35% of the real cap. Same as the season file.
 function leagueCapSettings(L) {
-  const C = FA.capLines(L);
-  return { cap: C.apron2, maxContract: [25, 30, 35].map(t => Math.round(t * C.cap / C.apron2)) };
+  if (isCollege()) return null;
+  const C = FA.capLinesFor(FA.seasonStart(L)), real = FA.capSystemOn() ? FA.capLines(L) : C;
+  if (FA.capSystemOn()) return { cap: real.apron2, maxContract: [25, 30, 35].map(t => Math.round(t * real.cap / real.apron2)) };
+  // Simple rules: the game's cap is the 1st apron line (room to go past the first number without knowing the rest),
+  // and the top annual salary stays $50M, with the other tiers in step (the game's own $28M / $36M / $50M).
+  // The file stores whole percents of the cap, so each lands within about half a percent of its dollar figure.
+  return { cap: C.apron1, maxContract: [28, 36, 50].map(d => Math.round(d * 100 / C.apron1)) };
 }
 
 // A franchise save back into a league file, to start new saves from it.
@@ -693,7 +704,7 @@ actions.downloadLeague = async () => {
   const o = overlay('<div class="spinner"></div><p class="note">Building league file…</p>');
   await nextFrame();
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
-  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(FA.capSystemOn() ? leagueCapSettings(L) : {}) });
+  const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(leagueCapSettings(L) || {}) });
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
   // The pack: traits, far-out traded picks, fans and tags, for giving back to a franchise started from this league.
@@ -862,8 +873,8 @@ const saveFingerprint = (L = league()) => {
 // Simple or Complete rules, chosen when a save is first opened and kept
 // with the save's fingerprint. Simple: the offseason without aprons, tax,
 // pick protections, no-trade clauses or trade restrictions.
-// Simple rules are parked for now: every offseason runs Complete. Flip to false to bring the choice back.
-const ALWAYS_COMPLETE = true;
+// Set to true to park the Simple/Complete choice and run everything Complete.
+const ALWAYS_COMPLETE = false;
 const isComplete = () => ALWAYS_COMPLETE || state.depth !== 'simple';
 const depthLast = () => { try { return localStorage.getItem('hlc:depth:last') || 'complete'; } catch { return 'complete'; } };
 function setDepth(d) {
