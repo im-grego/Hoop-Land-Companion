@@ -136,12 +136,24 @@ export const maxShift = (schemeTier, fx = {}) => (schemeTier >= 3 ? 3 : 2) + (fx
 
 // Game plan: the head coach's own scheme settings in the save (the game
 // uses them when it sims). Each is a numbered option; 0 is the default most
-// coaches use. Option names go in `names` once they're matched to the
-// game's coach screen. Scheme tier 1 opens offense, 2 defense, 3 rotation.
+// coaches use. Option names (PLAN_NAMES) come from the game's coach screen. Scheme tier 1 opens offense, 2 defense, 3 rotation.
 export const PLAN = [
   { tier: 1, group: 'Offense', keys: [['offFocus', 'Offensive focus', 3], ['offTempo', 'Tempo', 1], ['offRebounding', 'Offensive rebounding', 2]] },
   { tier: 2, group: 'Defense', keys: [['defFocus', 'Defensive focus', 2], ['defAggression', 'Defensive aggression', 2], ['defRebounding', 'Defensive rebounding', 2]] },
   { tier: 3, group: 'Rotation', keys: [['benchDepth', 'Bench depth', 2], ['benchUtilization', 'Bench usage', 2], ['closingLineup', 'Closing lineup', 1]] },
 ];
-export const PLAN_NAMES = {};
+export const PLAN_NAMES = {
+  offFocus: ['Balanced', 'Inside', 'Midrange', 'Outside'],
+  offTempo: ['Average', 'Fast Paced'],
+  offRebounding: ['Balanced', 'Crash Boards', 'Get Back On D'],
+  defFocus: ['Balanced', 'Interior', 'Perimeter'],
+  defAggression: ['Average', 'Physical', 'Conservative'],
+  defRebounding: ['Balanced', 'Crash Boards', 'Fast Break'],
+  benchDepth: ['Short', 'Average', 'Deep'],
+  benchUtilization: ['Low', 'Medium', 'High'],
+  closingLineup: ['Performance', 'Starters'],
+};
+// Coach archetypes (the save's `arc`) and the strengths a coach can have (`pri`, `sec`).
+export const COACH_ARCHETYPES = ['Balanced', 'Inside Offense', 'Midrange Offense', 'Outside Offense', 'Defensive Minded'];
+export const COACH_STRENGTHS = ['Development', 'Motivation', 'Leadership'];
 export const planOption = (k, v) => PLAN_NAMES[k]?.[v] || (v === 0 ? 'Default' : `Option ${v}`);
