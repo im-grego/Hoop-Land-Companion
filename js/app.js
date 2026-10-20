@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.8';
+const APP_VERSION = '0.135.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1053,11 +1053,11 @@ function stepActions(key) {
     case 'portal': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="portal">🔁 Transfer Portal</button><button class="btn" data-act="calDone" data-k="portal">✅ Wrap Up</button></div>`;
     case 'seniors': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="seniors">🎓 Senior Send-off</button><button class="btn" data-act="calDone" data-k="seniors">✅ Wrap Up</button></div>`;
     case 'departures': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="departures">🎓 Draft Departures</button><button class="btn" data-act="calDone" data-k="departures">✅ Wrap Up</button></div>`;
-    case 'review': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="review">📜 Season in Review</button><button class="btn" data-act="calDone" data-k="review">✅ Wrap Up</button></div>`;
+    case 'review': return `<button class="btn big focus" data-act="nav" data-to="review">📜 Begin</button>`;
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
-    case 'overview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="overview">📊 Offseason Overview</button><button class="btn" data-act="calDone" data-k="overview">✅ Wrap Up</button></div>`;
-    case 'preview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🔭 Draft Preview</button><button class="btn" data-act="calDone" data-k="preview">✅ Wrap Up</button></div>`;
+    case 'overview': return `<button class="btn big focus" data-act="nav" data-to="overview">📊 Begin</button>`;
+    case 'preview': return `<button class="btn big focus" data-act="nav" data-to="draft">🧢 Begin</button>`;
     case 'lottery': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="lottery">🎱 Draw</button><button class="btn" data-act="homeSimLottery">⏭ Sim</button></div>`;
     case 'mock1': return `<div class="grid2"><button class="btn focus" data-act="openMock" data-n="1">📰 Read</button><button class="btn" data-act="preFinish" data-k="mock1">⏭ Skip</button></div>`;
     case 'scout': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🔎 Begin</button><button class="btn" data-act="preFinish" data-k="scout">⏭ Skip</button></div>`;
@@ -1130,7 +1130,7 @@ function calMonthHtml(cal, cur, mo, anim = null) {
 // The calendar follows the current event: it shows that event's month by itself. When the event moves on,
 // the dates up to the next one cross off in turn (and the month turns over when the next event is in a later month).
 // The page turn: the old month lifts from its bottom-right corner and folds over to the top-left, and the new month is under it.
-function calPeel(w, newHtml, finalHtml = newHtml) {
+function calPeel(w, newHtml, finalHtml = newHtml, onDone = null) {
   const oldHtml = w.innerHTML, oldH = w.offsetHeight;
   w.innerHTML = `<div class="peel-stage"><div class="peel-new">${newHtml}</div><div class="peel-old">${oldHtml}</div><div class="peel-flap"></div></div>`;
   const stage = w.firstElementChild, nw = stage.children[0], old = stage.children[1], flap = stage.children[2];
@@ -1138,10 +1138,10 @@ function calPeel(w, newHtml, finalHtml = newHtml) {
   const poly = pts => `polygon(${pts.map(([x, y]) => `${(x * 100).toFixed(2)}% ${(y * 100).toFixed(2)}%`).join(',')})`;
   const t0 = performance.now(), dur = 900;
   const frame = now => {
-    if (!w.isConnected) return;
+    if (!w.isConnected) { onDone?.(); return; }
     const k = Math.min(1, (now - t0) / dur), e = k < .5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
     const s = 2.05 - e * 2.25;                                   // the fold line x + y = s travels from beyond the corner to past the origin
-    if (s <= 0) { w.innerHTML = finalHtml; return; }
+    if (s <= 0) { w.innerHTML = finalHtml; onDone?.(); return; }
     // The part of the old page still lying flat: x + y <= s, inside the unit square.
     const keep = s > 1 ? [[0, 0], [1, 0], [1, s - 1], [s - 1, 1], [0, 1]] : [[0, 0], [s, 0], [0, s]];
     // What folded over is the removed part reflected across the fold: (x, y) -> (s - y, s - x).
@@ -1165,13 +1165,26 @@ function calendarGrid(cal, cur) {
     const ps = cal.find(x => x.key === prevKey), pp = ps ? calPos(ps) : null;
     if (pp && (!curPos || pp[0] < curPos[0] || (pp[0] === curPos[0] && pp[1] < curPos[1]))) from = pp;
   }
-  if (from && from[0] < mo) {
-    const p1 = calMonthHtml(cal, cur, from[0], { fromDay: from[1] });
-    // After the dates cross off, the page peels from the bottom-right corner up to the top-left, showing the new month.
-    setTimeout(() => {
-      const w = document.getElementById('cal-wrap');
-      if (w) calPeel(w, calMonthHtml(cal, cur, mo, null).html, calMonthHtml(cal, cur, mo, { fromDay: 1 }).html);
-    }, p1.n * p1.per + 600);
+  // A month turn runs once: the old month stays up while its dates cross off, holds with a gold shimmer, then peels
+  // away to the new one. Redraws in the middle keep showing the old month; the new month never shows early.
+  const curKey = cur ? cur.key : '__done';
+  let turn = state.calTurn;
+  if (turn && (turn.key !== curKey || Date.now() - turn.t > 9000)) turn = state.calTurn = null;
+  if (!turn && from && from[0] < mo) turn = state.calTurn = { key: curKey, from: from[0], fromDay: from[1], mo, t: Date.now(), started: false };
+  if (turn) {
+    const first = !turn.started;
+    turn.started = true;
+    const p1 = calMonthHtml(cal, cur, turn.from, first ? { fromDay: turn.fromDay } : null);
+    if (first) {
+      const wait = p1.n * p1.per + 500;
+      setTimeout(() => { const w = document.getElementById('cal-wrap'); if (w && state.calTurn === turn) w.classList.add('cal-shimmer'); }, wait);
+      setTimeout(() => {
+        const w = document.getElementById('cal-wrap');
+        if (!w || state.calTurn !== turn) return;
+        w.classList.remove('cal-shimmer');
+        calPeel(w, calMonthHtml(cal, cur, turn.mo, null).html, calMonthHtml(cal, cur, turn.mo, { fromDay: 1 }).html, () => { if (state.calTurn === turn) state.calTurn = null; });
+      }, wait + 1000);
+    }
     return `<div id="cal-wrap">${p1.html}</div>`;
   }
   return `<div id="cal-wrap">${calMonthHtml(cal, cur, mo, from ? { fromDay: from[0] === mo ? from[1] : 1 } : null).html}</div>`;

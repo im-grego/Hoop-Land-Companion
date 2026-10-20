@@ -1397,3 +1397,10 @@ main.panel.bare { margin-top: 10px; }
 .wk-fold > summary::after { content: ' ▾'; color: var(--cyan); }
 .wk-fold[open] > summary::after { content: ' ▴'; }
 .draft-head { margin: 4px 0 8px; text-align: center; font-family: var(--pixel); font-size: 22px; letter-spacing: .06em; color: var(--gold); text-transform: uppercase; }
+
+/* A month that's over holds for a moment with a gold shimmer before the page peels. */
+#cal-wrap { position: relative; }
+#cal-wrap.cal-shimmer::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 4px;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 215, 90, .5) 50%, transparent 70%); background-size: 250% 100%; background-position: 130% 0;
+  animation: calShimmer .9s ease-in-out forwards; }
+@keyframes calShimmer { to { background-position: -30% 0; } }
