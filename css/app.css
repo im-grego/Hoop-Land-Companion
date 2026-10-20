@@ -1385,3 +1385,6 @@ main.panel.bare { margin-top: 10px; }
 .race-box { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; background: var(--btn); border: 3px solid var(--btn-edge); }
 .race-box .race-row { border: 0; padding: 4px 0; background: none; }
 .race-row .race-bar i.gain, .race-row.mine .race-bar i.gain { background: var(--up); }
+.team-bar { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 6px; padding: 6px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.team-bar h2.team-title { justify-content: center; text-align: center; font-size: 20px; }
+.team-bar .nav-btn { width: 44px; min-height: 44px; padding: 0; font-size: 20px; }

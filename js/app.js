@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.4';
+const APP_VERSION = '0.128.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2595,7 +2595,7 @@ function collegeNumber(p) {
 }
 // Team's full name for the draft screens: city + name (teams saved without
 // a city fall back to their name).
-const teamFull = t => (t ? (t.city ? `${t.city} ${t.name}` : t.name || t.shortName || '').trim() : '');
+const teamFull = t => (t ? (t.city && !String(t.name || '').startsWith(t.city) ? `${t.city} ${t.name || ''}` : t.name || t.city || t.shortName || '').trim() : '');
 const teamTint = t => {
   const [c1, c2] = (t.teamColors || []).map(c => /^[0-9a-f]{6}$/i.test(c) ? `#${c}` : null);
   return c1 ? `--tc1:${c1};--tc2:${c2 || c1}` : '';
@@ -3043,10 +3043,12 @@ screens.roster = (args) => {
   const nextT = mine[(idx + 1) % mine.length];
   layout({
     title: others ? t.shortName : 'My Team',
-    left: many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">${logoImg(prevT)}◀</button>` : '',
-    right: many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶${logoImg(nextT)}</button>` : '',
     body: `
-      <h2 class="team-title">${logoImg(t)}${esc(t.city)} ${esc(t.name)}</h2>
+      <div class="team-bar">
+        ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">◀</button>` : '<span></span>'}
+        <h2 class="team-title">${esc(teamFull(t))}</h2>
+        ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
+      </div>
       ${others ? '' : `<p class="note">${state.auto[state.leagueIdx] ? `Offseason points added: <span class="up">+${pts}</span>. Tap a player to adjust.` : 'Run the offseason bump first, or tap a player to add points by hand.'}</p>`}
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>
       ${movesBox(L, t)}`,
