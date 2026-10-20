@@ -69,23 +69,6 @@ export function coachValue(coach, team, league, map = profiles(league)) {
 }
 
 // ---------------------------------------------------------------------------
-// Reputation: how a team's coaching spend looks from outside. A head coach paid
-// far under the market reads as penny-pinching (free agents and coaches notice);
-// paying up reads as a team that invests.
-
-export function coachReputation(league, team) {
-  const c = headCoachOf(team);
-  if (!c || !c.contract?.sal) return { score: 0, tag: '', note: '' };
-  const mkt = marketSalary(c, league), pay = c.contract.sal, ratio = pay / Math.max(1, mkt);
-  const score = clamp((ratio - 0.9) * 0.8, -0.5, 0.4);
-  if (ratio <= 0.55) return { score, tag: 'Penny-Pinching', note: `Pays his head coach $${pay}M against a market of about $${mkt}M. Free agents and coaches notice.` };
-  if (ratio >= 1.3) return { score, tag: 'Invests in Coaching', note: `Pays his head coach $${pay}M against a market of about $${mkt}M, and it helps in free agency.` };
-  return { score, tag: '', note: '' };
-}
-// Free agents' view of the team: up to a small bonus, or a larger penalty.
-FA.setCoachFx((league, team) => coachReputation(league, team).score * 0.1);
-
-// ---------------------------------------------------------------------------
 // Will he sign? Offer = { yrs, sal }. A score of 60 or more says yes.
 
 export function marketSalary(coach, league) {
@@ -114,8 +97,6 @@ export function coachWillingness(league, team, coach, offer, map = profiles(leag
   add('Assets', clamp(firsts * 1.2 + prospects * 1.5 - 2, -2, 6), `${firsts} first-rounders, ${prospects} young prospects`);
   const fit = schemeFit(coach, team, league, map);
   add('Fit', (fit.fit - 0.5) * 26, fit.why[0] || 'a neutral fit with his scheme');
-  const rep = coachReputation(league, team);
-  if (rep.tag) add('Reputation', rep.score * 14, rep.tag === 'Penny-Pinching' ? 'a team that pinches pennies on coaches' : 'a team that invests in coaching');
   const score = 50 + f.reduce((a, x) => a + x.val, 0);
   return { score: Math.round(score), accept: score >= 60, factors: f, fit };
 }

@@ -26,7 +26,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
-import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReputation, coachReaction, playerSwing, fanSwing } from './coachmarket.js';
+import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -38,7 +38,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.121.1';
+const APP_VERSION = '0.121.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1963,7 +1963,6 @@ screens.coaches = () => {
     const sec = securityOf(c, car);
     return `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}">
       <span class="coach-top">${t ? logoImg(t) : ''}<b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${t ? esc(t.shortName) : 'Available'}</span><span class="badge ${secCls(sec.tag)}">${sec.tag}</span></span>
-      ${t && coachReputation(league(), t).tag ? `<span class="badge ${coachReputation(league(), t).score < 0 ? 'down-b' : 'lvl'}" style="align-self:flex-start">${coachReputation(league(), t).tag}</span>` : ''}
       <span class="small muted">${esc(coachArch(c))} · ${esc(coachGrade(c, field).tier)} · ${car.seasons ? `${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)})` : 'No record'}${car.titles ? ` · ${car.titles}× champion` : ''}${sec.yrs ? ` · $${sec.sal}M × ${sec.yrs}` : ''}</span>
     </button>`;
   };
@@ -2082,7 +2081,6 @@ screens.coach = args => {
       ${extBox(hit)}
       <fieldset class="frame"><legend>Job Security</legend><div class="stack">
         <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
-        ${t && coachReputation(league(), t).note ? `<p class="note small ${coachReputation(league(), t).score < 0 ? 'down' : 'up'}">${esc(coachReputation(league(), t).note)}</p>` : ''}
         <p class="note small muted">${sec.yrs ? `Contract: $${sec.sal}M for ${sec.yrs} more year${sec.yrs > 1 ? 's' : ''}.` : 'No contract on file.'}</p></div></fieldset>
       <fieldset class="frame"><legend>Career</legend><div class="stack">
         ${car.seasons ? `<p class="note">${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)}) career${car.poW + car.poL ? `, playoffs ${car.poW}-${car.poL}` : ''}</p>` : '<p class="note small muted">No games coached yet.</p>'}

@@ -296,10 +296,6 @@ export function roleFit(league, team, p) {
 }
 
 // Score of an offer { tid, sal, yrs, opt } for player p.
-// What a team's coaching spend does to how free agents see it (set by the app).
-let coachFxFn = () => 0;
-export const setCoachFx = fn => { coachFxFn = fn; };
-
 export function offerScore(league, p, offer, ask, motive, oldTid = null, discounted = false) {
   const team = league.teams.find(t => t.id === offer.tid);
   const w = { greed: 1, security: 0.15, control: 0.12, contender: 0.25, role: 0.25 };
@@ -312,7 +308,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
     w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0) +
-    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + (COMPLETE ? coachFxFn(league, team) : 0) + loadTaste(p, offer, motive);
+    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + loadTaste(p, offer, motive);
 }
 
 // How he feels about when the money comes: front-loaded pays the ones who
