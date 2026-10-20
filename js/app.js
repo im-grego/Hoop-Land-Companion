@@ -29,7 +29,7 @@ import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
 import { runMeeting, traitName } from './influence.js';
-import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, assistantOptions, fixOptions } from './scoring.js';
+import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.145.2';
+const APP_VERSION = '0.145.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2298,15 +2298,15 @@ actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
 actions.soAdd = () => soEdit(so => {
   const t = myTeam();
   if (so.length >= 3) return;
-  const pick = assistantOptions(t, headCoachOf(t), { exclude: so.map(o => o.pid), count: 1 })[0];
-  if (pick) so.push({ ...pick, usageRate: Math.max(MIN_USAGE, Math.min(pick.usageRate, MAX_TOTAL - soTotal(so))) });
+  const pick = autoOptions(t, league(), { exclude: so.map(o => o.pid), count: 1 })[0];
+  if (pick) so.push(pick);
 });
 actions.soAssist = () => {
   const t = myTeam();
   if (!t) return;
-  t.scoringOptions = assistantOptions(t, headCoachOf(t));
+  t.scoringOptions = autoOptions(t, league());
   state.dirty = true;
-  toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? `${p.ln} ${o.usageRate}%` : ''; }).join(' · '));
+  toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? p.ln : ''; }).join(' · '));
   render();
 };
 // Every team's options stay valid: players still on the roster, play selection 1.

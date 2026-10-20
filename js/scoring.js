@@ -78,9 +78,8 @@ export function fixOptions(team, coach, { user = false, fill = true, L = null } 
   if (alive.length !== had.length) { team.scoringOptions = alive; changed = true; }
   if (fill && team.scoringOptions.length < (had.length ? had.length : 3)) {
     const need = (had.length ? had.length : 3) - team.scoringOptions.length;
-    const add = assistantOptions(team, coach, { exclude: team.scoringOptions.map(o => o.pid), count: need });
-    let total = team.scoringOptions.reduce((s, o) => s + o.usageRate, 0);
-    for (const o of add) { o.usageRate = Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - total)); total += o.usageRate; team.scoringOptions.push(o); }
+    const add = L ? autoOptions(team, L, { exclude: team.scoringOptions.map(o => o.pid), count: need }) : assistantOptions(team, coach, { exclude: team.scoringOptions.map(o => o.pid), count: need });
+    team.scoringOptions.push(...add);
     changed = true;
   }
   return changed;
