@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.137.0';
+const APP_VERSION = '0.137.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -394,6 +394,7 @@ function render() {
     if (n) target = Math.max(0, n.getBoundingClientRect().top + window.scrollY - state.anchor.top);
   }
   state.anchor = null;
+  if (state.toTop) { target = 0; state.toTop = false; }   // an action that wants its results at the top of the page
   window.scrollTo(0, target);
   // iOS can drop a scroll made while it's still finishing a tap; put it
   // back once the redraw has settled.
@@ -2408,6 +2409,7 @@ actions.strRun = async () => {
   st.results = runStrength();
   saveStrength();
   state.dirty = true;
+  state.toTop = true;
   render();
   const mine = st.results.filter(r => isUserTeam(league().teams.find(t => t.id === r.tid))).length;
   toast('Strength program done', `${st.results.length} players around the league, ${mine} of yours.`);
