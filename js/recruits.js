@@ -18,6 +18,16 @@ const HT = [[73, 76], [74, 77], [75, 78], [77, 79], [78, 80], [79, 81], [80, 82]
 const FIRST = ['Jalen', 'Marcus', 'Darius', 'Tyrese', 'Caleb', 'Isaiah', 'Jordan', 'Malik', 'Andre', 'Cameron', 'Elijah', 'Xavier', 'Trey', 'Devin', 'Josiah', 'Micah', 'Amari', 'Jaylen', 'Kobe', 'Zion', 'Bryce', 'Kendrick', 'Dominic', 'Quentin', 'Rashad', 'Terrence', 'Corey', 'Desmond', 'Nolan', 'Luka', 'Mateo', 'Owen', 'Grant', 'Tristan', 'Keegan'];
 const LAST = ['Johnson', 'Williams', 'Brown', 'Jackson', 'Harris', 'Thompson', 'Robinson', 'Walker', 'Mitchell', 'Carter', 'Bryant', 'Coleman', 'Hayes', 'Reed', 'Brooks', 'Wallace', 'Foster', 'Simmons', 'Hughes', 'Griffin', 'Barnes', 'Fisher', 'Hunter', 'Porter', 'Dawson', 'Sutton', 'Holloway', 'Pierce', 'Maddox', 'Vaughn', 'Okafor', 'Diallo', 'Novak', 'Petrov'];
 
+// A fresh name from the same pool the recruiting classes draw on, one nobody
+// in `used` ("first last", lowercase) already has.
+export function generateName(rng, used = new Set()) {
+  for (let i = 0; i < 60; i++) {
+    const fn = FIRST[Math.floor(rng() * FIRST.length)], ln = LAST[Math.floor(rng() * LAST.length)];
+    if (!used.has(`${fn} ${ln}`.toLowerCase())) return { fn, ln };
+  }
+  return { fn: FIRST[Math.floor(rng() * FIRST.length)], ln: `${LAST[Math.floor(rng() * LAST.length)]} Jr.` };
+}
+
 const groupOf = pos => (pos <= 2 ? 'guard' : pos <= 5 ? 'wing' : 'big');
 const gauss = r => { const u = Math.max(1e-9, r()), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));

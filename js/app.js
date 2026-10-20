@@ -32,14 +32,14 @@ import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } f
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
-import { leagueLook } from './recruits.js';
+import { leagueLook, generateName } from './recruits.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.124.0';
+const APP_VERSION = '0.124.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4104,10 +4104,13 @@ function centerBoard() {
 // The draft class's looks, rebuilt from the league's own players (skin,
 // hair, gear); names, stats and ratings stay. Undo keeps the originals.
 function looksCard() {
-  const done = state.looks?.[seasonKey()];
+  const done = state.looks?.[seasonKey()], named = state.names?.[seasonKey()];
   return `<fieldset class="frame"><legend>🎨 Class Looks &amp; Builds</legend><div class="row">
-    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players, and spread their regression ages, stamina and tendencies to match the active players. Names and skill ratings stay.'}</p>
+    <p class="note small grow">${done ? `✓ ${done.length} prospects restyled to match your league.` : 'Give the class looks from your league\'s players, and spread their regression ages, stamina and tendencies to match them. Names, stats and ratings stay.'}</p>
     ${done ? '<button class="btn small off" data-act="looksUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="looksMatch">Match My League</button>'}
+  </div><div class="row" style="margin-top:8px">
+    <p class="note small grow">${named ? `✓ ${named.length} prospects renamed.` : 'Give the whole class new names, drawn from the same pool as the recruiting classes. Nobody in the league shares a name.'}</p>
+    ${named ? '<button class="btn small off" data-act="namesUndo">↺ Undo</button>' : '<button class="btn small focus" data-act="namesMake">Generate Names</button>'}
   </div></fieldset>`;
 }
 // Builds: the game hands nearly every prospect a regression age of 32 and
@@ -4163,6 +4166,31 @@ actions.looksUndo = () => {
     if (x.tend) x.p.tendencies = x.tend;
   }
   delete state.looks[seasonKey()];
+  render();
+};
+
+actions.namesMake = () => {
+  const L = league(), cls = L.draftClass || [];
+  if (!cls.length) { toast('No draft class to rename'); return; }
+  const rng = mulberry32((saveSalt() ^ 0x4a3e5) >>> 0);
+  const used = new Set(leaguePlayers(L, true).map(e => `${e.p.fn} ${e.p.ln}`.toLowerCase()));
+  for (const p of cls) used.delete(`${p.fn} ${p.ln}`.toLowerCase());
+  const before = [];
+  for (const p of cls) {
+    const n = generateName(rng, used);
+    used.add(`${n.fn} ${n.ln}`.toLowerCase());
+    before.push({ p, fn: p.fn, ln: p.ln });
+    p.fn = n.fn; p.ln = n.ln;
+  }
+  (state.names ||= {})[seasonKey()] = before;
+  state.dirty = true;
+  toast(`${before.length} prospects renamed`);
+  render();
+};
+actions.namesUndo = () => {
+  for (const x of state.names?.[seasonKey()] || []) { x.p.fn = x.fn; x.p.ln = x.ln; }
+  delete state.names[seasonKey()];
+  state.dirty = true;
   render();
 };
 
