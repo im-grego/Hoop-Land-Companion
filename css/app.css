@@ -1373,3 +1373,6 @@ main.panel.bare { margin-top: 10px; }
 .co-fill { display: block; height: 100%; background: var(--cyan); }
 .co-fill.a-motivation { background: var(--up); }
 .co-fill.a-leadership { background: var(--gold); }
+
+.pb-slot { display: flex; flex-direction: column; gap: 4px; }
+.pb-diagram { width: 100%; height: auto; display: block; image-rendering: pixelated; border: 2px solid var(--btn-edge); background: var(--bg-dark); }

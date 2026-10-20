@@ -37,7 +37,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.115.1';
+const APP_VERSION = '0.116.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1895,7 +1895,7 @@ const playOptions = (pos, cur) => {
 };
 const playsEditor = (qp, can) => POS5.map((pos, i) => `<div class="pb-edit"><span class="pb-pos">${pos}</span><div class="pb-sel">${[0, 1, 2, 3].map(k => {
   const cur = qp?.positions?.[i]?.plays?.[k] ?? playsFor(i + 1)[k];
-  return `<select class="sel-team" data-change="pbSlot" data-pos="${i}" data-slot="${k}" ${can ? '' : 'disabled'}>${playOptions(i, cur)}</select>`;
+  return `<div class="pb-slot"><select class="sel-team" data-change="pbSlot" data-pos="${i}" data-slot="${k}" ${can ? '' : 'disabled'}>${playOptions(i, cur)}</select><img class="pb-diagram" src="img/plays/${cur}.png" alt="${esc(playName(cur))} diagram" loading="lazy"></div>`;
 }).join('')}</div></div>`).join('');
 
 const samePlays = (x, y) => JSON.stringify((x?.positions || []).map(q => q.plays)) === JSON.stringify((y?.positions || []).map(q => q.plays));

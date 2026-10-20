@@ -1,6 +1,6 @@
 // Offline support: cache-first for the app shell, stale-while-revalidate for
 // fonts and team logos.
-const VERSION = 'hlc-v0.115.1';
+const VERSION = 'hlc-v0.116.0';
 const SHELL = [
   './',
   'index.html',
@@ -46,6 +46,7 @@ const SHELL = [
   'icons/app-180.png',
   'icons/app-192.png',
   'icons/app-512.png',
+  ...Array.from({ length: 102 }, (_, i) => `img/plays/${i}.png`),
 ];
 
 self.addEventListener('install', e => {
