@@ -4,7 +4,7 @@
 // rest of the usage goes to the other starters automatically.
 
 import { shownLevel } from './regression.js';
-import { playStyles } from './overview.js';
+import { playStyles, teamStanding } from './overview.js';
 import { playerCoachFit } from './coachmarket.js';
 
 export const FOCUS = ['Auto', 'Inside', 'Midrange', 'Outside', 'Facilitate'];     // 0-4, as the game numbers them
@@ -51,9 +51,20 @@ export function assistantOptions(team, coach, { exclude = [], count = 3 } = {}) 
   });
 }
 
+// What CPU teams run: three players on Auto usage and Auto focus. Developing and rebuilding teams
+// lean on potential; competing and contending ones on the best current player.
+export function autoOptions(team, L, { exclude = [], count = 3 } = {}) {
+  const skip = new Set(exclude);
+  let young = false;
+  try { young = ['developing', 'rebuilding'].includes(teamStanding(L, team).tier); } catch { /* no history: judge by talent */ }
+  const sc = p => { const lv = shownLevel(p), pt = Math.min(100, (p.pot || 0) * 9); return young ? 0.65 * pt + 0.35 * lv : 0.9 * lv + 0.1 * pt; };
+  return team.roster.filter(p => p.status !== 4 && !skip.has(p.id)).sort((a, b) => sc(b) - sc(a) || shownLevel(b) - shownLevel(a)).slice(0, count)
+    .map(p => ({ pid: p.id, usageRate: 0, focus: 0, playSelection: 1 }));
+}
+
 // Make a team's options valid. Missing players are replaced from the assistant's
 // picks; a CPU team whose formula broke gets a whole new one. Returns true when anything changed.
-export function fixOptions(team, coach, { user = false, fill = true } = {}) {
+export function fixOptions(team, coach, { user = false, fill = true, L = null } = {}) {
   const roster = new Set(team.roster.map(p => p.id));
   const had = Array.isArray(team.scoringOptions) ? team.scoringOptions : (team.scoringOptions = []);
   let changed = false;
@@ -61,8 +72,7 @@ export function fixOptions(team, coach, { user = false, fill = true } = {}) {
   const alive = had.filter(o => roster.has(o.pid));
   if (!user) {
     if (alive.length === had.length && had.length >= 3) return changed;
-    const next = assistantOptions(team, coach);
-    team.scoringOptions = next;
+    team.scoringOptions = L ? autoOptions(team, L) : assistantOptions(team, coach);
     return true;
   }
   if (alive.length !== had.length) { team.scoringOptions = alive; changed = true; }

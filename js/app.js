@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.145.1';
+const APP_VERSION = '0.145.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2002,10 +2002,10 @@ screens.scoring = () => {
         ${so.map((o, i) => `<div class="so-row ${sch >= 2 ? '' : 'plan-locked'}">
           <b class="small gold">${['1st', '2nd', '3rd'][i]} Option</b>
           <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
-          <div class="so-ctl"><span class="small muted so-lab">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > MIN_USAGE ? '' : 'disabled'}>−</button><b>${o.usageRate}%</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
+          <div class="so-ctl"><span class="small muted so-lab">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > 0 ? '' : 'disabled'}>−</button><b>${o.usageRate ? `${o.usageRate}%` : 'Auto'}</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
             <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div>
           <span class="small muted so-lab">Focus</span><div class="so-focus">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
-        ${so.length ? `<p class="note small">${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.</p>` : ''}
+        ${so.length ? `<p class="note small">${so.some(o => !o.usageRate) ? 'Auto usage is set by the game.' : `${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.`}</p>` : ''}
         ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</button>` : ''}
         <button class="btn" data-act="soAssist">🧑‍🏫 Use the Assistant Coach's Picks</button>
         ${sch >= 2 ? '' : '<p class="note small muted">Choosing players, usage and focus yourself opens with Scheme 2. The assistant\'s picks are always open.</p>'}
@@ -2292,7 +2292,7 @@ actions.deletePlaybook = async d => {
 };
 const soTotal = so => so.reduce((s, o) => s + (o.usageRate || 0), 0);
 const soEdit = fn => { const t = myTeam(); if (!t || tierNow('scheme') < 2) return; fn(t.scoringOptions ||= []); for (const o of t.scoringOptions) o.playSelection = 1; state.dirty = true; render(); };
-actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (!o) return; const room = MAX_TOTAL - (soTotal(so) - o.usageRate); o[d.k] = Math.max(MIN_USAGE, Math.min(MAX_USAGE, room, o[d.k] + +d.d)); });
+actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (!o) return; const room = MAX_TOTAL - (soTotal(so) - o.usageRate); if (d.k === 'usageRate') { const v = o.usageRate + +d.d; o.usageRate = v < MIN_USAGE ? 0 : Math.min(MAX_USAGE, room, v); } else o[d.k] = Math.max(MIN_USAGE, Math.min(MAX_USAGE, room, o[d.k] + +d.d)); });
 actions.soFocus = d => soEdit(so => { const o = so[+d.i]; if (o) o.focus = +d.v; });
 actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
 actions.soAdd = () => soEdit(so => {
@@ -2319,7 +2319,7 @@ function syncScoringOptions(final = false) {
     const c = headCoachOf(t), user = isUserTeam(t);
     if (!c && !user) continue;
     if (user && !final && !(t.scoringOptions || []).length) continue;
-    if (fixOptions(t, c, { user, fill: true })) changed++;
+    if (fixOptions(t, c, { user, fill: true, L })) changed++;
   }
   if (changed) state.dirty = true;
   return changed;
