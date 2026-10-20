@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.1';
+const APP_VERSION = '0.128.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -967,7 +967,7 @@ function stepSummary(key) {
   if (key === 'camp') { const r = state.summerTour[state.leagueIdx]?.result; return r?.mvp ? `Summer League MVP: ${mvpName(L, r.mvp)} (${L.teams.find(t => t.id === r.mvp.tid)?.shortName || '?'}).` : 'Summer League is a wrap.'; }
   if (key.startsWith('fa')) {
     const log = calFlags().faLog?.[+key[2]];
-    return log ? (log.best || log.big ? [log.best && `⭐ ${log.best}`, log.big && log.big !== log.best && `💵 ${log.big}`].filter(Boolean).join('\n') : `${log.n} signings.`) : 'Done in the game.';
+    return log ? (log.best || log.big ? [log.best && `⭐ ${log.best}`, log.big && log.big !== log.best && `💰 ${log.big}`].filter(Boolean).join('\n') : `${log.n} signings.`) : 'Done in the game.';
   }
   if (key === 'dev') { const a = state.auto[state.leagueIdx]; return a ? `+${a.points} in ratings upgrades across ${a.players} players.` : 'Done.'; }
   if (key === 'media') return 'Storylines set.';
@@ -1050,7 +1050,7 @@ function stepActions(key) {
 
 // ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
 // finished and passed dates crossed off, the current topic on top.
-const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💵', fa2: '💵', fa3: '💵', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1704,7 +1704,7 @@ function spendCoins(t, n) {
   state.dirty = true;
   return true;
 }
-const coinTag = n => `🪙${n}`;
+const coinTag = n => `💵${n}`;
 const tokTag = n => `🎟️${n}`;
 
 // Facilities: the four buildings, three tiers each. Coins buy the next
@@ -7268,7 +7268,7 @@ function settleIncentives() {
     }
   }
   saveIncStore(led);
-  if (hit.length) setTimeout(() => toast(`💵 Incentives earned`, hit.join(' · '), 5200), 3600);
+  if (hit.length) setTimeout(() => toast(`💰 Incentives earned`, hit.join(' · '), 5200), 3600);
 }
 actions.faOffer = d => {
   const s = faState();
@@ -8279,7 +8279,7 @@ function focusCalls(L, t, st, books, needs, rumors) {
   }
   const po = books.options.find(o => o.kind === 'player' && o.worth >= o.sal * 1.4);
   if (po) calls.push(`⚠️ ${playerName(po.p)} can beat his $${po.sal}M player option on the market. Expect an opt-out unless you make a promise.`);
-  if (books.space >= 15) calls.push(`💵 About $${books.space}M of cap space projected for July.`);
+  if (books.space >= 15) calls.push(`💰 About $${books.space}M of cap space projected for July.`);
   const ext = books.ext[0];
   if (ext && ext.level >= 78) calls.push(`🖊️ Extension: ${playerName(ext.p)} enters his final year. Lock him up in the extension window.`);
   const target = rumors.find(r => r.kind === 'star' && st.status === 'contending') || rumors.find(r => r.kind === 'vet' && st.status === 'contending');
@@ -9296,7 +9296,7 @@ screens.recruitee = ({ id }) => {
         <p class="note small">${myNil !== undefined ? `Offered: <b>$${myNil}M</b> NIL with a scholarship.` : 'No offer yet.'} $${left.toFixed(1).replace('.0', '')}M available.</p>
         <div class="grid2">${amounts.map(v => `<button class="btn ${v === myNil ? 'on focus' : ''}" data-act="recruitOffer" data-id="${id}" data-amt="${v}" ${v > left + 1e-9 ? 'disabled' : ''}>$${v}M</button>`).join('')}
           ${myNil !== undefined && com !== t.id ? `<button class="btn" data-act="recruitPull" data-id="${id}">Pull Offer</button>` : ''}</div></fieldset>
-      <fieldset class="frame"><legend>This Week</legend><p class="note small muted">Pick a pitch: 💵 NIL · 🏆 Winning · 📍 Close to home · ⏱️ Playing time.</p>
+      <fieldset class="frame"><legend>This Week</legend><p class="note small muted">Pick a pitch: 💰 NIL · 🏆 Winning · 📍 Close to home · ⏱️ Playing time.</p>
         ${pitchRow('call', `📞 Call (${RC.LIMITS.calls - u.calls} left)`, a.call, u.calls < RC.LIMITS.calls)}
         ${pitchRow('home', `🏠 Home visit (${RC.LIMITS.homes - u.homes} left)`, a.home, myNil !== undefined && u.homes < RC.LIMITS.homes)}
         ${pitchRow('official', `🏟️ Official visit (${RC.LIMITS.officials - u.officials} left)`, offi && (a.official || 'done'), myNil !== undefined && u.officials < RC.LIMITS.officials)}
