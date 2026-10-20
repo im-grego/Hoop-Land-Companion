@@ -182,3 +182,26 @@ export function coachDecision(league, team, map = profiles(league)) {
   }
   return { kind: null, cur, pr };
 }
+
+// ---------------------------------------------------------------------------
+// Reaction to a coaching change: how much the building liked the old coach and
+// how much it believes in the new one. Both run from -1 to 1.
+
+export function coachReaction(league, team, old, next) {
+  const rec = teamRecord(team), pct = rec.W + rec.L ? rec.pct : 0.5;
+  const oc = careerOf(old), seasonsHere = oc.rows.filter(r => r.tid === team.id).length;
+  const oldLv = coachLevel(old) / 10, newLv = coachLevel(next) / 10;
+  const like = clamp((pct - 0.5) * 1.2 + (oldLv - 0.4) * 0.8 + Math.min(0.2, seasonsHere * 0.04), -1, 1);
+  const nc = careerOf(next), fit = schemeFit(next, team, league).fit;
+  const belief = clamp((newLv - 0.45) * 1.2 + (fit - 0.5) * 0.8 + (nc.W + nc.L ? (nc.pct - 0.5) * 0.6 : 0) + Math.min(0.15, nc.titles * 0.05) + (newLv - oldLv) * 0.4, -1, 1);
+  const a = like >= 0.35 ? `they liked ${old.ln}` : like <= -0.25 ? `they were ready to move on from ${old.ln}` : '';
+  const b = belief >= 0.3 ? `they believe in ${next.ln}` : belief <= -0.1 ? `they doubt ${next.ln}` : '';
+  const clash = a && b && ((like >= 0.35) !== (belief >= 0.3));
+  const parts = [a, b].filter(Boolean);
+  return { like, belief, text: parts.join(clash ? ', but ' : ' and ') || 'a quiet change' };
+}
+// Per-player swing: loyal players hold on to the old coach, winners judge the new one.
+export function playerSwing(r, loyalty = 10, winning = 10) {
+  return clamp(Math.round(r.belief * 6 * (1 + (winning - 10) / 20) - r.like * 6 * (1 + (loyalty - 10) / 20)), -10, 10);
+}
+export const fanSwing = r => clamp(Math.round(r.belief * 7 - r.like * 4), -9, 9);

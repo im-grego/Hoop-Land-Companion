@@ -26,7 +26,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
-import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReputation } from './coachmarket.js';
+import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReputation, coachReaction, playerSwing, fanSwing } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -38,7 +38,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.120.0';
+const APP_VERSION = '0.121.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2024,7 +2024,7 @@ function coachChangesBox() {
   if (!list.length) return '';
   const L = league(), nm = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const ico = { hire: '🔁', extend: '🖊️', keep: '⏳' };
-  return `<fieldset class="frame"><legend>Coaching Changes</legend><div class="stack">${list.map(x => `<p class="note small" style="margin:0">${ico[x.kind]} <b>${esc(nm(x.tid))}</b> ${x.kind === 'hire' ? `replaced ${esc(x.out)} with ${esc(x.in)}: ${esc(x.why)}.` : x.kind === 'extend' ? `extended ${esc(x.in)} (${esc(x.why)}).` : `kept ${esc(x.in)} another year: ${esc(x.why)}.`}</p>`).join('')}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>Coaching Changes</legend><div class="stack">${list.map(x => `<p class="note small" style="margin:0">${ico[x.kind]} <b>${esc(nm(x.tid))}</b> ${x.kind === 'hire' ? `replaced ${esc(x.out)} with ${esc(x.in)}: ${esc(x.why)}. ${x.mood ? `Locker room: ${esc(x.mood)} (players ${x.avg > 0 ? '+' : ''}${x.avg}, fans ${x.fans > 0 ? '+' : ''}${x.fans}).` : ''}` : x.kind === 'extend' ? `extended ${esc(x.in)} (${esc(x.why)}).` : `kept ${esc(x.in)} another year: ${esc(x.why)}.`}</p>`).join('')}</div></fieldset>`;
 }
 
 // Hire an available coach as your head coach; the current one goes to the pool.
@@ -2050,8 +2050,9 @@ actions.hireCoach = async d => {
   if (!r) { toast('No head coach slot on this team'); return; }
   const tr = treeStore();
   if (tr.planOrig) delete tr.planOrig[r.old.id];
+  const m = coachChangeMorale(L, mine, r.old, c);
   state.dirty = true;
-  toast(`${c.fn} ${c.ln} is your head coach`, `$${r.ask.sal}M for ${r.ask.yrs} years`);
+  toast(`${c.fn} ${c.ln} is your head coach`, `$${r.ask.sal}M × ${r.ask.yrs} · players ${m.avg > 0 ? '+' : ''}${m.avg}, fans ${m.fans > 0 ? '+' : ''}${m.fans}: ${m.text}`, 4800);
   replace('coach', { arg: String(c.id) });
 };
 actions.coachSort = d => { state.coachSort = d.k; render(); };
@@ -6654,6 +6655,21 @@ function proactiveFrontOffice() {
   return why;
 }
 
+
+// A new head coach: players and fans react to losing the old one and to the hire.
+function coachChangeMorale(L, team, old, next) {
+  const r = coachReaction(L, team, old, next);
+  let sum = 0, n = 0;
+  for (const p of FA.signedRoster(team)) {
+    const d = playerSwing(r, tr(p, 'loyalty'), tr(p, 'winning'));
+    if (!d) continue;
+    sum += moraleEvent(p, `coach:${team.id}:${next.id}`, d, d > 0 ? `believes in ${next.ln}` : `misses ${old.ln}`) || 0; n++;
+  }
+  const fans = fanSwing(r);
+  fanEvent(team, fans);
+  return { ...r, avg: n ? Math.round(sum / n) : 0, fans };
+}
+
 // CPU coaching decisions, once per offseason: extend a worthwhile coach in his
 // final year, replace one under heavy pressure when a better (or younger,
 // higher-upside) coach is available, or give him another year when nobody is.
@@ -6670,7 +6686,7 @@ function cpuCoachMoves() {
     if (!d) continue;
     if (d.kind === 'fire' && fired < 6) {
       const r = hireHeadCoach(L, t, d.cand);
-      if (r) { fired++; list.push({ kind: 'hire', tid: t.id, out: `${d.cur.fn} ${d.cur.ln}`, in: `${d.cand.fn} ${d.cand.ln}`, why: d.why, gap: Math.round(d.pr.gap * 100) }); }
+      if (r) { fired++; const m = coachChangeMorale(L, t, d.cur, d.cand); list.push({ kind: 'hire', tid: t.id, out: `${d.cur.fn} ${d.cur.ln}`, in: `${d.cand.fn} ${d.cand.ln}`, why: d.why, gap: Math.round(d.pr.gap * 100), mood: m.text, avg: m.avg, fans: m.fans }); }
     } else if (d.kind === 'extend') {
       d.cur.contract.ext = { yrs: d.offer.yrs, sal: d.offer.sal, opt: 0, noTrd: 0 };
       list.push({ kind: 'extend', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: `$${d.offer.sal}M × ${d.offer.yrs}` });
