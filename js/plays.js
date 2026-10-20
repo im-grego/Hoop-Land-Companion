@@ -131,6 +131,10 @@ const FAMILY = {
   Motion: p => p.name.startsWith('Motion'),
   Iso: p => p.name.startsWith('Iso'),
   Horns: p => p.name.startsWith('Horns'),
+  // Horns comes in two looks: the corner players pin down off the elbow
+  // screens, or (when a big has the ball) the wings run off the corner screens.
+  HornsPin: p => p.name.startsWith('Horns') && !(p.ball >= 4 && +p.name.slice(-1) <= 3),
+  HornsWing: p => p.name.startsWith('Horns') && p.ball >= 4 && +p.name.slice(-1) <= 3,
   Post: p => p.name.startsWith('High Post'),
   Out5: p => p.name.startsWith('5-Out'),
 };
@@ -154,10 +158,8 @@ function pick(pos, recipe) {
 export const PRESETS = [
   { name: 'Pace & Space', group: 'Guard-Led', blurb: 'Best for guard-led teams that want pick-and-rolls and pops with an iso as the release valve.', recipe: ['PNR', 'PNR', 'PNP', 'Iso'] },
   { name: 'Iso & Spread', group: 'Guard-Led', blurb: 'Best for teams built around one or two elite scorers who need space and the ball.', recipe: ['Iso', 'Iso', 'Motion', 'Out5'] },
-  { name: 'Run & Gun', group: 'Guard-Led', blurb: 'Best for young, athletic teams that want quick pops and isos before the defense sets.', recipe: ['PNP', 'PNP', 'Iso', 'Motion'] },
   { name: 'Flow Offense', group: 'Ball Movement', blurb: 'Best for deep, unselfish teams that move the ball through motion and Horns, with a pop for the shooter.', recipe: ['Motion', 'Motion', 'Horns', 'PNP'] },
-  { name: 'Shooters\' Horns', group: 'Ball Movement', blurb: 'Best for teams loaded with shooters who can come off Horns screens and spot up in a spread floor.', recipe: ['Horns', 'Horns', 'PNP', 'Out5'] },
-  { name: 'Off-Ball Movement', group: 'Ball Movement', blurb: 'Best for high-IQ teams of cutters and shooters who get open without the ball, off Horns screens and 5-out spacing.', recipe: ['Horns', 'Motion', 'Horns', 'Out5'] },
+  { name: 'Off-Ball Movement', group: 'Ball Movement', blurb: 'Best for teams of shooters and cutters who get open without the ball: corner pin-downs and wing screens off Horns, with 5-out spacing.', recipe: ['HornsPin', 'HornsWing', 'Motion', 'Out5'] },
   { name: 'Inside-Out', group: 'Inside Game', blurb: 'Best for teams with a skilled big who can pass from the high post, backed by guards and shooters.', recipe: ['Post', 'Post', 'PNR', 'Horns'] },
   { name: 'Half-Court Grind', group: 'Inside Game', blurb: 'Best for physical, defense-first teams that slow the game down and score through the post.', recipe: ['Post', 'Horns', 'PNR', 'Iso'] },
 ];
