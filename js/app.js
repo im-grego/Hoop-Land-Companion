@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.141.4';
+const APP_VERSION = '0.142.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9918,6 +9918,23 @@ actions.portalDone = () => { calFlags().portal = true; goHome(); nextUp(); };
 
 // ---- Final cuts. Your teams: tap who goes (the likeliest cuts are marked).
 // CPU teams cut their lowest by level, potential and salary.
+// Contract buyouts. A player well over his value knows he's on the way out and will give up part of what he's owed
+// to go: he forfeits more the more overpaid he is (less if he follows the money). What he's still paid goes on the
+// team's cap as dead money for the years left, instead of his full salary. Only multi-year, clearly overpaid deals qualify.
+function buyoutOffer(p) {
+  const c = p.contract || {}, yrs = c.yrs || 0, sal = c.sal || 0;
+  if (yrs < 2 || !sal) return null;
+  const fair = fairSalary(shownLevel(p)), over = sal - fair;
+  if (over < tagGap(fair)) return null;
+  const money = traitsSet(p) ? tr(p, 'money') : 10;
+  const forfeit = Math.max(0.1, Math.min(0.6, Math.round((0.15 + 0.6 * (over / sal) - (money - 10) * 0.012) * 100) / 100));
+  const price = Math.max(1, Math.round(sal * (1 - forfeit)));
+  return { forfeit, price, yrs, sal, saved: (sal - price) * yrs, total: price * yrs, full: sal * yrs };
+}
+// Dead money after a set of cuts: what's on the books now plus each cut (full salary, or the buyout price).
+const deadAfter = (t, list, buy) => deadFor(t.id) + list.reduce((s, p) => { const c = p.contract || {}; if ((c.yrs || 0) <= 1) return s; const bo = buy[p.id] ? buyoutOffer(p) : null; return s + (bo ? bo.price : c.sal || 0); }, 0);
+actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[+d.id]; render(); };
+
 const cutSel = () => (state.cutSel ||= {});
 // CPU teams only cut players in the last year of their deal; you can cut
 // anyone, and years left become dead money.
@@ -9942,9 +9959,9 @@ screens.cuts = () => {
       ${mood.length ? `<p class="note small" style="margin-top:6px"><b>Locker room</b></p>${mood.map(x => `<p class="note small"><span class="${x.n > 0 ? 'up' : 'down'}">${esc(x.name)} morale ${x.n > 0 ? '+' : ''}${x.n}</span> <span class="muted">· ${esc(x.why)}</span></p>`).join('')}` : ''}</fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
       ${capBar(t)}
-      <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} Cutting a player with years left leaves his salary on your books as dead money.</p>
+      <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} Cutting a player with years left leaves his salary on your books as dead money each year until the deal runs out. A clearly overpaid player may take a buyout instead: he forfeits part of it, and only what he's still paid stays on the cap.${(() => { const go = ranked.filter(x => sel[x.p.id]).map(x => x.p); if (!go.some(p => (p.contract?.yrs || 0) > 1)) return ''; const now = deadFor(t.id), after = deadAfter(t, go, state.buyoutSel || {}); return ` <b>Dead money: $${now}M a year now, $${after}M a year after these cuts.</b>`; })()}</p>
       <div class="stack">${ranked.map((x, i) => `<div class="drill-row tap ${sel[x.p.id] ? 'r1' : ''}" data-act="cutToggle" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} ${potStars(x.p)}<br>
-        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? ` · <span class="down">$${x.p.contract.sal * x.p.contract.yrs}M dead if cut</span>` : ''}</span></span>
+        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? (() => { const bo = buyoutOffer(x.p); return bo && (state.buyoutSel || {})[x.p.id] && sel[x.p.id] ? ` · <span class="up">buyout $${bo.price}M × ${bo.yrs} dead</span>` : ` · <span class="down">$${x.p.contract.sal}M a year dead for ${x.p.contract.yrs} yrs if cut</span>`; })() : ''}</span>${(() => { const bo = sel[x.p.id] ? buyoutOffer(x.p) : null; return bo ? `<br><button class="btn tiny ${(state.buyoutSel || {})[x.p.id] ? 'on focus' : 'off'}" data-act="buyoutToggle" data-id="${x.p.id}">🤝 Buyout $${bo.price}M × ${bo.yrs} · he forfeits ${Math.round(bo.forfeit * 100)}% (saves $${bo.saved}M)</button>` : ''; })()}</span>
         <b class="small ${sel[x.p.id] ? 'down' : 'muted'}">${sel[x.p.id] ? '✂️ Cut' : 'Keep'}</b></div>`).join('')}</div></fieldset>`;
   }).join('');
   const log = calFlags().cutLog;
@@ -9953,7 +9970,7 @@ screens.cuts = () => {
     body: `<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${requestCard()}
       ${myCards}
-      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b> cut ${esc(x.names.join(', '))}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}</div>`
+      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`,
     action: done ? null : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
@@ -10222,31 +10239,61 @@ actions.cutsFinish = async () => {
   const mine = L.teams.filter(isUserTeam);
   const short = mine.find(t => cutsShort(t, sel) > 0);
   if (short) { toast(`${short.shortName}: pick ${cutsShort(short, sel)} more to cut`); return; }
-  const deadNew = mine.flatMap(t => cutRank(t).filter(x => sel[x.p.id] && (x.p.contract?.yrs || 0) > 1)).reduce((a, x) => a + x.p.contract.sal * x.p.contract.yrs, 0);
-  if (!(await confirmBox(`Make the cuts? Cut players are released to free agency.${deadNew ? ` <b class="down">$${deadNew}M</b> stays on your books as dead money.` : ''}`, 'Make the Cuts'))) return;
+  const buy = state.buyoutSel || {};
+  const cutsMine = mine.flatMap(t => cutRank(t).filter(x => sel[x.p.id] && (x.p.contract?.yrs || 0) > 1).map(x => x.p));
+  const deadNew = cutsMine.reduce((s, p) => { const bo = buy[p.id] ? buyoutOffer(p) : null; return s + (bo ? bo.total : p.contract.sal * p.contract.yrs); }, 0);
+  const savedBy = cutsMine.reduce((s, p) => { const bo = buy[p.id] ? buyoutOffer(p) : null; return s + (bo ? bo.saved : 0); }, 0);
+  if (!(await confirmBox(`Make the cuts? Cut players are released to free agency.${deadNew ? ` <b class="down">$${deadNew}M</b> stays on your books as dead money${savedBy ? `, <b class="up">$${savedBy}M</b> less thanks to buyouts` : ''}.` : ''}`, 'Make the Cuts'))) return;
   checkpoint('Final cuts');
   const list = [];
   let n = 0, mineN = 0;
   depthSwaps(L);
+  const ledger = deadLedger();
+  const bookDead = (t, p, sal, yrs) => { if (yrs > 1) ledger.push({ pid: p.id, name: playerName(p), tid: t.id, sal, yrs, yr: L.season.currentYear }); };
   for (const t of L.teams) {
     const ranked = cutRank(t);
-    const go = isUserTeam(t) ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax));
-    // A CPU team still over the 2nd apron (the game's cap) cuts down under it.
-    if (!isUserTeam(t) && FA.capSystemOn()) {
-      const extra = FA.signedRoster(t).filter(p => !go.some(x => x.p === p)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), L.season.currentYear) })).sort((a, b) => a.score - b.score);
-      let pay = FA.teamCommitted(t) - go.reduce((a, x) => a + (x.p.contract?.sal || 0), 0);
-      while (pay > FA.capLines(L).apron2 && extra.length) { const x = extra.shift(); go.push(x); pay -= x.p.contract?.sal || 0; }
+    const user = isUserTeam(t), buys = [];
+    let go = user ? ranked.filter(x => sel[x.p.id]) : ranked.slice(0, Math.max(0, FA.signedRoster(t).length - O.seasonMax));
+    if (!user) {
+      // Clear cuts (low level, potential and value) go first. Past those, a clearly overpaid player can be bought out if
+      // the price is right (he forfeits a good chunk); if it isn't, the team keeps him on the books and the deal runs out.
+      const need = Math.max(0, FA.signedRoster(t).length - O.seasonMax) - go.length;
+      const rest = () => FA.signedRoster(t).filter(p => !go.some(x => x.p === p)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), L.season.currentYear), bo: buyoutOffer(p) })).sort((x, y) => x.score - y.score);
+      for (let i = 0; i < need; i++) {
+        const c = rest().find(x => (x.p.contract?.yrs || 0) > 1);
+        if (!c) break;
+        if (c.bo && c.bo.forfeit >= 0.25) buys.push(c.p);
+        go.push({ p: c.p, score: c.score, held: !(c.bo && c.bo.forfeit >= 0.25) });
+      }
+      // Over the 2nd apron (the game's cap): take the biggest relief, a clear cut or a buyout.
+      if (FA.capSystemOn()) {
+        const lim = FA.capLines(L).apron2;
+        let pay = FA.teamCommitted(t) - go.reduce((s, x) => s + ((x.p.contract?.yrs || 0) > 1 ? (buys.includes(x.p) ? buyoutOffer(x.p).saved / buyoutOffer(x.p).yrs : 0) : x.p.contract?.sal || 0), 0);
+        for (let guard = 0; pay > lim && guard < 6; guard++) {
+          const opts = rest().map(x => ({ ...x, relief: (x.p.contract?.yrs || 0) <= 1 ? x.p.contract?.sal || 0 : x.bo ? x.bo.sal - x.bo.price : 0 })).filter(x => x.relief > 0);
+          const best = opts.sort((x, y) => y.relief - x.relief || x.score - y.score)[0];
+          if (!best) break;
+          go.push({ p: best.p, score: best.score });
+          if ((best.p.contract?.yrs || 0) > 1) buys.push(best.p);
+          pay -= best.relief;
+        }
+      }
     }
     if (!go.length) continue;
+    const bought = [];
     for (const x of go) {
       const c = x.p.contract || {};
-      if (isUserTeam(t) && (c.yrs || 0) > 1) saveDead([...deadLedger(), { pid: x.p.id, name: playerName(x.p), tid: t.id, sal: c.sal || 0, yrs: c.yrs, yr: L.season.currentYear }]);
+      const bo = user ? (buy[x.p.id] ? buyoutOffer(x.p) : null) : (buys.includes(x.p) ? buyoutOffer(x.p) : null);
+      if (bo) { bookDead(t, x.p, bo.price, bo.yrs); bought.push(`${playerName(x.p)} ($${bo.price}M × ${bo.yrs}, was $${bo.sal}M)`); }
+      else bookDead(t, x.p, c.sal || 0, c.yrs || 0);
       FA.cutPlayer(L, t, x.p);
     }
     n += go.length;
-    if (isUserTeam(t)) mineN += go.length;
-    list.push({ team: t.shortName, names: go.map(x => playerName(x.p)) });
+    if (user) mineN += go.length;
+    list.push({ team: t.shortName, names: go.filter(x => !bought.some(b => b.startsWith(playerName(x.p)))).map(x => playerName(x.p)), bought });
   }
+  saveDead(ledger);
+  state.buyoutSel = {};
   roleMorale(L);
   syncScoringOptions(true);
   calFlags().cutLog = { n, mine: mineN, list };
