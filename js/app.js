@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.136.1';
+const APP_VERSION = '0.137.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -825,8 +825,6 @@ const CALENDAR = [
     done: () => faDone(2) },
   { key: 'fa3', date: 'Jul 20', title: 'Free Agency · Week 3', blurb: 'Last call: asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
-  { key: 'meeting', date: 'Sep 14', title: 'Team Meeting', blurb: 'Your coaching staff and system in one place. The coach talks to the group, then every player\'s game and makeup shift a little.',
-    done: () => !!calFlags().meeting || !!calFlags().dev || !!calFlags().survey || !!calFlags().media },
   { key: 'dev', date: 'Sep 21', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
   { key: 'survey', date: 'Sep 25', title: 'GM Survey', blurb: 'Every GM in the league weighs in: predictions, players, the offseason, rookies, defense and more.',
@@ -1076,8 +1074,7 @@ function stepActions(key) {
       // Trades open after the July moratorium (week 1).
       return day >= 2 && isComplete() ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
-    case 'meeting': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="meeting">🗣️ Begin</button><button class="btn" data-act="meetingSkip">⏭ Skip</button></div>`;
-    case 'dev': return `${calFlags().meetingList ? '<button class="btn small off" data-act="nav" data-to="meeting" style="margin-bottom:8px">🗣️ Meeting Results</button>' : ''}<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
+    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="nav" data-to="meeting" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>🗣️ Begin Meeting</button></div><button class="btn small off" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'} style="margin-top:8px">✅ Wrap Up</button>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
     case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Late Free Agency</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>`;
@@ -1226,7 +1223,7 @@ actions.calCamp = async () => {
   state.undo = null;
   render();
 };
-actions.calDev = () => { calFlags().dev = true; applySchemeEvolution(); render(); };
+actions.calDev = () => { ensureMeetings(); calFlags().dev = true; applySchemeEvolution(); render(); };
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
@@ -1336,7 +1333,7 @@ screens.main = () => {
       title: 'Import File',
       body: `
         <img class="hero" src="icons/banner.jpg" alt="Hoop Land">
-        <fieldset class="frame"><legend>Hoop Land+</legend>
+        <fieldset class="frame"><legend>Hoop Land Plus</legend>
           <div class="stack">
             <p class="note">Load a save from the start of the offseason (Pre-Lottery) and run the whole offseason here: the lottery, the draft, summer league, free agency and player development. Export once at the end and load it in the game. Saves from later in the offseason pick up from where they are.</p>
             <label class="btn big focus"><span class="ico">📂</span> Load Season File
@@ -1714,7 +1711,7 @@ function coachCard() {
     <div class="grid2"><button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button></div>
     <p class="note small" style="margin:4px 0 0"><b class="gold">Strategy</b></p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
-    <div class="grid2"><button class="btn" data-act="nav" data-to="scoring">🏀 Scoring Options</button><button class="btn" data-act="nav" data-to="tendencies">🎯 Tendencies</button></div>
+    <button class="btn" data-act="nav" data-to="scoring">🏀 Scoring Options</button>
   </div></fieldset>
   ${isComplete() && !isCollege() ? `<fieldset class="frame"><legend>Arena</legend><div class="stack">
     <p class="note small">Coins buy facility upgrades here. Each one keeps its effect in the game, and the app adds much more on top.</p>
@@ -2449,6 +2446,9 @@ screens.offseason = () => {
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
       ${isCollege() ? coachCard() : ''}
+      ${isCollege() ? '' : (calFlags().meetingList ? meetingResultsBox() : `<fieldset class="frame"><legend>🗣️ Team Meeting</legend><div class="stack">
+        <p class="note small">After the off-season program, the coach talks to the group and every player's game and makeup shift a little, with his new ratings in play.</p>
+        <button class="btn ${auto ? 'focus' : 'off'}" data-act="nav" data-to="meeting" ${auto ? '' : 'disabled'}>🗣️ Begin Meeting</button></div></fieldset>`)}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
@@ -2497,6 +2497,7 @@ screens.camp = () => {
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
 actions.calDevBack = () => {
   if (isCollege()) { calFlags().summer = true; state.undo = null; goHome(); nextUp(); return; }
+  ensureMeetings();
   calFlags().dev = true; state.undo = null; goHome(); toast('Training camp done. Next up: Media Day.');
 };
 
@@ -7151,7 +7152,7 @@ function meetingResultsBox() {
   const L = league(), find = id => L.teams.flatMap(t => t.roster).find(p => p.id === id);
   const rows = list.map(x => ({ x, p: find(x.pid) })).filter(r => r.p);
   const moves = rows.reduce((s, r) => s + r.x.moves, 0);
-  return `<fieldset class="frame"><legend>🗣️ Meeting Results</legend><div class="stack">
+  return `<fieldset class="frame"><legend>🗣️ Team Meeting</legend><div class="stack">
     <p class="note">${rows.length ? `<b>${rows.length}</b> player${rows.length > 1 ? 's' : ''} shifted · ${moves} moves in all, biggest first.` : 'Nobody moved this time.'}</p>
     ${calFlags().meetingLeague ? `<p class="note small muted">Around the league, the other coaches' meetings moved ${calFlags().meetingLeague.moved} players.</p>` : ''}
     ${rows.map(({ x, p }) => `<div class="pq"><p class="note small" style="margin:0"><b>${esc(playerName(p))}</b> <span class="gold">Lv ${shownLevel(p)}</span></p>
@@ -7165,6 +7166,7 @@ screens.meeting = () => {
   layout({
     title: 'Team Meeting',
     body: `${done ? meetingResultsBox() : `<p class="note small">${c ? `${esc(`${c.fn} ${c.ln}`)} gathers the group.` : 'Your coach gathers the group.'} Set the staff and the system first. When the meeting ends, every player shifts a little: how he plays follows his ratings and the coach's scheme, and his makeup follows the coach (leadership for winning, locker room, playoff and loyalty; motivation for motor, durability and money). A good development coach, a coachable player and young age all give more room to move.</p>`}
+      <p class="note small">Scheme tier ${tierNow('scheme')}: every player has ${1 + tierNow('scheme')} influence, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(tierNow('scheme'), fxNow())} from where the offseason started.</p>
       ${proposalBox()}
       ${coachCard()}`,
     action: done ? null : { act: 'meetingEnd', label: 'End the Meeting' },
@@ -7187,11 +7189,17 @@ function runCpuMeetings(rng) {
   top.sort((x, y) => y.moves - x.moves);
   return { moved, top: top.slice(0, 5) };
 }
+// Every other coach holds his meeting whether or not yours does, after the off-season program.
+function ensureMeetings() {
+  if (calFlags().meeting || isCollege()) return;
+  calFlags().meeting = true;
+  calFlags().meetingLeague = runCpuMeetings(mulberry32((saveSalt() ^ 0xc9e7) >>> 0));
+  state.dirty = true;
+}
 actions.meetingSkip = () => { calFlags().meeting = true; calFlags().meetingLeague = runCpuMeetings(mulberry32((saveSalt() ^ 0xc9e7) >>> 0)); state.dirty = true; state.undo = null; render(); };
 actions.meetingEnd = () => {
   const L = league();
   if (calFlags().meeting) return;
-  checkpoint('Team meeting');
   const rng = mulberry32((saveSalt() ^ 0x3ee7) >>> 0), ts = tendStore();
   const sch = tierNow('scheme'), fx = fxNow(), list = [];
   for (const t of L.teams.filter(isUserTeam)) {
