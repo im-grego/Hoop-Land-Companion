@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.141.0';
+const APP_VERSION = '0.141.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3509,6 +3509,15 @@ function profileReport(p, team) {
   }
   return merged.map(x => x.t).join(' ');
 }
+// Awards he has won, from the league's award table: "Most Valuable Player ×2 · 2020, 2023".
+function awardsBox(p) {
+  const L = league(), table = L.awards || [];
+  const rows = (p.awards || []).filter(x => (x.league ?? state.leagueIdx) === state.leagueIdx && x.yearsWon?.length)
+    .map(x => ({ name: table.find(t => t.id === x.id)?.name, yrs: [...x.yearsWon].sort((m, n) => m - n) })).filter(x => x.name)
+    .sort((x, y) => y.yrs.length - x.yrs.length || y.yrs[y.yrs.length - 1] - x.yrs[x.yrs.length - 1]);
+  if (!rows.length) return '';
+  return `<fieldset class="frame"><legend>Awards</legend><div class="stack">${rows.map(r => `<div class="small mv-row"><span class="mv-l"><b>${esc(r.name)}</b>${r.yrs.length > 1 ? ` <span class="gold">×${r.yrs.length}</span>` : ''}</span><span class="muted mv-r">${r.yrs.join(', ')}</span></div>`).join('')}</div></fieldset>`;
+}
 // What just happened to him: a trade (with the deal), a free agent signing, or an extension.
 function newsBox(p) {
   const L = league(), lines = [];
@@ -3619,7 +3628,8 @@ screens.player = (args) => {
       <fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
-      </fieldset>`;
+      </fieldset>
+      ${awardsBox(p)}`;
   layout({
     title: 'Player Profile',
     body: `
