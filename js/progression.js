@@ -368,6 +368,7 @@ export function productionScores(players, leagueIdx, year, params) {
 export function maybeRegressionDown(p, injuryClass, z, params, rng) {
   if (p.age < p.regressionAge - params.regDownWindow) return false;
   if (p.age >= p.regressionAge) return false;
+  if (p.regressionAge <= 30) return false;          // the game won't take it below 30
   let chance = 0;
   if (injuryClass === 'structural') chance = params.regDownStructural;
   else if (injuryClass === 'nagging') chance = params.regDownNagging;
