@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.131.1';
+const APP_VERSION = '0.132.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1186,7 +1186,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1313,7 +1313,7 @@ screens.main = () => {
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
         <button class="btn left" data-act="nav" data-to="editor"><span class="ico">🏀</span> League</button>
       </div>
-      ${isCollege() ? '' : '<button class="btn left" data-act="nav" data-to="transactions"><span class="ico">🔁</span> Transactions</button>'}
+      ${isCollege() ? '' : '<div class="grid2"><button class="btn left" data-act="nav" data-to="rumors"><span class="ico">🗣️</span> Rumors</button><button class="btn left" data-act="nav" data-to="transactions"><span class="ico">🔁</span> Transactions</button></div>'}
       <div class="grid3">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
@@ -3131,6 +3131,21 @@ screens.transactions = (args = {}) => {
     body: `<div class="tabs fa-tabs">${[['sign', 'Signings'], ['trade', 'Trades'], ['block', 'The Block']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="txTab" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="note small muted">${note}</p>
       <div class="list">${rows.slice(0, 60).map(r => card(r.p, r.a, r.b)).join('') || '<p class="note small muted">Nothing yet.</p>'}</div>`,
+  });
+};
+// Rumors around the league: disgruntled stars, vets on sinking teams, tax pressure and players being shopped.
+screens.rumors = () => {
+  const L = league();
+  const list = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
+  const seen = new Set(list.map(r => r.p.id));
+  for (const t of L.teams.filter(x => !isUserTeam(x))) for (const p of FA.signedRoster(t)) {
+    if (p.season?.onTradeBlock === 1 && !seen.has(p.id) && shownLevel(p) >= 68) list.push({ kind: 'block', p, team: t, heat: 1, why: [], level: shownLevel(p), morale: p.season?.morale ?? 70 });
+  }
+  list.sort((x, y) => y.heat - x.heat || y.level - x.level);
+  layout({
+    title: 'Rumors',
+    body: `<p class="note small muted">Whispers about who could be on the move. Some of it comes true, some doesn't.</p>
+      <div class="stack">${list.slice(0, 30).map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div>`,
   });
 };
 actions.txTab = d => replace('transactions', { tab: d.v });
@@ -8449,11 +8464,16 @@ function rumorPost(r) {
     `Running it back costs ${city} $${r.bill}M in tax. Contenders pay it. Do they?`,
   ];
   if (r.kind === 'blowup' || r.kind === 'taxpay') star.splice(0, star.length, ...(r.kind === 'blowup' ? blowup : taxpay));
+  const block = [
+    `${city} is shopping ${nm}. Expect calls to pick up around the league.`,
+    `${nm} is on the table in ${city}. The price is a quality starter or real picks.`,
+    `Hearing ${city} would move ${nm} for the right offer. Several teams have checked in.`,
+  ];
   const handle = pick(['@HoopInsider', '@LeagueWhispers', '@CapSpaceGuy', '@TradeMachine', '@CourtsideSources']);
   const likes = 800 + (seed % 9000) + r.heat * 4000;
   return `<button class="hg-post tap" data-act="openPlayer" data-id="${p.id}">
     <div class="hg-head"><span class="hg-avatar">HG</span><b>${handle}</b></div>
-    <p class="hg-text">${esc((r.kind === 'vet' ? pick(vet) : pick(star)).trim())}</p>
+    <p class="hg-text">${esc(pick(r.kind === 'vet' ? vet : r.kind === 'blowup' ? blowup : r.kind === 'taxpay' ? taxpay : r.kind === 'block' ? block : star).trim())}</p>
     <div class="hg-foot"><span>❤️ ${likes.toLocaleString()}</span><span class="muted">${esc(t.shortName)} · ${esc(nm)} ${lvTag(p)}</span></div>
   </button>`;
 }
