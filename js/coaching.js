@@ -149,7 +149,7 @@ export const PLAN_NAMES = {
   defFocus: ['Balanced', 'Interior', 'Perimeter'],
   defAggression: ['Average', 'Physical', 'Conservative'],
   defRebounding: ['Balanced', 'Crash Boards', 'Fast Break'],
-  benchDepth: ['Short', 'Deep', 'Average'],
+  benchDepth: ['Average', 'Deep', 'Short'],
   benchUtilization: ['Low', 'Medium', 'High'],
   closingLineup: ['Starters', 'Performance'],
 };
