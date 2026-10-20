@@ -1376,3 +1376,5 @@ main.panel.bare { margin-top: 10px; }
 
 .pb-slot { display: flex; flex-direction: column; gap: 4px; }
 .pb-diagram { width: 100%; height: auto; display: block; image-rendering: pixelated; border: 2px solid var(--btn-edge); background: var(--bg-dark); }
+
+.gear-sw { display: inline-block; width: 18px; height: 18px; margin-left: 4px; border: 2px solid var(--btn-edge); vertical-align: middle; }

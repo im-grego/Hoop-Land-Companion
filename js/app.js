@@ -34,6 +34,7 @@ import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSend
 import * as RC from './recruiting.js';
 import { leagueLook, generateName } from './recruits.js';
 import { isForeign, nameFor, lookFor } from './names.js';
+import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
@@ -41,7 +42,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.125.0';
+const APP_VERSION = '0.126.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1543,6 +1544,31 @@ function jerseyCard() {
       <button class="btn" data-act="fixJerseys">👕 Fix Jersey Numbers</button>`}
   </div></fieldset>`;
 }
+
+// Socks and sleeves in each jersey's color, for every team, after the final cuts.
+function gearCard() {
+  const L = league(), li = state.leagueIdx, done = state.gear?.[li];
+  const sw = hex => `<span class="gear-sw" style="background:#${hex}" title="#${hex}"></span>`;
+  let body;
+  if (done) {
+    const players = new Set(done.map(x => x.p)).size;
+    body = `<p class="note"><span class="up">${done.length}</span> socks and sleeves on <span class="up">${players}</span> players now match their jerseys.</p>
+      <button class="btn small" data-act="undoGear">↺ Undo</button>`;
+  } else {
+    const log = GEAR.matchLeague(L, APPEARANCE_POOL.tattoos);
+    const n = log.length, players = new Set(log.map(x => x.p)).size;
+    GEAR.undoMatch(log);
+    body = n ? `<p class="note">${players} players have socks, sleeves or headbands that don't match their team's jerseys (${n} items). Home and away are white (black on a black jersey); the third and fourth match the jersey. Tattoos, black leg sleeves and odd-colored wristbands stay.</p>
+      <button class="btn" data-act="matchGear">🧦 Match Socks &amp; Sleeves</button>`
+      : '<p class="note">🧦 Every sock and sleeve already matches its jersey.</p>';
+  }
+  return `<fieldset class="frame"><legend>Socks &amp; Sleeves</legend><div class="stack">${body}
+    <details><summary class="note small muted">Colors by team</summary><div class="stack" style="margin-top:6px">${[...L.teams].sort((x, y) => x.shortName.localeCompare(y.shortName)).map(t => `<div class="small" style="display:flex;justify-content:space-between;align-items:center"><b>${esc(t.shortName)}</b><span>${GEAR.targets(t).map(sw).join('')}</span></div>`).join('')}</div></details>
+  </div></fieldset>`;
+}
+actions.matchGear = () => { (state.gear ||= {})[state.leagueIdx] = GEAR.matchLeague(league(), APPEARANCE_POOL.tattoos); state.dirty = true; render(); };
+actions.undoGear = () => { GEAR.undoMatch(state.gear?.[state.leagueIdx] || []); delete state.gear[state.leagueIdx]; state.dirty = true; render(); };
+
 actions.fixJerseys = () => { (state.jerseys ||= {})[state.leagueIdx] = fixJerseyNumbers(league()); state.dirty = true; render(); };
 actions.undoJerseys = () => { undoJerseyNumbers(state.jerseys[state.leagueIdx] || []); delete state.jerseys[state.leagueIdx]; render(); };
 
@@ -8051,7 +8077,6 @@ screens.storylines = () => {
   layout({
     title: 'Media Day',
     body: `
-      ${jerseyCard()}
       ${presserCard()}
       ${podium.length ? `<h2 class="team-title">From the Podium</h2><ol class="stories">${podium.map(s => `
         <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
@@ -9722,6 +9747,8 @@ screens.export = () => {
   layout({
     title: 'Opening Night',
     body: `
+      ${jerseyCard()}
+      ${gearCard()}
       <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
         <div class="stack">
