@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.3';
+const APP_VERSION = '0.128.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9263,6 +9263,9 @@ screens.recruitee = ({ id }) => {
   const dots = v => '●'.repeat(v >= 0.32 ? 3 : v >= 0.22 ? 2 : 1);
   const pitchRow = (kind, label, used, can) => `<p class="note small" style="margin-top:8px"><b>${label}</b>${used ? ` · <span class="up">done ${PITCH_ICON[used] || ''}</span>` : ''}</p>
     <div class="fa-tabs" style="grid-template-columns:repeat(4,1fr)">${RC.PITCHES.map(pt => `<button class="btn small" data-act="recruitAct" data-id="${id}" data-kind="${kind}" data-pitch="${pt.k}" ${used || !can || done ? 'disabled' : ''} title="${pt.label}">${pt.icon}</button>`).join('')}</div>`;
+  // Where each school stood when this week began (CPU schools move at week's end); yours turns green as you push.
+  let base = (M.base ||= {})[id];
+  if (!base || base.w !== M.week) base = M.base[id] = { w: M.week, pcts: Object.fromEntries(rc.map(e => [e.s.id, e.pct])), prev: base?.pcts || null };
   const sch = tid => S.byId.get(tid)?.t;
   const f1 = v => v.toFixed(1);
   const line = x.transfer ? (() => { const s = seasonLine(p, state.leagueIdx, league().season.currentYear - 1); return s ? `${f1(s.ppg)}/${f1(s.rpg)}/${f1(s.apg)} in ${s.gp} games last season` : 'No college stats'; })() : `Senior year: ${f1(x.hs.ppg)} pts, ${f1(x.hs.rpg)} reb, ${f1(x.hs.apg)} ast`;
@@ -9308,13 +9311,12 @@ screens.recruitee = ({ id }) => {
         <p class="note small muted">${line}</p></fieldset>
       ${blurbHtml}
       ${com !== undefined ? `<p class="note ${com === t.id ? 'up' : ''}">✍️ ${com === t.id ? 'Committed to you.' : `Committed to ${esc(sch(com)?.city || '?')}.`}${!done && com !== t.id ? ' A big push can still flip him.' : ''}</p>` : ''}
+      ${ratingsHtml}
       <fieldset class="frame"><legend>What He Wants</legend>
         ${known ? `<div class="stack">${mot.map(([k, v]) => `<div class="need-row"><span class="small grow"><b>${dots(v)}</b> ${MOTIVE[k]}</span><span class="small">${esc(t.shortName)}: ${word(comps[k])}</span></div>`).join('')}</div>
           <p class="note muted small" style="margin-top:6px">NIL ${myNil ? `is your $${myNil}M against` : 'compares your offer with'} what he's looking for (about $${x.ask}M).</p>`
-          : '<p class="note small muted">Call him to find out what matters to him.</p>'}</fieldset>
-      <fieldset class="frame"><legend>The Race</legend><p class="note small muted" style="margin-bottom:6px">Every school with an offer fills its own bar. The first to 100% gets his commitment${x.stars >= 4 ? '; the best recruits take the most winning over' : ''}.</p><div class="stack">${rc.slice(0, 5).map(e => `<div class="race-row ${e.s.t === t ? 'mine' : ''}">${logoImg(e.s.t)}<b class="small">${esc(e.s.t.shortName)}</b><span class="race-bar"><i style="width:${e.pct}%" class="${e.pct >= 100 ? 'full' : ''}"></i></span><span class="small">${e.pct}%</span></div>`).join('') || '<p class="note small muted">No offers yet.</p>'}</div>
+          : '<p class="note small muted">Call him to find out what matters to him.</p>'}<p class="note small muted" style="margin:10px 0 6px"><b>The Race</b><br>Every school with an offer fills its own bar. Your gains this week show in green; other schools move in when the week ends. The first to 100% gets his commitment${x.stars >= 4 ? '; the best recruits take the most winning over' : ''}.</p><div class="race-box">${rc.slice(0, 5).map(e => { const b0 = base.pcts[e.s.id] || 0, pv = base.prev ? (base.pcts[e.s.id] || 0) - (base.prev[e.s.id] || 0) : 0, up = Math.max(0, e.pct - b0); return `<div class="race-row ${e.s.t === t ? 'mine' : ''}">${logoImg(e.s.t)}<b class="small">${esc(e.s.t.shortName)}</b><span class="race-bar"><i style="width:${Math.min(b0, e.pct)}%" class="${e.pct >= 100 ? 'full' : ''}"></i>${up ? `<i class="gain" style="left:${b0}%;width:${up}%"></i>` : ''}</span><span class="small">${e.pct}%${pv > 0 ? `<br><span class="up">+${pv}</span>` : ''}</span></div>`; }).join('') || '<p class="note small muted">No offers yet.</p>'}</div>
         ${rc.length > 5 ? `<p class="note small muted">${rc.length - 5} more offer${rc.length > 6 ? 's' : ''}.</p>` : ''}</fieldset>
-      ${ratingsHtml}
       ${done ? '' : `<fieldset class="frame"><legend>Your Offer</legend>
         <p class="note small">${myNil !== undefined ? `Offered: <b>$${myNil}M</b> NIL with a scholarship.` : 'No offer yet.'} $${left.toFixed(1).replace('.0', '')}M available.</p>
         <div class="grid2">${amounts.map(v => `<button class="btn ${v === myNil ? 'on focus' : ''}" data-act="recruitOffer" data-id="${id}" data-amt="${v}" ${v > left + 1e-9 ? 'disabled' : ''}>$${v}M</button>`).join('')}

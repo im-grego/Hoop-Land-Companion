@@ -39,7 +39,7 @@ const STYLES = [
   { k: 'glass', label: 'Glass cleaner', icon: '🧹', f: t => (t.offReb + t.defReb) / 2, min: 3, text: 'crashes the boards' },
   { k: 'protector', label: 'Rim protector', icon: '🛡️', f: t => t.block, min: 3, text: 'goes for blocks' },
   { k: 'pest', label: 'Ball hawk', icon: '🦅', f: t => (t.stealOnBall + t.stealOffBall) / 2, min: 2.5, text: 'jumps passing lanes and pokes at the ball' },
-  { k: 'charge', label: 'Takes charges', icon: '🪨', f: t => t.takeCharge, min: 3, text: 'stands his ground for charges' },
+  { k: 'charge', label: 'High effort', icon: '💪', f: t => t.takeCharge, min: 3, text: 'stands his ground for charges' },
 ];
 const WONT = [
   { k: 'threePoint', max: -4, text: "won't shoot threes" },
@@ -64,7 +64,7 @@ export function playStyles(p, n = 3) {
   const t = p.tendencies;
   if (!t) return [];
   const ref = refFor(p);
-  return STYLES.map(s => ({ ...s, v: s.f(t), cut: ref ? ref[s.k] : s.min })).filter(s => s.v >= s.cut).sort((a, b) => (b.v - b.cut) - (a.v - a.cut)).slice(0, n);
+  return STYLES.map(s => ({ ...s, text: s.k === 'charge' && (p.id || 0) % 2 ? 'puts his body on the line' : s.text, v: s.f(t), cut: ref ? ref[s.k] : s.min })).filter(s => s.v >= s.cut).sort((a, b) => (b.v - b.cut) - (a.v - a.cut)).slice(0, n);
 }
 export const wontDo = p => (p.tendencies ? WONT.filter(w => p.tendencies[w.k] <= w.max).map(w => w.text) : []);
 // One line for a scouting report: "Floor spacer: lives beyond the arc; won't post up."

@@ -1382,3 +1382,6 @@ main.panel.bare { margin-top: 10px; }
 .so-lab { text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
 .so-focus { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
 .so-focus .btn { padding: 8px 0; font-size: 12px; min-width: 0; }
+.race-box { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; background: var(--btn); border: 3px solid var(--btn-edge); }
+.race-box .race-row { border: 0; padding: 4px 0; background: none; }
+.race-row .race-bar i.gain, .race-row.mine .race-bar i.gain { background: var(--up); }
