@@ -51,7 +51,18 @@ export function assistantOptions(team, coach, { exclude = [], count = 3 } = {}) 
   });
 }
 
-// What CPU teams run: three players on Auto usage and Auto focus. Developing and rebuilding teams
+// Usage by potential: 5 stars 30, 4.5 stars 25, 4 stars 20, 3.5 stars 15 (anything lower 10). A player more than
+// 7 levels under his potential's level (a maxed 4.5 star is 93, so 79 for one) counts as one tier lower, and keeps
+// dropping a tier until he meets that tier's mark.
+const USAGE_OF_POT = { 10: 30, 9: 25, 8: 20, 7: 15 };
+export function usageFor(p) {
+  let pot = Math.min(10, p.pot || 0);
+  const lv = shownLevel(p);
+  while (pot >= 7 && lv < 100 - 7 * (10 - pot) - 14) pot--;
+  return USAGE_OF_POT[pot] || 10;
+}
+
+// What CPU teams and the assistant run: three players on Auto focus, usage set by potential. Developing and rebuilding teams
 // lean on potential; competing and contending ones on the best current player.
 export function autoOptions(team, L, { exclude = [], count = 3 } = {}) {
   const skip = new Set(exclude);
@@ -59,7 +70,9 @@ export function autoOptions(team, L, { exclude = [], count = 3 } = {}) {
   try { young = ['developing', 'rebuilding'].includes(teamStanding(L, team).tier); } catch { /* no history: judge by talent */ }
   const sc = p => { const lv = shownLevel(p), pt = Math.min(100, (p.pot || 0) * 9); return young ? 0.65 * pt + 0.35 * lv : 0.9 * lv + 0.1 * pt; };
   return team.roster.filter(p => p.status !== 4 && !skip.has(p.id)).sort((a, b) => sc(b) - sc(a) || shownLevel(b) - shownLevel(a)).slice(0, count)
-    .map(p => ({ pid: p.id, usageRate: 0, focus: 0, playSelection: 1 }));
+    .map(p => ({ pid: p.id, usageRate: usageFor(p), focus: 0, playSelection: 1 }))
+    .sort((a, b) => b.usageRate - a.usageRate)
+    .map((o, i, all) => { const used = all.slice(0, i).reduce((v, x) => v + x.usageRate, 0); return { ...o, usageRate: Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - used)) }; });
 }
 
 // Make a team's options valid. Missing players are replaced from the assistant's
@@ -79,7 +92,8 @@ export function fixOptions(team, coach, { user = false, fill = true, L = null } 
   if (fill && team.scoringOptions.length < (had.length ? had.length : 3)) {
     const need = (had.length ? had.length : 3) - team.scoringOptions.length;
     const add = L ? autoOptions(team, L, { exclude: team.scoringOptions.map(o => o.pid), count: need }) : assistantOptions(team, coach, { exclude: team.scoringOptions.map(o => o.pid), count: need });
-    team.scoringOptions.push(...add);
+    let total = team.scoringOptions.reduce((v, o) => v + o.usageRate, 0);
+    for (const o of add) { o.usageRate = Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - total)); total += o.usageRate; team.scoringOptions.push(o); }
     changed = true;
   }
   return changed;
