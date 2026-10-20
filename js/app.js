@@ -43,7 +43,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.127.0';
+const APP_VERSION = '0.127.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1406,8 +1406,10 @@ function applyBump(seed) {
   const entries = bumpEntries().map(e => ({ ...e, ...bumpContext(), spend: state.params.spendCpuPoints && !isUserTeam(e.team),
     ...(() => {
       const F = FX.facilityFx(e.team), u = isUserTeam(e.team), f = u ? fxNow() : null, a = e.p.age;
-      const dev = (u && devT ? CO.devMult(devT) * (a <= 23 ? f.labYoung : 1) * (a >= 24 && a <= 27 ? f.lateBloom : 1) : 1) * F.devMult;
-      const pot = (u && devT ? CO.potMult(devT) * (a <= 21 ? f.labPot : 1) : 1) * (a <= 21 ? F.youngPot : 1);
+      // Every team's coach counts: yours with the tree on top, the rest by his own ratings.
+      const coachT = u ? devT : CO.coachTiers(headCoachOf(e.team)).dev;
+      const dev = (coachT ? CO.devMult(coachT) * (u && a <= 23 ? f.labYoung : 1) * (u && a >= 24 && a <= 27 ? f.lateBloom : 1) : 1) * F.devMult;
+      const pot = (coachT ? CO.potMult(coachT) * (u && a <= 21 ? f.labPot : 1) : 1) * (a <= 21 ? F.youngPot : 1);
       return { ...(dev !== 1 ? { devMult: dev } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
         potLossMult: F.potLossMult, longCutMult: F.longCutMult, nagMult: F.nagMult, structStd: F.structStd };
     })() }));
@@ -2081,7 +2083,7 @@ function hireBox({ c, t }, staff) {
   if (t) return '';
   const ask = askingContract(c, staff.map(x => x.c)), cur = CO.headCoach(mine);
   return `<fieldset class="frame"><legend>Hire</legend><div class="stack">
-    <p class="note small">Asks <b>$${ask.sal}M for ${ask.yrs} years</b>. He replaces ${cur ? esc(`${cur.fn} ${cur.ln}`) : 'your head coach'}${cur?.contract?.yrs ? `, who has $${cur.contract.sal}M × ${cur.contract.yrs} left and goes to the available pool` : ''}.</p>
+    <p class="note small">${coachWillingness(league(), mine, c, { yrs: ask.yrs, sal: ask.sal }).accept ? '✅ He would sign.' : '🚫 He would turn the job down.'} Asks <b>$${ask.sal}M for ${ask.yrs} years</b>. He replaces ${cur ? esc(`${cur.fn} ${cur.ln}`) : 'your head coach'}${cur?.contract?.yrs ? `, who has $${cur.contract.sal}M × ${cur.contract.yrs} left and goes to the available pool` : ''}.</p>
     <button class="btn focus" data-act="hireCoach" data-arg="${c.id}">🤝 Make Head Coach</button></div></fieldset>`;
 }
 const L_myTeam = () => myTeam();
@@ -2090,6 +2092,8 @@ actions.hireCoach = async d => {
   const c = (L.coaches || []).find(x => x.id === +d.arg);
   if (!mine || !c) return;
   const cur = CO.headCoach(mine);
+  const will = coachWillingness(L, mine, c, { yrs: 3, sal: marketSalary(c, L) });
+  if (!will.accept) { const worst = [...will.factors].sort((x, y) => x.val - y.val)[0]; toast(`${c.ln} turns you down`, `${worst.label}: ${worst.note}`, 4200, true); return; }
   if (!(await confirmBox(`Hire ${c.fn} ${c.ln} to replace ${cur ? `${cur.fn} ${cur.ln}` : 'your head coach'}?`, 'Hire'))) return;
   checkpoint('Coach change');
   const r = hireHeadCoach(L, mine, c);
@@ -2266,18 +2270,23 @@ $app.addEventListener('change', e => {
 // Culture: once per offseason, your players' Locker Room and Loyalty come up
 // toward the tier's cap. Recorded so it never stacks.
 function applyCulture() {
-  const tree = treeStore(), yr = `${league().season.currentYear}:${state.leagueIdx}`, t = tierNow('culture');
-  const prev = tree.culture[yr]?.tier || 0;
-  if (t <= prev) return;
-  const cap = CO.cultureCap(t);
-  for (const { p } of tendPlayers()) {
-    if (!p.traits) continue;
-    for (const k of ['lockerRoom', 'loyalty']) {
-      const v = p.traits[k] || 10;
-      p.traits[k] = Math.max(v, Math.min(cap, v + t - prev));
+  const tree = treeStore(), L = league();
+  for (const t of L.teams) {
+    const mine = isUserTeam(t), c = headCoachOf(t);
+    const tier = mine ? tierNow('culture') : CO.coachTiers(c).culture;
+    const key = `${L.season.currentYear}:${state.leagueIdx}${mine ? '' : `:${t.id}`}`;
+    const prev = tree.culture[key]?.tier || 0;
+    if (tier <= prev) continue;
+    const cap = CO.cultureCap(tier);
+    for (const p of t.roster) {
+      if (!p.traits || !p.tendencies) continue;
+      for (const k of ['lockerRoom', 'loyalty']) {
+        const v = p.traits[k] || 10;
+        p.traits[k] = Math.max(v, Math.min(cap, v + tier - prev));
+      }
     }
+    tree.culture[key] = { tier };
   }
-  tree.culture[yr] = { tier: t };
   saveTree();
   state.dirty = true;
 }
@@ -6899,6 +6908,7 @@ function meetingResultsBox() {
   const moves = rows.reduce((s, r) => s + r.x.moves, 0);
   return `<fieldset class="frame"><legend>🗣️ Meeting Results</legend><div class="stack">
     <p class="note">${rows.length ? `<b>${rows.length}</b> player${rows.length > 1 ? 's' : ''} shifted · ${moves} moves in all, biggest first.` : 'Nobody moved this time.'}</p>
+    ${calFlags().meetingLeague ? `<p class="note small muted">Around the league, the other coaches' meetings moved ${calFlags().meetingLeague.moved} players.</p>` : ''}
     ${rows.map(({ x, p }) => `<div class="pq"><p class="note small" style="margin:0"><b>${esc(playerName(p))}</b> <span class="gold">Lv ${shownLevel(p)}</span></p>
       <p class="note small pq-fx">${[...x.tend.map(([k, d]) => `<span class="${d > 0 ? 'up' : 'down'}">${esc(TEND_LABELS[k] || k)} ${sgn(d)}</span>`),
         ...x.traits.map(([k, d]) => `<span class="${(GOOD_TRAIT_DOWN.has(k) ? -d : d) > 0 ? 'up' : 'down'}">${esc(traitName(k))} ${sgn(d)}</span>`)].join(' · ')}</p></div>`).join('')}
@@ -6915,7 +6925,24 @@ screens.meeting = () => {
     action: done ? null : { act: 'meetingEnd', label: 'End the Meeting' },
   });
 };
-actions.meetingSkip = () => { calFlags().meeting = true; state.undo = null; render(); };
+// Every other team's coach holds the same meeting, on his own ratings (no skill tree).
+function runCpuMeetings(rng) {
+  const L = league();
+  let moved = 0, top = [];
+  for (const t of L.teams.filter(x => !isUserTeam(x))) {
+    const c = headCoachOf(t);
+    if (!c) continue;
+    const sch = CO.coachTiers(c).scheme, dev = (c.attributes?.development?.[0] ?? 0) / 2;
+    for (const p of t.roster) {
+      if (!p.tendencies && !p.traits) continue;
+      const r = runMeeting(p, c, { base: CO.nudgesFor(p, sch, {}), lim: CO.maxShift(sch, {}) + 1 + (dev >= 8 ? 1 : 0), rng });
+      if (r.moves) { moved++; top.push({ pid: p.id, tid: t.id, ...r }); }
+    }
+  }
+  top.sort((x, y) => y.moves - x.moves);
+  return { moved, top: top.slice(0, 5) };
+}
+actions.meetingSkip = () => { calFlags().meeting = true; calFlags().meetingLeague = runCpuMeetings(mulberry32((saveSalt() ^ 0xc9e7) >>> 0)); state.dirty = true; state.undo = null; render(); };
 actions.meetingEnd = () => {
   const L = league();
   if (calFlags().meeting) return;
@@ -6937,11 +6964,11 @@ actions.meetingEnd = () => {
   list.sort((a, b) => b.moves - a.moves);
   calFlags().meeting = true;
   calFlags().meetingList = list;
+  calFlags().meetingLeague = runCpuMeetings(mulberry32((saveSalt() ^ 0xc9e7) >>> 0));
   state.dirty = true;
-  toast('The meeting breaks up', `${list.length} players shifted`);
+  toast('The meeting breaks up', `${list.length} of your players shifted`);
   render();
 };
-
 // A new head coach: players and fans react to losing the old one and to the hire.
 function coachChangeMorale(L, team, old, next) {
   const r = coachReaction(L, team, old, next);
@@ -6970,14 +6997,14 @@ function cpuCoachMoves() {
   for (const { t } of order) {
     const d = coachDecision(L, t);
     if (!d) continue;
-    if (d.kind === 'fire' && fired < 6) {
+    if (d.kind === 'fire' && fired < 6 && coachWillingness(L, t, d.cand, { yrs: 3, sal: marketSalary(d.cand, L) }).accept) {
       const r = hireHeadCoach(L, t, d.cand);
       if (r) { fired++; installSignature(t, d.cand); const m = coachChangeMorale(L, t, d.cur, d.cand); list.push({ kind: 'hire', tid: t.id, out: `${d.cur.fn} ${d.cur.ln}`, in: `${d.cand.fn} ${d.cand.ln}`, why: d.why, gap: Math.round(d.pr.gap * 100), mood: m.text, avg: m.avg, fans: m.fans }); }
     } else if (d.kind === 'extend') {
       d.cur.contract.ext = { yrs: d.offer.yrs, sal: d.offer.sal, opt: 0, noTrd: 0 };
       list.push({ kind: 'extend', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: `$${d.offer.sal}M × ${d.offer.yrs}` });
     } else if ((d.kind === 'keep' || d.kind === 'fire') && d.pr.pressure >= 0.45) {
-      list.push({ kind: 'keep', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: d.why });
+      list.push({ kind: 'keep', tid: t.id, in: `${d.cur.fn} ${d.cur.ln}`, why: d.kind === 'fire' ? `${d.cand.ln} wouldn't take the job` : d.why });
     }
   }
   offSet('coachMoves', { done: true, list });
