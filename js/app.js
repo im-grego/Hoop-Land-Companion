@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.5';
+const APP_VERSION = '0.134.6';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3320,17 +3320,21 @@ function levelRanks(p, team) {
 // A short scouting paragraph: where he stands, how he plays, what he's like, where he's headed, what he's paid.
 function profileReport(p, team) {
   const out = [];
+  const add = (g, ...ss) => ss.forEach(s => out.push({ g, t: s }));
   const rk = levelRanks(p, team);
   if (rk) {
     const nm = team ? teamFull(team) : '';
-    out.push(`He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}` : ''}.`);
+    add('rank', `He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}` : ''}.`);
   }
   if (p.tendencies) {
-    esc(styleSentence(p)).split(/(?<=\.) /).forEach(s => out.push(s));
+    // His game, then a skill, then what he won't do; a skill joins the first sentence.
+    const [does, ...rest] = esc(styleSentence(p)).split(/(?<=\.) /);
+    add('style', does);
     const sk = earnedSkills(p)[0];
-    if (sk) { const w = skillSays(sk.id); out.push(`He ${esc(w.charAt(0).toLowerCase() + w.slice(1))}.`); }
+    if (sk) { const w = skillSays(sk.id); add('style', `He ${esc(w.charAt(0).toLowerCase() + w.slice(1))}.`); }
+    add('wont', ...rest);
   }
-  if (traitsSet(p)) { const t = personality(p); out.push(esc(t.startsWith('A steady pro') ? `He is ${t[0].toLowerCase()}${t.slice(1)}` : `He ${t[0].toLowerCase()}${t.slice(1)}`)); }
+  if (traitsSet(p)) { const t = personality(p); add('pers', esc(t.startsWith('A steady pro') ? `He is ${t[0].toLowerCase()}${t.slice(1)}` : `He ${t[0].toLowerCase()}${t.slice(1)}`)); }
   // Where he's headed
   const y = regressionYear(p), up = tierFor(p.pot);
   const z = bumpContext().production.get(p.id);
@@ -3343,25 +3347,26 @@ function profileReport(p, team) {
     : left <= 3 ? 'He has a few good years left before he starts to regress.'
     : left <= 6 ? 'He is still in his prime.'
     : 'He can play at this level for a very long time.';
-  if (p.age <= 24 && !declining(p)) out.push('He is still developing.', can); else out.push(can, timing);
-  if (prod) out.push(prod.trim());
+  if (p.age <= 24 && !declining(p)) add('dev', 'He is still developing.', can); else add('dev', can, timing);
+  if (prod) add('prod', prod.trim());
   // What he's paid
   const c = p.contract;
   if (c?.sal && c.yrs) {
     const fair = fairSalary(shownLevel(p)), gap = tagGap(fair);
     const worth = c.sal - fair >= gap ? 'overpaid' : fair - c.sal >= gap ? 'underpaid' : 'fairly paid';
     const opt = c.opt === 1 ? ', with a team option on the last year' : c.opt === 2 ? ', with a player option on the last year' : '';
-    out.push(`He is ${worth} for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}${opt}.`);
+    add('paid', `He is ${worth} for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}${opt}.`);
   }
-  // Back-to-back "He ..." sentences become one: "He is still developing and has the potential to be ...".
+  // "He ..." sentences of the same kind join with "and", two at a time (his game and a skill; developing and potential);
+  // development lines never join his traits or skills.
   const merged = [];
-  out.forEach((s, i) => {
+  for (const s of out) {
     const last = merged[merged.length - 1];
-    if (i > (rk ? 1 : 0) && last && /^He /.test(last.t) && /^He /.test(s) && !last.joined && last.t.length + s.length < 240) {
-      last.t = `${last.t.replace(/\.$/, '')} and ${s.slice(3)}`;
+    if (last && last.g === s.g && !last.joined && /^He /.test(last.t) && /^He /.test(s.t) && ['style', 'dev'].includes(s.g)) {
+      last.t = `${last.t.replace(/\.$/, '')} and ${s.t.slice(3)}`;
       last.joined = true;
-    } else merged.push({ t: s });
-  });
+    } else merged.push({ ...s });
+  }
   return merged.map(x => x.t).join(' ');
 }
 // Status tags: what's true of him right now (contract, options, injury, trade block, ...).
