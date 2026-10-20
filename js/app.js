@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.141.3';
+const APP_VERSION = '0.141.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3537,7 +3537,7 @@ function newsBox(p) {
   }
   const xl = extLedger().find(x => x.pid === p.id && x.yr === L.season.currentYear);
   const ex = c.ext?.yrs > 0 ? c.ext : xl;
-  if (ex?.yrs > 0) lines.push(`Signed an extension${xl ? ` with ${nameOf(xl.tid)}` : ''}: $${ex.sal}M × ${ex.yrs}${ex.opt === 2 ? ' · PO' : ex.opt === 1 ? ' · TO' : ''}, starting when his current deal ends.`);
+  if (ex?.yrs > 0) lines.push(`Signed extension: $${ex.sal}M × ${ex.yrs}${ex.opt === 2 ? ' · PO' : ex.opt === 1 ? ' · TO' : ''}, starting when his current deal ends.`);
   return lines.length ? `<fieldset class="frame"><legend>News</legend>${lines.map(l => `<p class="note small">${esc(l)}</p>`).join('')}</fieldset>` : '';
 }
 // Status tags: what's true of him right now (contract, options, injury, trade block, ...).
