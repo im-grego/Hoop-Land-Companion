@@ -1396,3 +1396,4 @@ main.panel.bare { margin-top: 10px; }
 .wk-fold > summary::-webkit-details-marker { display: none; }
 .wk-fold > summary::after { content: ' ▾'; color: var(--cyan); }
 .wk-fold[open] > summary::after { content: ' ▴'; }
+.draft-head { margin: 4px 0 8px; text-align: center; font-family: var(--pixel); font-size: 22px; letter-spacing: .06em; color: var(--gold); text-transform: uppercase; }

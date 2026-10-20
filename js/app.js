@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.0';
+const APP_VERSION = '0.134.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -214,24 +214,39 @@ function logoUrl(url) {
 function logoImg(team, cls = 'logo-sm') {
   const u = logoUrl(team.logoURL);
   if (!u) return `<span class="${cls} logo-ph" aria-hidden="true"></span>`;
-  return `<img class="${cls}" src="${esc(u)}" alt="" width="34" height="34" decoding="async" referrerpolicy="no-referrer" onerror="this.style.visibility='hidden'">`;
+  // A logo that fails to load tries again a couple of times before it's given up on.
+  return `<img class="${cls}" src="${esc(u)}" alt="" width="34" height="34" decoding="async" referrerpolicy="no-referrer" onerror="var t=(+this.dataset.t||0)+1;this.dataset.t=t;if(t<=2){var s=this.src.split('#')[0],e=this;setTimeout(function(){e.src=s+(s.indexOf('?')<0?'?':'&')+'r='+t},600*t)}else{this.style.visibility='hidden'}">`;
 }
 // Fetch every team logo as soon as a save loads (and keep them), so screens
-// open with their logos already there.
+// open with their logos already there. Failed loads retry; logosPending() /
+// whenLogosReady() let the draft wait until they're all in.
 const logoCache = new Map();
+function loadLogo(u, entry, tries = 0) {
+  const img = new Image();
+  img.referrerPolicy = 'no-referrer';
+  img.decoding = 'async';
+  try { img.fetchPriority = 'high'; } catch { /* older browsers */ }
+  img.onload = () => { entry.done = true; entry.img = img; };
+  img.onerror = () => { if (tries < 3) setTimeout(() => loadLogo(u, entry, tries + 1), 500 * (tries + 1)); else entry.done = true; };
+  img.src = tries ? `${u}${u.includes('?') ? '&' : '?'}r=${tries}` : u;
+  entry.img = img;
+}
 function preloadLogos(data) {
   const urls = new Set();
   for (const L of data.seasonLeagues || []) for (const t of L.teams || []) { const u = logoUrl(t.logoURL); if (u) urls.add(u); }
   for (const u of urls) {
     if (logoCache.has(u)) continue;
-    const img = new Image();
-    img.referrerPolicy = 'no-referrer';
-    img.decoding = 'async';
-    try { img.fetchPriority = 'high'; } catch { /* older browsers */ }
-    img.src = u;
-    logoCache.set(u, img);
+    const entry = { done: false, img: null };
+    logoCache.set(u, entry);
+    loadLogo(u, entry);
   }
 }
+const logosPending = () => [...logoCache.values()].some(x => !x.done);
+const whenLogosReady = (ms = 5000) => new Promise(res => {
+  const t0 = Date.now();
+  const tick = () => (!logosPending() || Date.now() - t0 > ms ? res() : setTimeout(tick, 100));
+  tick();
+});
 
 // A notification that slides down from the top, like a text message.
 // `detail` adds a second line (trade alerts show the deal).
@@ -493,7 +508,7 @@ async function loadFile(file) {
     state.fileName = file.name;
     state.undo = null;
     state.cal = {}; state.cutSel = {}; state.cutSeeded = false; state.rm = null; state.calLast = undefined;
-    preloadLogos(data);   // start the team logos downloading before the heavy setup
+    preloadLogos(data); state.logoWaited = false;   // start the team logos downloading before the heavy setup
     installData(data);
     if (state.leagueFile) {
       leagueTraitsIn(data.seasonLeagues[0]);
@@ -570,7 +585,7 @@ function installData(data, keepSnaps = false) {
       state.leagueAvg[li] = avg;
     });
     data.seasonLeagues.forEach(L => { if (L.draftClass?.length) saveOriginals(L, originalRatings(L)); });
-    preloadLogos(data);
+    preloadLogos(data); state.logoWaited = false;
     loadUserTeams();
   }
 }
@@ -4211,6 +4226,15 @@ screens.draft = (args) => {
     });
     return;
   }
+  // Don't open the live draft until the team logos are in (they keep loading in the background for a few seconds at most).
+  if (tab === 'live' && !state.logoWaited) {
+    if (logosPending()) {
+      layout({ title: 'Draft Room', body: '<div class="center"><div class="spinner"></div><p class="note">Getting the draft ready…</p></div>' });
+      whenLogosReady(5000).then(() => { state.logoWaited = true; if (state.stack[state.stack.length - 1].name === 'draft') render(); });
+      return;
+    }
+    state.logoWaited = true;
+  }
   if (isStep('scout') && !preStore().scoutSeen) { preStore().scoutSeen = true; savePre(); }
   const allowed = draftTabsNow(L);
   const tabs = allowed.length < 2 ? '' : `<div class="tabs">${DRAFT_TABS.filter(([k]) => allowed.includes(k)).map(([k, l]) =>
@@ -5908,6 +5932,7 @@ function draftLive() {
     html: `
       ${state.userTeams.size ? '' : '<p class="note muted small">Select your teams to draft for them.</p>'}
       ${done ? draftRecap(live, order) : `
+      <h3 class="draft-head">${L.season.currentYear} ${esc(L.shortName || 'NBA')} Draft</h3>
       ${user ? '<div class="you-clock">🚨 You are on the clock</div>' : ''}
       <div class="clock-card ${user ? 'mine' : ''}" ${teamTint(o.owner) ? `style="${teamTint(o.owner)}"` : ''}>
         <span class="pk">#${o.overall}</span>
