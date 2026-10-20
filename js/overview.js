@@ -36,7 +36,7 @@ const STYLES = [
   { k: 'creator', label: 'Shot creator', icon: '🪄', f: t => (t.step + t.cross + t.spin + t.fades) / 4, min: 2.5, text: 'creates his own shot off the dribble' },
   { k: 'playmaker', label: 'Playmaker', icon: '🧠', f: t => (t.pass * 2 + t.runPlay) / 3, min: 2.5, text: 'looks to set teammates up' },
   { k: 'lob', label: 'Lob threat', icon: '🛫', f: t => (t.dunk + t.runPlay) / 2, min: 2.5, text: 'catches lobs' },
-  { k: 'setter', label: 'Table setter', icon: '🍽️', f: t => t.lob, min: 3, text: 'throws lobs' },
+  { k: 'setter', label: 'Table setter', icon: '🍽️', f: t => t.lob, min: 1, fixed: true, ok: (p, t) => (p.attributes?.PAS?.[0] || 0) >= 13 && t.pass >= 0, text: 'throws lobs' },   // passing 6.5+ as the game shows it, a passing tendency of 0+, lobs of 1+
   { k: 'three', label: '3-Level scorer', icon: '🔱', f: t => Math.min((t.dunk * 2 + t.floater) / 3, (t.twoPoint * 2 + t.fades) / 3, t.threePoint), min: 0.5, fixed: true, text: 'scores at all three levels' },
   { k: 'glass', label: 'Glass cleaner', icon: '🧹', f: t => (t.offReb + t.defReb) / 2, min: 3, text: 'crashes the boards' },
   { k: 'protector', label: 'Rim protector', icon: '🛡️', f: t => t.block, min: 3, text: 'goes for blocks' },
@@ -66,7 +66,7 @@ export function playStyles(p, n = 3) {
   const t = p.tendencies;
   if (!t) return [];
   const ref = refFor(p);
-  return STYLES.map(s => ({ ...s, text: s.k === 'charge' && (p.id || 0) % 2 ? 'puts his body on the line' : s.text, v: s.f(t), cut: s.fixed ? s.min : ref ? ref[s.k] : s.min })).filter(s => s.v >= s.cut).sort((a, b) => (b.v - b.cut) - (a.v - a.cut)).slice(0, n);
+  return STYLES.map(s => ({ ...s, text: s.k === 'charge' && (p.id || 0) % 2 ? 'puts his body on the line' : s.text, v: s.f(t), cut: s.fixed ? s.min : ref ? ref[s.k] : s.min })).filter(s => s.v >= s.cut && (!s.ok || s.ok(p, t))).sort((a, b) => (b.v - b.cut) - (a.v - a.cut)).slice(0, n);
 }
 export const wontDo = p => (p.tendencies ? WONT.filter(w => p.tendencies[w.k] <= w.max).map(w => w.text) : []);
 // A plain sentence for a report: no tags, just what he does.
