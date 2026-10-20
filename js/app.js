@@ -37,7 +37,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.116.0';
+const APP_VERSION = '0.117.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1173,7 +1173,7 @@ const STEP_SCREENS = {
   dev: ['offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1915,6 +1915,7 @@ screens.playbook = () => {
         ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b><span class="small muted">Your own playbook.</span>
           <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
         <button class="btn" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
+        <button class="btn off" data-act="nav" data-to="teamBooks">👥 Team Playbooks</button>
       </div></fieldset>
       <fieldset class="frame ${sch >= 2 ? '' : 'plan-locked'}"><legend>Scoring Options${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</legend><div class="stack">
         ${so.map((o, i) => `<div class="so-row">
@@ -2003,6 +2004,67 @@ screens.coach = args => {
       </div></fieldset>`,
   });
 };
+
+
+// Team playbooks: set any team's style, or let the roster pick one.
+// The suggestion scores each style on what the roster is built to do.
+const styleFeatures = t => {
+  const top = [...t.roster].sort((x, y) => shownLevel(y) - shownLevel(x)).slice(0, 8);
+  const att = (p, k) => p.attributes?.[k]?.[0] ?? 0, avg = k => (top.length ? top.reduce((s, p) => s + att(p, k), 0) / top.length : 0);
+  const star = top[0], bigs = top.filter(p => posGroup(p) === 'bigs'), guards = top.filter(p => posGroup(p) === 'guards');
+  return {
+    star, starLv: star ? shownLevel(star) : 0, perimeter: star ? posGroup(star) !== 'bigs' : false,
+    guard: guards[0], big: bigs[0], bigCount: bigs.length,
+    shooters: top.filter(p => att(p, 'TPT') >= 14).length, pas: avg('PAS'), def: (avg('DRE') + avg('BLK') + avg('STL')) / 3,
+    depth: top.length ? shownLevel(top[top.length - 1]) : 0, att,
+  };
+};
+function suggestStyle(t) {
+  const L = league();
+  const F = styleFeatures(t), all = L.teams.map(styleFeatures);
+  const pct = (k, v) => all.filter(x => x[k] < v).length / Math.max(1, all.length - 1);
+  const sc = Object.fromEntries(PRESETS.map(p => [p.name, 0]));
+  sc['Iso & Spread'] += (F.starLv >= 95 ? 3 : F.starLv >= 90 ? 1.5 : 0) + (F.perimeter ? 1 : 0);
+  sc['Pace & Space'] += (F.guard ? (shownLevel(F.guard) >= 90 ? 2 : shownLevel(F.guard) >= 86 ? 1 : 0) + (F.att(F.guard, 'PAS') >= 13 ? 1 : 0) : 0) + pct('shooters', F.shooters);
+  sc['Flow Offense'] += pct('pas', F.pas) * 3 + pct('depth', F.depth);
+  sc['Off-Ball Movement'] += pct('shooters', F.shooters) * 3 + pct('pas', F.pas) * 0.5;
+  sc['Inside-Out'] += F.big ? (shownLevel(F.big) >= F.starLv - 2 ? 2 : 0) + (F.att(F.big, 'PAS') >= 12 ? 1.5 : 0) + (shownLevel(F.big) >= 88 ? 1 : 0) : 0;
+  sc['Half-Court Grind'] += pct('def', F.def) * 3 + (F.bigCount >= 3 ? 1 : 0) + (1 - pct('shooters', F.shooters));
+  return Object.entries(sc).sort((x, y) => y[1] - x[1])[0][0];
+}
+const styleOf = t => PRESETS.find(p => samePlays(t.quickPlays, presetPlays(p)))?.name || (hasPlays(t) ? 'Custom' : 'None');
+screens.teamBooks = () => {
+  const L = league();
+  const teams = [...L.teams].sort((x, y) => x.shortName.localeCompare(y.shortName));
+  layout({
+    title: 'Team Playbooks',
+    body: `<p class="note small">Pick a style for any team. Suggestions come from each roster: its best player, its bigs, its shooting, passing and defense.</p>
+      <div class="grid2"><button class="btn focus" data-act="suggestAll" data-mode="empty">✨ Fill Empty Teams</button><button class="btn" data-act="suggestAll" data-mode="all">✨ Suggest For All CPU</button></div>
+      <div class="stack">${teams.map(t => {
+        const cur = styleOf(t), sug = suggestStyle(t), mine = isUserTeam(t);
+        return `<div class="pb-book"><span class="coach-top">${logoImg(t)}<b>${esc(t.shortName)}</b><span class="small muted">${esc(cur)}${mine ? ' · yours' : ''}</span></span>
+          <select class="sel-team" data-change="teamBook" data-tid="${t.id}">
+            <option value="" ${cur === 'Custom' || cur === 'None' ? 'selected' : ''} disabled>${cur === 'None' ? 'No playbook' : cur === 'Custom' ? 'Custom playbook' : cur}</option>
+            ${PRESETS.map((p, i) => `<option value="${i}" ${p.name === cur ? 'selected' : ''}>${esc(p.name)}${p.name === sug ? ' (suggested)' : ''}</option>`).join('')}
+          </select></div>`;
+      }).join('')}</div>`,
+  });
+};
+const setTeamStyle = (t, p) => { t.quickPlays = presetPlays(p); state.dirty = true; };
+actions.suggestAll = async d => {
+  const L = league();
+  const todo = L.teams.filter(t => !isUserTeam(t) && (d.mode === 'all' || !hasPlays(t)));
+  if (!todo.length) { toast('Nothing to fill'); return; }
+  if (d.mode === 'all' && !(await confirmBox(`Replace the playbook of ${todo.length} CPU teams with a roster-based style?`, 'Replace'))) return;
+  for (const t of todo) setTeamStyle(t, PRESETS.find(p => p.name === suggestStyle(t)));
+  toast(`${todo.length} team playbooks set`);
+  render();
+};
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'teamBook') return;
+  const t = league().teams.find(x => x.id === +e.target.dataset.tid), p = PRESETS[+e.target.value];
+  if (t && p) { setTeamStyle(t, p); render(); }
+});
 
 actions.savePlaybook = () => {
   const t = myTeam();
