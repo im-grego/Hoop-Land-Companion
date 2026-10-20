@@ -39,12 +39,12 @@ import { isForeign, nameFor, lookFor } from './names.js';
 import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
-import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
+import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.130.0';
+const APP_VERSION = '0.131.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3177,7 +3177,8 @@ function rankBox(p, mpg = null) {
   const yr = lastSeasonYear();
   const { ranks, of } = seasonRanks(yr);
   const r = ranks.get(p.id);
-  if (!r) return '';
+  const prod = productionText(p);
+  if (!r) return prod ? `<fieldset class="frame"><legend>${yr} Season</legend>${prod}</fieldset>` : '';
   const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
   return `<fieldset class="frame"><legend>${yr} Season</legend>
     ${mpg ? `<p class="note small muted center" style="margin-bottom:6px">${mpg.mpg.toFixed(1)} MPG in ${mpg.gp} games</p>` : ''}
@@ -3186,6 +3187,7 @@ function rankBox(p, mpg = null) {
       return `<button class="stat-cell" data-act="openLeaders" data-m="stats" data-k="${k}" aria-label="${name} leaders"><span class="muted small">${k}</span><b>${r.pg[k].toFixed(1)}</b><span class="small ${n && n <= 10 ? 'gold' : n && n <= 30 ? 'up' : 'muted'}">${n ? ord(n) : '—'}</span></button>`;
     }).join('')}</div>
     <p class="note muted small" style="margin-top:6px">${r.qualified ? `League rank among ${of} qualified players.` : `${r.gp} games: not enough to be ranked.`}</p>
+    ${prod}
   </fieldset>`;
 }
 
@@ -3294,31 +3296,37 @@ function levelRanks(p, team) {
 // A short scouting paragraph: where he stands, how he plays, what he's like, where he's headed, what he's paid.
 function profileReport(p, team) {
   const out = [];
-  const lv = shownLevel(p), rk = levelRanks(p, team);
-  if (rk) out.push(`Level ${lv}: ${ordN(rk.league)} in the league and ${ordN(rk.team)} on ${esc(team.shortName)}, ${rk.team <= 5 ? 'a starter' : rk.team <= 9 ? 'a rotation piece' : 'on the fringe of the rotation'}.`);
-  else out.push(`Level ${lv}.`);
-  if (p.tendencies) {
-    out.push(esc(styleLine(p)));
-    const sk = earnedSkills(p)[0];
-    if (sk) { const w = skillSays(sk.id); out.push(`${esc(w.charAt(0).toUpperCase() + w.slice(1))}.`); }
+  const rk = levelRanks(p, team);
+  if (rk) {
+    const nm = team ? teamFull(team) : '';
+    out.push(`He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}, ${rk.team <= 5 ? 'a starter' : rk.team <= 9 ? 'a rotation piece' : 'on the fringe of the rotation'}` : ''}.`);
   }
-  if (traitsSet(p)) out.push(esc(personality(p)));
+  if (p.tendencies) {
+    out.push(esc(styleSentence(p)));
+    const sk = earnedSkills(p)[0];
+    if (sk) { const w = skillSays(sk.id); out.push(`He ${esc(w.charAt(0).toLowerCase() + w.slice(1))}.`); }
+  }
+  if (traitsSet(p)) { const t = personality(p); out.push(esc(t.startsWith('A steady pro') ? `He is ${t[0].toLowerCase()}${t.slice(1)}` : `He ${t[0].toLowerCase()}${t.slice(1)}`)); }
   // Where he's headed
   const y = regressionYear(p), up = tierFor(p.pot);
   const z = bumpContext().production.get(p.id);
   const prod = z == null ? '' : z >= 1.5 ? ' Last season he out-produced his peers by a wide margin.' : z >= 0.5 ? ' Last season he produced above his peers.' : z <= -1.5 ? ' Last season he badly under-produced for his role.' : z <= -0.5 ? ' Last season he produced below his peers.' : '';
-  const POT_PHRASE = { Legend: 'an all-time great', 'Hall of Fame': 'a Hall of Famer', Superstar: 'a superstar', 'All-Star': 'an All-Star', 'Quality Starter': 'a quality starter', 'Role Player': 'a role player', 'Rotational Player': 'a rotational player', 'G-League': 'a G-League player' };
+  const POT_PHRASE = { Legend: 'an all-time great', 'Hall of Fame': 'a Hall of Famer', Superstar: 'a superstar', 'All-Star': 'an All-Star', 'Quality Starter': 'a quality starter', 'Role Player': 'a role player', 'Rotational Player': 'a rotational player' };
   const can = `He has the potential to be ${POT_PHRASE[up] || 'a ' + up}.`;
-  const arc = declining(p) ? `He is in decline (age ${p.age}, regression age ${p.regressionAge}).`
-    : y >= 0 ? `He is at the age where decline starts (regression age ${p.regressionAge}). ${can}`
-    : p.age <= 24 ? `He is still developing. ${can}`
-    : `${can} He has ${-y + 1} season${-y + 1 === 1 ? '' : 's'} before decline starts.`;
-  out.push(`${arc}${prod}`);
+  const left = -y + 1;   // seasons before decline starts
+  const timing = declining(p) ? 'He is already in decline.'
+    : y >= 0 || left <= 1 ? 'He could start regressing very soon.'
+    : left <= 3 ? 'He has a few good years left before he starts to regress.'
+    : left <= 6 ? 'He is still in his prime.'
+    : 'He can play at this level for a very long time.';
+  out.push(`${p.age <= 24 && !declining(p) ? `He is still developing. ${can}` : `${can} ${timing}`}${prod}`);
   // What he's paid
   const c = p.contract;
   if (c?.sal && c.yrs) {
-    const fair = fairSalary(lv), gap = tagGap(fair);
-    out.push(`Paid $${c.sal}M for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}, ${c.sal - fair >= gap ? `above his market value of about $${fair}M` : fair - c.sal >= gap ? `well under his market value of about $${fair}M` : `about his market value ($${fair}M)`}.`);
+    const fair = fairSalary(shownLevel(p)), gap = tagGap(fair);
+    const worth = c.sal - fair >= gap ? 'overpaid' : fair - c.sal >= gap ? 'underpaid' : 'fairly paid';
+    const opt = c.opt === 1 ? ', with a team option on the last year' : c.opt === 2 ? ', with a player option on the last year' : '';
+    out.push(`He is ${worth} for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}${opt}.`);
   }
   return out.join(' ');
 }
@@ -3365,7 +3373,7 @@ screens.player = (args) => {
           </div>`; }).join('')}
         </div>
       </fieldset>` : '';
-  const tab = ['scout', 'style', 'personality', 'attributes', 'stats'].includes(args.tab) ? args.tab : 'scout';
+  const tab = ['scout', 'traits', 'attributes', 'stats'].includes(args.tab) ? args.tab : 'scout';
   const trainer = `<fieldset class="frame"><legend>Trainer</legend>
         <div class="stack">
           <div class="pts-row">
@@ -3403,21 +3411,20 @@ screens.player = (args) => {
           <button class="btn" data-act="addSkill">＋ Add Skill</button>
         </div>
       </fieldset>`;
-  const tabsRow = `<div class="tabs pl-tabs">${[['scout', 'Scouting'], ['style', 'Play Style'], ['personality', 'Personality'], ['attributes', 'Attributes'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  const tabsRow = `<div class="tabs pl-tabs">${[['scout', 'Overview'], ['traits', 'Traits'], ['attributes', 'Attributes'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const personality = traitsBox(p) || '<p class="note muted">Personality isn\'t set for this player yet. Reload the file and it fills in.</p>';
   const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}
       <div class="grid2">
         <button class="btn" data-act="autoOne">🎲 Re-roll Bump</button>
         <button class="btn" data-act="revertOne">↺ Revert</button>
       </div>`
-    : tab === 'style' ? (playStyleBox(p) || '<p class="note muted">No play style on file for this player.</p>')
-    : tab === 'personality' ? personality
+    : tab === 'traits' ? (personality + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
     : tab === 'stats' ? statsTab(p, args)
-    : `<fieldset class="frame"><legend>Scouting Report</legend>
+    : `${rankBox(p, mpg)}
+      <fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
-      </fieldset>
-      ${rankBox(p, mpg)}`;
+      </fieldset>`;
   layout({
     title: 'Player Profile',
     body: `
@@ -3454,8 +3461,7 @@ function statsTab(p, args) {
   };
   const avgLine = top => `<div class="statline">${top('PPG', r => r.PTS / r.GP)}${top('RPG', r => r.REB / r.GP)}${top('APG', r => r.AST / r.GP)}${top('SPG', r => r.STL / r.GP)}${top('BPG', r => r.BLK / r.GP)}</div>`;
   const tabs = `<div class="tabs fa-tabs">${[['season', 'Regular'], ['playoffs', 'Playoffs'], ['highs', 'Highs']].map(([k, l]) => `<button class="btn small ${k === sv ? 'on focus' : 'off'}" data-act="plStats" data-v="${k}">${l}</button>`).join('')}</div>`;
-  const prod = productionText(p);
-  const head = prod;
+  const head = '';
   if (sv === 'highs') {
     // The save keeps each player's best single game per category for the regular season, playoffs and finals.
     const cs = p.careerStats || {};
@@ -8493,8 +8499,7 @@ function playStyleBox(p) {
   const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
-    <p class="note small">${esc(styleLine(p))}</p>
-    ${earnedSkills(p).length ? `<p class="note small">🎖️ ${esc(earnedSkills(p).slice(0, 2).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toUpperCase()))}.</p>` : ''}
+    <p class="note small">${esc(styleSentence(p))}${earnedSkills(p).length ? ` ${esc(`He ${earnedSkills(p).slice(0, 2).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toLowerCase())}.`)}` : ''}</p>
     <details class="tend-wrap"><summary class="small">All tendencies</summary>
       ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
     </details>
@@ -9342,7 +9347,7 @@ screens.recruitee = ({ id }) => {
   const upT = tierFor(potEst);
   const blurb = [
     `Level ${x.lv}: ${x.transfer ? `No. ${x.rank} in the transfer pool` : `No. ${x.rank} in the class`}, ${x.stars >= 5 ? 'an immediate star' : x.stars >= 4 ? 'a likely starter' : x.stars >= 3 ? 'a rotation piece' : 'a developmental player'}.`,
-    p.tendencies ? esc(styleLine(p)) : '',
+    p.tendencies ? esc(styleSentence(p)) : '',
     traitsSet(p) ? esc(personality(p)) : '',
     `${acc >= 75 ? 'He has' : 'Early reports say he has'} the potential to be ${POTW[upT] || 'a ' + upT}.${x.transfer ? '' : ` ${p.age <= 18 ? 'He is young and still developing.' : ''}`}`,
   ].filter(Boolean).join(' ');
