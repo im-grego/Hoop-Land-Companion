@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.134.7';
+const APP_VERSION = '0.134.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -8579,7 +8579,7 @@ function traitsBox(p, prospect = false) {
   return `<fieldset class="frame"><legend>Personality</legend>
     ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
-    <details class="tend-wrap"><summary class="small">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
+    <details class="tend-wrap" data-anchor="traits-all" ${state.traitsOpen ? 'open' : ''}><summary class="small" data-act="traitsFold">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
     const v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
     return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'top' : v >= 10 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
@@ -8587,6 +8587,7 @@ function traitsBox(p, prospect = false) {
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
   }).join('')}</div></details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
+actions.traitsFold = (d, el, e) => { e?.preventDefault(); state.traitsOpen = !state.traitsOpen; render(); };
 actions.traitAdj = d => {
   const L = league();
   const p = [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])].find(x => x.id === +d.id);

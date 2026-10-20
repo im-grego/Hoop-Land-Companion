@@ -13,11 +13,11 @@ export const TRAITS = [
   { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Committed', loIcon: '🗡️', hiIcon: '🤝', loSays: 'goes where the offer is best', hiSays: 'stays where he\'s wanted' },
   { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'Relentless', loIcon: '😴', hiIcon: '🔋', loSays: 'coasts when he can', hiSays: 'never stops working' },
   { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', loIcon: '☣️', hiIcon: '🗣️', loSays: 'is a problem in the locker room', hiSays: 'sets the tone in the locker room' },
-  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Shines', hiTag: 'Playoff riser', loIcon: '🥶', hiIcon: '✨', loSays: 'shrinks in the big moments', hiSays: 'gets better when it matters' },
+  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Shines', hiTag: 'Playoff Riser', loTag: 'Playoff Fraud', loIcon: '🥶', hiIcon: '✨', loSays: 'shrinks in the big moments', hiSays: 'gets better when it matters' },
 ];
-export const traitLabel = (t, v) => (v >= 16 ? (t.hiTag || t.hi) : v <= 4 ? t.lo : v <= 9 ? 'Low' : 'Solid');
+export const traitLabel = (t, v) => (v >= 16 ? t.hi : v <= 4 ? t.lo : v <= 9 ? 'Low' : 'Solid');
 // The tag a trait earns at either end of the scale: { icon, label } or null.
-export const traitTag = (t, v) => (v >= 16 ? { icon: t.hiIcon, label: t.hiTag || t.hi } : v > 0 && v <= 4 ? { icon: t.loIcon, label: t.lo } : null);
+export const traitTag = (t, v) => (v >= 16 ? { icon: t.hiIcon, label: t.hiTag || t.hi } : v > 0 && v <= 4 ? { icon: t.loIcon, label: t.loTag || t.lo } : null);
 // A line on his personality from the strongest traits (`keys` limits which
 // ones are known).
 export function personality(p, keys = null) {
