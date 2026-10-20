@@ -1408,3 +1408,8 @@ main.panel.bare { margin-top: 10px; }
 .xbtns { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
 .xbtns .btn { min-width: 96px; padding: 6px 8px; }
 .opt-btns .btn { min-width: 92px; }
+.bottom.two { justify-content: space-between; }
+.bottom .action.alt { min-width: 130px; font-size: 18px; background: var(--btn); }
+.tx-block { background: var(--btn); border: 3px solid var(--btn-edge); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.tx-block .tx-head { display: flex; justify-content: space-between; gap: 8px; }
+.tx-block .linkish { text-align: left; }

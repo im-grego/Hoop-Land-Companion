@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.138.2';
+const APP_VERSION = '0.139.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -331,7 +331,7 @@ function skillHint(id) {
 // ---------------------------------------------------------------------------
 // Layout + routing
 
-function layout({ title, left = '', right = '', body, action = null, bare = false }) {
+function layout({ title, left = '', right = '', body, action = null, actionLeft = null, bare = false }) {
   const t = esc(title);
   $app.innerHTML = `
     ${bare ? `<h1 class="sr-only">${t}</h1>` : `<div class="header">
@@ -343,7 +343,7 @@ function layout({ title, left = '', right = '', body, action = null, bare = fals
       ${right}
     </div>`}
     <main class="panel ${bare ? 'bare' : ''}">${body}</main>
-    ${action ? `<div class="bottom"><button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
+    ${action ? `<div class="bottom ${actionLeft ? 'two' : ''}">${actionLeft ? `<button class="btn action alt" data-act="${actionLeft.act}" data-id="${actionLeft.id}">${esc(actionLeft.label)}</button>` : ''}<button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
 }
 
 const BACK_ARROW = `<svg width="40" height="28" viewBox="0 0 10 7" shape-rendering="crispEdges" aria-hidden="true">
@@ -420,6 +420,8 @@ window.addEventListener('beforeunload', e => {
   if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
 });
 
+// A dropdown marked data-keep remembers whether it's open, so a redraw (a tap inside it) never folds it up.
+$app.addEventListener('toggle', e => { const k = e.target?.dataset?.keep; if (k) (state.keepOpen ||= {})[k] = e.target.open; }, true);
 function runAct(el, e) {
   const act = el.dataset.act;
   if (act === 'back') return back();
@@ -3166,21 +3168,46 @@ screens.transactions = (args = {}) => {
   if (tab === 'sign') {
     for (const t of L.teams) for (const m of teamMoves(L, t).ins) if (!m.back && !m.from.startsWith('Trade') && m.from !== 'Draft') rows.push({ p: m.p, a: `${m.from} → ${t.shortName}`, b: money(m.p) });
   } else if (tab === 'trade') {
-    const trail = new Map();
-    for (const x of offGet('moves').list || []) { const r = trail.get(x.pid) || { from: x.from, to: x.to }; r.to = x.to; trail.set(x.pid, r); }
-    for (const [pid, r] of trail) { if (r.from === r.to) continue; const e = findPlayer(pid); if (e) rows.push({ p: e.p, a: `${nameOf(r.from)} → ${nameOf(r.to)}`, b: money(e.p) }); }
+    rows = [];
   } else {
     for (const t of L.teams) for (const p of FA.signedRoster(t)) if (p.season?.onTradeBlock === 1) rows.push({ p, a: t.shortName, b: money(p) });
   }
   rows.sort((x, y) => shownLevel(y.p) - shownLevel(x.p));
-  const note = { sign: 'Free agents and portal moves this offseason, best first.', trade: 'Trades this offseason, best player first.', block: 'Players teams are shopping. They could be on the move.' }[tab];
+  const note = { sign: 'Free agents and portal moves this offseason, best first.', trade: 'Trades this offseason, the best player involved first.', block: 'Players teams are shopping. They could be on the move.' }[tab];
   layout({
     title: 'Transactions',
     body: `<div class="tabs fa-tabs">${[['sign', 'Signings'], ['trade', 'Trades'], ['block', 'The Block']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="txTab" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="note small muted">${note}</p>
-      <div class="list">${rows.slice(0, 60).map(r => card(r.p, r.a, r.b)).join('') || '<p class="note small muted">Nothing yet.</p>'}</div>`,
+      ${tab === 'trade' ? tradeBlocks(L) : `<div class="list">${rows.slice(0, 60).map(r => card(r.p, r.a, r.b)).join('') || '<p class="note small muted">Nothing yet.</p>'}</div>`}`,
   });
 };
+// Every trade this offseason as one block: who went where, with the picks, best player involved first.
+function dealsList() {
+  const L = league();
+  const deals = [...(offGet('deals').list || [])];
+  // Trades from before the deal ledger: rebuilt from the per-player ledger, grouped by team pair, no picks.
+  const seen = new Set(deals.flatMap(d => [...d.a, ...d.b]));
+  const old = new Map();
+  for (const x of offGet('moves').list || []) {
+    if (seen.has(x.pid)) continue;
+    const k = [x.from, x.to].sort().join('-');
+    const d = old.get(k) || { A: Math.min(x.from, x.to), B: Math.max(x.from, x.to), a: [], b: [], pa: [], pb: [] };
+    (x.from === d.A ? d.a : d.b).push(x.pid);
+    old.set(k, d);
+  }
+  deals.push(...old.values());
+  return deals.map(d => {
+    const ps = pids => pids.map(id => findPlayer(id)?.p).filter(Boolean);
+    const a = ps(d.a), b = ps(d.b);
+    return { ...d, pa_: a, pb_: b, best: Math.max(0, ...[...a, ...b].map(shownLevel)) };
+  }).filter(d => d.pa_.length + d.pb_.length || d.pa.length + d.pb.length).sort((x, y) => y.best - x.best);
+}
+function tradeBlocks(L) {
+  const nameOf = id => L.teams.find(x => x.id === id)?.shortName || '?';
+  const side = (tid, ps, picks) => `<div class="small"><b>${esc(nameOf(tid))}</b> send${ps.length + picks.length ? '' : 's nothing'}: ${[...ps.map(p => `<button class="linkish" data-act="openPlayer" data-id="${p.id}">${esc(playerName(p))}</button> <span class="gold">Lv ${shownLevel(p)}</span>${p.contract?.sal ? ` <span class="muted">$${p.contract.sal}M × ${p.contract.yrs}</span>` : ''}`), ...picks.map(esc)].join(' · ')}</div>`;
+  const list = dealsList();
+  return `<div class="stack">${list.map(d => `<div class="tx-block"><div class="tx-head"><b>${esc(nameOf(d.A))} ⇄ ${esc(nameOf(d.B))}</b><span class="small muted">best Lv ${d.best}</span></div>${side(d.A, d.pa_, d.pa)}${side(d.B, d.pb_, d.pb)}</div>`).join('') || '<p class="note small muted">No trades yet.</p>'}</div>`;
+}
 // Rumors around the league: disgruntled stars, vets on sinking teams, tax pressure and players being shopped.
 screens.rumors = () => {
   const L = league();
@@ -3413,6 +3440,8 @@ function profileReport(p, team) {
     const opt = c.opt === 1 ? ', with a team option on the last year' : c.opt === 2 ? ', with a player option on the last year' : '';
     add('paid', `He is ${worth} for ${c.yrs} more season${c.yrs > 1 ? 's' : ''}${opt}.`);
   }
+  const ex = p.contract?.ext;
+  if (ex?.yrs > 0) add('ext', `He has signed an extension: $${ex.sal}M × ${ex.yrs}${ex.opt === 2 ? ' with a player option' : ex.opt === 1 ? ' with a team option' : ''}.`);
   // "He ..." sentences of the same kind join with "and", two at a time (his game and a skill; developing and potential);
   // development lines never join his traits or skills.
   const merged = [];
@@ -3424,6 +3453,23 @@ function profileReport(p, team) {
     } else merged.push({ ...s });
   }
   return merged.map(x => x.t).join(' ');
+}
+// What just happened to him: a trade (with the deal), a free agent signing, or an extension.
+function newsBox(p) {
+  const L = league(), lines = [];
+  const nameOf = id => L.teams.find(x => x.id === id)?.shortName || '?';
+  const deal = dealsList().filter(d => d.a.includes(p.id) || d.b.includes(p.id)).pop();
+  if (deal) {
+    const fromA = deal.a.includes(p.id), from = fromA ? deal.A : deal.B, to = fromA ? deal.B : deal.A;
+    const withP = (fromA ? deal.pa_ : deal.pb_).filter(x => x !== p && x.id !== p.id).map(playerName);
+    const back = [...(fromA ? deal.pb_ : deal.pa_).map(playerName), ...(fromA ? deal.pb : deal.pa)];
+    const sent = [...withP, ...(fromA ? deal.pa : deal.pb)];
+    lines.push(`Traded from ${nameOf(from)} to ${nameOf(to)}${sent.length ? ` along with ${sent.join(', ')}` : ''}, for ${back.length ? back.join(', ') : 'nothing in return'}.`);
+  }
+  const sg = offGet('signed')[p.id], c = p.contract || {};
+  if (sg && sg.tid === p.tid && c.sal && c.yrs && !/^Extended/.test(sg.why)) lines.push(`Signed with ${nameOf(p.tid)}: $${c.sal}M × ${c.yrs}${c.opt === 2 ? ' · PO' : c.opt === 1 ? ' · TO' : ''}.`);
+  if (c.ext?.yrs > 0) lines.push(`Extension: $${c.ext.sal}M × ${c.ext.yrs}${c.ext.opt === 2 ? ' · PO' : c.ext.opt === 1 ? ' · TO' : ''}, starting when his current deal ends.`);
+  return lines.length ? `<fieldset class="frame"><legend>News</legend>${lines.map(l => `<p class="note small">${esc(l)}</p>`).join('')}</fieldset>` : '';
 }
 // Status tags: what's true of him right now (contract, options, injury, trade block, ...).
 function playerTags(p) {
@@ -3509,7 +3555,7 @@ screens.player = (args) => {
   const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}`
     : tab === 'traits' ? (personality + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
     : tab === 'stats' ? statsTab(p, args)
-    : `${rankBox(p, mpg)}
+    : `${newsBox(p)}${rankBox(p, mpg)}
       <fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
@@ -3526,7 +3572,13 @@ screens.player = (args) => {
       ${tabsRow}
       ${content}`,
     action: { act: 'back', label: 'Done' },
+    actionLeft: team && !isUserTeam(team) && state.userTeams.size && isComplete() && !isCollege() ? { act: 'tradeFor', id: p.id, label: 'Trade For' } : null,
   });
+};
+actions.tradeFor = d => {
+  const e = findPlayer(+d.id), mine = league().teams.find(isUserTeam);
+  if (!e?.team || !mine) return;
+  go('liveTrade', { a: mine.id, b: e.team.id, selB: [`p:${e.p.id}`] });
 };
 actions.plTab = d => replace('player', { ...state.stack[state.stack.length - 1].args, tab: d.t });
 actions.plStats = d => replace('player', { ...state.stack[state.stack.length - 1].args, sv: d.v });
@@ -5895,6 +5947,12 @@ setTradeHook((kind, rec) => {
       else { const i = list.map(x => x.pid === m.p.id && x.from === m.from.id && x.to === m.to.id).lastIndexOf(true); if (i >= 0) list.splice(i, 1); }
     }
     offSet('moves', { list });
+    // One record per trade, with the picks: what the Transactions page and the player news read.
+    const dl = offGet('deals'), deals = Array.isArray(dl.list) ? dl.list : [];
+    const sig = { a: rec.moved.filter(m => m.from.id === rec.A.id).map(m => m.p.id), b: rec.moved.filter(m => m.from.id === rec.B.id).map(m => m.p.id) };
+    if (kind === 'do') deals.push({ A: rec.A.id, B: rec.B.id, ...sig, pa: (rec.picksA || []).map(pk => pickLabel(pk)), pb: (rec.picksB || []).map(pk => pickLabel(pk)) });
+    else { const i = deals.map(x => x.A === rec.A.id && x.B === rec.B.id && JSON.stringify([x.a, x.b]) === JSON.stringify([sig.a, sig.b])).lastIndexOf(true); if (i >= 0) deals.splice(i, 1); }
+    offSet('deals', { list: deals });
     if (kind === 'do') syncScoringOptions();
   } catch { /* the ledger is a convenience */ }
 });
@@ -8647,7 +8705,7 @@ function traitsBox(p, prospect = false) {
   return `<fieldset class="frame"><legend>Personality</legend>
     ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
-    <details class="tend-wrap" data-anchor="traits-all" ${state.traitsOpen ? 'open' : ''}><summary class="small" data-act="traitsFold">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
+    <details class="tend-wrap" data-anchor="traits-all" data-keep="traits-all" ${state.keepOpen?.['traits-all'] ? 'open' : ''}><summary class="small">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
     const v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
     return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'top' : v >= 10 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
@@ -8655,7 +8713,6 @@ function traitsBox(p, prospect = false) {
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
   }).join('')}</div></details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
-actions.traitsFold = (d, el, e) => { e?.preventDefault(); state.traitsOpen = !state.traitsOpen; render(); };
 actions.traitAdj = d => {
   const L = league();
   const p = [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])].find(x => x.id === +d.id);
