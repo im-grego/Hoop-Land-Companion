@@ -86,3 +86,25 @@ export function philosophyOf(c) {
   const bits = [`${cap(join(off))}.`, def.length ? `${cap(join(def))}.` : '', `${cap(join(rot))}.`].filter(Boolean).join(' ');
   return `${archName(c)}. ${bits}${strong.length ? ` ${strong.length > 1 ? `Best known as ${dev[strong[0]]}, and also ${dev[strong[1]]}.` : `Best known as ${dev[strong[0]]}.`}` : ''}`;
 }
+
+// How good he is now and how far he can go. Level is the mean of his three
+// shown ratings (0-10), ranked against the league's head coaches; the ceiling
+// is the mean of his three ratings' caps. Room to grow is the gap, read with
+// his age (older coaches rarely reach the cap).
+const KEYS = ['development', 'motivation', 'leadership'];
+const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
+export const coachLevel = c => mean(KEYS.map(k => shownRating(c, k)));
+export const coachCeiling = c => mean(KEYS.map(k => shownCeiling(c, k)));
+export function coachGrade(c, field = []) {
+  const now = coachLevel(c), ceil = Math.max(now, coachCeiling(c));
+  const lv = field.map(coachLevel);
+  const below = lv.filter(v => v < now).length, same = lv.filter(v => v === now).length;
+  const pct = lv.length ? (below + same / 2) / lv.length : 0.5;
+  const tier = pct >= 0.9 ? 'Elite' : pct >= 0.7 ? 'Strong' : pct >= 0.4 ? 'Solid' : pct >= 0.15 ? 'Below Average' : 'Weak';
+  const room = ceil - now;
+  const young = c.age <= 45, old = c.age >= 58;
+  const growth = room < 0.75 ? 'At his ceiling' : room < 1.75 ? (old ? 'Little room left' : 'Some room to grow') : (old ? 'Room on paper, short on time' : 'A lot of room to grow');
+  const rank = lv.length ? lv.filter(v => v > now).length + 1 : null;
+  const line = `${tier} coach${rank ? ` (#${rank} of ${lv.length})` : ''}. ${growth}${room >= 0.75 ? `: ${now.toFixed(1)} now, up to ${ceil.toFixed(1)}` : ''}.${young && room >= 1.75 ? ' Young enough to get there.' : ''}`;
+  return { now, ceil, room, tier, growth, rank, of: lv.length, line };
+}

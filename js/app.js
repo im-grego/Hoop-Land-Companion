@@ -25,7 +25,7 @@ import { regressed } from './regression.js';
 import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } from './autoplay.js';
 import { saveToLeague } from './leagueexport.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
-import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf } from './coachprofile.js';
+import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade } from './coachprofile.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
@@ -37,7 +37,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.115.0';
+const APP_VERSION = '0.115.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1956,11 +1956,12 @@ screens.coaches = () => {
   const rows = staff.map(x => ({ ...x, car: careerOf(x.c) }));
   const by = { team: (a, b) => a.t.shortName.localeCompare(b.t.shortName), record: (a, b) => b.car.pct - a.car.pct, titles: (a, b) => b.car.titles - a.car.titles || b.car.pct - a.car.pct, pay: (a, b) => (b.c.contract?.sal || 0) - (a.c.contract?.sal || 0) };
   rows.sort(by[sort] || by.team);
+  const field = staff.map(x => x.c);
   const row = ({ c, t, car }) => {
     const sec = securityOf(c, car);
     return `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}">
       <span class="coach-top">${t ? logoImg(t) : ''}<b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${t ? esc(t.shortName) : 'Available'}</span><span class="badge ${secCls(sec.tag)}">${sec.tag}</span></span>
-      <span class="small muted">${esc(coachArch(c))} · ${car.seasons ? `${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)})` : 'No record'}${car.titles ? ` · ${car.titles}× champion` : ''}${sec.yrs ? ` · $${sec.sal}M × ${sec.yrs}` : ''}</span>
+      <span class="small muted">${esc(coachArch(c))} · ${esc(coachGrade(c, field).tier)} · ${car.seasons ? `${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)})` : 'No record'}${car.titles ? ` · ${car.titles}× champion` : ''}${sec.yrs ? ` · $${sec.sal}M × ${sec.yrs}` : ''}</span>
     </button>`;
   };
   layout({
@@ -1977,7 +1978,7 @@ screens.coach = args => {
   const { staff, pool } = allCoaches();
   const hit = [...staff, ...pool].find(x => x.c.id === +args.arg);
   if (!hit) { layout({ title: 'Coach', body: '<p class="note">Coach not found.</p>' }); return; }
-  const { c, t } = hit, car = careerOf(c), sec = securityOf(c, car);
+  const { c, t } = hit, car = careerOf(c), sec = securityOf(c, car), g = coachGrade(c, staff.map(x => x.c));
   const stars = potentialStars(c);
   const star = '★'.repeat(Math.floor(stars)) + (stars % 1 ? '½' : '');
   const att = [['development', 'Development'], ['motivation', 'Motivation'], ['leadership', 'Leadership']];
@@ -1987,6 +1988,8 @@ screens.coach = args => {
     body: `<fieldset class="frame"><legend>${t ? esc(`${t.city} ${t.name}`) : 'Available'}</legend><div class="stack">
         <p class="note"><b>${esc(coachArch(c))}</b> · <span class="gold">${star}</span> potential · ${c.age}y${c.yrs ? ` · ${c.yrs} yrs experience` : ''}</p>
         <p class="note small">${strengthName(c.pri) ? `<b>${esc(strengthName(c.pri))}</b> primary` : ''}${strengthName(c.sec) ? ` · <b>${esc(strengthName(c.sec))}</b> secondary` : ''}</p>
+        <p class="note"><b>${esc(g.tier)}</b> · ${esc(g.growth)}</p>
+        <p class="note small muted">${esc(g.line)}</p>
         <p class="note">${esc(philosophyOf(c))}</p></div></fieldset>
       <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
       <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
