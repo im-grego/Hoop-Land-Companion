@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.144.1';
+const APP_VERSION = '0.144.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4031,7 +4031,7 @@ screens.settings = (args) => {
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
       ]) +
-      (isCollege() ? '' : setGroup('Draft Picks', ['<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 1, 4, 8 and 14 protections are added where the real deal has one. Swaps and rollovers are left to the app.</span>']));
+      (isCollege() ? '' : setGroup('Draft Picks', ['<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 1, 4, 8 and 14 protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>']));
   } else {
     body = setGroup('Skills From the Bump', [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
   }
@@ -9950,7 +9950,7 @@ actions.applyRealPicks = async () => {
   }
   state.dirty = true;
   render();
-  toast('Real picks applied', `${r.moved} moved · ${r.kept} already traded in the game stayed · ${isComplete() ? r.protections.length : 0} protections`);
+  toast('Real picks applied', `${r.moved} moved · ${r.kept} already traded in the game stayed · ${r.voided} forfeited removed · ${isComplete() ? r.protections.length : 0} protections`);
 };
 actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[+d.id]; render(); };
 
