@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.137.1';
+const APP_VERSION = '0.138.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1075,7 +1075,7 @@ function stepActions(key) {
       // Trades open after the July moratorium (week 1).
       return day >= 2 && isComplete() ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
-    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="nav" data-to="meeting" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>🗣️ Begin Meeting</button></div><button class="btn small off" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'} style="margin-top:8px">✅ Wrap Up</button>`;
+    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
     case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
     case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Late Free Agency</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>`;
@@ -2394,13 +2394,16 @@ screens.strength = () => {
       }).join('') || '<p class="note muted">None of your players are young enough for the program.</p>'}</div>`;
   } else {
     const rows = st.results.map(r => ({ r, team: L.teams.find(t => t.id === r.tid), p: L.teams.flatMap(t => t.roster).find(x => x.id === r.pid) })).filter(x => x.p);
-    const mine = rows.filter(x => isUserTeam(x.team)), rest = rows.filter(x => !isUserTeam(x.team));
+    const move = x => Object.values(x.r.gains).reduce((s, v) => s + v, 0) + Math.abs(x.r.lbs || 0) / 5 + (x.r.inch ? 2 : 0);   // most movement first
+    const byMove = (p, q) => move(q) - move(p) || shownLevel(q.p) - shownLevel(p.p);
+    const mine = rows.filter(x => isUserTeam(x.team)).sort(byMove), rest = rows.filter(x => !isUserTeam(x.team)).sort(byMove);
     const row = x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> <span class="muted small">${esc(x.team.shortName)} · ${esc(posName(x.p))} · ${x.p.age}y</span></span><b class="small up">${gainText(x.r)}</b></div>`;
     body = `<fieldset class="frame"><legend>Your Players</legend><div class="stack">${mine.map(row).join('') || '<p class="note muted small">No gains for your players this summer.</p>'}</div></fieldset>
       <fieldset class="frame"><legend>Around the League</legend><div class="stack">${rest.map(row).join('') || '<p class="note muted small">None.</p>'}</div></fieldset>`;
   }
   layout({ title: 'Strength Program', body, action: st.results ? null : { act: 'strRun', label: 'Run Program' } });
 };
+actions.campTab = d => replace('offseason', { tab: d.v });
 actions.strFocus = d => { strengthStore().focus[+d.id] = d.k; saveStrength(); render(); };
 actions.strRun = async () => {
   const st = strengthStore();
@@ -2415,15 +2418,19 @@ actions.strRun = async () => {
   toast('Strength program done', `${st.results.length} players around the league, ${mine} of yours.`);
 };
 
-screens.offseason = () => {
+screens.offseason = (args = {}) => {
   const auto = state.auto[state.leagueIdx];
+  const tab = ['prog', 'influence', 'mentor', 'strength'].includes(args.tab) ? args.tab : 'prog';
+  const show = k => isCollege() || tab === k;
+  const tabs = isCollege() ? '' : `<div class="tabs pl-tabs">${[['prog', 'Progression'], ['influence', 'Influence'], ['mentor', 'Mentorship'], ['strength', 'Strength']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="campTab" data-v="${k}">${l}</button>`).join('')}</div>`;
   const P = state.params;
   const bands = P.ageBands;
   layout({
     title: isCollege() ? 'Summer Development' : 'Training Camp',
     body: `
-      ${isCollege() ? '' : mentorCard()}
-      <fieldset class="frame"><legend>Off-season Progression</legend>
+      ${tabs}
+      ${isCollege() || tab !== 'mentor' ? '' : mentorCard()}
+      ${show('prog') ? `<fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
           ${auto ? `
             <dl class="info tight">
@@ -2442,15 +2449,15 @@ screens.offseason = () => {
             <p class="note"><b>Trainer:</b> last season's production is weighed against players in the same role and age. Standouts can gain potential, or push their regression age back a year if they're at it (or a year away). Poor seasons and injuries can cost potential or bring regression a year sooner, but never for a player who's already declining.</p>
             <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
-      </fieldset>
-      ${strengthCard()}
-      ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
+      </fieldset>` : ''}
+      ${show('strength') ? strengthCard() : ''}
+      ${isCollege() || tab !== 'prog' ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
       ${isCollege() ? coachCard() : ''}
-      ${isCollege() ? '' : (calFlags().meetingList ? meetingResultsBox() : `<fieldset class="frame"><legend>🗣️ Team Meeting</legend><div class="stack">
+      ${isCollege() || tab !== 'influence' ? '' : (calFlags().meetingList ? meetingResultsBox() : `<fieldset class="frame"><legend>Influence</legend><div class="stack">
         <p class="note small">After the off-season program, the coach talks to the group and every player's game and makeup shift a little, with his new ratings in play.</p>
-        <button class="btn ${auto ? 'focus' : 'off'}" data-act="nav" data-to="meeting" ${auto ? '' : 'disabled'}>🗣️ Begin Meeting</button></div></fieldset>`)}
+        <button class="btn ${auto ? 'focus' : 'off'}" data-act="nav" data-to="meeting" ${auto ? '' : 'disabled'}>🗣️ Begin Team Meeting</button></div></fieldset>`)}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
@@ -5883,15 +5890,15 @@ setTradeHook((kind, rec) => {
 function lockSigning(p, why) {
   if (!isComplete()) return; const m = offGet('signed'); m[p.id] = { why, tid: p.tid }; offSet('signed', m); }
 // Why an FA signing can't be traded yet.
-const signingLock = x => x.matched ? 'Matched offer sheet: 1 year'
-  : x.kind === 'snt' ? 'Sign-and-trade: Dec 15'
-  : x.from?.id === x.team.id && x.offer.sal > (x.rec?.contract?.sal || 0) * 1.2 && x.offer.sal > FA.minFor(x.p) ? 'Re-signed with a raise: Jan 15'
-  : 'Signed this offseason: Dec 15';
+const signingLock = x => x.matched ? 'Matched offer sheet'
+  : x.kind === 'snt' ? 'Sign-and-trade'
+  : x.from?.id === x.team.id && x.offer.sal > (x.rec?.contract?.sal || 0) * 1.2 && x.offer.sal > FA.minFor(x.p) ? 'Re-signed with a raise'
+  : 'Signed this offseason';
 const stepPast = key => { const cal = activeCal(), cur = cal.indexOf(currentStep()); return cur < 0 || cur >= cal.findIndex(st => st.key === key); };
 function tradeLock(p) {
   if (!isComplete() || p.status !== FA.STATUS_SIGNED) return null;
   // A signed rookie waits 30 days (draft rights trade any time).
-  if (p.history?.draft?.yr === league().season.currentYear && !stepPast('latefa')) return 'Rookie deal: 30 days';
+  if (p.history?.draft?.yr === league().season.currentYear && !stepPast('latefa')) return 'Rookie deal';
   const x = offGet('signed')[p.id];
   return x && x.tid === p.tid ? x.why : null;
 }
@@ -6283,7 +6290,9 @@ function liveAssets(team) {
   // Players whose contracts are up (pending free agents) can't be traded:
   // they're listed last, greyed out.
   const pending = p => p.status === 4 || !p.contract?.yrs;
-  const roster = [...team.roster].sort((a, b) => pending(a) - pending(b) || playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly));
+  // Tradeable players by level, then everyone who can't be moved (pending free agents, fresh signings), also by level.
+  const stuck = p => pending(p) || !!tradeLock(p);
+  const roster = [...team.roster].sort((a, b) => stuck(a) - stuck(b) || shownLevel(b) - shownLevel(a) || playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly));
   for (const p of roster) {
     const l = seasonLine(p, state.leagueIdx, ly);
     const ct = contractText(p);
@@ -7697,7 +7706,7 @@ function sntBox(m, s) {
         const rec = FA.signPlayer(L, m.p, mine, { yrs: deal.yrs, sal: deal.sal, opt: deal.yrs >= 5 && !deal.opt ? FA.OPT_PLAYER : deal.opt || 0 }, s.day);
         const trade = executeTrade({ team: mine, players: [m.p], picks: [] }, { team: partner, players: pkg.items.filter(a => a.p).map(a => a.p), picks: pkg.items.filter(a => a.pk).map(a => a.pk) }, L.season.currentYear);
         s.bids.delete(m.p.id);
-        lockSigning(m.p, 'Sign-and-trade: Dec 15');
+        lockSigning(m.p, 'Sign-and-trade');
         const away = offGet('away');
         (away[mine.id] ||= []).push(m.p.id);
         for (const a of pkg.items) if (a.p) (away[partner.id] ||= []).push(a.p.id);
@@ -8932,7 +8941,7 @@ function signExtension(L, t, p, deal, cpu = false) {
   moraleEvent(p, `ext:${L.season.currentYear}`, 8, 'extension');
   const ntc = deal.ntc && FA.ntcEligible(L, p, t) ? 1 : 0;
   // Over 4 seasons in all, or a raise over 120%: six months before a trade.
-  if (deal.yrs + 1 > 4 || deal.sal > (p.contract.sal || 0) * 1.2) lockSigning(p, 'Extended: 6 months');
+  if (deal.yrs + 1 > 4 || deal.sal > (p.contract.sal || 0) * 1.2) lockSigning(p, 'Extended');
   p.contract.ext = { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, noTrd: ntc };
   p.contract.canExt = false;
   const led = extLedger().filter(x => x.pid !== p.id);
@@ -10011,7 +10020,7 @@ actions.lateSign = d => {
   if (FA.signedRoster(t).length >= O.rosterMax) { toast(`Roster is full (${O.rosterMax})`, '', 2400, true); return; }
   if (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2) { toast('That would put you over the 2nd apron', '', 2400, true); return; }
   FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
-  lockSigning(p, 'Signed this offseason: Dec 15');
+  lockSigning(p, 'Signed this offseason');
   ((calFlags().lateMine ||= [])).push(p.id);
   state.dirty = true;
   render();
@@ -10026,7 +10035,7 @@ actions.lateFinish = () => {
       const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
       if (!p || (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2)) break;
       FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
-      lockSigning(p, 'Signed this offseason: Dec 15');
+      lockSigning(p, 'Signed this offseason');
       list.push({ name: playerName(p), lv: `Lv ${shownLevel(p)}`, team: t.shortName, sal: lateMin(p), yrs: lateYears(p) });
     }
   }
@@ -10053,7 +10062,7 @@ function depthSwaps(L) {
       if (!vet) break;
       FA.cutPlayer(L, t, spare);
       FA.signPlayer(L, vet, t, { tid: t.id, sal: lateMin(vet), yrs: 1, opt: 0 }, L.season.currentDay || 3);
-      lockSigning(vet, 'Signed this offseason: Dec 15');
+      lockSigning(vet, 'Signed this offseason');
     }
   }
 }
