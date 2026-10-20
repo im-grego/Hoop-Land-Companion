@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
+  parseSave, serializeSave, injuryHistory, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.128.7';
+const APP_VERSION = '0.129.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1186,7 +1186,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1313,6 +1313,7 @@ screens.main = () => {
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
         <button class="btn left" data-act="nav" data-to="editor"><span class="ico">🏀</span> League</button>
       </div>
+      ${isCollege() ? '' : '<button class="btn left" data-act="nav" data-to="transactions"><span class="ico">🔁</span> Transactions</button>'}
       <div class="grid3">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
@@ -3082,6 +3083,13 @@ function teamMoves(L, t) {
     if (l && l.tid === t.id) continue;
     ins.push({ p, from: isCollege() ? (l ? `Transfer · ${nameOf(l.tid) || 'portal'}` : 'High school') : rookie(p) ? 'Draft' : l ? (nameOf(l.tid) || 'Free agency') : 'Signed' });
   }
+  // Back from a long injury: out a fifth of last season or more and healthy now, so he's like a new addition.
+  const gone = new Set(ins.map(x => x.p.id));
+  for (const p of t.roster) {
+    if (gone.has(p.id) || (p.season?.injury?.gamesOut || 0) > 0) continue;
+    const h = injuryHistory(p, yr, 1);
+    if (h && h.games >= L.season.totalGames / 5) ins.push({ p, from: `Back healthy · missed ${h.games} games`, back: true });
+  }
   for (const [pid, { p, at }] of everyone) if (!traded.has(pid) && at !== t.shortName && line(p)?.tid === t.id) outs.push({ p, to: isCollege() ? (at === 'Free agency' ? 'Transfer portal' : `Transfer · ${at}`) : at });
   if (isCollege()) {
     for (const p of L.retirees || []) if ((p.yrs ?? 0) >= 4 && line(p)?.tid === t.id) outs.push({ p, to: 'Graduated' });
@@ -3092,12 +3100,40 @@ function teamMoves(L, t) {
 }
 function movesBox(L, t) {
   const { ins, outs } = teamMoves(L, t);
-  const row = (p, tag, arrow) => `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted">${arrow} ${esc(tag)}${arrow === '←' ? ` · $${p.contract.sal}M × ${p.contract.yrs}` : ''}</span></div>`;
+  if (!ins.length && !outs.length) return '';
+  const row = (p, tag, arrow) => `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><span>${esc(playerName(p))} <span class="gold">Lv ${shownLevel(p)}</span> <span class="muted">${esc(posName(p))} · ${p.age}y</span></span><span class="muted">${arrow} ${esc(tag)}${arrow === '←' && p.contract?.sal ? ` · $${p.contract.sal}M × ${p.contract.yrs}` : ''}</span></div>`;
   return `<details class="frame" style="margin-top:10px" ${state.movesOpen ? 'open' : ''}><summary data-act="movesToggle"><b>Moves</b> <span class="small muted">In ${ins.length} · Out ${outs.length}</span></summary>
-    <p class="note small" style="margin-top:6px"><b>In</b></p>${ins.map(m => row(m.p, m.from, '←')).join('') || '<span class="small muted">None</span>'}
+    <p class="note small" style="margin-top:6px"><b>In</b></p>${ins.map(m => m.back ? row(m.p, m.from, '🩹') : row(m.p, m.from, '←')).join('') || '<span class="small muted">None</span>'}
     <p class="note small" style="margin-top:6px"><b>Out</b></p>${outs.map(m => row(m.p, m.to, '→')).join('') || '<span class="small muted">None</span>'}
   </details>`;
 }
+// League-wide transactions: signings, trades and the block, best players first.
+screens.transactions = (args = {}) => {
+  const L = league();
+  const tab = ['sign', 'trade', 'block'].includes(args.tab) ? args.tab : 'sign';
+  const nameOf = id => L.teams.find(x => x.id === id)?.shortName || '?';
+  const card = (p, left, right) => `<button class="prow" data-act="openPlayer" data-id="${p.id}"><span class="name">${esc(playerName(p))} ${lvTag(p, 'small')}</span><span class="right small muted">${esc(right)}</span><span class="detail small muted">${esc(posName(p))} · ${p.age}y · ${esc(left)}</span></button>`;
+  const money = p => (p.contract?.sal ? `$${p.contract.sal}M × ${p.contract.yrs}` : '');
+  let rows = [];
+  if (tab === 'sign') {
+    for (const t of L.teams) for (const m of teamMoves(L, t).ins) if (!m.back && !m.from.startsWith('Trade') && m.from !== 'Draft') rows.push({ p: m.p, a: `${m.from} → ${t.shortName}`, b: money(m.p) });
+  } else if (tab === 'trade') {
+    const trail = new Map();
+    for (const x of offGet('moves').list || []) { const r = trail.get(x.pid) || { from: x.from, to: x.to }; r.to = x.to; trail.set(x.pid, r); }
+    for (const [pid, r] of trail) { if (r.from === r.to) continue; const e = findPlayer(pid); if (e) rows.push({ p: e.p, a: `${nameOf(r.from)} → ${nameOf(r.to)}`, b: money(e.p) }); }
+  } else {
+    for (const t of L.teams) for (const p of FA.signedRoster(t)) if (p.season?.onTradeBlock === 1) rows.push({ p, a: t.shortName, b: money(p) });
+  }
+  rows.sort((x, y) => shownLevel(y.p) - shownLevel(x.p));
+  const note = { sign: 'Free agents and portal moves this offseason, best first.', trade: 'Trades this offseason, best player first.', block: 'Players teams are shopping. They could be on the move.' }[tab];
+  layout({
+    title: 'Transactions',
+    body: `<div class="tabs fa-tabs">${[['sign', 'Signings'], ['trade', 'Trades'], ['block', 'The Block']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="txTab" data-v="${k}">${l}</button>`).join('')}</div>
+      <p class="note small muted">${note}</p>
+      <div class="list">${rows.slice(0, 60).map(r => card(r.p, r.a, r.b)).join('') || '<p class="note small muted">Nothing yet.</p>'}</div>`,
+  });
+};
+actions.txTab = d => replace('transactions', { tab: d.v });
 actions.movesToggle = () => { state.movesOpen = !state.movesOpen; replace('roster', state.stack[state.stack.length - 1].args); };
 
 // ---------------------------------------------------------------------------
