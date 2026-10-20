@@ -1,0 +1,202 @@
+{
+ "0": {
+  "name": "Flex 1-5 PNR",
+  "ball": 1
+ },
+ "1": {
+  "name": "Flex 1-5 PNP",
+  "ball": 1
+ },
+ "2": {
+  "name": "Flex 1-4 PNR",
+  "ball": 1
+ },
+ "3": {
+  "name": "Flex 1-4 PNP",
+  "ball": 1
+ },
+ "4": {
+  "name": "Flex 2-5 PNR",
+  "ball": 2
+ },
+ "5": {
+  "name": "Flex 2-5 PNP",
+  "ball": 2
+ },
+ "6": {
+  "name": "Flex 2-4 PNR",
+  "ball": 2
+ },
+ "7": {
+  "name": "Flex 2-4 PNP",
+  "ball": 2
+ },
+ "8": {
+  "name": "Horns 3",
+  "ball": 1
+ },
+ "9": {
+  "name": "Horns 2",
+  "ball": 1
+ },
+ "10": {
+  "name": "Motion 5",
+  "ball": 1
+ },
+ "11": {
+  "name": "Motion 4",
+  "ball": 1
+ },
+ "12": {
+  "name": "Flex 3-5 PNR",
+  "ball": 3
+ },
+ "13": {
+  "name": "Flex 3-5 PNP",
+  "ball": 3
+ },
+ "14": {
+  "name": "Flex 3-4 PNR",
+  "ball": 3
+ },
+ "15": {
+  "name": "Flex 3-4 PNP",
+  "ball": 3
+ },
+ "16": {
+  "name": "Iso 2",
+  "ball": 1
+ },
+ "17": {
+  "name": "Iso 3",
+  "ball": 1
+ },
+ "18": {
+  "name": "Motion 5",
+  "ball": 2
+ },
+ "19": {
+  "name": "Motion 4",
+  "ball": 2
+ },
+ "20": {
+  "name": "Motion 3",
+  "ball": 2
+ },
+ "21": {
+  "name": "Motion 3",
+  "ball": 1
+ },
+ "22": {
+  "name": "Motion 2",
+  "ball": 1
+ },
+ "23": {
+  "name": "Motion 5",
+  "ball": 3
+ },
+ "24": {
+  "name": "Motion 4",
+  "ball": 3
+ },
+ "25": {
+  "name": "Motion 2",
+  "ball": 3
+ },
+ "26": {
+  "name": "Motion 5",
+  "ball": 4
+ },
+ "27": {
+  "name": "Motion 3",
+  "ball": 4
+ },
+ "28": {
+  "name": "Motion 2",
+  "ball": 4
+ },
+ "29": {
+  "name": "Motion 4",
+  "ball": 5
+ },
+ "30": {
+  "name": "Motion 3",
+  "ball": 5
+ },
+ "31": {
+  "name": "Motion 2",
+  "ball": 5
+ },
+ "32": {
+  "name": "Iso 4",
+  "ball": 1
+ },
+ "33": {
+  "name": "Iso 5",
+  "ball": 1
+ },
+ "34": {
+  "name": "Iso 1",
+  "ball": 2
+ },
+ "35": {
+  "name": "Iso 3",
+  "ball": 2
+ },
+ "36": {
+  "name": "Iso 4",
+  "ball": 2
+ },
+ "37": {
+  "name": "Iso 5",
+  "ball": 2
+ },
+ "38": {
+  "name": "Iso 1",
+  "ball": 3
+ },
+ "39": {
+  "name": "Iso 2",
+  "ball": 3
+ },
+ "40": {
+  "name": "Iso 4",
+  "ball": 3
+ },
+ "42": {
+  "name": "Iso 1",
+  "ball": 4
+ },
+ "50": {
+  "name": "Flex 4-1 PNR",
+  "ball": 4
+ },
+ "66": {
+  "name": "Horns 4",
+  "ball": 2
+ },
+ "68": {
+  "name": "Horns 1",
+  "ball": 3
+ },
+ "80": {
+  "name": "High Post 2",
+  "ball": 1
+ },
+ "82": {
+  "name": "High Post 4",
+  "ball": 1
+ },
+ "90": {
+  "name": "High Post 2",
+  "ball": 4
+ },
+ "97": {
+  "name": "5-Out 3",
+  "ball": 1
+ },
+ "98": {
+  "name": "5-Out 4",
+  "ball": 2
+ }
+}
