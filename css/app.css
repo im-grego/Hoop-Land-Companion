@@ -1419,3 +1419,4 @@ main.panel.bare { margin-top: 10px; }
 .infl-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--dim); }
 .infl-row.mine .infl-bar i { background: var(--cyan); }
 .infl-row.mine { font-weight: 800; }
+.tend-row.tend-edit2 { grid-template-columns: 110px 1fr 28px auto; }

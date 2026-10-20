@@ -296,7 +296,7 @@ export function runSurvey(L, li = 0, salt = 1) {
     const tend = (t, k) => num(coaches.get(t.id)?.tend?.[k]) || 0;
     // Teams with an open head coaching job aren't on the ballot.
     const hired = teams.filter(t => coaches.get(t.id)?.name);
-    const C = (t, score) => { const c = coaches.get(t.id); return { ...T(t, score + potZ(t) * 0.6), name: c?.name || `${t.city} ${t.name} head coach`.trim(), coachTeam: c?.name ? `${t.city} ${t.name}`.trim() : null }; };
+    const C = (t, score) => { const c = coaches.get(t.id); return { ...T(t, score + potZ(t) * 0.6), name: c?.name || `${t.city} ${t.name} head coach`.trim(), coachTeam: c?.name ? `${t.city} ${t.name}`.trim() : null, cid: c?.id ?? null }; };
     const pool = hired.length >= 10 ? hired : teams;
     out.push(ask('coachBest', 'Coaches', 'Who is the best coach in the league?', pool.map(t => C(t, over(t) * 0.5 + pct(t) * 3 + projZ(t) * 0.4 + playoff(t) * 0.3 + (devZ(t) + motZ(t) + leadZ(t)) * 0.35))));
     out.push(ask('coachMotivate', 'Coaches', 'Who is the best motivator of people?', pool.map(t => C(t, motZ(t) * 1.4 + over(t) * 0.5 + pct(t) * 0.5))));

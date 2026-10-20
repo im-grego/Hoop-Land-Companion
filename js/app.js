@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.140.0';
+const APP_VERSION = '0.141.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -409,9 +409,6 @@ function render() {
 if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
 window.addEventListener('popstate', () => {
   if (state.stack.length < 2) return;
-  // Backing out of the GM survey wraps it up.
-  const leaving = state.stack[state.stack.length - 1].name;
-  if (leaving === 'survey' && isStep('survey')) { saveSurveyHist(surveyNow()); calFlags().survey = true; toast('Next up: Media Day'); }
   state.stack.pop();
   render();
 });
@@ -1078,7 +1075,7 @@ function stepActions(key) {
       return day >= 2 && isComplete() ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
     }
     case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
-    case 'survey': return `<button class="btn big focus" data-act="nav" data-to="survey">📋 Read the GM Survey</button>`;
+    case 'survey': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="survey">📋 Read</button><button class="btn" data-act="surveySkip">⏭ Skip</button></div>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn" data-act="calDone" data-k="media">✅ Wrap Up</button></div>`;
     case 'latefa': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Begin</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div><button class="btn big focus" data-act="lateFinish" style="margin-top:8px">⏭ Advance</button>`;
     case 'cuts': return `<button class="btn big focus" data-act="nav" data-to="cuts">✂️ Final Cuts</button>`;
@@ -3524,9 +3521,14 @@ function newsBox(p) {
     const sent = [...withP, ...(fromA ? deal.pa : deal.pb)];
     lines.push(`Traded from ${nameOf(from)} to ${nameOf(to)}${sent.length ? ` along with ${sent.join(', ')}` : ''}, for ${back.length ? back.join(', ') : 'nothing in return'}.`);
   }
-  const sg = offGet('signed')[p.id], c = p.contract || {};
-  if (sg && sg.tid === p.tid && c.sal && c.yrs && !/^Extended/.test(sg.why)) lines.push(`Signed with ${nameOf(p.tid)}: $${c.sal}M × ${c.yrs}${c.opt === 2 ? ' · PO' : c.opt === 1 ? ' · TO' : ''}.`);
-  if (c.ext?.yrs > 0) lines.push(`Extension: $${c.ext.sal}M × ${c.ext.yrs}${c.ext.opt === 2 ? ' · PO' : c.ext.opt === 1 ? ' · TO' : ''}, starting when his current deal ends.`);
+  const sn = offGet('signNews')[p.id], c = p.contract || {};
+  if (sn && sn.tid === p.tid && c.sal && c.yrs && !/^Extended/.test(sn.why || '')) {
+    const terms = `$${c.sal}M × ${c.yrs}${c.opt === 2 ? ' · PO' : c.opt === 1 ? ' · TO' : ''}`;
+    lines.push(sn.why === 'Sign-and-trade' ? `Signed and traded to ${nameOf(p.tid)}: ${terms}.` : /^Re-signed/.test(sn.why) ? `Re-signed with ${nameOf(p.tid)}: ${terms}.` : sn.why === 'Matched offer sheet' ? `${nameOf(p.tid)} matched his offer sheet: ${terms}.` : `Signed with ${nameOf(p.tid)}: ${terms}.`);
+  }
+  const xl = extLedger().find(x => x.pid === p.id && x.yr === L.season.currentYear);
+  const ex = c.ext?.yrs > 0 ? c.ext : xl;
+  if (ex?.yrs > 0) lines.push(`Signed an extension${xl ? ` with ${nameOf(xl.tid)}` : ''}: $${ex.sal}M × ${ex.yrs}${ex.opt === 2 ? ' · PO' : ex.opt === 1 ? ' · TO' : ''}, starting when his current deal ends.`);
   return lines.length ? `<fieldset class="frame"><legend>News</legend>${lines.map(l => `<p class="note small">${esc(l)}</p>`).join('')}</fieldset>` : '';
 }
 // Status tags: what's true of him right now (contract, options, injury, trade block, ...).
@@ -6015,6 +6017,8 @@ setTradeHook((kind, rec) => {
   } catch { /* the ledger is a convenience */ }
 });
 function lockSigning(p, why) {
+  // The signing is remembered for the player's News box in any mode; only the trade lock is a Complete rule.
+  { const n = offGet('signNews'); n[p.id] = { tid: p.tid, why }; offSet('signNews', n); }
   if (!isComplete()) return; const m = offGet('signed'); m[p.id] = { why, tid: p.tid }; offSet('signed', m); }
 // Why an FA signing can't be traded yet.
 const signingLock = x => x.matched ? 'Matched offer sheet'
@@ -7904,7 +7908,10 @@ function surveyRows(results, n = 5) {
   return `<div class="sv-rows">${results.slice(0, n).map((r, i) => {
     const t = league().teams.find(x => x.id === r.tid);
     const tint = t ? teamTint(t) : '';
-    const name = r.kind === 'player' && r.tid >= 0 ? `<button class="linkish" data-act="openPlayer" data-id="${r.pid}">${esc(r.name)}</button>` : `<b>${esc(r.name)}</b>`;
+    const name = r.kind === 'player' && r.tid >= 0 ? `<button class="linkish" data-act="openPlayer" data-id="${r.pid}">${esc(r.name)}</button>`
+      : r.kind === 'player' ? `<button class="linkish" data-act="openPlayer" data-id="${r.pid}">${esc(r.name)}</button>`
+      : r.cid != null ? `<button class="linkish" data-act="nav" data-to="coach" data-arg="${r.cid}">${esc(r.name)}</button>`
+      : t ? `<button class="linkish" data-act="nav" data-to="roster" data-arg="${t.id}">${esc(r.name)}</button>` : `<b>${esc(r.name)}</b>`;
     return `<div class="sv-row ${t && isUserTeam(t) ? 'mine' : ''}" ${tint ? `style="${tint}"` : ''}>
       <span class="sv-n">${i + 1}</span>${t ? logoImg(t) : ''}
       <span class="grow">${name}${r.coachTeam ? ` <span class="small muted">${esc(r.coachTeam)}</span>` : ''}${r.kind === 'player' ? ` <span class="small muted">${esc(r.team)}${r.country ? ` · ${esc(r.country)}` : ''}${r.pick ? ` · #${r.pick} pick` : ''}</span>` : ''}
@@ -7944,6 +7951,7 @@ screens.survey = (args) => {
   });
 };
 actions.surveyTab = d => replace('survey', { tab: d.t });
+actions.surveySkip = () => { saveSurveyHist(surveyNow()); calFlags().survey = true; state.undo = null; render(); toast('Next up: Media Day'); };
 actions.surveyDone = () => { saveSurveyHist(surveyNow()); calFlags().survey = true; goHome(); toast('Next up: Media Day'); };
 
 // ---------------------------------------------------------------------------
@@ -8769,6 +8777,14 @@ function traitsBox(p, prospect = false) {
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
   }).join('')}</div></details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
+actions.tendAdj = d => {
+  const L = league();
+  const p = [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])].find(x => x.id === +d.id);
+  if (!p?.tendencies) return;
+  p.tendencies[d.k] = Math.max(-5, Math.min(5, (p.tendencies[d.k] || 0) + +d.d));
+  state.dirty = true;
+  render();
+};
 actions.traitAdj = d => {
   const L = league();
   const p = [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])].find(x => x.id === +d.id);
@@ -8786,8 +8802,8 @@ function playStyleBox(p) {
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(styleSentence(p))}${earnedSkills(p).length ? ` ${esc(`He ${earnedSkills(p).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toLowerCase())}.`)}` : ''}</p>
-    <details class="tend-wrap"><summary class="small">All tendencies</summary>
-      ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k]}</span></div>`).join('')}`).join('')}
+    <details class="tend-wrap" data-anchor="tend-all" data-keep="tend-all" ${state.keepOpen?.['tend-all'] ? 'open' : ''}><summary class="small">All tendencies</summary>
+      ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row tend-edit2"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k] || 0}</span><span class="trait-ctl"><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="-1" aria-label="Lower ${TEND_LABELS[k]}">−</button><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="1" aria-label="Raise ${TEND_LABELS[k]}">+</button></span></div>`).join('')}`).join('')}
     </details>
   </fieldset>`;
 }
