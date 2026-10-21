@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.146.1';
+const APP_VERSION = '0.146.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1594,23 +1594,24 @@ function gearCard() {
   const sw = hex => `<span class="gear-sw" style="background:#${hex}" title="#${hex}"></span>`;
   let body;
   if (done) {
-    const players = new Set(done.map(x => x.p)).size;
-    body = `<p class="note"><span class="up">${done.length}</span> socks and sleeves on <span class="up">${players}</span> players now match their jerseys.</p>
+    const players = new Set(done.gear.map(x => x.p)).size, suited = new Set(done.suits.map(x => x.m)).size;
+    body = `<p class="note"><span class="up">${done.gear.length}</span> socks and sleeves on <span class="up">${players}</span> players now match their jerseys, and <span class="up">${suited}</span> players' suits were redone.</p>
       <button class="btn small" data-act="undoGear">↺ Undo</button>`;
   } else {
-    const log = GEAR.matchLeague(L, APPEARANCE_POOL.tattoos);
-    const n = log.length, players = new Set(log.map(x => x.p)).size;
-    GEAR.undoMatch(log);
-    body = n ? `<p class="note">${players} players have socks or sleeves that don't match their team's jerseys (${n} items). Every jersey gets white (black on a black jersey), never a team color. Tattoos and rubber wristbands (the same color with every jersey) stay.</p>
-      <button class="btn" data-act="matchGear">🧦 Match Socks &amp; Sleeves</button>`
-      : '<p class="note">🧦 Every sock and sleeve already matches its jersey.</p>';
+    const log = GEAR.matchLeague(L, APPEARANCE_POOL.tattoos), suits = GEAR.matchSuitsLeague(L);
+    const n = log.length, players = new Set(log.map(x => x.p)).size, suited = new Set(suits.map(x => x.m)).size;
+    GEAR.undoMatch(log); GEAR.undoSuits(suits);
+    body = n || suited ? `<p class="note">${players} players have socks or sleeves that don't match their team's jerseys (${n} items). Every jersey gets white (black on a black jersey), never a team color. Tattoos and rubber wristbands (the same color with every jersey) stay.
+      ${suited} players' suits differ from the standard: black jacket and pants, white shirt, a team-color tie (hall of famers: gold jacket, black tie). Coaches keep theirs.</p>
+      <button class="btn" data-act="matchGear">🧦 Match Socks, Sleeves &amp; Suits</button>`
+      : '<p class="note">🧦 Every sock, sleeve and suit already matches.</p>';
   }
-  return `<fieldset class="frame"><legend>Socks &amp; Sleeves</legend><div class="stack">${body}
+  return `<fieldset class="frame"><legend>Socks, Sleeves &amp; Suits</legend><div class="stack">${body}
     <details><summary class="note small muted">Colors by team</summary><div class="stack" style="margin-top:6px">${[...L.teams].sort((x, y) => x.shortName.localeCompare(y.shortName)).map(t => `<div class="small" style="display:flex;justify-content:space-between;align-items:center"><b>${esc(t.shortName)}</b><span>${GEAR.targets(t).map(sw).join('')}</span></div>`).join('')}</div></details>
   </div></fieldset>`;
 }
-actions.matchGear = () => { (state.gear ||= {})[state.leagueIdx] = GEAR.matchLeague(league(), APPEARANCE_POOL.tattoos); state.dirty = true; render(); };
-actions.undoGear = () => { GEAR.undoMatch(state.gear?.[state.leagueIdx] || []); delete state.gear[state.leagueIdx]; state.dirty = true; render(); };
+actions.matchGear = () => { (state.gear ||= {})[state.leagueIdx] = { gear: GEAR.matchLeague(league(), APPEARANCE_POOL.tattoos), suits: GEAR.matchSuitsLeague(league()) }; state.dirty = true; render(); };
+actions.undoGear = () => { const d = state.gear?.[state.leagueIdx]; if (d) { GEAR.undoSuits(d.suits); GEAR.undoMatch(d.gear); } delete state.gear[state.leagueIdx]; state.dirty = true; render(); };
 
 actions.fixJerseys = () => { (state.jerseys ||= {})[state.leagueIdx] = fixJerseyNumbers(league()); state.dirty = true; render(); };
 actions.undoJerseys = () => { undoJerseyNumbers(state.jerseys[state.leagueIdx] || []); delete state.jerseys[state.leagueIdx]; render(); };
