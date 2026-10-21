@@ -2,9 +2,12 @@
 // accessory color with each of the four jerseys.
 //
 // - Every jersey: black when the jersey is black or close to it, otherwise white. Never a team color.
-// Tattoos, bare skin, head accessories and rubber wristbands (one color on every jersey) are left alone.
+// - Head accessories follow the same rule, except glasses (0005, 0006, 0024), which stay black (202020).
+// Tattoos, bare skin and rubber wristbands (one color on every jersey) are left alone.
 
 export const BLACK = '141020';
+export const GLASSES = new Set(['0005', '0006', '0024']), GLASSES_C = '202020';
+const hasHead = v => !!v && v !== 'none' && v !== '0000';
 const HEX = /^[0-9a-f]{6}$/i;
 const rgb = h => [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
 const lum = h => { const [r, g, b] = rgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255; };
@@ -61,7 +64,10 @@ export function matchTeam(team, known, tattoos = {}) {
     (p.accessories || []).forEach((a, i) => {
       const w = want[i];
       if (!w) return;
-      // Sleeves in a color from some old team still count as team gear; only a wrist color can be a one-off.
+      // Head gear and sleeves in a color from some old team still count as team gear; only a wrist color can be a one-off.
+      const head = v => ['gear', 'odd'].includes(kind(v, skin, tat, known));
+      if (hasHead(a.headAcc) && head(a.headAccC)) set(p, a, i, 'headAccC', GLASSES.has(a.headAcc) ? GLASSES_C : w);
+      if (hasHead(a.headAcc2) && head(a.headAcc2C)) set(p, a, i, 'headAcc2C', GLASSES.has(a.headAcc2) ? GLASSES_C : w);
       for (const k of BODY) {
         if (rubber.has(k)) continue;
         const kd = kind(a[k], skin, tat, known);
@@ -73,9 +79,19 @@ export function matchTeam(team, known, tattoos = {}) {
   }
   return log;
 }
+// Glasses are black on everyone: rosters, free agents, retirees and hall of famers.
+export function matchGlasses(league) {
+  const log = [];
+  const people = [...league.teams.flatMap(t => t.roster), ...(league.freeAgents || []), ...(league.retirees || []), ...(league.hallOfFame || [])];
+  for (const p of people) (p.accessories || []).forEach((a, i) => {
+    for (const k of ['headAcc', 'headAcc2']) if (GLASSES.has(a[k]) && a[k + 'C'] !== GLASSES_C) { log.push({ p, i, key: k + 'C', was: a[k + 'C'] }); a[k + 'C'] = GLASSES_C; }
+  });
+  return log;
+}
 export function matchLeague(league, tattoos) {
   const known = knownColors(league);
-  return league.teams.flatMap(t => matchTeam(t, known, tattoos));
+  const log = league.teams.flatMap(t => matchTeam(t, known, tattoos));
+  return [...log, ...matchGlasses(league)];
 }
 export function undoMatch(log) { for (const x of [...log].reverse()) x.p.accessories[x.i][x.key] = x.was; }
 
