@@ -1,0 +1,521 @@
+# NBA rosters, 2026-27 offseason. Name|Team|Number|Position|Height|Weight|Last attended|Country
+# Kept for reference (the "last attended" column is the pool for college teams if they are ever added). Not loaded by the app.
+Precious Achiuwa|SAC|9|F|6-8|243|Memphis|Nigeria
+Darius Acuff Jr.|SAC|5|G|6-2|190|Arkansas|USA
+Steven Adams|HOU|12|C|6-11|279|Pittsburgh|New Zealand
+Bam Adebayo|MIA|13|C-F|6-9|260|Kentucky|USA
+Michael Ajayi|CHA||G|6-7|235|Butler|USA
+Jaden Akins|NYK|14|G|6-2|195|Michigan State|USA
+Santi Aldama|DAL|34|F-C|7-0|215|Loyola-Maryland|Spain
+Trey Alexander|UTA|15|G|6-5|185|Creighton|USA
+Nickeil Alexander-Walker|ATL|7|G|6-5|205|Virginia Tech|Canada
+Grayson Allen|CHA|8|G|6-4|198|Duke|USA
+Jarrett Allen|CLE|31|C|6-9|250|Texas|USA
+Jose Alvarado|NYK|5|G|6-0|179|Georgia Tech|USA
+Nate Ament|MIL|15|F|6-10|207|Tennessee|USA
+Christian Anderson|CHA|5|G|6-1|165|Texas Tech|USA
+Kyle Anderson|TOR|13|F-G|6-8|230|UCLA|USA
+Giannis Antetokounmpo|MIA|7|F|6-11|250|Filathlitikos|Greece
+OG Anunoby|NYK|8|F-G|6-7|240|Indiana|United Kingdom
+Deni Avdija|POR|8|F|6-8|228|Maccabi Tel Aviv|Israel
+Tobe Awaka|CHI|19|F|6-8|250|Arizona|USA
+Deandre Ayton|WAS|8|C|7-0|252|Arizona|Bahamas
+Marvin Bagley III|DEN|3|F|6-10|235|Duke|USA
+Ace Bailey|UTA|19|F|6-9|200|Rutgers|USA
+LaMelo Ball|MIN|1|G|6-7|180|Illawarra|USA
+Mo Bamba|UTA|44|C|7-0|231|Texas|USA
+Paolo Banchero|ORL|5|F|6-10|250|Duke|USA
+Desmond Bane|ORL|3|G|6-6|215|TCU|USA
+Dominick Barlow|PHI|25|F|6-9|224|Overtime Elite|USA
+Harrison Barnes|SAS|40|F|6-7|225|North Carolina|USA
+Scottie Barnes|TOR|4|F-G|6-8|237|Florida State|USA
+Brooks Barnhizer|OKC|23|G|6-5|230|Northwestern|USA
+RJ Barrett|TOR|9|F-G|6-6|214|Duke|Canada
+Charles Bassey|GSW|28|F-C|6-9|244|Western Kentucky|Nigeria
+Jamison Battle|TOR|77|F|6-7|220|Ohio State|USA
+Bradley Beal|LAC|3|G|6-4|207|Florida|USA
+Reece Beekman|WAS|26|G|6-1|190|Virginia|USA
+Joan Beringer|MIN|19|F|7-0|230|Cedevita Olimpija (Slovenia)|France
+Saddiq Bey|NOP|41|F|6-8|240|Villanova|USA
+Tarik Biberovic|DAL|13|F|6-6|218||Bosnia and Herzegovina
+Tyler Bilodeau|BKN|34|F|6-8|230|UCLA|USA
+Goga Bitadze|ORL|35|C-F|6-11|235|Mega Basket|Georgia
+Nate Bittle|TOR||C|7-0|215|Oregon|USA
+Anthony Black|ORL|0|G|6-7|212|Arkansas|USA
+Leaky Black|SAC|19|F|6-7|209|North Carolina|USA
+Bogdan Bogdanović|HOU|31|G|6-5|231|Fenerbahce|Serbia
+Adem Bona|PHI|30|F|6-10|235|UCLA|Nigeria
+Devin Booker|PHX|15|G|6-5|206|Kentucky|USA
+Cameron Boozer|MEM|27|F|6-8|250|Duke|USA
+Kylan Boswell|CHA||G|6-1|200|Illinois|USA
+Jamaree Bouyea|PHX|17|G|6-2|180|San Francisco|USA
+Jaden Bradley|TOR|8|G|6-3|200|Arizona|USA
+Tony Bradley|UTA|13|C-F|6-10|248|North Carolina|USA
+Christian Braun|DEN|0|G|6-6|220|Kansas|USA
+Trevon Brazile|DEN|7|F|6-10|220|Arkansas|USA
+Mikal Bridges|NYK|25|G-F|6-6|209|Villanova|USA
+Miles Bridges|PHX|22|F|6-7|225|Michigan State|USA
+Dillon Brooks|PHX|3|G-F|6-7|225|Oregon|Canada
+Jaylen Brown|PHI|7|G-F|6-6|223|California|USA
+Kobe Brown|IND|24|F|6-7|250|Missouri|USA
+Maliq Brown|SAS|15|F|6-8|225|Duke|USA
+Mikel Brown Jr.|BKN|0|G|6-4|190|Louisville|USA
+Jalen Brunson|NYK|11|G|6-2|190|Villanova|USA
+Carter Bryant|SAS|11|F|6-6|220|Arizona|USA
+Thomas Bryant|CLE|3|C-F|6-9|260|Indiana|USA
+Brayden Burries|MIL|0|G|6-4|205|Arizona|USA
+Jimmy Butler III|GSW|10|F|6-6|230|Marquette|USA
+Matas Buzelis|CHI|14|F|6-9|196|NBA G League Ignite|USA
+Jamal Cain|ORL|8|F|6-7|207|Oakland|USA
+Kentavious Caldwell-Pope|PHI|1|G|6-5|204|Georgia|USA
+Toumani Camara|POR|33|F|6-7|230|Dayton|Belgium
+Clint Capela|HOU|30|C|6-10|256|Elan Chalon|Switzerland
+Dylan Cardwell|SAC|32|C|6-10|255|Auburn|USA
+Branden Carlson|POR|10|C|7-0|220|Utah|USA
+Cameron Carr|LAL|43|G|6-5|175|Baylor|USA
+Bub Carrington|WAS|7|G|6-4|190|Pittsburgh|USA
+Devin Carter|BOS|22|G|6-2|199|Providence|USA
+Jevon Carter|ORL|2|G|6-1|190|West Virginia|USA
+Wendell Carter Jr.|ORL|34|C-F|6-10|262|Duke|USA
+Alex Caruso|OKC|9|G|6-5|186|Texas A&M|USA
+Stephon Castle|SAS|5|G|6-6|215|Connecticut|USA
+Colin Castleton|ORL|14|C|6-11|250|Florida|USA
+Chris Cenac Jr.|BOS|12|F|6-11|240|Houston|USA
+Julian Champagnie|SAS|30|F|6-7|217|St. John's|USA
+Justin Champagnie|WAS|9|G-F|6-6|206|Pittsburgh|USA
+Cam Christie|LAC|24|G|6-5|190|Minnesota|USA
+Max Christie|DAL|0|G|6-5|190|Michigan State|USA
+Moussa Cisse|DAL|30|C|6-11|220|Memphis|Guinea
+Sidy Cissoko|POR|91|G|6-6|220|NBA G League Ignite|France
+Jaylen Clark|MIN|7|G|6-5|205|UCLA|USA
+Jordan Clarkson|NYK|0|G|6-5|194|Missouri|USA
+Nic Claxton|CHI|9|C|6-11|215|Georgia|USA
+Nique Clifford|SAC|10|G|6-5|210|Colorado State|USA
+Donovan Clingan|POR|23|C|7-2|280|Connecticut|USA
+Noah Clowney|BKN|21|F-C|6-10|240|Alabama|USA
+Isaiah Collier|UTA|8|G|6-4|210|Southern California|USA
+John Collins|DET|20|F-C|6-9|226|Wake Forest|USA
+Zach Collins|CHI|12|F-C|6-9|240|Gonzaga|USA
+Mike Conley|BOS|45|G|6-0|182|Ohio State|USA
+Ryan Conwell|MIA|4|G|6-2|215|Louisville|USA
+Carson Cooper|MEM|20|F|6-10|245|Michigan State|USA
+Quadir Copeland|HOU|25|G|6-5|214|North Carolina State|USA
+Bilal Coulibaly|WAS|0|G|6-7|195|Metropolitans 92|France
+Cedric Coward|MEM|23|G|6-6|206|Washington State|USA
+Isaiah Crawford|HOU|27|F|6-6|225|Louisiana Tech|USA
+LJ Cryer|GSW|18|G|6-0|197|Houston|USA
+Cade Cunningham|DET|2|G|6-6|220|Oklahoma State|USA
+Stephen Curry|GSW|30|G|6-2|205|Davidson|USA
+Tristan da Silva|ORL|23|F|6-8|217|Colorado|Germany
+Pacôme Dadiet|NYK|4|F|6-9|210|Ratiopharm Ulm|France
+Dyson Daniels|ATL|5|G|6-7|199|NBA G League Ignite|Australia
+Anthony Davis|WAS|23|F-C|6-10|253|Kentucky|USA
+Sergio de Larrea|DAL|55|G|6-6|175|Valencia, Spain|Spain
+Egor Dëmin|BKN|8|G|6-9|212|Brigham Young|Russia
+RayJ Dennis|ATL|00|G|6-1|180|Baylor|USA
+DeMar DeRozan|DEN|10|G-F|6-6|220|Southern California|USA
+Malik Dia|NOP|8|F|6-9|256|Mississippi|USA
+Moussa Diabaté|CHA|14|F|6-10|210|Michigan|France
+Alpha Diallo|DEN|11|G|6-7|210|Providence|USA
+Mohamed Diawara|NYK|51|F|6-9|225|Paris Basketball|France
+Gradey Dick|LAC|9|G-F|6-7|200|Kansas|USA
+Ousmane Dieng|MIL|21|F|6-9|185|New Zealand Breakers|France
+Khalifa Diop|CLE|18|C|6-10|231|CB Gran Canaria|Senegal
+Donte DiVincenzo|MIN|0|G|6-4|203|Villanova|USA
+Josh Dix|OKC|21|G|6-5|210|Creighton|USA
+Tre Donaldson|MIA|24|G|6-1|200|Miami|USA
+Luka Dončić|LAL|77|F-G|6-8|230|Real Madrid|Slovenia
+Luguentz Dort|ATL|0|G|6-4|220|Arizona State|Canada
+Ayo Dosunmu|MIN|13|G|6-4|201|Illinois|USA
+Andre Drummond|NYK|0|C|6-10|279|Connecticut|USA
+Kris Dunn|LAC|8|G|6-3|205|Providence|USA
+Ryan Dunn|PHX|0|F|6-7|216|Virginia|USA
+Kevin Durant|HOU|7|F|6-11|234|Texas|USA
+Jalen Duren|DET|0|C|6-10|250|Memphis|USA
+AJ Dybantsa|WAS|4|F|6-9|210|Brigham Young|USA
+Tari Eason|HOU|17|F|6-8|229|Louisiana State|USA
+Zach Edey|MEM|14|C|7-4|305|Purdue|Canada
+VJ Edgecombe|PHI|77|G|6-5|190|Baylor|USA
+Anthony Edwards|MIN|5|G|6-4|225|Georgia|USA
+Justin Edwards|PHI|11|F|6-7|217|Kentucky|USA
+Zuby Ejiofor|ATL|20|F|6-8|240|St. John's|USA
+Keon Ellis|BKN|1|G|6-4|180|Alabama|USA
+Joel Embiid|PHI|21|C-F|7-0|270|Kansas|Cameroon
+Tristan Enaruna|CLE|21|F|6-7|220|Cleveland State|Netherlands
+Noa Essengue|CHI|2|F|6-9|194|Ratiopharm Ulm (Germany)|France
+Isaiah Evans|MIN|33|F|6-6|175|Duke|USA
+Tacko Fall|PHI|99|C|7-6|311|Central Florida|Senegal
+Jeremiah Fears|NOP|0|G|6-3|188|Oklahoma|USA
+Kyle Filipowski|UTA|2|C|6-11|250|Duke|USA
+Dorian Finney-Smith|ATL|8|F|6-7|220|Florida|USA
+Cooper Flagg|DAL|32|F|6-10|205|Duke|USA
+Rasheer Fleming|PHX|20|F|6-9|240|St. Joseph's (PA)|USA
+Kingston Flemings|ATL|4|G|6-3|190|Houston|USA
+Simone Fontecchio|MIA|0|F|6-7|220|Baskonia|Italy
+De'Aaron Fox|SAS|4|G|6-3|185|Kentucky|USA
+Johnny Furphy|IND|12|G|6-8|200|Kansas|Australia
+Daniel Gafford|DAL|21|F-C|6-10|265|Arkansas|USA
+Myron Gardner|MIA|15|F|6-5|225|Arkansas-Little Rock|USA
+Darius Garland|LAC|10|G|6-1|192|Vanderbilt|USA
+Luka Garza|BOS|52|C|6-10|252|Iowa|USA
+Keyonte George|UTA|3|G|6-5|185|Baylor|USA
+Kyshawn George|WAS|18|F|6-8|200|Miami|Switzerland
+Paul George|BOS|13|F|6-8|230|Fresno State|USA
+Josh Giddey|CHI|3|G|6-8|214|NBA Global Academy|Australia
+Keshon Gilbert|ATL|00|G|6-3|200|Iowa State|USA
+Shai Gilgeous-Alexander|OKC|2|G|6-6|195|Kentucky|Canada
+Anthony Gill|WAS|16|F|6-8|230|Virginia|USA
+Collin Gillespie|PHX|12|G|6-1|195|Villanova|USA
+Ja'Kobi Gillespie|SAS|17|G|6-0|186|Tennessee|USA
+Rudy Gobert|MIN|27|C|7-1|258|Cholet|France
+Vladislav Goldin|MIA|50|C|7-0|255|Michigan|Russia
+Hugo González|BOS|28|G|6-6|200|Spain|Spain
+Jordan Goodwin|PHX|23|G|6-3|215|St. Louis|USA
+Aaron Gordon|DEN|32|F|6-8|235|Arizona|USA
+Jerami Grant|MEM|3|F|6-7|213|Syracuse|USA
+Allen Graves|TOR|22|F|6-8|225|Santa Clara|USA
+AJ Green|MIL|20|G|6-4|190|Northern Iowa|USA
+Draymond Green|GSW|23|F-C|6-6|240|Michigan State|USA
+Jalen Green|PHX|4|G|6-4|186|NBA G League Ignite|USA
+Javonte Green|DET|31|G|6-5|205|Radford|USA
+Josh Green|UTA|5|G|6-6|200|Arizona|Australia
+Quentin Grimes|LAL|5|G|6-4|207|Houston|USA
+Mouhamed Gueye|ATL|18|F|6-11|210|Washington State|Senegal
+Rui Hachimura|LAC|28|F|6-8|230|Gonzaga|Japan
+Tyrese Haliburton|IND|0|G|6-5|185|Iowa State|USA
+PJ Hall|CHA|16|C|6-9|245|Clemson|USA
+Yang Hansen|POR|16|C|7-1|270|Zibo|China
+Tim Hardaway Jr.|MIA|10|G|6-5|205|Michigan|USA
+James Harden|CLE|1|G|6-4|220|Arizona State|USA
+Jaden Hardy|LAL|7|G|6-4|198|NBA G League Ignite|USA
+Elijah Harkless|DET|94|G|6-3|195|UNLV|USA
+Dylan Harper|SAS|2|G|6-5|215|Rutgers|USA
+Ron Harper Jr.|BOS|8|G-F|6-5|231|Rutgers|USA
+Tobias Harris|SAS|23|F|6-8|226|Tennessee|USA
+Josh Hart|NYK|3|G|6-5|215|Villanova|USA
+Isaiah Hartenstein|OKC|55|C-F|7-0|250|Zalgiris|Germany
+Sam Hauser|BOS|30|F|6-7|217|Virginia|USA
+Jordan Hawkins|CHI|15|G|6-4|190|Connecticut|USA
+Jaxson Hayes|UTA|11|C-F|7-0|220|Texas|USA
+Scoot Henderson|POR|00|G|6-3|207|NBA G League Ignite|USA
+Taylor Hendricks|MEM|22|F|6-9|215|Central Florida|USA
+Tyler Herro|MIL|11|G|6-5|195|Kentucky|USA
+Mario Hezonja|CLE|33|F-G|6-8|255|FC Barcelona|Croatia
+Buddy Hield|CHI|7|G|6-5|220|Oklahoma|Bahamas
+Blake Hinson|UTA|25|F|6-8|230|Pittsburgh|USA
+Jrue Holiday|POR|5|G|6-4|220|UCLA|USA
+Ronald Holland II|DET|5|F|6-8|206|NBA G League Ignite|USA
+DaRon Holmes II|DEN|14|F|6-9|225|Dayton|USA
+Chet Holmgren|OKC|7|C-F|7-1|208|Gonzaga|USA
+Bryce Hopkins|DEN|13|F|6-7|225|St. John's|USA
+Al Horford|GSW|20|C|6-8|260|Florida|Dominican Republic
+Jett Howard|DAL|9|G|6-8|215|Michigan|USA
+Kevin Huerter|DET|27|G-F|6-6|190|Maryland|USA
+Jay Huff|IND|32|C|7-1|240|Virginia|USA
+Ariel Hukporti|PHI|55|C|7-0|246|Riesen Ludwigsburg|Germany
+De'Andre Hunter|SAC|15|F-G|6-7|221|Virginia|USA
+Bones Hyland|MIN|8|G|6-2|169|Virginia Commonwealth|USA
+Oso Ighodaro|PHX|11|F|6-11|235|Marquette|USA
+Graham Ike|GSW|45|F-C|6-10|257|Gonzaga|USA
+Brandon Ingram|LAC|7|F|6-8|190|Duke|USA
+Harrison Ingram|UTA|00|F|6-5|230|North Carolina|USA
+Kyrie Irving|DAL|11|G|6-2|195|Duke|Australia
+Jonathan Isaac|ORL|1|F|6-10|240|Florida State|USA
+GG Jackson|MEM|45|F|6-9|210|South Carolina|USA
+Isaiah Jackson|LAC|23|F|6-8|205|Kentucky|USA
+Quenton Jackson|IND|29|G|6-4|173|Texas A&M|USA
+Jaren Jackson Jr.|UTA|20|F-C|6-10|242|Michigan State|USA
+Trayce Jackson-Davis|TOR|32|F|6-9|245|Indiana|USA
+Kasparas Jakučionis|MIL|25|G|6-5|200|Illinois-Urbana-Champaign|Lithuania
+Bronny James|LAL|9|G|6-2|210|Southern California|USA
+LeBron James|PHI|23|F|6-9|250|St. Vincent-St. Mary HS (OH)|USA
+Sion James|CHA|4|G|6-5|220|Duke|USA
+Jaime Jaquez Jr.|MIL|24|G|6-7|225|UCLA|USA
+Joshua Jefferson|BKN|9|F|6-8|250|Iowa State|USA
+Daniss Jenkins|DET|24|G|6-4|165|St. John's|USA
+Ty Jerome|MEM|2|G-F|6-5|195|Virginia|USA
+Isaiah Joe|DET|17|G|6-4|165|Arkansas|USA
+AJ Johnson|NOP|14|G|6-6|175|Illawarra|USA
+Cameron Johnson|DEN|23|F|6-8|210|North Carolina|USA
+Chaney Johnson|BKN|31|G-F|6-7|235|Auburn|USA
+Jalen Johnson|ATL|1|F|6-8|219|Duke|USA
+Keldon Johnson|SAS|3|F-G|6-5|220|Kentucky|USA
+Keshad Johnson|MIA|16|F|6-6|230|Arizona|USA
+Tre Johnson|WAS|12|G|6-5|190|Texas|USA
+Morez Johnson Jr.|DAL|14|F|6-10|250|Michigan|USA
+Nikola Jokić|DEN|15|C|6-11|284|Mega Basket|Serbia
+Herbert Jones|NOP|2|F|6-7|210|Alabama|USA
+Isaac Jones|DET|13|F|6-8|245|Washington State|USA
+Kam Jones|MIL|19|G|6-4|200|Marquette|USA
+Spencer Jones|DEN|21|F|6-7|225|Stanford|USA
+Tre Jones|CHI|30|G|6-1|190|Duke|USA
+Tyus Jones|DEN|5|G|6-1|196|Duke|USA
+David Jones Garcia|SAS|25|G|6-4|210|Memphis|Dominican Republic
+Derrick Jones Jr.|LAC|5|F|6-6|210|UNLV|USA
+DeAndre Jordan|NOP|6|C|6-11|280|Texas A&M|USA
+Nikola Jović|MIA|5|F|6-10|245|Mega Basket|Serbia
+Ryan Kalkbrenner|CHA|11|C|7-1|256|Creighton|USA
+Arthur Kaluma|LAL|47|F|6-7|225|Texas|Uganda
+Alex Karaban|SAC|33|F|6-7|220|Connecticut|USA
+Luke Kennard|PHX|8|G|6-5|206|Duke|USA
+Jayson Kent|POR||F|6-8|215|Texas|USA
+Walker Kessler|LAL|14|C|7-1|245|Auburn|USA
+Corey Kispert|ATL|24|F|6-6|224|Gonzaga|USA
+Kon Knueppel|CHA|7|G-F|6-6|215|Duke|USA
+Tyler Kolek|NYK|13|G|6-2|195|Marquette|USA
+Luke Kornet|SAS|7|C-F|7-1|250|Vanderbilt|USA
+Vít Krejčí|POR|27|G|6-8|195|Zaragoza|Czech Republic
+Jonathan Kuminga|MIN|24|F|6-7|225|NBA G League Ignite|DRC
+Kyle Kuzma|MIL|18|F|6-8|221|Utah|USA
+Jock Landale|ATL|31|C|6-11|255|St. Mary's|Australia
+Chaz Lanier|DET|8|G|6-4|206|Tennessee|USA
+Jake LaRavia|LAL|12|F|6-8|235|Wake Forest|USA
+Pelle Larsson|MIA|9|G|6-5|215|Arizona|Sweden
+Zach LaVine|SAC|8|G|6-5|200|UCLA|USA
+Tobi Lawal|DAL|33|F|6-7|215|Virginia Tech|United Kingdom
+Yaxel Lendeborg|GSW|1|F|6-9|247|Michigan|USA
+Kawhi Leonard|TOR|2|F|6-7|225|San Diego State|USA
+Malevy Leons|GSW|33|F|6-9|206|Bradley|Netherlands
+Caris LeVert|MIL|12|G|6-7|205|Michigan|USA
+Damian Lillard|POR|0|G|6-2|200|Weber State|USA
+Dereck Lively II|DAL|2|C|7-1|230|Duke|USA
+Kevon Looney|LAL|55|F|6-9|222|UCLA|USA
+Brook Lopez|LAC|11|C|7-1|282|Stanford|USA
+Karim Lopez|MEM|35|F|6-8|210||Mexico
+Caleb Love|PHI|2|G|6-3|212|Arizona|USA
+Trey Lyles|MIN|41|F|6-9|234|Kentucky|Canada
+Khaman Maluach|PHX|10|C|7-1|250|Duke|South Sudan
+Sandro Mamukelashvili|LAL|54|F-C|6-10|240|Seton Hall|Georgia
+Terance Mann|BKN|14|G-F|6-5|220|Florida State|USA
+Tre Mann|WAS|1|G|6-4|178|Florida|USA
+Chris Mañon|LAL|30|G|6-4|209|Vanderbilt|USA
+Aday Mara|OKC|15|C|7-3|255|Michigan|Spain
+Lauri Markkanen|UTA|23|F-C|7-1|240|Arizona|Finland
+Bogoljub Marković|MIL|23|F|6-10|210|Serbia|Serbia
+Naji Marshall|DAL|3|F|6-6|220|Xavier|USA
+Alijah Martin|TOR|55|G|6-2|210|Florida|USA
+Caleb Martin|DAL|16|F|6-5|205|Nevada|USA
+Nick Martinelli|LAC|12|F|6-7|220|Northwestern|USA
+Jahmai Mashack|MEM|21|G|6-4|203|Tennessee|USA
+Bennedict Mathurin|NOP|24|G-F|6-5|222|Arizona|Canada
+Karlo Matković|NOP|17|F-C|6-11|255|Mega Basket|Bosnia and Herzegovina
+Tyrese Maxey|PHI|0|G|6-2|200|Kentucky|USA
+Miles McBride|NYK|2|G|6-2|195|West Virginia|USA
+Jared McCain|OKC|3|G|6-2|195|Duke|USA
+CJ McCollum|ATL|3|G|6-2|190|Lehigh|USA
+T.J. McConnell|IND|9|G|6-1|190|Arizona|USA
+Kevin McCullar Jr.|NYK|9|G|6-6|210|Kansas|USA
+Jaden McDaniels|MIN|3|F|6-9|185|Washington|USA
+Bryce McGowens|NOP|11|G|6-6|202|Nebraska|USA
+Jordan McLaughlin|SAS|0|G|5-11|185|Southern California|USA
+Liam McNeeley|CHA|33|F|6-8|210|Connecticut|USA
+De'Anthony Melton|GSW|8|G|6-2|199|Southern California|USA
+Sam Merrill|CLE|5|G|6-4|195|Utah State|USA
+Khris Middleton|WAS|22|F|6-7|222|Texas A&M|USA
+Baba Miller|LAC|18|F|6-11|204|Cincinnati|Spain
+Brandon Miller|CHA|24|F|6-7|200|Alabama|USA
+Jordan Miller|LAC|22|G|6-5|194|Miami|USA
+Leonard Miller|CHI|11|F|6-10|220|NBA G League Ignite|Canada
+Riley Minix|CLE|12|F|6-7|230|Morehead State|USA
+Josh Minott|BKN|00|F|6-9|215|Memphis|USA
+Yves Missi|NOP|21|C|6-11|236|Baylor|Cameroon
+Ajay Mitchell|OKC|25|G|6-4|190|California-Santa Barbara|Belgium
+Davion Mitchell|MIA|2|G|6-0|200|Baylor|USA
+Dillon Mitchell|BOS|20|F|6-6|200|St. John's|USA
+Donovan Mitchell|CLE|45|G|6-2|228|Louisville|USA
+Evan Mobley|CLE|4|C|6-11|230|Southern California|USA
+Jonathan Mogbo|SAC|22|F|6-7|225|San Francisco|USA
+Malik Monk|SAC|0|G|6-3|200|Kentucky|USA
+Moses Moody|GSW|4|G|6-5|217|Arkansas|USA
+Alex Morales|ORL|30|G|6-6|195|Wagner|USA
+Ja Morant|POR|1|G|6-2|174|Murray State|USA
+Trey Murphy III|NOP|25|F|6-9|220|Virginia|USA
+Dejounte Murray|NOP|5|G|6-4|188|Washington|USA
+Jamal Murray|DEN|27|G|6-4|215|Kentucky|Canada
+Keegan Murray|SAC|13|F|6-8|225|Iowa|USA
+Kris Murray|MEM|17|F|6-8|218|Iowa|USA
+Collin Murray-Boyles|TOR|30|F|6-7|245|South Carolina|USA
+Svi Mykhailiuk|UTA|10|G-F|6-6|205|Kansas|Ukraine
+Pete Nance|MIL|35|F|6-9|225|Northwestern|USA
+Larry Nance Jr.|IND|22|F-C|6-8|245|Wyoming|USA
+Grant Nelson|BKN|16|F|6-10|240|Alabama|USA
+Izaiyah Nelson|ORL|25|F|6-10|218|South Florida|USA
+Andrew Nembhard|IND|2|G-F|6-4|191|Gonzaga|Canada
+Ryan Nembhard|DEN|9|G|5-11|180|Gonzaga|Canada
+Aaron Nesmith|IND|23|G-F|6-5|215|Vanderbilt|USA
+Asa Newell|ATL|14|F|6-9|220|Georgia|USA
+Georges Niang|GSW|32|F|6-7|245|Iowa State|USA
+Tyler Nickel|NYK|55|F|6-7|220|Vanderbilt|USA
+Yanic Konan Niederhäuser|LAC|14|C|6-11|242|Penn State|Switzerland
+Zeke Nnaji|DEN|22|F-C|6-10|240|Arizona|USA
+Jusuf Nurkić|UTA|30|C|7-0|290|Cedevita|Bosnia and Herzegovina
+AK Okereke|LAL|31|F|6-7|244|Vanderbilt|USA
+Josh Okogie|UTA|21|G|6-4|213|Georgia Tech|Nigeria
+Onyeka Okongwu|ATL|17|F-C|6-10|240|Southern California|USA
+Ebuka Okorie|DET|23|G|6-2|185|Stanford|Nigeria
+Isaac Okoro|CHI|35|F-G|6-6|225|Auburn|USA
+Felix Okpara|WAS|34|C|6-11|235|Tennessee|Nigeria
+Royce O'Neale|CHA|00|F|6-6|226|Baylor|USA
+Ugonna Onyenso|DET|34|C|6-11|225|Virginia|Nigeria
+Kelly Oubre Jr.|IND|10|F-G|6-7|210|Kansas|USA
+Otega Oweh|OKC|13|G|6-4|215|Kentucky|USA
+Gary Payton II|GSW|0|G|6-2|192|Oregon State|USA
+Koa Peat|PHX|18|F|6-8|235|Arizona|USA
+Noah Penda|ORL|93|G-F|6-7|242|Le Mans Sarthe|France
+Darryn Peterson|UTA|22|G|6-6|205|Kansas|USA
+Julian Phillips|HOU|4|F|6-7|205|Tennessee|USA
+Labaron Philon|PHI|00|G|6-3|177|Alabama|USA
+Jalen Pickett|LAC|24|G|6-2|202|Penn State|USA
+Jaron Pierre Jr.|NOP|10|G|6-6|206|Southern Methodist|USA
+Scotty Pippen Jr.|MEM|1|G|6-1|170|Vanderbilt|USA
+Daeqwon Plowden|SAC|29|G-F|6-4|216|Bowling Green|USA
+Brandin Podziemski|GSW|2|G|6-4|208|Santa Clara|USA
+Jakob Poeltl|TOR|19|C|7-0|253|Utah|Austria
+Jordan Poole|NOP|3|G|6-4|200|Michigan|USA
+Craig Porter Jr.|CLE|9|G|6-1|194|Wichita State|USA
+Michael Porter Jr.|BKN|17|F|6-10|232|Missouri|USA
+Bobby Portis Jr.|MIA|95|F|6-10|250|Arkansas|USA
+Kristaps Porziņģis|GSW|7|F-C|7-2|240|Cajasol Sevilla|Latvia
+Quinten Post|MEM|41|C|7-0|238|Boston College|Netherlands
+Micah Potter|POR|9|C|6-9|248|Wisconsin|USA
+Drake Powell|BKN|4|G-F|6-6|212|North Carolina|USA
+Norman Powell|CHI|24|G|6-4|215|UCLA|USA
+Taurean Prince|DET|12|F|6-6|218|Baylor|USA
+Payton Pritchard|BOS|11|G|6-1|212|Oregon|USA
+Tyrese Proctor|CLE|24|G|6-4|185|Duke|Australia
+Olivier-Maxence Prosper|MEM|18|F|6-7|230|Marquette|Canada
+Zyon Pullin|MIN|15|G|6-4|206|Florida|USA
+Jayden Quaintance|SAS|22|F|6-9|255|Kentucky|USA
+Derik Queen|NOP|22|C|6-11|225|Maryland|USA
+Neemias Queta|BOS|88|C|7-0|270|Utah State|Portugal
+Immanuel Quickley|TOR|5|G|6-3|190|Kentucky|USA
+Julius Randle|BKN|30|F-C|6-9|256|Kentucky|USA
+Maxime Raynaud|SAC|42|C|7-1|268|Stanford|France
+Duop Reath|PHX|26|C|6-10|245|Louisiana State|South Sudan
+Austin Reaves|LAL|15|G|6-5|197|Oklahoma|USA
+Paul Reed|DET|7|F|6-9|210|DePaul|USA
+Tarris Reed Jr.|SAS|10|C|6-10|265|Connecticut|USA
+Julian Reese|NOP|13|F|6-11|230|Maryland|USA
+Naz Reid|CHA|0|C-F|6-9|264|Louisiana State|USA
+Will Richard|GSW|3|G|6-3|207|Florida|USA
+Nick Richards|MIA|8|C|6-11|255|Kentucky|Jamaica
+Jase Richardson|ORL|11|G|6-2|185|Michigan State|USA
+Will Riley|WAS|27|F|6-9|180|Illinois-Urbana-Champaign|USA
+Zaccharie Risacher|DAL|10|F|6-8|200|JL Bourg-en-Bresse|France
+Duncan Robinson|DET|55|F|6-7|215|Michigan|USA
+Mitchell Robinson|BOS|4|C-F|7-0|245|Western Kentucky|USA
+Ryan Rollins|MIL|13|G|6-3|180|Toledo|USA
+Rayan Rupert|PHI|12|G-F|6-7|205|New Zealand Breakers|France
+Cormac Ryan|MIL|30|G|6-5|205|North Carolina|USA
+Domantas Sabonis|SAC|11|F-C|6-10|240|Gonzaga|Lithuania
+Tidjane Salaün|CHA|31|F|6-10|207|Cholet|France
+Kobe Sanders|LAC|4|G|6-8|207|Nevada|USA
+Gui Santos|GSW|15|F|6-7|225|Minas|Brazil
+Ben Saraf|BKN|77|G|6-5|212|Ratiopharm Ulm|Israel
+Alex Sarr|WAS|20|C|7-0|205|Washington Wizards|France
+Marcus Sasser|DAL|8|G|6-2|195|Houston|USA
+Baylor Scheierman|BOS|55|G|6-6|213|Creighton|USA
+Dennis Schröder|CHA|17|G|6-1|175|Braunschweig|Germany
+Jaylin Sellers|CHI|22|G|6-4|205|Providence|USA
+Alperen Sengun|HOU|28|C|6-11|271|Besiktas|Turkey
+Brice Sensabaugh|UTA|28|F|6-6|225|Ohio State|USA
+Collin Sexton|LAL|10|G|6-1|190|Alabama|USA
+Landry Shamet|NYK|44|G|6-5|190|Wichita State|USA
+Terrence Shannon Jr|MIN|4|G-F|6-6|215|Illinois|USA
+Emanuel Sharp|SAC|34|G|6-3|212|Houston|Israel
+Day'Ron Sharpe|BKN|20|C|6-10|265|North Carolina|USA
+Shaedon Sharpe|POR|17|G|6-5|210|Kentucky|Canada
+Jamal Shead|TOR|1|G|6-1|200|Houston|USA
+Ben Sheppard|IND|26|G|6-6|190|Belmont|USA
+Reed Sheppard|HOU|15|G|6-2|189|Kentucky|USA
+Pascal Siakam|IND|43|F|6-9|245|New Mexico State|Cameroon
+Ben Simmons|SAC|25|G-F|6-9|245|Louisiana State|Australia
+Anfernee Simons|PHI|5|G|6-4|200|Edgewater HS (FL)|USA
+Jericho Sims|MIL|00|C|6-10|250|Texas|USA
+Jalen Slawson|IND|18|F|6-7|215|Furman|USA
+Javon Small|MEM|10|G|6-1|190|West Virginia|USA
+Marcus Smart|HOU|36|G|6-3|220|Oklahoma State|USA
+Braden Smith|IND|3|G|5-11|170|Purdue|USA
+Dru Smith|MIA|12|G|6-2|200|Missouri|USA
+Jalen Smith|CHI|25|F-C|6-9|244|Maryland|USA
+Malachi Smith|TOR|18|G|6-4|205|Gonzaga|USA
+Tolu Smith|DET|35|F|6-11||Mississippi State|USA
+Jabari Smith Jr.|HOU|10|F|6-11|231|Auburn|USA
+Thomas Sorber|OKC|12|C|6-9|250|Georgetown|USA
+Cam Spencer|MEM|24|G|6-3|205|Connecticut|USA
+Pat Spencer|PHX|61|G|6-2|205|Northwestern|USA
+Hannes Steinbach|CHA|22|F|6-10|248|Washington|Germany
+Isaiah Stewart|MEM|28|F-C|6-8|250|Washington|USA
+Bennett Stirtz|OKC|14|G|6-3|180|Iowa|USA
+Julian Strawther|DEN|1|G|6-6|205|Gonzaga|USA
+Max Strus|LAC|31|G-F|6-5|215|DePaul|USA
+Jalen Suggs|ORL|4|G|6-5|207|Gonzaga|USA
+Dailyn Swain|CHI|5|F|6-6|220|Texas|USA
+Jae'Sean Tate|HOU|8|F|6-4|239|Ohio State|USA
+Jayson Tatum|BOS|0|F-G|6-8|229|Duke|USA
+Adou Thiero|LAL|1|G|6-7|220|Arkansas|USA
+Meleek Thomas|CLE|15|G|6-3|190|Arkansas|USA
+Amen Thompson|HOU|1|G-F|6-7|227|Overtime Elite|USA
+Ausar Thompson|DET|9|G-F|6-7|205|Overtime Elite|USA
+Klay Thompson|MIA|11|G-F|6-5|200|Washington State|USA
+Bruce Thornton|HOU|2|G|6-0|229|Ohio State|USA
+Matisse Thybulle|LAL|4|G-F|6-5|202|Washington|USA
+Drew Timme|PHX|17|F|6-9|235|Gonzaga|USA
+Nae'Qwan Tomlin|CLE|35|F|6-8|210|Memphis|USA
+John Tonje|POR|8|G|6-4|218|Wisconsin|USA
+Nikola Topić|OKC|44|G|6-6|200|Crvena zvezda|Serbia
+Obi Toppin|IND|1|F|6-9|220|Dayton|USA
+Karl-Anthony Towns|NYK|32|C-F|7-0|248|Kentucky|USA
+Nolan Traore|BKN|10|G|6-4|190|Saint-Quentin|France
+Gary Trent Jr.|MIL|5|G|6-4|204|Duke|USA
+Oscar Tshiebwe|HOU|34|F-C|6-8|270|Kentucky|DRC
+Myles Turner|MIL|3|C-F|6-11|250|Texas|USA
+Jaylon Tyson|CLE|20|G-F|6-6|224|California|USA
+Ernest Udeh Jr.|CLE|88|C|6-9|266|Miami|USA
+Jarred Vanderbilt|LAL|2|F|6-8|214|Kentucky|USA
+Fred VanVleet|HOU|5|G|6-0|213|Wichita State|USA
+Devin Vassell|SAS|24|G-F|6-5|200|Florida State|USA
+Henri Veesaar|ATL|13|C|6-11|225|North Carolina|Estonia
+Nikola Vučević|ORL|9|C|6-11|265|Southern California|Montenegro
+Tristan Vukcevic|WAS|00|F|7-0|220|Real Madrid|Italy
+Dean Wade|PHI|45|F-C|6-9|228|Kansas State|USA
+Keaton Wagler|LAC|1|G|6-6|175|Illinois|USA
+Franz Wagner|ORL|22|F|6-10|230|Michigan|Germany
+Moritz Wagner|BKN|13|F-C|6-11|255|Michigan|Germany
+Jabari Walker|PHI|33|F|6-7|237|Colorado|USA
+Jarace Walker|IND|5|F|6-7|235|Houston|USA
+Cason Wallace|OKC|22|G|6-3|195|Kentucky|USA
+Jordan Walsh|BOS|27|G|6-6|210|Arkansas|USA
+Ja'Kobe Walter|TOR|14|G|6-5|180|Baylor|USA
+Kel'el Ware|MIL|9|C|7-0|230|Indiana|USA
+P.J. Washington|DAL|25|F|6-6|230|Kentucky|USA
+Trendon Watford|NOP|9|G-F|6-9|244|Louisiana State|USA
+Jamir Watkins|WAS|5|F|6-5|210|Florida State|USA
+Peyton Watson|CLE|8|G|6-7|215|UCLA|USA
+Jaylen Wells|MEM|0|F|6-7||Washington State|USA
+Victor Wembanyama|SAS|1|F-C|7-4|235|Metropolitans 92|France
+Coby White|CHA|3|G|6-5|210|North Carolina|USA
+Derrick White|BOS|9|G|6-4|200|Colorado|USA
+Cam Whitmore|DEN|1|F|6-6|230|Villanova|USA
+Aaron Wiggins|ATL|2|G|6-5|190|Maryland|USA
+Andrew Wiggins|MIA|22|F|6-6|210|Kansas|Canada
+Amari Williams|BOS|77|F-C|6-11|269|Kentucky|United Kingdom
+Brandon Williams|GSW|12|G|6-1|185|Arizona|USA
+Cody Williams|MIN|9|F|6-7|190|Colorado|USA
+Grant Williams|CHA|2|F|6-7|236|Tennessee|USA
+Jalen Williams|OKC|8|G-F|6-5|211|Santa Clara|USA
+Jaylin Williams|OKC|6|F|6-9|240|Arkansas|USA
+Kenrich Williams|OKC|34|G-F|6-7|210|TCU|USA
+Mark Williams|PHX|15|C|7-1|240|Duke|USA
+Patrick Williams|CHI|44|F|6-7|235|Florida State|USA
+Ziaire Williams|LAL|11|F|6-9|185|Stanford|USA
+Robert Williams III|POR|35|C-F|6-9|249|Texas A&M|USA
+Zion Williamson|NOP|1|F|6-6|277|Duke|USA
+Caleb Wilson|CHI|8|F|6-10|215|North Carolina|USA
+Jalen Wilson|ATL|22|F|6-6|220|Kansas|USA
+James Wiseman|NYK|11|C|7-0|240|Memphis|USA
+Danny Wolf|BKN|2|F|6-11|256|Michigan|USA
+Trae Young|WAS|3|G|6-1|164|Oklahoma|USA
+Chris Youngblood|POR|3|G|6-4||Alabama|USA
+Rocco Zikarsky|MIN|44|C|7-3|227|Brisbane Bullets (Australia)|Australia
+Ivica Zubac|IND|40|C|7-0|240|Mega Basket|Croatia
