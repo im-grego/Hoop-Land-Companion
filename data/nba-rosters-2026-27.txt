@@ -88,7 +88,7 @@ Max Christie|DAL|0|G|6-5|190|Michigan State|USA
 Moussa Cisse|DAL|30|C|6-11|220|Memphis|Guinea
 Sidy Cissoko|POR|91|G|6-6|220|NBA G League Ignite|France
 Jaylen Clark|MIN|7|G|6-5|205|UCLA|USA
-Jordan Clarkson|NYK|0|G|6-5|194|Missouri|USA
+Jordan Clarkson|NYK|00|G|6-5|194|Missouri|USA
 Nic Claxton|CHI|9|C|6-11|215|Georgia|USA
 Nique Clifford|SAC|10|G|6-5|210|Colorado State|USA
 Donovan Clingan|POR|23|C|7-2|280|Connecticut|USA
