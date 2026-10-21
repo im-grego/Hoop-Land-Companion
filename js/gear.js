@@ -115,7 +115,7 @@ export function matchSuits(people, { jacket = BLACK, tie = 'PRI' } = {}) {
 // suit goes with, pants and glasses are 202020, and no other head gear. The first suit is the one on display, so it
 // uses the main (second, colored) jersey, which makes suits 1 and 2 alike; suits 3 and 4 use their own jerseys, white
 // or not. Two exceptions for suits 1 and 2: a red, purple or yellow second jersey makes the tops 202020, and a dark
-// (but not black) third jersey lends its color instead. The coaches listed third and fourth wear the player suit.
+// (but not black) third jersey lends its color instead. The coaches listed third and fourth wear the player suit with black shoes.
 const hsl = h => {
   const [r, g, b] = rgb(h).map(v => v / 255), mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
   const l = (mx + mn) / 2, sat = d ? d / (1 - Math.abs(2 * l - 1)) : 0;
@@ -141,7 +141,9 @@ export function matchCoachSuits(team) {
     set('pantC', '202020'); set('shoeC', 'FFFFFF'); set('soleC', 'FFFFFF');
     if (GLASSES.has(s.headAcc)) set('headAccC', GLASSES_C); else if (hasHead(s.headAcc)) { set('headAcc', 'none'); set('headAccC', '000000'); }
   });
-  return [...log, ...matchSuits(staff.slice(2, 4), { tie: suitTie(team) })];
+  const rest = matchSuits(staff.slice(2, 4), { tie: suitTie(team) });
+  for (const m of staff.slice(2, 4)) (m.suits || []).forEach((s, i) => { if (s.shoeC !== '000000') { rest.push({ m, i, key: 'shoeC', was: s.shoeC }); s.shoeC = '000000'; } });
+  return [...log, ...rest];
 }
 // Free-agent head coaches and assistants: white shoes and soles too (they have no jerseys to match).
 export function matchPoolCoachShoes(league) {
