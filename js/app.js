@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.145.7';
+const APP_VERSION = '0.145.8';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1712,7 +1712,6 @@ function coachCard() {
     <div class="grid2"><button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button></div>
     <p class="note small" style="margin:4px 0 0"><b class="gold">Strategy</b></p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
-    <button class="btn" data-act="nav" data-to="scoring">🏀 Scoring Options</button>
   </div></fieldset>
   ${isComplete() && !isCollege() ? `<fieldset class="frame"><legend>Arena</legend><div class="stack">
     <p class="note small">Coins buy facility upgrades here. Each one keeps its effect in the game, and the app adds much more on top.</p>
@@ -1985,30 +1984,6 @@ screens.playbook = () => {
           <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
         <button class="btn" data-act="nav" data-to="playbookEdit" ${sch >= 1 ? '' : 'disabled'}>✏️ Make Your Own${sch >= 1 ? '' : ' · 🔒 Scheme 1'}</button>
         <button class="btn off" data-act="nav" data-to="teamBooks">👥 Team Playbooks</button>
-      </div></fieldset>`,
-  });
-};
-screens.scoring = () => {
-  const t = myTeam();
-  if (!t) { layout({ title: 'Scoring Options', body: '<p class="note">Pick your team first.</p>' }); return; }
-  const sch = tierNow('scheme');
-  const so = (t.scoringOptions || []);
-  const rosterIds = new Set(t.roster.map(p => p.id));
-  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
-  layout({
-    title: 'Scoring Options',
-    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Scoring Options</legend><div class="stack">
-        <p class="note small muted">Up to three players your offense runs through. Usage moves in 5% steps and the rest goes to your other starters. Every option runs the playbook, never auto play calling.</p>
-        ${so.map((o, i) => `<div class="so-row ${sch >= 2 ? '' : 'plan-locked'}">
-          <b class="small gold">${['1st', '2nd', '3rd'][i]} Option</b>
-          <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
-          <div class="so-ctl"><span class="small muted so-lab">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > 0 ? '' : 'disabled'}>−</button><b>${o.usageRate ? `${o.usageRate}%` : 'Auto'}</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
-            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div>
-          <span class="small muted so-lab">Focus</span><div class="so-focus">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
-        ${so.length ? `<p class="note small">${so.some(o => !o.usageRate) ? 'Auto usage is set by the game.' : `${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.`}</p>` : ''}
-        ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</button>` : ''}
-        <button class="btn" data-act="soAssist">🧑‍🏫 Use the Assistant Coach's Picks</button>
-        ${sch >= 2 ? '' : '<p class="note small muted">Choosing players, usage and focus yourself opens with Scheme 2. The assistant\'s picks are always open.</p>'}
       </div></fieldset>`,
   });
 };
