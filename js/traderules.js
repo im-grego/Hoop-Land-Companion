@@ -49,12 +49,13 @@ export function touchErr(moves, teams) {
 // Pick protections: top-N protected; if it lands in the top N it goes back
 // to the team that protected it and the holder gets that team's 2nd that
 // year instead. Value to the holder drops with the protection.
-export const PROTECTIONS = [0, 4, 8, 14];
+export const LOTTERY_PROT = 99;                    // "lottery protected": the size of the lottery (14 or 16) is read when the pick settles
+export const PROTECTIONS = [0, 3, 8, LOTTERY_PROT];
 
 // Settle this year's protected picks once the order is set (pk.pk is the
 // 0-based slot). `ledger` is [{ otid, yr, top, from }]; returns what
 // happened: [{ entry, kept, holder, back }].
-export function settleProtections(league, ledger) {
+export function settleProtections(league, ledger, lotteryN = 14) {
   const yr = league.season.currentYear;
   const out = [];
   for (const e of ledger.filter(x => x.yr === yr && !x.done)) {
@@ -62,7 +63,7 @@ export function settleProtections(league, ledger) {
     const pk = holder?.draftPicks.find(x => x.yr === yr && x.rd === 1 && x.otid === e.otid);
     if (!pk) { e.done = true; continue; }
     const from = league.teams.find(t => t.id === e.from);
-    const kept = pk.pk < e.top && from && holder !== from;
+    const kept = pk.pk < (e.top >= LOTTERY_PROT ? lotteryN : e.top) && from && holder !== from;
     let back = null;
     if (kept) {
       holder.draftPicks.splice(holder.draftPicks.indexOf(pk), 1);

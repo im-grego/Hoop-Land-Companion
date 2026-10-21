@@ -17,12 +17,12 @@ const SHORT = { BRK: 'BKN', CHA: 'CHO', GOS: 'GSW', PHL: 'PHI', SAN: 'SAS', UTH:
 const ALT = { 'philadelphia sixers': 'PHL', 'portland blazers': 'POR' };
 
 // "year round FROM>TO [top N]": FROM's pick now belongs to TO; a top-N protection sends it back if it lands in the top N.
-// Protections are the closest of #1, top 4, top 8 and top 14.
+// Protections are the closest of top 3, top 8 and lottery (tL).
 const DATA = `
-2027 1 ATL>SAN, NYK>BRK, DAL>CHA t4, MIA>CHA t14, LAL>MEM t4, PHX>HOU
+2027 1 ATL>SAN, NYK>BRK, DAL>CHA t3, MIA>CHA tL, LAL>MEM t3, PHX>HOU
 2028 1 ORL>POR
 2029 1 NYK>BRK, LAL>DAL, IND>LAC
-2030 1 ORL>MEM, GOS>MEM t14
+2030 1 ORL>MEM, GOS>MEM tL
 2031 1 PHL>BOS, CLE>DEN, MIA>MIL, PHX>MEM, NYK>BRK, MIN>SAC, LAL>UTH, TOR>LAC
 2032 1 DEN>BRK
 2033 1 MIN>CHA, PHX>CHA, MIA>MIL, LAL>UTH, TOR>LAC
@@ -52,7 +52,7 @@ export const REAL_PICKS = DATA.trim().split('\n').flatMap(line => {
   return rest.join(' ').split(',').map(s => s.trim()).filter(Boolean).map(s => {
     const [mv, t] = s.split(' ');
     const [from, to] = mv.split('>');
-    return { yr: +yr, rd: +rd, from, to, top: t ? +t.slice(1) : 0 };
+    return { yr: +yr, rd: +rd, from, to, top: t ? (t.slice(1) === 'L' ? 99 : +t.slice(1)) : 0 };
   });
 });
 
