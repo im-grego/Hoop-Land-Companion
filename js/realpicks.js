@@ -40,9 +40,10 @@ export const SWAPS = [
   { yr: 2029, rd: 1, best: 'PHL', worst: 'LAC' }, { yr: 2029, rd: 1, best: 'MEM', worst: 'ORL' }, { yr: 2030, rd: 1, best: 'UTH', worst: 'LAL' },
   { yr: 2030, rd: 2, best: 'CHI', worst: 'IND' }, { yr: 2030, rd: 2, best: 'ORL', worst: 'NOP' }, { yr: 2031, rd: 1, best: 'SAN', worst: 'SAC' },
 ];
-// Dead cap that is really on a team's books: Damian Lillard, waived and stretched by Portland in 2025
-// (about $113M left, spread over five seasons: 2025-26 through 2029-30). `yr` is the first season's ending year.
-export const REAL_DEAD = [{ team: 'POR', name: 'Damian Lillard', sal: 22.5, yr: 2026, yrs: 5, tag: 'real:lillard' }];
+// Dead cap that is really on a team's books: Damian Lillard, waived and stretched by Milwaukee (about $21.3M a
+// year after the set-off from his Portland deal, rounded down to $21M), five seasons: 2025-26 through 2029-30.
+// `yr` is the first season's ending year.
+export const REAL_DEAD = [{ team: 'MIL', name: 'Damian Lillard', sal: 21, yr: 2026, yrs: 5, tag: 'real:lillard' }];
 // Forfeited first-rounders (the Clippers' scandal penalty): these picks don't exist, so they're taken out.
 // IND's 2029 first was owed to LAC and goes with it.
 export const FORFEITED = [{ yr: 2029, rd: 1, team: 'IND' }, { yr: 2030, rd: 1, team: 'LAC' }, { yr: 2031, rd: 1, team: 'LAC' }, { yr: 2032, rd: 1, team: 'LAC' }, { yr: 2033, rd: 1, team: 'LAC' }];
