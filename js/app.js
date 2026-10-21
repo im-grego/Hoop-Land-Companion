@@ -44,7 +44,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.152.0';
+const APP_VERSION = '0.152.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -626,6 +626,21 @@ function spendAllPoints(L) {
   for (const p of [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || [])]) n += spendHeldPoints(p, state.params, rng);
   return n;
 }
+// Playbooks on for every pro team: the game reads "play selection" from a team's scoring option entries, and 1 means
+// the team runs its playbook. The app has no scoring options of its own, so on export each team keeps up to three
+// valid entries (usage and focus on Auto, whoever is first, second or third) and every entry is set to selection 1.
+function usePlaybooks(L) {
+  if (!L || L.leagueType !== 0) return;
+  for (const t of L.teams) {
+    const ids = new Set(t.roster.map(p => p.id));
+    const keep = [];
+    for (const o of t.scoringOptions || []) if (ids.has(o.pid) && !keep.some(k => k.pid === o.pid) && keep.length < 3) keep.push(o);
+    const pool = [...t.roster].filter(p => p.status !== 4 && !keep.some(k => k.pid === p.id)).sort((a, b) => shownLevel(b) - shownLevel(a));
+    while (keep.length < Math.min(3, t.roster.length) && pool.length) keep.push({ pid: pool.shift().id, usageRate: 0, focus: 0, playSelection: 1 });
+    for (const o of keep) o.playSelection = 1;
+    t.scoringOptions = keep;
+  }
+}
 let restoreCap = null;
 function buildExport() {
   restoreCap = null;
@@ -660,6 +675,7 @@ function buildExport() {
   // History starts: the starting year (the game scrolls back as far as it), on every league in the save.
   const startWas = (!isCollege() && state.params.startYear > 0) ? state.data.seasonLeagues.map(x => x.season.startingYear) : null;
   if (startWas) state.data.seasonLeagues.forEach(x => { x.season.startingYear = state.params.startYear; });
+  state.data.seasonLeagues.forEach(usePlaybooks);
   const text = serializeSave(state.data);
   if (startWas) state.data.seasonLeagues.forEach((x, i) => { x.season.startingYear = startWas[i]; });
   if (restoreCap) { [league().season.salaryCap, league().season.maxContract] = restoreCap; restoreCap = null; }
@@ -740,6 +756,7 @@ actions.downloadLeague = async () => {
   await nextFrame();
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
   const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(leagueCapSettings(L) || {}) });
+  usePlaybooks(C);
   if (!isCollege() && state.params.startYear > 0) C.season.startingYear = state.params.startYear;
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
@@ -10585,6 +10602,7 @@ function buildLeagueExport() {
       p.traits[t.k] = same ? was : Math.max(0, Math.min(100, Math.round(v * 5)));
     }
   }
+  usePlaybooks(L);
   const yWas = L.season.startingYear;
   if (!isCollege() && state.params.startYear > 0) L.season.startingYear = state.params.startYear;
   const text = serializeSave(L);
