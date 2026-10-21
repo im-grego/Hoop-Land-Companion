@@ -129,6 +129,7 @@ export const DEFAULT_PARAMS = {
   draftTradeWindow: 8,
   commissioner: false,     // trades: work any team's side and force trades through
   rookieR2Years: 2,
+  startYear: 0,            // history starts: 0 keeps the file's starting year; otherwise written as the starting year on export (the game scrolls back that far)
   faClearCpuOffers: true,  // clear the game's pending CPU offers after the app's free agency day        // second-round rookie deals (team option); the game gives 4     // picks after being drafted that a rookie can still be traded (draft-and-trade)
 };
 
