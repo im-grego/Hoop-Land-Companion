@@ -111,8 +111,26 @@ export function matchSuits(people, { jacket = BLACK, tie = 'PRI' } = {}) {
       if (s[key] !== val) { log.push({ m, i, key, was: s[key] }); s[key] = val; }
   return log;
 }
+// Coach suits (head coach and the assistant listed second): jacket, shirt and tie take the color of the jersey the
+// suit goes with, pants and glasses are 202020, and no other head gear. The first suit is the one on display, so
+// it uses the main (second, colored) jersey, which makes suits 1 and 2 alike; suits 3 and 4 use their own jerseys,
+// white or not.
+export function matchCoachSuits(team) {
+  const log = [], u = team.uniforms || [];
+  const colorOf = v => String(resolve(team, v) || '');
+  const main = [u[1]?.jersey, u[0]?.jersey, 'PRI'].find(v => v && !isWhiteish(colorOf(v))) || 'PRI';
+  for (const m of (team.frontOffice?.staff || []).slice(0, 2)) (m.suits || []).forEach((s, i) => {
+    const c = i <= 1 ? main : (u[i]?.jersey ?? main);
+    const set = (key, val) => { if (s[key] !== val) { log.push({ m, i, key, was: s[key] }); s[key] = val; } };
+    for (const k of ['jacketC', 'shirtC', 'tieC']) set(k, c);
+    set('pantC', '202020');
+    if (GLASSES.has(s.headAcc)) set('headAccC', GLASSES_C); else if (hasHead(s.headAcc)) { set('headAcc', 'none'); set('headAccC', '000000'); }
+  });
+  return log;
+}
 export function matchSuitsLeague(league) {
   return [
+    ...league.teams.flatMap(t => matchCoachSuits(t)),
     ...league.teams.flatMap(t => matchSuits(t.roster, { tie: suitTie(t) })),
     ...matchSuits(league.freeAgents || []),
     ...matchSuits(league.retirees || []),
