@@ -55,7 +55,9 @@ export function assistantOptions(team, coach, { exclude = [], count = 3 } = {}) 
 // 7 levels under his potential's level (a maxed 4.5 star is 93, so 86 for one) counts as one tier lower, and keeps
 // dropping a tier until he meets that tier's mark.
 const USAGE_OF_POT = { 10: 25, 9: 20, 8: 15, 7: 10 };
+export const USAGE_BY_POT = false;      // off for now: CPU and assistant options stay on Auto usage
 export function usageFor(p) {
+  if (!USAGE_BY_POT) return 0;
   let pot = Math.min(10, p.pot || 0);
   const lv = shownLevel(p);
   while (pot >= 7 && lv < 100 - 7 * (10 - pot) - 7) pot--;
@@ -72,7 +74,7 @@ export function autoOptions(team, L, { exclude = [], count = 3 } = {}) {
   return team.roster.filter(p => p.status !== 4 && !skip.has(p.id)).sort((a, b) => sc(b) - sc(a) || shownLevel(b) - shownLevel(a)).slice(0, count)
     .map(p => ({ pid: p.id, usageRate: usageFor(p), focus: 0, playSelection: 1 }))
     .sort((a, b) => b.usageRate - a.usageRate)
-    .map((o, i, all) => { const used = all.slice(0, i).reduce((v, x) => v + x.usageRate, 0); return { ...o, usageRate: Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - used)) }; });
+    .map((o, i, all) => { const used = all.slice(0, i).reduce((v, x) => v + x.usageRate, 0); return { ...o, usageRate: o.usageRate && Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - used)) }; });
 }
 
 // Make a team's options valid. Missing players are replaced from the assistant's
@@ -93,7 +95,7 @@ export function fixOptions(team, coach, { user = false, fill = true, L = null } 
     const need = (had.length ? had.length : 3) - team.scoringOptions.length;
     const add = L ? autoOptions(team, L, { exclude: team.scoringOptions.map(o => o.pid), count: need }) : assistantOptions(team, coach, { exclude: team.scoringOptions.map(o => o.pid), count: need });
     let total = team.scoringOptions.reduce((v, o) => v + o.usageRate, 0);
-    for (const o of add) { o.usageRate = Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - total)); total += o.usageRate; team.scoringOptions.push(o); }
+    for (const o of add) { if (o.usageRate) o.usageRate = Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - total)); total += o.usageRate; team.scoringOptions.push(o); }
     changed = true;
   }
   return changed;

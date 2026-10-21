@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.145.6';
+const APP_VERSION = '0.145.7';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2299,14 +2299,14 @@ actions.soAdd = () => soEdit(so => {
   const t = myTeam();
   if (so.length >= 3) return;
   const pick = autoOptions(t, league(), { exclude: so.map(o => o.pid), count: 1 })[0];
-  if (pick) so.push({ ...pick, usageRate: Math.max(MIN_USAGE, Math.min(pick.usageRate, MAX_TOTAL - soTotal(so))) });
+  if (pick) so.push({ ...pick, usageRate: pick.usageRate && Math.max(MIN_USAGE, Math.min(pick.usageRate, MAX_TOTAL - soTotal(so))) });
 });
 actions.soAssist = () => {
   const t = myTeam();
   if (!t) return;
   t.scoringOptions = autoOptions(t, league());
   state.dirty = true;
-  toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? `${p.ln} ${o.usageRate}%` : ''; }).join(' · '));
+  toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? (o.usageRate ? `${p.ln} ${o.usageRate}%` : p.ln) : ''; }).join(' · '));
   render();
 };
 // Every team's options stay valid: players still on the roster, play selection 1.
