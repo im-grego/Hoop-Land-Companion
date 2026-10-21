@@ -51,15 +51,15 @@ export function assistantOptions(team, coach, { exclude = [], count = 3 } = {}) 
   });
 }
 
-// Usage by potential: 5 stars 30, 4.5 stars 25, 4 stars 20, 3.5 stars 15 (anything lower 10). A player more than
+// Usage by potential: 5 stars 25, 4.5 stars 20, 4 stars 15, 3.5 stars 10 (anything lower 5). A player more than
 // 7 levels under his potential's level (a maxed 4.5 star is 93, so 86 for one) counts as one tier lower, and keeps
 // dropping a tier until he meets that tier's mark.
-const USAGE_OF_POT = { 10: 30, 9: 25, 8: 20, 7: 15 };
+const USAGE_OF_POT = { 10: 25, 9: 20, 8: 15, 7: 10 };
 export function usageFor(p) {
   let pot = Math.min(10, p.pot || 0);
   const lv = shownLevel(p);
   while (pot >= 7 && lv < 100 - 7 * (10 - pot) - 7) pot--;
-  return USAGE_OF_POT[pot] || 10;
+  return USAGE_OF_POT[pot] || 5;
 }
 
 // What CPU teams and the assistant run: three players on Auto focus, usage set by potential. Developing and rebuilding teams
