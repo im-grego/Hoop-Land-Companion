@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.146.2';
+const APP_VERSION = '0.147.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4007,7 +4007,7 @@ screens.settings = (args) => {
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
       ]) +
-      (isCollege() ? '' : setGroup('Draft Picks', ['<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 1, 4, 8 and 14 protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>']));
+      (isCollege() ? '' : setGroup('Realistic NBA', ['<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<button class="btn" data-act="addRealDead">💸 Add Real Dead Cap</button>', '<span class="note muted small">Lillard\'s stretched contract: $22.5M a year on Portland\'s cap through 2029-30.</span>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 1, 4, 8 and 14 protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>']));
   } else {
     body = setGroup('Skills From the Bump', [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
   }
@@ -9961,6 +9961,21 @@ function buyoutOffer(p) {
 }
 // Dead money after a set of cuts: what's on the books now plus each cut (full salary, or the buyout price).
 const deadAfter = (t, list, buy) => deadFor(t.id) + list.reduce((s, p) => { const c = p.contract || {}; if ((c.yrs || 0) <= 1) return s; const bo = buy[p.id] ? buyoutOffer(p) : null; return s + (bo ? bo.price : c.sal || 0); }, 0);
+actions.addRealDead = () => {
+  if (!state.data || isCollege()) return;
+  const L = league(), led = deadLedger();
+  let added = 0;
+  for (const d of RP.REAL_DEAD) {
+    const t = RP.teamFor(L, d.team);
+    if (!t || led.some(x => x.tag === d.tag)) continue;
+    const p = L.teams.flatMap(x => x.roster).concat(L.freeAgents || [], L.retirees || []).find(q => `${q.fn} ${q.ln}` === d.name);
+    led.push({ pid: p?.id ?? -1, name: d.name, tid: t.id, sal: d.sal, yrs: d.yrs, yr: d.yr, tag: d.tag });
+    added++;
+  }
+  if (added) { saveDead(led); state.dirty = true; }
+  render();
+  toast(added ? 'Real dead cap added' : 'Already on the books', added ? 'Lillard: $22.5M a year on Portland through 2029-30' : 'Nothing new to add');
+};
 actions.applyRealPicks = async () => {
   if (!state.data || isCollege()) return;
   const L = league();
