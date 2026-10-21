@@ -123,27 +123,38 @@ const hsl = h => {
   return { hue: hue * 60, sat, l };
 };
 export const isLoud = v => { if (!HEX.test(v)) return false; const { hue, sat } = hsl(v); return sat >= 0.35 && (hue <= 14 || hue >= 335 || (hue >= 255 && hue <= 320) || (hue >= 38 && hue <= 70)); };   // red, purple, yellow (gold)
+export const isRedPurple = v => { if (!HEX.test(v)) return false; const { hue, sat } = hsl(v); return sat >= 0.5 && lum(v) > 0.03 && (hue <= 14 || hue >= 335 || (hue >= 255 && hue <= 320)); };   // any shade of red or purple
 export const isDarkNotBlack = v => HEX.test(v) && !isBlackish(v) && lum(v) <= 0.26;
 export function matchCoachSuits(team) {
   const log = [], u = team.uniforms || [];
   const colorOf = v => String(resolve(team, v) || '');
   const main = [u[1]?.jersey, u[0]?.jersey, 'PRI'].find(v => v && !isWhiteish(colorOf(v))) || 'PRI';
   let top = main;
-  if (u[2] && isDarkNotBlack(colorOf(u[2].jersey))) top = u[2].jersey;
+  if (u[2] && isRedPurple(colorOf(u[2].jersey))) top = '202020';
+  else if (u[2] && isDarkNotBlack(colorOf(u[2].jersey))) top = u[2].jersey;
   else if (isLoud(colorOf(main))) top = '202020';
   const staff = team.frontOffice?.staff || [];
   for (const m of staff.slice(0, 2)) (m.suits || []).forEach((s, i) => {
     const c = i <= 1 ? top : (u[i]?.jersey ?? main);
     const set = (key, val) => { if (s[key] !== val) { log.push({ m, i, key, was: s[key] }); s[key] = val; } };
     for (const k of ['jacketC', 'shirtC', 'tieC']) set(k, c);
-    set('pantC', '202020');
+    set('pantC', '202020'); set('shoeC', 'FFFFFF'); set('soleC', 'FFFFFF');
     if (GLASSES.has(s.headAcc)) set('headAccC', GLASSES_C); else if (hasHead(s.headAcc)) { set('headAcc', 'none'); set('headAccC', '000000'); }
   });
   return [...log, ...matchSuits(staff.slice(2, 4), { tie: suitTie(team) })];
 }
+// Free-agent head coaches and assistants: white shoes and soles too (they have no jerseys to match).
+export function matchPoolCoachShoes(league) {
+  const log = [];
+  for (const m of (league.coaches || []).filter(c => c.pos === 1 || c.pos === 2)) (m.suits || []).forEach((s, i) => {
+    for (const key of ['shoeC', 'soleC']) if (s[key] !== 'FFFFFF') { log.push({ m, i, key, was: s[key] }); s[key] = 'FFFFFF'; }
+  });
+  return log;
+}
 export function matchSuitsLeague(league) {
   return [
     ...league.teams.flatMap(t => matchCoachSuits(t)),
+    ...matchPoolCoachShoes(league),
     ...league.teams.flatMap(t => matchSuits(t.roster, { tie: suitTie(t) })),
     ...matchSuits(league.freeAgents || []),
     ...matchSuits(league.retirees || []),
