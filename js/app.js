@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.149.0';
+const APP_VERSION = '0.149.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3494,13 +3494,24 @@ function profileReport(p, team) {
   return merged.map(x => x.t).join(' ');
 }
 // Awards he has won, from the league's award table: "Most Valuable Player ×2 · 2020, 2023".
+// Years won, with runs of three or more in a row shortened: 2009-2014, 2016, 2018-2021.
+function yearRuns(yrs) {
+  const a = [...new Set(yrs)].sort((x, y) => x - y), out = [];
+  for (let i = 0; i < a.length;) {
+    let j = i;
+    while (j + 1 < a.length && a[j + 1] === a[j] + 1) j++;
+    if (j - i >= 2) out.push(`${a[i]}-${a[j]}`); else for (let k = i; k <= j; k++) out.push(String(a[k]));
+    i = j + 1;
+  }
+  return out.join(', ');
+}
 function awardsBox(p) {
   const L = league(), table = L.awards || [];
   const rows = (p.awards || []).filter(x => (x.league ?? state.leagueIdx) === state.leagueIdx && x.yearsWon?.length)
     .map(x => ({ name: table.find(t => t.id === x.id)?.name, yrs: [...x.yearsWon].sort((m, n) => m - n) })).filter(x => x.name)
     .sort((x, y) => y.yrs.length - x.yrs.length || y.yrs[y.yrs.length - 1] - x.yrs[x.yrs.length - 1]);
   if (!rows.length) return '';
-  return `<fieldset class="frame"><legend>Awards</legend><div class="stack">${rows.map(r => `<div class="small mv-row"><span class="mv-l"><b>${esc(r.name)}</b>${r.yrs.length > 1 ? ` <span class="gold">×${r.yrs.length}</span>` : ''}</span><span class="muted mv-r">${r.yrs.join(', ')}</span></div>`).join('')}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>Awards</legend><div class="stack">${rows.map(r => `<div class="small mv-row aw-row"><span class="mv-l"><b>${esc(r.name)}</b>${r.yrs.length > 1 ? ` <span class="gold">×${r.yrs.length}</span>` : ''}</span><span class="muted mv-r">${yearRuns(r.yrs)}</span></div>`).join('')}</div></fieldset>`;
 }
 // What just happened to him: a trade (with the deal), a free agent signing, or an extension.
 function newsBox(p) {
@@ -3554,15 +3565,17 @@ function hofProfile(p, args) {
   const yearsOf = (p.stats || []).filter(x => x.league === state.leagueIdx && (x.season || []).some(r => r.GP > 0)).map(x => x.yr);
   const span = yearsOf.length ? `${Math.min(...yearsOf)}–${Math.max(...yearsOf)}` : '';
   const teamsOf = [...new Set((p.stats || []).filter(x => x.league === state.leagueIdx).flatMap(x => (x.season || []).filter(r => r.GP > 0).map(r => L.teams.find(t => t.id === r.tid)?.shortName)).filter(Boolean))];
-  const line = (label, st) => st.GP ? `<div><span class="muted small">${label}</span><b>${avg(st, 'PTS')} / ${avg(st, 'REB')} / ${avg(st, 'AST')}</b><span class="small muted">${st.GP} GP</span></div>` : '';
+  const cell = (label, v) => `<div><span class="muted small">${label}</span><b>${v}</b></div>`;
+  const row = (title, st) => st.GP ? `<p class="note small" style="margin:8px 0 4px"><b>${title}</b> <span class="muted">· ${st.GP} games</span></p>
+      <div class="statline">${cell('PPG', avg(st, 'PTS'))}${cell('RPG', avg(st, 'REB'))}${cell('APG', avg(st, 'AST'))}${cell('SPG', avg(st, 'STL'))}${cell('BPG', avg(st, 'BLK'))}</div>` : '';
   const career = `<fieldset class="frame"><legend>Career</legend>
       <p class="note small">${span ? `${span} · ` : ''}${yearsOf.length || p.yrs || 0} seasons${teamsOf.length ? ` · ${esc(teamsOf.join(', '))}` : ''}${champs ? ` · 🏆 ${champs} title${champs > 1 ? 's' : ''}` : ''}</p>
-      <div class="statline">${line('Regular season (PTS / REB / AST)', cs)}${line('Playoffs (PTS / REB / AST)', po)}</div></fieldset>`;
+      ${row('Regular season', cs)}${row('Playoffs', po)}</fieldset>`;
   const report = `<fieldset class="frame"><legend>Scouting Report</legend>
       <p class="note small scout-p">${(() => { try { const t = personality(p); const st = styleSentence(p); return `${esc(st)}${traitsSet(p) ? ` He ${esc(t[0].toLowerCase() + t.slice(1))}` : ''}`; } catch { return ''; } })()}</p></fieldset>`;
-  const ratings = `<fieldset class="frame"><legend>Ratings</legend><div class="stack">${ATTRS.map(k => { const [cur, ceil] = p.attributes[k]; return `<div class="attr"><div class="body">
-      <div class="top"><span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span><span>${cur} <span class="gold">/ ${ceil}</span></span></div>
-      <div class="${barClass(k)}"><div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div><div class="fill" style="width:${Math.min(cur, ATTR_MAX) / ATTR_MAX * 100}%"></div></div></div></div>`; }).join('')}</div></fieldset>
+  const ratings = `<fieldset class="frame"><legend>Ratings</legend>
+    ${[...SKILL_ATTRS, ...PHYSICAL].map(k => { const now = p.attributes[k][0]; return `<div class="rk rk2" style="grid-template-columns:1fr 44px"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${now}</span><div class="${barClass(k)}"><div class="fill" style="width:${now / ATTR_MAX * 100}%"></div></div></div>`; }).join('')}
+  </fieldset>
     <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend><div class="stack">${(p.skills || []).filter(s => s.level >= 1).map(s => `<div class="skill"><div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">(${s.level})</span>` : ''}</div></div>`).join('') || '<p class="note muted">No skills.</p>'}</div></fieldset>`;
   const tabsRow = `<div class="tabs pl-tabs">${[['scout', 'Overview'], ['traits', 'Traits'], ['attributes', 'Attributes'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const content = tab === 'attributes' ? ratings
