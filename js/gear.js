@@ -1,11 +1,8 @@
 // Socks and sleeves that match the jersey: every player on a team wears the same
 // accessory color with each of the four jerseys.
 //
-// - Jersey 1 and 2: white, unless the jersey is black.
-// - Jersey 3 and 4: black when the jersey is black or close to it. Otherwise the jersey's own
-//   color, but only when that color is the team's 3rd color or one outside its main three;
-//   a jersey in the primary or secondary color keeps white accessories.
-// Tattoos, bare skin and rubber wristbands (one color on every jersey) are left alone.
+// - Every jersey: black when the jersey is black or close to it, otherwise white. Never a team color.
+// Tattoos, bare skin, head accessories and rubber wristbands (one color on every jersey) are left alone.
 
 export const BLACK = '141020';
 const HEX = /^[0-9a-f]{6}$/i;
@@ -18,11 +15,9 @@ export const resolve = (team, v) => { const c = team.teamColors || []; const t =
 
 // The color for each of a team's four jerseys.
 export function targets(team) {
-  return (team.uniforms || []).map((u, i) => {
+  return (team.uniforms || []).map(u => {
     const jersey = resolve(team, u.jersey);
-    if (isBlackish(jersey)) return BLACK;
-    if (i <= 1 || jersey === resolve(team, 'PRI') || jersey === resolve(team, 'SEC')) return 'FFFFFF';
-    return jersey;
+    return isBlackish(jersey) ? BLACK : 'FFFFFF';
   });
 }
 
@@ -66,10 +61,7 @@ export function matchTeam(team, known, tattoos = {}) {
     (p.accessories || []).forEach((a, i) => {
       const w = want[i];
       if (!w) return;
-      // Head gear and sleeves in a color from some old team still count as team gear; only a wrist color can be a one-off.
-      const head = v => ['gear', 'odd'].includes(kind(v, skin, tat, known));
-      if (a.headAcc && a.headAcc !== 'none' && head(a.headAccC)) set(p, a, i, 'headAccC', w);
-      if (a.headAcc2 && a.headAcc2 !== 'none' && head(a.headAcc2C)) set(p, a, i, 'headAcc2C', w);
+      // Sleeves in a color from some old team still count as team gear; only a wrist color can be a one-off.
       for (const k of BODY) {
         if (rubber.has(k)) continue;
         const kd = kind(a[k], skin, tat, known);
@@ -86,3 +78,23 @@ export function matchLeague(league, tattoos) {
   return league.teams.flatMap(t => matchTeam(t, known, tattoos));
 }
 export function undoMatch(log) { for (const x of [...log].reverse()) x.p.accessories[x.i][x.key] = x.was; }
+
+// Staff suits: black jacket and pants, white shirt, a team-color tie (the first of the primary, secondary
+// and tertiary that isn't black or white). Head accessories and shoes are left alone.
+export function suitTie(team) {
+  const c = team.teamColors || [];
+  const i = [0, 1, 2].find(k => c[k] && !isBlackish(String(c[k])) && !isWhiteish(String(c[k])));
+  return ['PRI', 'SEC', 'TER'][i ?? 0];
+}
+export function matchSuits(team, staff = team.frontOffice?.staff || []) {
+  const tie = suitTie(team), log = [];
+  for (const m of staff) for (const [i, s] of (m.suits || []).entries()) {
+    for (const [key, val] of [['jacketC', BLACK], ['pantC', BLACK], ['shirtC', 'FFFFFF'], ['tieC', tie]])
+      if (s[key] !== val) { log.push({ m, i, key, was: s[key] }); s[key] = val; }
+  }
+  return log;
+}
+export function matchSuitsLeague(league) {
+  return [...league.teams.flatMap(t => matchSuits(t)), ...(league.coaches || []).flatMap(c => matchSuits({ teamColors: [] }, [c]))];
+}
+export function undoSuits(log) { for (const x of [...log].reverse()) x.m.suits[x.i][x.key] = x.was; }

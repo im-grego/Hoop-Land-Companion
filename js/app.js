@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.145.8';
+const APP_VERSION = '0.146.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1601,7 +1601,7 @@ function gearCard() {
     const log = GEAR.matchLeague(L, APPEARANCE_POOL.tattoos);
     const n = log.length, players = new Set(log.map(x => x.p)).size;
     GEAR.undoMatch(log);
-    body = n ? `<p class="note">${players} players have socks, sleeves or headbands that don't match their team's jerseys (${n} items). Home and away are white (black on a black jersey); the third and fourth match the jersey. Tattoos and rubber wristbands (the same color with every jersey) stay.</p>
+    body = n ? `<p class="note">${players} players have socks or sleeves that don't match their team's jerseys (${n} items). Every jersey gets white (black on a black jersey), never a team color. Tattoos and rubber wristbands (the same color with every jersey) stay.</p>
       <button class="btn" data-act="matchGear">🧦 Match Socks &amp; Sleeves</button>`
       : '<p class="note">🧦 Every sock and sleeve already matches its jersey.</p>';
   }
