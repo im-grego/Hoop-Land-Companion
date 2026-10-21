@@ -32,7 +32,7 @@ import { runMeeting, traitName } from './influence.js';
 import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
-import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, isReal } from './traits.js';
+import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillHallOfFame, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
 import { leagueLook, generateName } from './recruits.js';
@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.148.0';
+const APP_VERSION = '0.149.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -172,7 +172,12 @@ const snapOf = p => {
 const isUserTeam = t => t && state.userTeams.has(t.id);
 
 function allEntries() { return leaguePlayers(league(), true); }
-function findPlayer(pid) { return allEntries().find(e => e.p.id === pid); }
+function findPlayer(pid) {
+  const e = allEntries().find(e => e.p.id === pid);
+  if (e) return e;
+  const h = (league().hallOfFame || []).find(p => p.id === pid);
+  return h ? { p: h, team: null, hof: true } : null;
+}
 
 // ---------------------------------------------------------------------------
 // Utilities
@@ -3538,10 +3543,48 @@ function playerTags(p) {
   if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');
   return t.join('');
 }
+// A Hall of Famer: the same profile as an active player, read-only, with the whole career.
+function hofProfile(p, args) {
+  const L = league();
+  fillHallOfFame(L);
+  const tab = ['scout', 'traits', 'attributes', 'stats'].includes(args.tab) ? args.tab : 'scout';
+  const cs = p.careerStats?.season || {}, po = p.careerStats?.playoffs || {};
+  const avg = (st, k) => (st.GP ? (st[k] / st.GP).toFixed(1) : '—');
+  const champs = ((p.awards || []).find(a => a.id === 0)?.yearsWon || []).length;
+  const yearsOf = (p.stats || []).filter(x => x.league === state.leagueIdx && (x.season || []).some(r => r.GP > 0)).map(x => x.yr);
+  const span = yearsOf.length ? `${Math.min(...yearsOf)}–${Math.max(...yearsOf)}` : '';
+  const teamsOf = [...new Set((p.stats || []).filter(x => x.league === state.leagueIdx).flatMap(x => (x.season || []).filter(r => r.GP > 0).map(r => L.teams.find(t => t.id === r.tid)?.shortName)).filter(Boolean))];
+  const line = (label, st) => st.GP ? `<div><span class="muted small">${label}</span><b>${avg(st, 'PTS')} / ${avg(st, 'REB')} / ${avg(st, 'AST')}</b><span class="small muted">${st.GP} GP</span></div>` : '';
+  const career = `<fieldset class="frame"><legend>Career</legend>
+      <p class="note small">${span ? `${span} · ` : ''}${yearsOf.length || p.yrs || 0} seasons${teamsOf.length ? ` · ${esc(teamsOf.join(', '))}` : ''}${champs ? ` · 🏆 ${champs} title${champs > 1 ? 's' : ''}` : ''}</p>
+      <div class="statline">${line('Regular season (PTS / REB / AST)', cs)}${line('Playoffs (PTS / REB / AST)', po)}</div></fieldset>`;
+  const report = `<fieldset class="frame"><legend>Scouting Report</legend>
+      <p class="note small scout-p">${(() => { try { const t = personality(p); const st = styleSentence(p); return `${esc(st)}${traitsSet(p) ? ` He ${esc(t[0].toLowerCase() + t.slice(1))}` : ''}`; } catch { return ''; } })()}</p></fieldset>`;
+  const ratings = `<fieldset class="frame"><legend>Ratings</legend><div class="stack">${ATTRS.map(k => { const [cur, ceil] = p.attributes[k]; return `<div class="attr"><div class="body">
+      <div class="top"><span class="lbl">${k} <span class="muted">${ATTR_NAMES[k]}</span></span><span>${cur} <span class="gold">/ ${ceil}</span></span></div>
+      <div class="${barClass(k)}"><div class="room" style="width:${Math.min(ceil, ATTR_MAX) / ATTR_MAX * 100}%"></div><div class="fill" style="width:${Math.min(cur, ATTR_MAX) / ATTR_MAX * 100}%"></div></div></div></div>`; }).join('')}</div></fieldset>
+    <fieldset class="frame"><legend>Skills (${activeSkills(p).length})</legend><div class="stack">${(p.skills || []).filter(s => s.level >= 1).map(s => `<div class="skill"><div class="sk-line"><span class="sk-name sk-${SKILL_GROUP[skillCategory(s.id)] || ''}">${esc(skillName(s.id))}</span>${isLeveled(s.id) ? ` <span class="gold small">(${s.level})</span>` : ''}</div></div>`).join('') || '<p class="note muted">No skills.</p>'}</div></fieldset>`;
+  const tabsRow = `<div class="tabs pl-tabs">${[['scout', 'Overview'], ['traits', 'Traits'], ['attributes', 'Attributes'], ['stats', 'Stats']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="plTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  const content = tab === 'attributes' ? ratings
+    : tab === 'traits' ? ((traitsBox(p) || '') + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
+    : tab === 'stats' ? statsTab(p, args)
+    : `${career}${report}${awardsBox(p)}`;
+  layout({
+    title: 'Hall of Fame',
+    body: `<div>
+        <h2 class="team-title pl-name">${esc(playerName(p))} <span class="gold small">Peak Lv ${levelOf(p)}</span></h2>
+        <p class="note">🏛️ Hall of Fame · ${esc(POSITIONS[p.pos] ?? p.pos)} · ${heightStr(p.ht)}, ${p.wt} lb${span ? ` · ${span}` : ''}</p>
+        ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
+      </div>
+      ${tabsRow}${content}`,
+    action: { act: 'back', label: 'Done' },
+  });
+}
 screens.player = (args) => {
   const e = findPlayer(args.id);
   if (!e) { back(); return; }
   const { p, team } = e;
+  if (e.hof) { hofProfile(p, args); return; }
   const snap = snapOf(p);
   const d = diffPlayer(p, snap);
   const ceilMode = !!args.ceil;
@@ -10582,7 +10625,7 @@ const edSeg = (opts, cur, act, data) => `<div class="tabs fa-tabs">${opts.map(([
 screens.editor = (args = {}) => {
   const L = league();
   const tab = args.tab || 'teams';
-  const tabs = [['teams', 'Teams'], ['picks', 'Picks'], ['coaches', 'Coaches'], ['tools', 'Tools']];
+  const tabs = [['teams', 'Teams'], ['picks', 'Picks'], ['coaches', 'Coaches'], ...(isCollege() || !(L.hallOfFame || []).length ? [] : [['hof', 'Hall of Fame']]), ['tools', 'Tools']];
   const head = `<p class="note small">${esc(L.leagueName || L.shortName)} · ${state.leagueFile ? 'league file' : 'your save'} · ${L.teams.length} teams. ${state.leagueFile ? 'Edits are written into the file when you export.' : 'Edits change your save; Export League snapshots it.'}</p>
     <div class="tabs">${tabs.map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="edTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   let body = '';
@@ -10617,6 +10660,19 @@ screens.editor = (args = {}) => {
       <select class="sel-team" data-act="edPickTeam">${L.teams.map(x => `<option value="${x.id}" ${x === A ? 'selected' : ''}>${esc(x.city)} ${esc(x.name)}</option>`).join('')}</select>
       <div class="stack" style="margin-top:8px">${rows.map(r => `<div class="drill-row wrap"><span class="grow">${r.y} R${r.rd} <span class="muted small">· ${r.holder.id === A.id ? 'kept' : `held by ${esc(r.holder.shortName)}`}</span></span>
         <select class="sel-team" data-act="edPickTo" data-tid="${A.id}" data-yr="${r.y}" data-rd="${r.rd}"><option value="">Send to…</option>${L.teams.filter(x => x !== r.holder).map(x => `<option value="${x.id}">${esc(x.shortName)}${x.id === A.id ? ' (back)' : ''}</option>`).join('')}</select></div>`).join('')}</div>`;
+  } else if (tab === 'hof') {
+    fillHallOfFame(L);
+    const hf = (state.hof ||= { q: '', sort: 'name' });
+    const tot = (p, k) => p.careerStats?.season?.[k] || 0;
+    const titles = p => ((p.awards || []).find(a => a.id === 0)?.yearsWon || []).length;
+    const first = p => Math.min(...((p.stats || []).filter(x => x.league === 0 && (x.season || []).some(r => r.GP > 0)).map(x => x.yr)), 9999);
+    const SORTS = { name: ['A–Z', (a, b) => a.ln.localeCompare(b.ln) || a.fn.localeCompare(b.fn)], pts: ['Points', (a, b) => tot(b, 'PTS') - tot(a, 'PTS')], titles: ['Titles', (a, b) => titles(b) - titles(a) || tot(b, 'PTS') - tot(a, 'PTS')], era: ['Era', (a, b) => first(a) - first(b)], awards: ['Awards', (a, b) => (b.awards || []).length - (a.awards || []).length] };
+    const q = hf.q.trim().toLowerCase();
+    const list = (L.hallOfFame || []).filter(p => !q || `${p.fn} ${p.ln}`.toLowerCase().includes(q)).sort((SORTS[hf.sort] || SORTS.name)[1]);
+    const avg = (p, k) => (tot(p, 'GP') ? (tot(p, k) / tot(p, 'GP')).toFixed(1) : '—');
+    body = `<input type="search" class="sel-team" placeholder="Search ${(L.hallOfFame || []).length} Hall of Famers" value="${esc(hf.q)}" data-change="hofQ">
+      <div class="seg" style="margin:8px 0">${Object.entries(SORTS).map(([k, [l]]) => `<button class="btn small ${hf.sort === k ? 'on focus' : 'off'}" data-act="hofSort" data-k="${k}">${l}</button>`).join('')}</div>
+      <div class="stack">${list.map(p => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> <span class="gold small">Peak ${levelOf(p)}</span><br><span class="small muted">${esc(POSITIONS[p.pos] ?? p.pos)} · ${first(p) < 9999 ? first(p) : '—'} · ${avg(p, 'PTS')} / ${avg(p, 'REB')} / ${avg(p, 'AST')}${titles(p) ? ` · 🏆 ${titles(p)}` : ''}</span></span></div>`).join('') || '<p class="note muted small">No match.</p>'}</div>`;
   } else if (tab === 'coaches') {
     const staffs = L.teams.flatMap(t => (t.frontOffice?.staff || []).filter(c => c.pri === 1 || (c.attributes?.development?.[1] || 0) > 0).map(c => ({ c, t })));
     const pool = (L.coaches || []).filter(c => c.attributes).map(c => ({ c, t: null }));
@@ -10637,6 +10693,12 @@ function appTier(t) {
   try { return TIER_NAMES[teamStanding(league(), t).tier] || '—'; } catch { return ED_TAGS[t.status ?? 0] || '—'; }
 }
 actions.edTab = d => replace('editor', { tab: d.t });
+actions.hofSort = d => { (state.hof ||= { q: '', sort: 'name' }).sort = d.k; replace('editor', { tab: 'hof' }); };
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'hofQ') return;
+  (state.hof ||= { q: '', sort: 'name' }).q = e.target.value;
+  replace('editor', { tab: 'hof' });
+});
 actions.edTeam = d => replace('editor', { tab: 'teams', tid: d.id === '' ? undefined : +d.id });
 actions.edFans = d => { const t = league().teams.find(x => x.id === +d.id); t.frontOffice.fans = Math.max(0, Math.min(100, (t.frontOffice.fans ?? 0) + 5 * +d.d)); state.dirty = true; render(); };
 actions.edTag = d => { const t = league().teams.find(x => x.id === +d.id); t.status = +d.v; state.dirty = true; render(); };

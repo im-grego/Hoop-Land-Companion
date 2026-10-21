@@ -130,6 +130,47 @@ export function generateTraits(p, teamId = p.tid) {
 export function fillTraits(L) {
   return fillPairs([...L.teams.flatMap(t => t.roster.map(p => [p, t.id])), ...(L.freeAgents || []).map(p => [p, 0]), ...(L.draftClass || []).map(p => [p, 0])]);
 }
+// Hall of Famers: judged from the whole career instead of his current age. Titles and playoff production feed
+// winning and playoff riser, games played per year and career length feed durability, seasons with one team feed
+// loyalty, the era (older stars were paid less) feeds money, and the way he played (glass, charges, passing) feeds
+// motor and locker room. Real names still use REAL.
+export function hofTraits(p) {
+  const seasons = proSeasons(p);
+  const count = {};
+  for (const s of seasons) for (const r of s.rows) if (r.GP > 0) count[r.tid] = (count[r.tid] || 0) + 1;
+  const main = Number(Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0);
+  const g = generateTraits({ ...p, age: 28, yrs: Math.max(p.yrs || 0, seasons.length) }, main);
+  const cs = p.careerStats?.season || {}, po = p.careerStats?.playoffs || {}, t = p.tendencies || {};
+  const champs = ((p.awards || []).find(a => a.id === 0)?.yearsWon || []).length;
+  const yrs = Math.max(seasons.length, p.yrs || 0, 1);
+  const gpPerYear = (cs.GP || 0) / yrs;
+  const teams = Object.keys(count).length;
+  const draftYr = p.history?.draft?.yr || 2000;
+  g.durability = 5 + Math.min(1, gpPerYear / 76) * 7 + Math.min(3, (yrs - 8) * 0.35) - (att(p, 'SPD') > 17 ? 0.5 : 0) + gauss(p.id, 91) * 1.2;
+  g.winning += Math.min(4, champs * 0.9);
+  g.playoffRiser += (po.GP || 0) >= 40 ? Math.min(2, champs * 0.4) : 0;
+  g.loyalty += (teams === 1 ? 3.5 : teams === 2 ? 1 : 0) - Math.max(0, teams - 3) * 0.5;
+  g.money += draftYr < 1985 ? -2.5 : draftYr < 2000 ? -1 : 0.5;
+  // Motor from the work he did: rebounding and steals per game, minutes carried, conditioning (older eras'
+  // tendency sliders run low, so they only nudge it).
+  const gp = cs.GP || 0, mpg = gp ? (cs.MIN?.[0] || 0) / 60 / gp : 0;
+  g.motor = 6 + (att(p, 'STM') - 10) * 0.35 + (gp ? Math.min(3.5, ((cs.REB || 0) / gp) / 3.2 + ((cs.STL || 0) / gp) * 1.2) : 0) + (mpg >= 36 ? 2 : mpg >= 32 ? 1 : 0)
+    + ((t.takeCharge || 0) + (t.defReb || 0) + (t.stealOnBall || 0)) * 0.1 + gauss(p.id, 55) * 1.3;
+  g.lockerRoom += Math.min(3, champs * 0.5) + ((t.pass || 0) + (t.runPlay || 0)) * 0.12;
+  return g;
+}
+export function fillHallOfFame(L) {
+  let n = 0;
+  for (const p of L.hallOfFame || []) {
+    if (!p.traits) p.traits = Object.fromEntries(TRAIT_KEYS.map(k => [k, 0]));
+    if (traitsSet(p)) continue;
+    const real = REAL[`${p.fn} ${p.ln}`.trim()];
+    const g = real ? Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, real[i]])) : hofTraits(p);
+    for (const k of TRAIT_KEYS) p.traits[k] = clamp20(g[k]);
+    n++;
+  }
+  return n;
+}
 // The same for any list of players (retirees, Hall of Famers, all-star squads).
 export const fillTraitsList = players => fillPairs(players.map(p => [p, 0]));
 function fillPairs(everyone) {
