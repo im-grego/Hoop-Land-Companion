@@ -79,22 +79,28 @@ export function matchLeague(league, tattoos) {
 }
 export function undoMatch(log) { for (const x of [...log].reverse()) x.p.accessories[x.i][x.key] = x.was; }
 
-// Staff suits: black jacket and pants, white shirt, a team-color tie (the first of the primary, secondary
-// and tertiary that isn't black or white). Head accessories and shoes are left alone.
+// Player suits (active, free agents, retirees, hall of famers; coaches keep theirs): black jacket and pants,
+// white shirt, a team-color tie (the first of the primary, secondary and tertiary that isn't black or white).
+// Hall of famers wear a gold jacket and a black tie. Head accessories and shoes are left alone.
+export const HOF_JACKET = 'E57028';
 export function suitTie(team) {
   const c = team.teamColors || [];
   const i = [0, 1, 2].find(k => c[k] && !isBlackish(String(c[k])) && !isWhiteish(String(c[k])));
   return ['PRI', 'SEC', 'TER'][i ?? 0];
 }
-export function matchSuits(team, staff = team.frontOffice?.staff || []) {
-  const tie = suitTie(team), log = [];
-  for (const m of staff) for (const [i, s] of (m.suits || []).entries()) {
-    for (const [key, val] of [['jacketC', BLACK], ['pantC', BLACK], ['shirtC', 'FFFFFF'], ['tieC', tie]])
+export function matchSuits(people, { jacket = BLACK, tie = 'PRI' } = {}) {
+  const log = [];
+  for (const m of people) for (const [i, s] of (m.suits || []).entries())
+    for (const [key, val] of [['jacketC', jacket], ['pantC', BLACK], ['shirtC', 'FFFFFF'], ['tieC', tie]])
       if (s[key] !== val) { log.push({ m, i, key, was: s[key] }); s[key] = val; }
-  }
   return log;
 }
 export function matchSuitsLeague(league) {
-  return [...league.teams.flatMap(t => matchSuits(t)), ...(league.coaches || []).flatMap(c => matchSuits({ teamColors: [] }, [c]))];
+  return [
+    ...league.teams.flatMap(t => matchSuits(t.roster, { tie: suitTie(t) })),
+    ...matchSuits(league.freeAgents || []),
+    ...matchSuits(league.retirees || []),
+    ...matchSuits(league.hallOfFame || [], { jacket: HOF_JACKET, tie: BLACK }),
+  ];
 }
 export function undoSuits(log) { for (const x of [...log].reverse()) x.m.suits[x.i][x.key] = x.was; }
