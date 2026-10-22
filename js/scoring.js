@@ -1,0 +1,102 @@
+// Scoring options: up to three players a team builds its offense around, each
+// with a usage rate (5% steps), a focus and a play selection. Play selection is
+// always 1 so every team runs its playbook instead of auto play calling. The
+// rest of the usage goes to the other starters automatically.
+
+import { shownLevel } from './regression.js';
+import { playStyles, teamStanding } from './overview.js';
+import { playerCoachFit } from './coachmarket.js';
+
+export const FOCUS = ['Auto', 'Inside', 'Midrange', 'Outside', 'Facilitate'];     // 0-4, as the game numbers them
+export const MAX_USAGE = 45, MIN_USAGE = 5, MAX_TOTAL = 85;
+const FOCUS_OF_STYLE = { rim: 1, post: 1, lob: 1, mid: 2, shooter: 3, playmaker: 4 };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const r5 = v => Math.round(v / 5) * 5;
+const A = (p, k) => p.attributes?.[k]?.[0] ?? 0;
+
+// What he can score with: his best three scoring ratings.
+const scoringPower = p => ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS'].map(k => A(p, k)).sort((x, y) => y - x).slice(0, 3).reduce((s, v) => s + v, 0) / 60;
+// How much he wants to shoot: the shot-taking tendencies.
+const drive = p => { const t = p.tendencies; if (!t) return 0.5; const ks = ['dunk', 'floater', 'hook', 'post', 'twoPoint', 'threePoint', 'fades', 'step', 'spin', 'cross']; return clamp((ks.reduce((s, k) => s + (t[k] || 0), 0) / ks.length + 5) / 10, 0, 1); };
+
+// The focus that fits him: his leading play style, settled by his ratings when
+// it's a creator, and Auto when nothing stands out.
+export function focusFor(p) {
+  const st = playStyles(p, 3).filter(s => FOCUS_OF_STYLE[s.k] || s.k === 'creator')[0];
+  if (!st) return 0;
+  if (st.k !== 'creator') return FOCUS_OF_STYLE[st.k];
+  const inside = Math.max(A(p, 'LAY'), A(p, 'DNK'), A(p, 'INS')), mid = A(p, 'MID'), out = A(p, 'TPT');
+  const best = Math.max(inside, mid, out);
+  if (best - Math.min(inside, mid, out) < 2) return 0;
+  return best === out ? 3 : best === mid ? 2 : 1;
+}
+
+// What the CPU would do in control: scorers who fit the scheme and the playbook.
+export function assistantOptions(team, coach, { exclude = [], count = 3 } = {}) {
+  const skip = new Set(exclude);
+  const pool = [...team.roster].filter(p => p.status !== 4 && !skip.has(p.id)).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 9);
+  const scored = pool.map(p => {
+    const fit = coach ? playerCoachFit(p, team, coach).fit : 0.6;
+    return { p, sc: 0.42 * clamp((shownLevel(p) - 50) / 50, 0, 1) + 0.25 * scoringPower(p) + 0.18 * fit + 0.15 * drive(p) };
+  }).sort((a, b) => b.sc - a.sc).slice(0, count);
+  const mean = scored.reduce((s, x) => s + x.sc, 0) / (scored.length || 1);
+  let used = 0, prev = 40;
+  return scored.map((x, i) => {
+    const base = [30, 20, 15][i] ?? 10;
+    let u = clamp(r5(base + (x.sc - mean) * 40), 10, 40);
+    u = Math.min(u, prev, MAX_TOTAL - used);
+    prev = u;
+    used += u;
+    return { pid: x.p.id, usageRate: u, focus: focusFor(x.p), playSelection: 1 };
+  });
+}
+
+// Usage by potential: 5 stars 25, 4.5 stars 20, 4 stars 15, 3.5 stars 10 (anything lower 5). A player more than
+// 7 levels under his potential's level (a maxed 4.5 star is 93, so 86 for one) counts as one tier lower, and keeps
+// dropping a tier until he meets that tier's mark.
+const USAGE_OF_POT = { 10: 25, 9: 20, 8: 15, 7: 10 };
+export const USAGE_BY_POT = false;      // off for now: CPU and assistant options stay on Auto usage
+export function usageFor(p) {
+  if (!USAGE_BY_POT) return 0;
+  let pot = Math.min(10, p.pot || 0);
+  const lv = shownLevel(p);
+  while (pot >= 7 && lv < 100 - 7 * (10 - pot) - 7) pot--;
+  return USAGE_OF_POT[pot] || 5;
+}
+
+// What CPU teams and the assistant run: three players on Auto focus, usage set by potential. Developing and rebuilding teams
+// lean on potential; competing and contending ones on the best current player.
+export function autoOptions(team, L, { exclude = [], count = 3 } = {}) {
+  const skip = new Set(exclude);
+  let young = false;
+  try { young = ['developing', 'rebuilding'].includes(teamStanding(L, team).tier); } catch { /* no history: judge by talent */ }
+  const sc = p => { const lv = shownLevel(p), pt = Math.min(100, (p.pot || 0) * 9); return young ? 0.65 * pt + 0.35 * lv : 0.9 * lv + 0.1 * pt; };
+  return team.roster.filter(p => p.status !== 4 && !skip.has(p.id)).sort((a, b) => sc(b) - sc(a) || shownLevel(b) - shownLevel(a)).slice(0, count)
+    .map(p => ({ pid: p.id, usageRate: usageFor(p), focus: 0, playSelection: 1 }))
+    .sort((a, b) => b.usageRate - a.usageRate)
+    .map((o, i, all) => { const used = all.slice(0, i).reduce((v, x) => v + x.usageRate, 0); return { ...o, usageRate: o.usageRate && Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - used)) }; });
+}
+
+// Make a team's options valid. Missing players are replaced from the assistant's
+// picks; a CPU team whose formula broke gets a whole new one. Returns true when anything changed.
+export function fixOptions(team, coach, { user = false, fill = true, L = null } = {}) {
+  const roster = new Set(team.roster.map(p => p.id));
+  const had = Array.isArray(team.scoringOptions) ? team.scoringOptions : (team.scoringOptions = []);
+  let changed = false;
+  for (const o of had) if (o.playSelection !== 1) { o.playSelection = 1; changed = true; }
+  const alive = had.filter(o => roster.has(o.pid));
+  if (!user) {
+    if (alive.length === had.length && had.length >= 3) return changed;
+    team.scoringOptions = L ? autoOptions(team, L) : assistantOptions(team, coach);
+    return true;
+  }
+  if (alive.length !== had.length) { team.scoringOptions = alive; changed = true; }
+  if (fill && team.scoringOptions.length < (had.length ? had.length : 3)) {
+    const need = (had.length ? had.length : 3) - team.scoringOptions.length;
+    const add = L ? autoOptions(team, L, { exclude: team.scoringOptions.map(o => o.pid), count: need }) : assistantOptions(team, coach, { exclude: team.scoringOptions.map(o => o.pid), count: need });
+    let total = team.scoringOptions.reduce((v, o) => v + o.usageRate, 0);
+    for (const o of add) { if (o.usageRate) o.usageRate = Math.max(MIN_USAGE, Math.min(o.usageRate, MAX_TOTAL - total)); total += o.usageRate; team.scoringOptions.push(o); }
+    changed = true;
+  }
+  return changed;
+}

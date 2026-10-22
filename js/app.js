@@ -29,6 +29,7 @@ import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
 import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
 import { runMeeting, traitName } from './influence.js';
+import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillHallOfFame, isReal } from './traits.js';
@@ -44,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.152.1';
+const APP_VERSION = '0.153.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -628,7 +629,7 @@ function spendAllPoints(L) {
 }
 // Playbooks on for every pro team: the game reads "play selection" from a team's scoring option entries, and 1 means
 // the team runs its playbook. The app has no scoring options of its own, so on export each team keeps up to three
-// valid entries (usage and focus on Auto, whoever is first, second or third) and every entry is set to selection 1.
+// valid entries (a team with none gets three on Auto) and every entry is set to selection 1, whoever is first, second or third.
 function usePlaybooks(L) {
   if (!L || L.leagueType !== 0) return;
   for (const t of L.teams) {
@@ -636,7 +637,8 @@ function usePlaybooks(L) {
     const keep = [];
     for (const o of t.scoringOptions || []) if (ids.has(o.pid) && !keep.some(k => k.pid === o.pid) && keep.length < 3) keep.push(o);
     const pool = [...t.roster].filter(p => p.status !== 4 && !keep.some(k => k.pid === p.id)).sort((a, b) => shownLevel(b) - shownLevel(a));
-    while (keep.length < Math.min(3, t.roster.length) && pool.length) keep.push({ pid: pool.shift().id, usageRate: 0, focus: 0, playSelection: 1 });
+    // A team with no valid entry gets three on Auto; otherwise its own (or the CPU's) picks stand.
+    if (!keep.length) while (keep.length < Math.min(3, t.roster.length) && pool.length) keep.push({ pid: pool.shift().id, usageRate: 0, focus: 0, playSelection: 1 });
     for (const o of keep) o.playSelection = 1;
     t.scoringOptions = keep;
   }
@@ -1256,11 +1258,11 @@ actions.calDev = () => { ensureMeetings(); calFlags().dev = true; applySchemeEvo
 const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], preview: ['draft', 'prospect', 'overview'], lottery: ['lottery'], mock1: ['mock'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect'], mock2: ['mock', 'prospect'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
-  meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
-  dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'playbookEdit'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
+  meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
+  dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], survey: ['survey'], media: ['storylines'], latefa: ['latefa', 'liveTrade'], cuts: ['cuts'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (isCollege()) {
@@ -1739,6 +1741,7 @@ function coachCard() {
     <div class="grid2"><button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button></div>
     <p class="note small" style="margin:4px 0 0"><b class="gold">Strategy</b></p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="gameplan">📋 Game Plan</button><button class="btn" data-act="nav" data-to="playbook">📒 Playbook</button></div>
+    <button class="btn" data-act="nav" data-to="scoring">🏀 Scoring Options</button>
   </div></fieldset>
   ${isComplete() && !isCollege() ? `<fieldset class="frame"><legend>Arena</legend><div class="stack">
     <p class="note small">Coins buy facility upgrades here. Each one keeps its effect in the game, and the app adds much more on top.</p>
@@ -1969,9 +1972,10 @@ actions.resetPlan = () => {
 };
 
 // Playbook: the team's quick plays (4 per position, by the game's play
-// number).
+// number) and scoring options (up to 3 players with usage and focus).
 // Playbooks are saved on this device by name and can be installed on your
-// team in any file. Any playbook can be installed; Scheme 1 makes your own.
+// team in any file. Any playbook can be installed; Scheme 1 makes your own; Scheme 2 edits scoring
+// options.
 const POS5 = ['PG', 'SG', 'SF', 'PF', 'C'];
 const pbKey = 'hlc:playbooks';
 const loadBooks = () => { try { return JSON.parse(localStorage.getItem(pbKey)) || []; } catch { return []; } };
@@ -1993,9 +1997,13 @@ const playsEditor = (qp, can) => POS5.map((pos, i) => `<div class="pb-edit"><spa
 
 const samePlays = (x, y) => JSON.stringify((x?.positions || []).map(q => q.plays)) === JSON.stringify((y?.positions || []).map(q => q.plays));
 screens.playbook = () => {
+  syncScoringOptions();
   const t = myTeam();
   if (!t) { layout({ title: 'Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
   const sch = tierNow('scheme'), books = loadBooks();
+  const so = (t.scoringOptions || []);
+  const rosterIds = new Set(t.roster.map(p => p.id));
+  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
   const inst = (act, i, on) => `<button class="btn small ${on ? 'off' : 'focus'}" data-act="${act}" data-i="${i}" ${on ? 'disabled' : ''}>${on ? '✓ Installed' : '📥 Use This Playbook'}</button>`;
   layout({
     title: 'Playbook',
@@ -2009,6 +2017,36 @@ screens.playbook = () => {
       </div></fieldset>`,
   });
 };
+screens.scoring = () => {
+  const t = myTeam();
+  if (!t) { layout({ title: 'Scoring Options', body: '<p class="note">Pick your team first.</p>' }); return; }
+  const sch = tierNow('scheme');
+  const so = (t.scoringOptions || []);
+  const rosterIds = new Set(t.roster.map(p => p.id));
+  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
+  layout({
+    title: 'Scoring Options',
+    body: `<fieldset class="frame"><legend>${esc(t.shortName)} Scoring Options</legend><div class="stack">
+        <p class="note small muted">Up to three players your offense runs through. Usage moves in 5% steps and the rest goes to your other starters. Every option runs the playbook, never auto play calling.</p>
+        ${so.map((o, i) => `<div class="so-row ${sch >= 2 ? '' : 'plan-locked'}">
+          <b class="small gold">${['1st', '2nd', '3rd'][i]} Option</b>
+          <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
+          <div class="so-ctl"><span class="small muted so-lab">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > 0 ? '' : 'disabled'}>−</button><b>${o.usageRate ? `${o.usageRate}%` : 'Auto'}</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
+            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div>
+          <span class="small muted so-lab">Focus</span><div class="so-focus">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
+        ${so.length ? `<p class="note small">${so.some(o => !o.usageRate) ? 'Auto usage is set by the game.' : `${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.`}</p>` : ''}
+        ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</button>` : ''}
+        <button class="btn" data-act="soAssist">🧑‍🏫 Use the Assistant Coach's Picks</button>
+        ${sch >= 2 ? '' : '<p class="note small muted">Choosing players, usage and focus yourself opens with Scheme 2. The assistant\'s picks are always open.</p>'}
+      </div></fieldset>
+      <fieldset class="frame"><legend>Around the League</legend><div class="stack">
+        <p class="note small muted">CPU teams stay on Auto: three players picked by their situation, usage and focus left to the game. Every team runs its playbook either way.</p>
+        <button class="btn" data-act="soLeagueAssign">🧑‍🏫 Auto-Assign the League</button>
+        <button class="btn" data-act="soLeagueAuto">↺ Set the League Back to Auto</button>
+      </div></fieldset>`,
+  });
+};
+
 screens.playbookEdit = () => {
   const t = myTeam();
   if (!t) { layout({ title: 'Your Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
@@ -2287,6 +2325,61 @@ actions.deletePlaybook = async d => {
   saveBooks(books);
   render();
 };
+const soTotal = so => so.reduce((s, o) => s + (o.usageRate || 0), 0);
+const soEdit = fn => { const t = myTeam(); if (!t || tierNow('scheme') < 2) return; fn(t.scoringOptions ||= []); for (const o of t.scoringOptions) o.playSelection = 1; state.dirty = true; render(); };
+actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (!o) return; const room = MAX_TOTAL - (soTotal(so) - o.usageRate); if (d.k === 'usageRate') { const v = o.usageRate + +d.d; o.usageRate = v < MIN_USAGE ? 0 : Math.min(MAX_USAGE, room, v); } else o[d.k] = Math.max(MIN_USAGE, Math.min(MAX_USAGE, room, o[d.k] + +d.d)); });
+actions.soFocus = d => soEdit(so => { const o = so[+d.i]; if (o) o.focus = +d.v; });
+actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
+actions.soAdd = () => soEdit(so => {
+  const t = myTeam();
+  if (so.length >= 3) return;
+  const pick = autoOptions(t, league(), { exclude: so.map(o => o.pid), count: 1 })[0];
+  if (pick) so.push({ ...pick, usageRate: pick.usageRate && Math.max(MIN_USAGE, Math.min(pick.usageRate, MAX_TOTAL - soTotal(so))) });
+});
+actions.soAssist = () => {
+  const t = myTeam();
+  if (!t) return;
+  t.scoringOptions = autoOptions(t, league());
+  state.dirty = true;
+  toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? (o.usageRate ? `${p.ln} ${o.usageRate}%` : p.ln) : ''; }).join(' · '));
+  render();
+};
+// Every team's options stay valid: players still on the roster, play selection 1.
+// A CPU team whose formula breaks (a trade, a cut) gets a new one; yours only
+// replaces the missing player, and fills in at the end if you never set any.
+// League-wide (every team but yours): Auto-Assign picks three new players for each team; Back to Auto keeps the
+// players and puts usage and focus on Auto. Both keep play selection at 1, so every team runs its playbook.
+const cpuTeams = () => league().teams.filter(t => !isUserTeam(t));
+actions.soLeagueAssign = () => {
+  const L = league();
+  for (const t of cpuTeams()) t.scoringOptions = autoOptions(t, L);
+  state.dirty = true;
+  toast('League auto-assigned', `${cpuTeams().length} teams: three options each, usage and focus on Auto`);
+  render();
+};
+actions.soLeagueAuto = () => {
+  const L = league();
+  for (const t of cpuTeams()) {
+    const ids = new Set(t.roster.map(p => p.id));
+    const keep = (t.scoringOptions || []).filter(o => ids.has(o.pid));
+    t.scoringOptions = keep.length ? keep.map(o => ({ ...o, usageRate: 0, focus: 0, playSelection: 1 })) : autoOptions(t, L);
+  }
+  state.dirty = true;
+  toast('League back to Auto', 'Usage and focus on Auto for every other team');
+  render();
+};
+function syncScoringOptions(final = false) {
+  const L = league();
+  let changed = 0;
+  for (const t of L.teams) {
+    const c = headCoachOf(t), user = isUserTeam(t);
+    if (!c && !user) continue;
+    if (user && !final && !(t.scoringOptions || []).length) continue;
+    if (fixOptions(t, c, { user, fill: true, L })) changed++;
+  }
+  if (changed) state.dirty = true;
+  return changed;
+}
 $app.addEventListener('change', e => {
   if (e.target.dataset.change !== 'pbSlot') return;
   const t = myTeam(), d = e.target.dataset, id = +e.target.value;
@@ -2297,6 +2390,10 @@ $app.addEventListener('change', e => {
   state.dirty = true;
   applyCoachFriction();
   render();
+});
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'soPlayer') return;
+  soEdit(so => { const o = so[+e.target.dataset.i]; if (o) { o.pid = +e.target.value; const p = myTeam().roster.find(x => x.id === o.pid); if (p) o.focus = focusFor(p); } });
 });
 
 // Culture: once per offseason, your players' Locker Room and Loyalty come up
@@ -2412,7 +2509,7 @@ screens.offseason = (args = {}) => {
       ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
-      ${isCollege() ? coachCard() : ''}
+      ${coachCard()}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
@@ -6045,6 +6142,7 @@ setTradeHook((kind, rec) => {
     if (kind === 'do') deals.push({ A: rec.A.id, B: rec.B.id, ...sig, pa: (rec.picksA || []).map(pk => pickLabel(pk)), pb: (rec.picksB || []).map(pk => pickLabel(pk)) });
     else { const i = deals.map(x => x.A === rec.A.id && x.B === rec.B.id && JSON.stringify([x.a, x.b]) === JSON.stringify([sig.a, sig.b])).lastIndexOf(true); if (i >= 0) deals.splice(i, 1); }
     offSet('deals', { list: deals });
+    if (kind === 'do') syncScoringOptions();
   } catch { /* the ledger is a convenience */ }
 });
 function lockSigning(p, why) {
@@ -7305,6 +7403,7 @@ function applySchemeEvolution() {
   }
   S.done = yr;
   saveScheme(S);
+  syncScoringOptions();
   applyCoachFriction();
   state.dirty = true;
 }
@@ -7497,6 +7596,7 @@ function cpuBlockDeals(day) {
   const why = proactiveFrontOffice();
   cpuCoachMoves();
   applyCoachFriction();
+  syncScoringOptions();
   for (const t of cpu) {
     // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
     for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {
@@ -10430,6 +10530,7 @@ actions.cutsFinish = async () => {
   }
   calFlags().waiverLog = waiver;
   roleMorale(L);
+  syncScoringOptions(true);
   calFlags().cutLog = { n, mine: mineN, list };
   {
     const rq = offGet('req');
@@ -10462,6 +10563,7 @@ actions.cutsFinish = async () => {
 };
 
 screens.export = () => {
+  syncScoringOptions(true);
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
     navigator.canShare({ files: [new File(['x'], 'x', { type: 'application/octet-stream' })] });
   layout({
