@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.162.0';
+const APP_VERSION = '0.163.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -666,7 +666,7 @@ function dumpSalary(L, t, limit, pay = filePay, log = [], o = {}) {
   const fits = (x, p) => o.picks ? FA.capSpace(L, x) >= sal(p) && (FA.signedRoster(x).length < FA.FA_DEFAULTS.cpuRosterMax || spot(x)) : limit - pay(x) >= sal(p) + 4 && spot(x);
   for (let guard = 0; pay(t) > limit && guard < 10; guard++) {
     const over = pay(t) - limit;
-    const cands = FA.signedRoster(t).filter(p => !core.has(p.id) && !cheapYoung(p) && sal(p) > 0 && !tradeLock(p) && (!o.onlyOverpaid || overpaid(p) >= 3)).sort((a, b) => overpaid(b) - overpaid(a) || sal(b) - sal(a));
+    const cands = FA.signedRoster(t).filter(p => !core.has(p.id) && !cheapYoung(p) && sal(p) > 0 && !tradeLock(p) && !FA.isLifer(L, p, t) && (!o.onlyOverpaid || overpaid(p) >= 3)).sort((a, b) => overpaid(b) - overpaid(a) || sal(b) - sal(a));
     const order = [...cands.filter(p => sal(p) >= over && overpaid(p) > -3), ...cands];
     let moved = false;
     for (const p of order) {
@@ -674,7 +674,7 @@ function dumpSalary(L, t, limit, pay = filePay, log = [], o = {}) {
       if (!to) continue;
       const picks = o.picks ? dumpPicks(L, t, Math.max(0, overpaid(p)) * Math.max(1, p.contract?.yrs || 1)) : [];
       executeTrade({ team: t, players: [p], picks, prospects: [] }, { team: to, players: [], picks: [], prospects: [] }, L.season.currentYear);
-      if (reb(to) === 0 && p.age >= 28 && p.season && p.season.onTradeBlock !== 2) p.season.onTradeBlock = 1;
+      if (reb(to) === 0 && p.age >= 28 && !FA.isLifer(L, p, to) && p.season && p.season.onTradeBlock !== 2) p.season.onTradeBlock = 1;
       const max = o.picks ? FA.FA_DEFAULTS.cpuRosterMax : FA.FA_DEFAULTS.seasonMax;
       if (FA.signedRoster(to).length > max) { const c = camp(to); if (c) { FA.cutPlayer(L, to, c); log.push(`${to.shortName} released ${playerName(c)} to make room`); } }
       log.push(`${t.shortName} dumped ${playerName(p)} ($${sal(p)}M) on ${to.shortName}${picks.length ? ` with ${picks.map(pk => `a ${pk.yr} ${pk.rd === 1 ? '1st' : '2nd'}`).join(' and ')}` : ''}`);
@@ -725,7 +725,9 @@ function fillRoster(L, t, to, list, { floor = 0, skip = new Set() } = {}) {
 // it took on included, so they're on the game's trading block when the season starts. Untouchables stay put.
 function rebuildBlock(L) {
   for (const t of L.teams.filter(x => !isUserTeam(x) && teamStatus(L, x) === 'rebuilding'))
-    for (const p of FA.signedRoster(t)) if (p.season && p.season.onTradeBlock === 0 && p.age >= 28 && shownLevel(p) >= 70 && !tradeLock(p)) p.season.onTradeBlock = 1;
+    for (const p of FA.signedRoster(t)) if (p.season && p.season.onTradeBlock === 0 && p.age >= 28 && shownLevel(p) >= 70 && !tradeLock(p) && !FA.isLifer(L, p, t)) p.season.onTradeBlock = 1;
+  // A franchise lifer is never shopped: he finishes his career where he is.
+  for (const t of L.teams.filter(x => !isUserTeam(x))) for (const p of FA.signedRoster(t)) if (p.season?.onTradeBlock === 1 && FA.isLifer(L, p, t)) p.season.onTradeBlock = 0;
 }
 function gameCapCheck(L, cap) {
   if (!cap) return [];
@@ -740,7 +742,7 @@ function gameCapCheck(L, cap) {
     // Nobody could take enough: waive the worst value for the money (it stays on the app's books as dead money).
     const core = new Set([...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(p => p.id));
     for (let guard = 0; room(t) < roomFor() && guard < 10; guard++) {
-      const p = FA.signedRoster(t).filter(x => !core.has(x.id) && sal(x) > 0).sort((a, b) => (cheapYoung(a) - cheapYoung(b)) || overpaid(b) - overpaid(a) || sal(b) - sal(a))[0];
+      const p = FA.signedRoster(t).filter(x => !core.has(x.id) && sal(x) > 0 && !FA.isLifer(L, x, t)).sort((a, b) => (cheapYoung(a) - cheapYoung(b)) || overpaid(b) - overpaid(a) || sal(b) - sal(a))[0];
       if (!p) break;
       const c = { ...p.contract };
       FA.cutPlayer(L, t, p);
@@ -7519,7 +7521,7 @@ function proactiveFrontOffice() {
       const raises = core.reduce((s, p) => s + Math.max(fairSalary(shownLevel(p)) * 1.05, p.contract?.sal || 0), 0);
       let over = committed + raises - (tax - 10);   // a front office stays clear of the line, not just under it
       if (over <= 0) continue;
-      const cands = players.filter(p => p.age >= 31 && (p.contract?.yrs ?? 0) >= 2 && p.season?.onTradeBlock === 0 && !tradeLock(p)
+      const cands = players.filter(p => p.age >= 31 && (p.contract?.yrs ?? 0) >= 2 && p.season?.onTradeBlock === 0 && !tradeLock(p) && !FA.isLifer(L, p, t)
         && (p.contract.sal - fairSalary(shownLevel(p))) >= tagGap(fairSalary(shownLevel(p))))
         .sort((x, y) => (y.contract.sal - fairSalary(shownLevel(y))) - (x.contract.sal - fairSalary(shownLevel(x))));
       for (const p of cands.slice(0, 2)) {
@@ -7822,7 +7824,7 @@ function cpuBlockDeals(day) {
   syncScoringOptions();
   for (const t of cpu) {
     // Only players actually on the block (1), never untouchables (2), and only a few deals a day.
-    for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0)) {
+    for (const p of FA.signedRoster(t).filter(x => x.season?.onTradeBlock === 1 && !tradeLock(x) && x.contract?.yrs > 0 && !FA.isLifer(L, x, t))) {
       if (done.length >= 5) break;
       if (rng() > 0.4) continue;                                   // not every shopped player draws a call every day
       const want = playerValue(p, state.leagueIdx, ly);
@@ -10374,7 +10376,7 @@ actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[
 const cutSel = () => (state.cutSel ||= {});
 // CPU teams only cut players in the last year of their deal; you can cut
 // anyone, and years left become dead money.
-const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
+const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1 && !FA.isLifer(league(), p, t)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
 screens.cuts = () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const done = !!calFlags().cuts;
@@ -10471,7 +10473,7 @@ function requestsState() {
     const { strip, gone } = stripScore(L, t);
     if (strip < 2) continue;
     const roster = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3)
-      .filter(p => demandsHelp(p, t) && tr(p, 'loyalty') < 17 && !tradeLock(p) && p.season?.onTradeBlock !== 2 && canAskOut(p) && (isUserTeam(t) || cpuAsks < 3));
+      .filter(p => demandsHelp(p, t) && tr(p, 'loyalty') < 17 && !tradeLock(p) && p.season?.onTradeBlock !== 2 && canAskOut(p) && !FA.isLifer(L, p, t) && (isUserTeam(t) || cpuAsks < 3));
     const max = strip >= 4 ? 2 : 1;
     let n = 0;
     for (const p of roster) {
@@ -10495,7 +10497,7 @@ function requestsState() {
   // A star in the last year of his deal who's unhappy can ask to be moved to a new opportunity
   // (and test free agency from there), stripped roster or not.
   for (const t of L.teams) {
-    for (const p of FA.signedRoster(t).filter(x => demandsHelp(x, t) && canAskOut(x) && x.contract.yrs === 1 && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
+    for (const p of FA.signedRoster(t).filter(x => demandsHelp(x, t) && canAskOut(x) && !FA.isLifer(L, x, t) && x.contract.yrs === 1 && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
       const morale = p.season?.morale ?? 60;
       if (morale >= 50 || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
       const odds = (morale < 35 ? 0.3 : 0.15) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
@@ -10506,7 +10508,7 @@ function requestsState() {
   }
   // A star whose game the coach's system doesn't feature can ask out too.
   for (const t of L.teams) {
-    for (const p of FA.signedRoster(t).filter(x => offGet('friction')[x.id] && canAskOut(x) && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
+    for (const p of FA.signedRoster(t).filter(x => offGet('friction')[x.id] && canAskOut(x) && !FA.isLifer(L, x, t) && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
       const morale = p.season?.morale ?? 60;
       if (morale >= 50 || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
       const fr = frictionFor(p), c = headCoachOf(t);
@@ -10717,7 +10719,7 @@ actions.cutsFinish = async () => {
       // Clear cuts (low level, potential and value) go first. Past those, a clearly overpaid player can be bought out if
       // the price is right (he forfeits a good chunk); if it isn't, the team keeps him on the books and the deal runs out.
       const need = Math.max(0, FA.signedRoster(t).length - O.seasonMax) - go.length;
-      const rest = () => FA.signedRoster(t).filter(p => !go.some(x => x.p === p)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), L.season.currentYear), bo: buyoutOffer(p) })).sort((x, y) => x.score - y.score);
+      const rest = () => FA.signedRoster(t).filter(p => !go.some(x => x.p === p) && !FA.isLifer(L, p, t)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), L.season.currentYear), bo: buyoutOffer(p) })).sort((x, y) => x.score - y.score);
       for (let i = 0; i < need; i++) {
         const c = rest().find(x => (x.p.contract?.yrs || 0) > 1);
         if (!c) break;

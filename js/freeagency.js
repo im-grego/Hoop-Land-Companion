@@ -336,6 +336,15 @@ export function seasonsWith(league, p, team) {
   const cur = league.season.currentYear;
   return (p.stats || []).filter(s => s.league === 0 && s.yr < cur && (s.season || []).some(x => x.tid === team.id)).length;
 }
+// A franchise lifer: 8+ straight seasons with the team, 35 and over, and into his 2nd year of regression or later.
+// He finishes his career there: never shopped, dumped or cut, and his team brings him back when his deal is up.
+export function isLifer(league, p, team) {
+  if (!team || p.age <= 35 || p.age < (p.regressionAge || 32) + 1) return false;
+  const rows = (p.stats || []).filter(s => s.league === 0 && s.yr <= league.season.currentYear).sort((a, b) => b.yr - a.yr);
+  let n = 0;
+  for (const r of rows) { if ((r.season || []).some(x => x.tid === team.id)) n++; else if ((r.season || []).length) break; }
+  return n >= 8;
+}
 export const ntcEligible = (league, p, team) => COMPLETE && !!team && (p.yrs || 0) >= 8 && seasonsWith(league, p, team) >= 4;
 export const wantsNtc = (league, p, team) => ntcEligible(league, p, team) && (tr(p, 'loyalty') >= 14 || tr(p, 'money') >= 15 || (p.age >= 30 && levelOf(p) >= 80));
 
@@ -446,10 +455,12 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
     const crowd = m => 1 + 0.15 * (bids.get(m.p.id)?.length || 0);
     const pool = market
       .map(m => ({ ...m, want: teamWant(league, team, m.p, ly, st) / crowd(m) }))
-      .filter(m => m.want > 6 + rng() * 6 && canPay(m));
+      .filter(m => m.want > 6 + rng() * 6 && canPay(m) && !(m.from && m.from.id !== team.id && isLifer(league, m.p, m.from)));
+    // A franchise lifer's team brings him back first; nobody else calls.
+    const lifers = market.filter(m => m.from?.id === team.id && isLifer(league, m.p, team));
     const byWant = [...pool].sort((a, b) => b.want - a.want);
     const byValue = [...pool].sort((a, b) => b.want / Math.max(3, cost(b)) - a.want / Math.max(3, cost(a)));
-    const targets = [...new Set([...byWant.slice(0, 2), ...byValue.slice(0, 2)])];
+    const targets = [...new Set([...lifers, ...byWant.slice(0, 2), ...byValue.slice(0, 2)])];
     let made = 0;
     for (const m of targets) {
       if (made >= 2) break;
@@ -473,8 +484,9 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       if (offer.yrs >= 5) { if (!bird) offer.yrs = o.maxYears; else if (!offer.opt) offer.opt = rng() < 0.6 ? OPT_PLAYER : OPT_TEAM; }
       if (checkOffer(league, team, m.p, offer, day, used, o)) continue;
       // Only a contender goes into the tax for a free agent.
-      if (CAP_ON && offer.sal > minFor(m.p, o) && taxStance(league, team) !== 'pay' && teamCommitted(team) + offer.sal > capLines(league).tax) continue;
-      if (taxed && offer.sal > minFor(m.p, o) * 1.5) {
+      const lifer = bird && isLifer(league, m.p, team);
+      if (!lifer && CAP_ON && offer.sal > minFor(m.p, o) && taxStance(league, team) !== 'pay' && teamCommitted(team) + offer.sal > capLines(league).tax) continue;
+      if (!lifer && taxed && offer.sal > minFor(m.p, o) * 1.5) {
         if (!bird) continue;
         const keep = m.p.age <= 25 || offer.sal <= 12 || (st === 'contending' && levelOf(m.p) >= 85);
         if (!keep || teamCommitted(team) + offer.sal > capLines(league).apron2) continue;

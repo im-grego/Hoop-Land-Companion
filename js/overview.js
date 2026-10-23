@@ -111,7 +111,7 @@ const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
 const projOf = t => [...t.roster].map(p => levelOf(p) * (p.status === 4 ? 0.9 : 1)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0);
 // A rebuilding team with an 86+ veteran in the rumor mill (shopped on the block, or the kind contenders call about) is
 // selling him off, the way a Competing team at the top of the league reads as a contender.
-const shopping = team => team.roster.some(p => p.status !== 4 && p.age >= 28 && levelOf(p) >= 86 && (p.season?.onTradeBlock === 1 || p.age >= (p.regressionAge || 32) - 4));
+const shopping = (L, team) => team.roster.some(p => p.status !== 4 && !FA.isLifer(L, p, team) && p.age >= 28 && levelOf(p) >= 86 && (p.season?.onTradeBlock === 1 || p.age >= (p.regressionAge || 32) - 4));
 function teamTier(L, team, status, pct, round) {
   const mine = projOf(team);
   const rank = 1 + L.teams.filter(t => t !== team && projOf(t) > mine).length;
@@ -124,11 +124,11 @@ function teamTier(L, team, status, pct, round) {
     if (tag >= 3) return rank <= 3 && (pct >= 0.6 || round >= 3) ? 'favorites' : 'contending';
     if (tag === 2) return age >= 29 && pct < 0.55 ? 'selling' : 'competing';
     if (tag === 1) return age >= 29 ? 'selling' : 'developing';
-    return shopping(team) ? 'selling' : 'rebuilding';
+    return shopping(L, team) ? 'selling' : 'rebuilding';
   }
   if (rank <= 3 && (pct >= 0.6 || round >= 3)) return 'favorites';
   if (status === 'contending') return 'contending';
-  if (status === 'rebuilding') return shopping(team) ? 'selling' : 'rebuilding';
+  if (status === 'rebuilding') return shopping(L, team) ? 'selling' : 'rebuilding';
   const top5 = [...team.roster].filter(p => p.status !== 4).sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 5);
   const age = top5.reduce((a, p) => a + p.age, 0) / (top5.length || 1);
   return age >= 28 ? 'selling' : 'developing';
@@ -237,7 +237,8 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
   for (const team of L.teams) {
     if (skip(team)) continue;
     const st = teamStanding(L, team);
-    const roster = [...team.roster].filter(p => p.status !== 4).sort((a, b) => level(b) - level(a));
+    // A franchise lifer finishing his career at home isn't rumored anywhere.
+    const roster = [...team.roster].filter(p => p.status !== 4 && !FA.isLifer(L, p, team)).sort((a, b) => level(b) - level(a));
     const star = roster[0], second = roster[1];
     if (!star) continue;
     const prime = star.age >= 24 && star.age < (star.regressionAge || 32);
