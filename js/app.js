@@ -15,6 +15,7 @@ import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
 import { setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
+import { destinationParts, destinationGrade } from './destination.js';
 import * as TR from './traderules.js';
 import * as FX from './facilities.js';
 import { buildPack, savePack, readPack, isPack, packMatch, applyPackTraits, packPickDiffs, applyPackPicks, packTeamDiffs, applyPackTeams } from './leaguepack.js';
@@ -45,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.164.0';
+const APP_VERSION = '0.165.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -8013,6 +8014,12 @@ function settleIncentives() {
   saveIncStore(led);
   if (hit.length) setTimeout(() => toast(`💰 Incentives earned`, hit.join(' · '), 5200), 3600);
 }
+// What the city and team mean to him besides the money (state tax, weather, market, stage, roster, picks).
+function destinationLine(L, team, p) {
+  const parts = destinationParts(L, team, p).filter(x => x.text);
+  const tag = x => x.k === 'tax' ? (x.keep > 0.02 ? 'up' : x.keep < -0.02 ? 'down' : 'muted') : x.v > 0 ? 'up' : x.v < 0 ? 'down' : 'muted';
+  return `<p class="note small">📍 Destination <b>${destinationGrade(L, team, p)}</b>${parts.length ? ` · ${parts.map(x => `<span class="${tag(x)}">${esc(x.text)}</span>`).join(' · ')}` : ''}</p>`;
+}
 actions.faOffer = d => {
   const s = faState();
   const L = league();
@@ -8087,6 +8094,7 @@ ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load &
       ${tab === 'extras' ? extrasHtml : termsHtml}
       <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
+      ${isComplete() ? destinationLine(L, team, m.p) : ''}
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
       <div class="grid2">
         <button class="btn off" data-k="close">${existing ? 'Withdraw' : 'Cancel'}</button>

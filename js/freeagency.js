@@ -17,6 +17,7 @@ import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
 import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
+import { destinationValue, taxKeep } from './destination.js';
 
 export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRAFTED = 2;
 export const OPT_NONE = 0, OPT_TEAM = 1, OPT_PLAYER = 2;
@@ -311,16 +312,22 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   // A veteran taking a discount cares about what they're chasing, not a
   // couple of million more.
   if (discounted) w.greed = 0.3;
-  const money = ((offer.avg ?? offer.sal) + (offer.incEv || 0) + (offer.cutEv || 0)) / Math.max(1, ask);   // avg: the average year of a loaded deal   // incEv: what he thinks his incentives are worth ($M)
+  // What he takes home after state tax, against a typical city.
+  const money = ((offer.avg ?? offer.sal) + (offer.incEv || 0) + (offer.cutEv || 0)) * (COMPLETE ? taxKeep(team) : 1) / Math.max(1, ask);   // avg: the average year of a loaded deal   // incEv: what he thinks his incentives are worth ($M)
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
     w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0) +
-    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + loadTaste(p, offer, motive) + (offer.tid === oldTid ? liferPull(league, p, oldTid) : 0);
+    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + loadTaste(p, offer, motive) + (offer.tid === oldTid ? liferPull(league, p, oldTid) : 0) +
+    (COMPLETE ? destinationValue(league, team, p) : 0);
 }
 // A franchise lifer is set on finishing at home: anyone else needs about double his team's money (half again more for
-// a money chaser) to pry him loose.
-const liferPull = (league, p, tid) => isLifer(league, p, league.teams.find(t => t.id === tid)) ? 1.2 : 0;
+// a money chaser) to pry him loose. Loyalty moves it: a Committed (16+) one is close to immovable, a Mercenary one
+// only leans home.
+const liferPull = (league, p, tid) => {
+  if (!isLifer(league, p, league.teams.find(t => t.id === tid))) return 0;
+  return traitsSet(p) ? 0.3 + tr(p, 'loyalty') * 0.075 : 1.2;
+};
 
 // How he feels about when the money comes: front-loaded pays the ones who
 // chase it and want security; back-loaded suits winners who help the team's
