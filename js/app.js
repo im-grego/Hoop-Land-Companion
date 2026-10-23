@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.156.1';
+const APP_VERSION = '0.156.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1281,6 +1281,8 @@ function setupCard() {
   const done = (k, label) => (f[k] ? `<span class="up small">✓ ${label}</span>` : '');
   return `<fieldset class="frame"><legend>🏗️ Franchise Setup</legend><div class="stack">
     <p class="note small">A new season, nothing played yet. Make it the real NBA before you start, then export and play the season in Hoop Land.</p>
+    <p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
+    <button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button>
     <button class="btn ${f.picks ? 'off' : 'focus'}" data-act="applyRealPicks">🏀 Apply Real Picks</button>
     <p class="note small muted">Moves every pick to its real holder, adds the real protections and best/worst swaps, and removes the Clippers' forfeited firsts. ${done('picks', 'Done')}</p>
     <button class="btn ${f.dead ? 'off' : 'focus'}" data-act="addRealDead">💸 Add Real Dead Cap</button>
@@ -1338,6 +1340,7 @@ const STEP_SCREENS = {
 const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
+  if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
   if (isCollege()) {
     const cur = currentStep();
     // Recruiting stays open to look back at once the weeks are done.
