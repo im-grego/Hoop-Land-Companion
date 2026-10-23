@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.173.0';
+const APP_VERSION = '0.174.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -964,10 +964,8 @@ const CALENDAR = [
     done: () => preDone('workouts') },
   { key: 'draft', date: 'Jun 23', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
-  { key: 'options', date: 'Jun 29', title: 'Options & Qualifying Offers', blurb: 'Team and player options come due, and teams decide on qualifying offers for their restricted free agents.',
-    done: () => !!optStore().done || phaseRank(league().season) >= 4 },
-  { key: 'ext', date: 'Jul 1', title: 'Extension Window', blurb: 'Lock up players heading into their final year before they ever reach free agency.',
-    done: () => !!extStore().done || phaseRank(league().season) >= 4 },
+  { key: 'options', date: 'Jun 29', title: 'Contracts', blurb: 'Options and qualifying offers come due, then the extension window: lock up players heading into their final year, including the options you just picked up.',
+    done: () => (!!optStore().done && !!extStore().done) || phaseRank(league().season) >= 4 },
   { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies pick their numbers, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
   { key: 'fa1', date: 'Jul 6', title: 'Free Agency · Week 1', blurb: 'No more collusion: the market opens and the big deals happen.',
@@ -1172,7 +1170,7 @@ function stepSummary(key) {
     const first = leagueRookies(L).find(r => r.pick === 1);
     return first ? `${playerName(first.p)} went #1 to ${first.team?.shortName || '?'}.` : 'Draft complete.';
   }
-  if (key === 'options') { const g = optStore().log || {}; return `${g.exercised || 0} options picked up, ${g.out || 0} heading to free agency.`; }
+  if (key === 'options') { const g = optStore().log || {}, e = extStore().log || {}; return `${g.exercised || 0} options picked up, ${g.out || 0} heading to free agency. Extensions: ${e.mine || 0} for you, ${e.cpu || 0} around the league.`; }
   if (key === 'camp') { const r = state.summerTour[state.leagueIdx]?.result; return r?.mvp ? `Summer League MVP: ${mvpName(L, r.mvp)} (${L.teams.find(t => t.id === r.mvp.tid)?.shortName || '?'}).` : 'Summer League is a wrap.'; }
   if (key.startsWith('fa')) {
     const log = calFlags().faLog?.[+key[2]];
@@ -1236,8 +1234,9 @@ function stepActions(key) {
     case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
       <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
     case 'draft': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Begin</button><button class="btn" data-act="homeSimDraft">⏭ Sim</button></div>`;
-    case 'options': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="options">📃 Begin</button><button class="btn" data-act="homeSimOptions">⏭ Sim</button></div>`;
-    case 'ext': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="extensions">✍️ Begin</button><button class="btn" data-act="homeSimExt">⏭ Sim</button></div>`;
+    case 'options': return optStore().done
+      ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="extensions">✍️ Extensions</button><button class="btn" data-act="homeSimExt">⏭ Sim</button></div>`
+      : `<div class="grid2"><button class="btn focus" data-act="nav" data-to="options">📃 Begin</button><button class="btn" data-act="homeSimContracts">⏭ Sim</button></div>`;
     case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🌴 Begin</button><button class="btn" data-act="homeSimCamp">⏭ Sim</button></div>`;
     case 'fa1': case 'fa2': case 'fa3': {
       const day = +key[2];
@@ -1474,7 +1473,7 @@ actions.calDev = () => { ensureMeetings(); calFlags().dev = true; applySchemeEvo
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options'], ext: ['extensions'],
+  office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options', 'extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
   meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
@@ -8671,10 +8670,10 @@ screens.options = () => {
   const pending = myTeamOpts.some(x => !x.c.choice) || myQO.some(x => st.qo[x.p.id] == null);
   layout({
     title: 'Options Deadline',
-    body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, decline it to let him go, or negotiate: decline it for a longer deal now, before anyone else can bid.</p>
+    body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, or decline it to let him go. Picked-up options can be extended right after, in the extension window.</p>
       <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
-        <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}${btn('optNeg', x.p.id, 'deal', x.c.choice === 'deal', deal ? '✍️ New Deal' : 'Negotiate')}</span>
-        ${deal ? `<p class="note small up full">Option declined for a new deal: $${deal.sal}M × ${deal.yrs}${deal.opt === FA.OPT_PLAYER ? ' · PO' : deal.opt === FA.OPT_TEAM ? ' · TO' : ''} <span class="tot">$${deal.sal * deal.yrs}M</span></p>` : neg?.last && !neg.last.ok ? `<p class="note small down full">${esc(neg.last.text)}${neg.tries >= 3 ? ' Talks are over.' : ''}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
+        <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span>
+        ${x.c.choice === 'ex' ? `<p class="note small up full">${done ? 'Picked up: he can be extended in the extension window.' : 'Picked up: once decisions are final you can talk extension.'}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
       <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row wrap">${head(x)}
         <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b>
         ${x.c.reason && !done ? (x.c.pitch ? (x.c.pitch.ok ? '' : `<p class="note small down full">He heard you out on ${esc(PITCHES[x.c.pitch.kind].promise)}. He's testing the market.</p>`)
@@ -8685,12 +8684,13 @@ screens.options = () => {
         ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Make Offer: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Let Walk: he\'s unrestricted.</p>' : ''}</fieldset>
       <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
-    action: done ? null : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
+    action: done ? { act: 'nav', label: 'On to Extensions', to: 'extensions' } : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
   });
 };
 // Sim the deadline: your open team options and qualifying offers get the same call a CPU team would make.
 actions.homeSimOptions = async () => {
   const L = league(), st = optStore();
+  if (st.done) return;
   for (const x of optionPlayers(L)) if (isUserTeam(x.team) && x.p.contract.opt === 1 && !st.team[x.p.id]) { const c = optionCall(L, x.p, x.team); st.team[x.p.id] = c.worth >= c.sal * 0.75 ? 'ex' : 'dec'; }
   for (const t of L.teams.filter(isUserTeam)) for (const p of t.roster.filter(q => FA.qoEligible(L, q))) if (st.qo[p.id] == null) st.qo[p.id] = marketValue(p) >= qoAmount(p);   // the CPU's call (qoCall reads yours back)
   saveOptStore();
@@ -8790,8 +8790,8 @@ actions.optFinish = async (d = {}) => {
       signExtension(L, team, p, deal, !isUserTeam(team));
       exercised++;
     } else if (c.choice === 'ex' || c.choice === 'in') {
-      // The option year is now guaranteed (a 0-year deal gets that year).
-      Object.assign(p.contract, { yrs: Math.max(1, p.contract.yrs || 0), opt: 0 });
+      // The option year is now guaranteed (a 0-year deal gets that year), and he can be extended in the window that follows.
+      Object.assign(p.contract, { yrs: Math.max(1, p.contract.yrs || 0), opt: 0, canExt: true });
       p.status = FA.STATUS_SIGNED;
       if (row) row.sal = p.contract.sal;
       exercised++;
@@ -8816,8 +8816,13 @@ actions.optFinish = async (d = {}) => {
   st.log = { exercised, out };
   saveOptStore();
   state.dirty = true;
-  goHome();
-  toast('Options deadline done', `${exercised} picked up · ${out} heading to free agency`);
+  if (d.auto) goHome(); else replace('extensions', {});
+  toast('Options deadline done', `${exercised} picked up · ${out} heading to free agency. On to extensions.`);
+};
+// Sim the whole Contracts step: the deadline (if it's still open), then the extension window.
+actions.homeSimContracts = async () => {
+  if (!optStore().done) await actions.homeSimOptions();
+  if (optStore().done && !extStore().done) await actions.homeSimExt();
 };
 
 // Press conference answers (per season) and promises (kept across seasons).
@@ -9646,15 +9651,15 @@ screens.extensions = () => {
     const grudge = FA.hasGrudge(p, t);
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
-      <span class="right small">$${p.contract.sal}M<br><span class="muted">final year</span></span>
+      <span class="right small">$${p.contract.sal}M<br><span class="muted">${(optStore().log && (optStore().team || {})[p.id] === 'ex') ? 'option year' : 'final year'}</span></span>
       <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref}${a.holdout ? ' · <span class="down">🚫 holding out</span>' : a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
       ${grudge ? '<span class="chg"><span class="down">🚫 Refuses to meet with you: you broke your promise</span></span>' : status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
   const log = st.log;
   layout({
-    title: 'Extension Window',
-    body: `<p class="note small">Players heading into the last year of their deal.</p>
+    title: 'Contracts · Extensions',
+    body: `<p class="note small">Players heading into the last year of their deal, including any option you just picked up.</p>
       ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)}</legend><div class="list">${extEligible(L, t).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => row(t, p)).join('')
         || (Object.values(st.talks).some(x => x.signed) ? '' : '<p class="note small muted">Nobody heading into a final year.</p>')}
         ${t.roster.filter(p => st.talks[p.id]?.signed && !extEligible(L, t).includes(p)).map(p => `<div class="prow"><span class="name">${esc(playerName(p))} ${lvTag(p)}</span><span class="meta up">✍️ $${st.talks[p.id].signed.sal}M × ${st.talks[p.id].signed.yrs}${optTag(st.talks[p.id].signed.opt)} ${total(st.talks[p.id].signed)}</span></div>`).join('')}</div></fieldset>`).join('')}
@@ -9831,8 +9836,8 @@ actions.extClose = async (d = {}) => {
   st.log = { mine: Object.values(st.talks).filter(x => x.signed).length, cpu: list.length, list };
   saveExtStore();
   state.dirty = true;
-  render();
-  toast('Extension window closed', `${list.length} extensions around the league`);
+  if (d.auto) render(); else goHome();
+  toast('Contracts are done', `${list.length} extensions around the league`);
 };
 
 // ---------------------------------------------------------------------------
