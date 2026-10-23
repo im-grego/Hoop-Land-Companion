@@ -109,9 +109,9 @@ export function teamStanding(L, team) {
 export const TIER_NAMES = { favorites: 'Favorites', contending: 'Contending', competing: 'Competing', developing: 'Developing', selling: 'Selling', rebuilding: 'Rebuilding' };
 const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
 const projOf = t => [...t.roster].map(p => levelOf(p) * (p.status === 4 ? 0.9 : 1)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0);
-// A rebuilding team with veterans in the rumor mill (shopped on the block, or the kind contenders call about) is
-// selling them off, the way a Competing team at the top of the league reads as a contender.
-const shopping = team => team.roster.some(p => p.status !== 4 && p.age >= 28 && (p.season?.onTradeBlock === 1 && levelOf(p) >= 70 || levelOf(p) >= 79 && p.age >= (p.regressionAge || 32) - 4));
+// A rebuilding team with an 86+ veteran in the rumor mill (shopped on the block, or the kind contenders call about) is
+// selling him off, the way a Competing team at the top of the league reads as a contender.
+const shopping = team => team.roster.some(p => p.status !== 4 && p.age >= 28 && levelOf(p) >= 86 && (p.season?.onTradeBlock === 1 || p.age >= (p.regressionAge || 32) - 4));
 function teamTier(L, team, status, pct, round) {
   const mine = projOf(team);
   const rank = 1 + L.teams.filter(t => t !== team && projOf(t) > mine).length;
