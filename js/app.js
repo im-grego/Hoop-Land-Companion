@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.157.2';
+const APP_VERSION = '0.157.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -739,12 +739,9 @@ function buildExport() {
   const startWas = (!isCollege() && state.params.startYear > 0) ? state.data.seasonLeagues.map(x => x.season.startingYear) : null;
   if (startWas) state.data.seasonLeagues.forEach(x => { x.season.startingYear = state.params.startYear; });
   state.data.seasonLeagues.forEach(usePlaybooks);
-  // The game would apply an extension the moment the season starts and wipe out the final year of the current deal.
-  // The app keeps extensions in its own ledger and applies them when the current deal is up, so the file goes out without them.
-  const extHeld = state.data.seasonLeagues.flatMap(x => x.teams.flatMap(t => t.roster)).filter(p => p.contract?.ext?.yrs > 0).map(p => [p, p.contract.ext]);
-  for (const [p] of extHeld) p.contract.ext = { yrs: 0, sal: 0, opt: 0, noTrd: 0 };
+  // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
+  // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
   const text = serializeSave(state.data);
-  for (const [p, e] of extHeld) p.contract.ext = e;
   if (startWas) state.data.seasonLeagues.forEach((x, i) => { x.season.startingYear = startWas[i]; });
   if (restoreCap) { [league().season.salaryCap, league().season.maxContract] = restoreCap; restoreCap = null; }
   for (const p of shut) p.contract.canExt = true;
