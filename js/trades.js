@@ -93,6 +93,7 @@ export function cpuAccepts(give, get, margin = 1.08) {
 
 // Move a player between rosters, keeping the new season's stats row in step
 // (the game rewrites that row's team and number on a move).
+// The whole contract goes with him, as in the NBA and in the game: the team trading him away keeps no dead money.
 export function movePlayer(p, from, to, year) {
   const i = from.roster.indexOf(p);
   if (i < 0) throw new Error('Player not on that roster');

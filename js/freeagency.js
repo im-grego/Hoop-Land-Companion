@@ -715,7 +715,9 @@ export function signPlayer(league, p, team, offer, day) {
   }
   p.tid = team.id;
   p.status = STATUS_SIGNED;
-  Object.assign(p.contract, { tid: team.id, pid: p.id, type: 0, yrs: offer.yrs, sal: offer.sal, opt: offer.opt || 0, noTrd: offer.ntc ? 1 : 0 });
+  // A signed deal is written the way the game writes one: no team or player id on the contract (those mark offers), so
+  // it travels with the player in a trade and nothing points back at the team he left.
+  Object.assign(p.contract, { tid: 0, pid: 0, type: 0, yrs: offer.yrs, sal: offer.sal, opt: offer.opt || 0, noTrd: offer.ntc ? 1 : 0 });
   if (p.season) { p.season.focus = 0; p.season.onTradeBlock = 0; }
   const row = (p.stats || []).filter(s => s.yr === year && s.league === 0).pop();
   rec.row = row ? { sal: row.sal, stint: row.season?.[row.season.length - 1] && { ...row.season[row.season.length - 1] } } : null;
