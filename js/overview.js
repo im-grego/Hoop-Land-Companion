@@ -102,12 +102,16 @@ export function teamStanding(L, team) {
   return { ...r, status, tier: teamTier(L, team, status, r.pct, round), finish, champ, round, trend };
 }
 
-// Five tiers, best to worst: Favorites, Contending, Developing, Selling,
+// Tiers, best to worst: Favorites, Contending, Competing, Developing, Selling,
 // Rebuilding. The middle splits by age: a young core on the way up is
-// Developing; an aging core that's slipping is Selling.
+// Developing; an aging core that's slipping is Selling. A rebuilding team
+// shopping its veterans is Selling too.
 export const TIER_NAMES = { favorites: 'Favorites', contending: 'Contending', competing: 'Competing', developing: 'Developing', selling: 'Selling', rebuilding: 'Rebuilding' };
 const W9 = [1, 0.95, 0.9, 0.8, 0.7, 0.55, 0.45, 0.35, 0.25];
 const projOf = t => [...t.roster].map(p => levelOf(p) * (p.status === 4 ? 0.9 : 1)).sort((a, b) => b - a).slice(0, 9).reduce((a, v, i) => a + v * W9[i], 0);
+// A rebuilding team with veterans in the rumor mill (shopped on the block, or the kind contenders call about) is
+// selling them off, the way a Competing team at the top of the league reads as a contender.
+const shopping = team => team.roster.some(p => p.status !== 4 && p.age >= 28 && (p.season?.onTradeBlock === 1 && levelOf(p) >= 70 || levelOf(p) >= 79 && p.age >= (p.regressionAge || 32) - 4));
 function teamTier(L, team, status, pct, round) {
   const mine = projOf(team);
   const rank = 1 + L.teams.filter(t => t !== team && projOf(t) > mine).length;
@@ -120,11 +124,11 @@ function teamTier(L, team, status, pct, round) {
     if (tag >= 3) return rank <= 3 && (pct >= 0.6 || round >= 3) ? 'favorites' : 'contending';
     if (tag === 2) return age >= 29 && pct < 0.55 ? 'selling' : 'competing';
     if (tag === 1) return age >= 29 ? 'selling' : 'developing';
-    return 'rebuilding';
+    return shopping(team) ? 'selling' : 'rebuilding';
   }
   if (rank <= 3 && (pct >= 0.6 || round >= 3)) return 'favorites';
   if (status === 'contending') return 'contending';
-  if (status === 'rebuilding') return 'rebuilding';
+  if (status === 'rebuilding') return shopping(team) ? 'selling' : 'rebuilding';
   const top5 = [...team.roster].filter(p => p.status !== 4).sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 5);
   const age = top5.reduce((a, p) => a + p.age, 0) / (top5.length || 1);
   return age >= 28 ? 'selling' : 'developing';
@@ -276,6 +280,8 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
         if (p === star && out.some(x => x.p === p)) continue;
         if (level(p) >= 79 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a ${st.tier} team`], level: level(p), morale: p.season?.morale ?? 70 });
       }
+      // Veterans it's shopping (the contracts it took on included) are on the market too.
+      for (const p of roster) if (p.season?.onTradeBlock === 1 && p.age >= 28 && level(p) >= 70 && !out.some(x => x.p === p)) out.push({ kind: 'block', p, team, heat: 1, why: [], level: level(p), morale: p.season?.morale ?? 70 });
     }
   }
   return out.sort((a, b) => b.heat - a.heat || b.level - a.level);
