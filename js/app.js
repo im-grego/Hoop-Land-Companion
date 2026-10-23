@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.156.3';
+const APP_VERSION = '0.157.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -644,6 +644,65 @@ function usePlaybooks(L) {
     t.scoringOptions = keep;
   }
 }
+// The game releases players when a team is over its cap as the season starts (OKC went to 6). Before a free agency
+// save goes out, every CPU team is brought under the game's cap with at least 13 players: overpaid veterans are dumped on
+// teams with room (for nothing back, if that's what it takes), then the worst value is waived, then the roster is filled
+// with minimum deals. Your teams aren't touched; the Export screen warns you instead.
+const filePay = t => t.roster.reduce((a, p) => a + (p.contract?.sal || 0), 0);
+// Salary relief the way a capped-out front office does it: overpaid veterans are moved to teams with room, for
+// nothing back if that's the price. The core (three best players) and cheap young talent stay. Returns the log.
+const cheapYoung = p => p.age <= 25 && (p.contract?.sal || 0) <= 12;
+function dumpSalary(L, t, limit, pay = filePay, log = []) {
+  const sal = p => p.contract?.sal || 0;
+  const overpaid = p => sal(p) - fairSalary(shownLevel(p));
+  const core = new Set([...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(p => p.id));
+  const others = L.teams.filter(x => x !== t && !isUserTeam(x));
+  for (let guard = 0; pay(t) > limit && guard < 10; guard++) {
+    const over = pay(t) - limit;
+    const cands = FA.signedRoster(t).filter(p => !core.has(p.id) && !cheapYoung(p) && sal(p) > 0 && !tradeLock(p)).sort((a, b) => overpaid(b) - overpaid(a) || sal(b) - sal(a));
+    const order = [...cands.filter(p => sal(p) >= over && overpaid(p) > -3), ...cands];
+    let moved = false;
+    for (const p of order) {
+      const to = others.filter(x => limit - pay(x) >= sal(p) + 4 && x.roster.length < 15).sort((a, b) => pay(a) - pay(b))[0];
+      if (!to) continue;
+      executeTrade({ team: t, players: [p], picks: [], prospects: [] }, { team: to, players: [], picks: [], prospects: [] }, L.season.currentYear);
+      log.push(`${t.shortName} dumped ${playerName(p)} ($${sal(p)}M) on ${to.shortName}`);
+      moved = true;
+      break;
+    }
+    if (!moved) break;
+  }
+  return log;
+}
+function gameCapCheck(L, cap) {
+  if (!cap) return [];
+  const log = [], yr = L.season.currentYear, MIN_ROSTER = 13, waived = new Set();
+  const sal = p => p.contract?.sal || 0;
+  const overpaid = p => sal(p) - fairSalary(shownLevel(p));
+  const room = t => cap - filePay(t);
+  for (const t of L.teams.filter(x => !isUserTeam(x))) {
+    dumpSalary(L, t, cap, filePay, log);
+    // Nobody could take enough: waive the worst value for the money (it stays on the app's books as dead money).
+    const core = new Set([...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(p => p.id));
+    for (let guard = 0; room(t) < 0 && guard < 10; guard++) {
+      const p = FA.signedRoster(t).filter(x => !core.has(x.id) && sal(x) > 0).sort((a, b) => (cheapYoung(a) - cheapYoung(b)) || overpaid(b) - overpaid(a) || sal(b) - sal(a))[0];
+      if (!p) break;
+      const c = { ...p.contract };
+      FA.cutPlayer(L, t, p);
+      waived.add(p.id);
+      if (c.yrs > 1) { const led = deadLedger(); led.push({ pid: p.id, name: playerName(p), tid: t.id, sal: c.sal, yrs: c.yrs - 1, yr: yr + 1 }); saveDead(led); }
+      log.push(`${t.shortName} waived ${playerName(p)} ($${c.sal}M)`);
+    }
+    while (FA.signedRoster(t).length < MIN_ROSTER) {
+      const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && !waived.has(x.id) && lateMin(x) <= room(t)).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
+      if (!p) break;
+      FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: 1, opt: 0 }, L.season.currentDay || 3);
+      log.push(`${t.shortName} filled with ${playerName(p)} ($${lateMin(p)}M)`);
+    }
+  }
+  if (log.length) { calFlags().capCheckLog = log; state.dirty = true; }
+  return log;
+}
 let restoreCap = null;
 function buildExport() {
   restoreCap = null;
@@ -668,6 +727,7 @@ function buildExport() {
     const s = league().season;
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
+  if (!isCollege() && league().season.phase === 6) gameCapCheck(league(), league().season.salaryCap);
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
   // don't want. A file leaving free agency goes out with everyone's extension
@@ -679,7 +739,12 @@ function buildExport() {
   const startWas = (!isCollege() && state.params.startYear > 0) ? state.data.seasonLeagues.map(x => x.season.startingYear) : null;
   if (startWas) state.data.seasonLeagues.forEach(x => { x.season.startingYear = state.params.startYear; });
   state.data.seasonLeagues.forEach(usePlaybooks);
+  // The game would apply an extension the moment the season starts and wipe out the final year of the current deal.
+  // The app keeps extensions in its own ledger and applies them when the current deal is up, so the file goes out without them.
+  const extHeld = state.data.seasonLeagues.flatMap(x => x.teams.flatMap(t => t.roster)).filter(p => p.contract?.ext?.yrs > 0).map(p => [p, p.contract.ext]);
+  for (const [p] of extHeld) p.contract.ext = { yrs: 0, sal: 0, opt: 0, noTrd: 0 };
   const text = serializeSave(state.data);
+  for (const [p, e] of extHeld) p.contract.ext = e;
   if (startWas) state.data.seasonLeagues.forEach((x, i) => { x.season.startingYear = startWas[i]; });
   if (restoreCap) { [league().season.salaryCap, league().season.maxContract] = restoreCap; restoreCap = null; }
   for (const p of shut) p.contract.canExt = true;
@@ -1264,6 +1329,7 @@ function recallSetup() {
   saveProt(unionBy(protLedger(), read(from('prot')), (x, y) => x.otid === y.otid && x.yr === y.yr));
   saveSwaps(unionBy(swapLedger(), read(from('swap')), (x, y) => x.yr === y.yr && x.rd === y.rd && x.x === y.x && x.y === y.y));
   saveDead(unionBy(deadLedger(), read(from('dead')), (x, y) => x.tag && x.tag === y.tag));
+  saveExtLedger(unionBy(extLedger(), read(from('extLedger')), (x, y) => x.pid === y.pid));
   try { localStorage.setItem(setupKey(), JSON.stringify({ ...rec, short: L.shortName, name: L.meta?.saveName || '' })); } catch { /* ignore */ }
   state.setupCheck = { kind: 'recalled', score: best.sc, from: rec.name };
   setTimeout(() => toast('Recognized this save', `Matched your Franchise Setup for "${rec.name}" (${Math.round(best.sc * 100)}% of the same players). Protections, swaps and dead cap carried over.`, 6000), 600);
@@ -8351,10 +8417,11 @@ function optionCall(L, p, team) {
     if (isUserTeam(team)) return { kind: 'team', choice: optStore().team[p.id] || null, worth, sal };
     let keep = worth >= sal * 0.75;
     // Over the tax and not contending: only clear bargains get picked up.
-    const ducking = keep && FA.capSystemOn() && FA.taxStance(L, team) !== 'pay' && FA.teamCommitted(team) > FA.capLines(L).tax && worth < sal * 1.2;
+    // Cheap young players are kept regardless: they're what a team over the tax can afford.
+    const ducking = keep && FA.capSystemOn() && FA.taxStance(L, team) !== 'pay' && FA.teamCommitted(team) > FA.capLines(L).tax && worth < sal * 1.2 && !(p.age <= 25 && sal <= 10);
     if (ducking) keep = false;
-    // Complete rules: instead of the option, the team may negotiate a longer
-    // deal before the market opens (most often a rookie-scale player on the rise).
+    // Complete rules: with the option picked up, the team may also negotiate a longer deal (an extension that
+    // starts next season), most often with a rookie-scale player on the rise.
     const deal = keep && isComplete() ? cpuOptionDeal(L, p, team, sal) : null;
     if (deal) return { kind: 'team', choice: 'deal', deal, worth, sal, why: `New deal: $${deal.sal}M × ${deal.yrs}${deal.opt === FA.OPT_PLAYER ? ' · PO' : deal.opt === FA.OPT_TEAM ? ' · TO' : ''}` };
     return { kind: 'team', choice: keep ? 'ex' : 'dec', worth, sal, why: keep ? 'Picked up' : ducking ? 'Declined: ducking the tax' : `Declined: not worth $${sal}M` };
@@ -8435,7 +8502,7 @@ screens.options = () => {
 actions.homeSimOptions = async () => {
   const L = league(), st = optStore();
   for (const x of optionPlayers(L)) if (isUserTeam(x.team) && x.p.contract.opt === 1 && !st.team[x.p.id]) { const c = optionCall(L, x.p, x.team); st.team[x.p.id] = c.worth >= c.sal * 0.75 ? 'ex' : 'dec'; }
-  for (const t of L.teams.filter(isUserTeam)) for (const p of t.roster.filter(q => FA.qoEligible(L, q))) if (st.qo[p.id] == null) st.qo[p.id] = qoCall(L, p, t);
+  for (const t of L.teams.filter(isUserTeam)) for (const p of t.roster.filter(q => FA.qoEligible(L, q))) if (st.qo[p.id] == null) st.qo[p.id] = marketValue(p) >= qoAmount(p);   // the CPU's call (qoCall reads yours back)
   saveOptStore();
   await actions.optFinish({ auto: true });
 };
@@ -8521,14 +8588,16 @@ actions.optFinish = async (d = {}) => {
   checkpoint('Options deadline');
   const yr = L.season.currentYear;
   let exercised = 0, out = 0;
-  for (const { p, c } of list) {
+  for (const { p, team, c } of list) {
     const row = (p.stats || []).filter(s => s.yr === yr && s.league === 0).pop();
     const deal = c.choice === 'deal' && (c.deal || st.deals?.[p.id]);
     if (deal) {
-      // Option declined for a new deal that starts this season.
-      Object.assign(p.contract, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0, canExt: false });
+      // The option is picked up and the new deal is an extension that starts when it's done, as in the NBA:
+      // the cheap option year stays on the books this season.
+      Object.assign(p.contract, { yrs: Math.max(1, p.contract.yrs || 0), opt: 0 });
       p.status = FA.STATUS_SIGNED;
-      if (row) row.sal = deal.sal;
+      if (row) row.sal = p.contract.sal;
+      signExtension(L, team, p, deal, !isUserTeam(team));
       exercised++;
     } else if (c.choice === 'ex' || c.choice === 'in') {
       // The option year is now guaranteed (a 0-year deal gets that year).
@@ -9541,6 +9610,12 @@ actions.extClose = async (d = {}) => {
       if (FA.capSystemOn() && FA.taxStance(L, t) !== 'pay' && FA.teamCommitted(t) > FA.capLines(L).tax * 0.95 && lv < 84) odds *= 0.3;
       if (status === 'contending' && lv >= 80) odds += 0.15;
       if (p.age >= 32) odds *= 0.5;
+      // High-payroll teams keep their space: no extension that would take next season past the 2nd apron,
+      // unless he's a young star worth it.
+      if (FA.capSystemOn()) {
+        const raise = Math.round(a.sal / 1.1) - (p.contract.sal || 0);
+        if (FA.teamCommitted(t) + raise > FA.capLines(L, 1).apron2 && !(p.age <= 25 && lv >= 88)) continue;
+      }
       if (rng() < odds) {
         // Around market value, and a young player on the rise doesn't take
         // a pay cut. Veterans and rising young players often get a player
@@ -10571,9 +10646,13 @@ actions.cutsFinish = async () => {
       // Over the 2nd apron (the game's cap): take the biggest relief, a clear cut or a buyout.
       if (FA.capSystemOn()) {
         const lim = FA.capLines(L).apron2;
+        // First move overpaid veterans to teams with room; only then cut, and never the core or cheap young talent.
+        const dumps = dumpSalary(L, t, lim, FA.teamCommitted);
+        if (dumps.length) (calFlags().dumpLog ||= []).push(...dumps);
+        const core = new Set([...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(p => p.id));
         let pay = FA.teamCommitted(t) - go.reduce((s, x) => s + ((x.p.contract?.yrs || 0) > 1 ? (buys.includes(x.p) ? buyoutOffer(x.p).saved / buyoutOffer(x.p).yrs : 0) : x.p.contract?.sal || 0), 0);
         for (let guard = 0; pay > lim && guard < 6; guard++) {
-          const opts = rest().map(x => ({ ...x, relief: (x.p.contract?.yrs || 0) <= 1 ? x.p.contract?.sal || 0 : x.bo ? x.bo.sal - x.bo.price : 0 })).filter(x => x.relief > 0);
+          const opts = rest().filter(x => !core.has(x.p.id) && !cheapYoung(x.p)).map(x => ({ ...x, relief: (x.p.contract?.yrs || 0) <= 1 ? x.p.contract?.sal || 0 : x.bo ? x.bo.sal - x.bo.price : 0 })).filter(x => x.relief > 0);
           const best = opts.sort((x, y) => y.relief - x.relief || x.score - y.score)[0];
           if (!best) break;
           go.push({ p: best.p, score: best.score });
@@ -10642,6 +10721,21 @@ actions.cutsFinish = async () => {
   toast(`✂️ ${n} player${n === 1 ? '' : 's'} cut`, mineN ? `${mineN} from your roster` : '');
 };
 
+// The game cuts players from a team over its cap (or a short roster can't play): CPU teams are fixed on export,
+// yours are flagged here so you can make the moves yourself.
+function capWarn() {
+  const L = league();
+  if (isCollege() || !FA.capSystemOn()) return '';
+  const cap = leagueCapSettings(L)?.cap;
+  const rows = L.teams.filter(isUserTeam).map(t => {
+    const pay = filePay(t), n = FA.signedRoster(t).length, bad = [];
+    if (cap && pay > cap) bad.push(`$${pay - cap}M over the game's cap ($${cap}M): the game will release players to get under it`);
+    if (n < 13) bad.push(`only ${n} players: sign ${13 - n} more`);
+    return bad.length ? `<p class="note small down">⚠ ${esc(t.shortName)}: ${bad.join('; ')}.</p>` : '';
+  }).join('');
+  const log = calFlags().capCheckLog || [];
+  return rows || log.length ? `<fieldset class="frame"><legend>Rosters &amp; the Game's Cap</legend>${rows}${log.length ? `<details><summary class="note small muted">CPU teams fixed on export (${log.length})</summary><div class="stack" style="margin-top:6px">${log.map(x => `<p class="note small">${esc(x)}</p>`).join('')}</div></details>` : ''}</fieldset>` : '';
+}
 screens.export = () => {
   syncScoringOptions(true);
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
@@ -10651,6 +10745,7 @@ screens.export = () => {
     body: `
       ${jerseyCard()}
       ${gearCard()}
+      ${capWarn()}
       <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
         <div class="stack">
