@@ -317,9 +317,11 @@ export function diffPlayer(p, snap) {
 // Jersey number for a player joining a team: their current number if free,
 // else its single-digit version (#27 → 7, #55 → 5), else the lowest number
 // that's neither worn nor retired. `p` is excluded from the "worn" check.
+// Teammates under contract hold their numbers; one whose deal is up (status 4) doesn't block a newcomer. If he
+// re-signs, Media Day settles the clash by tenure like any other.
 export function jerseyNumber(team, p, want = p.num) {
   const taken = new Set([
-    ...team.roster.filter(x => x !== p).map(x => x.num),
+    ...team.roster.filter(x => x !== p && x.status !== 4 && x.status !== 5).map(x => x.num),
     ...(team.retiredNumbers || []).map(r => r.num),
   ]);
   if (want >= 0 && !taken.has(want)) return want;
