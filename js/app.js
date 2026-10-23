@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.156.2';
+const APP_VERSION = '0.156.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1081,10 +1081,10 @@ function stepActions(key) {
     case 'portal': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="portal">🔁 Transfer Portal</button><button class="btn" data-act="calDone" data-k="portal">✅ Wrap Up</button></div>`;
     case 'seniors': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="seniors">🎓 Senior Send-off</button><button class="btn" data-act="calDone" data-k="seniors">✅ Wrap Up</button></div>`;
     case 'departures': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="departures">🎓 Draft Departures</button><button class="btn" data-act="calDone" data-k="departures">✅ Wrap Up</button></div>`;
-    case 'review': return `<button class="btn big focus" data-act="nav" data-to="review">📜 Begin</button>`;
+    case 'review': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="review">📜 Begin</button><button class="btn" data-act="calDone" data-k="review">⏭ Skip</button></div>`;
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
-    case 'overview': return `<button class="btn big focus" data-act="nav" data-to="overview">📊 Begin</button>`;
+    case 'overview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="overview">📊 Begin</button><button class="btn" data-act="calDone" data-k="overview">⏭ Skip</button></div>`;
     case 'preview': return `<button class="btn big focus" data-act="nav" data-to="draft">🧢 Begin</button>`;
     case 'lottery': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="lottery">🎱 Draw</button><button class="btn" data-act="homeSimLottery">⏭ Sim</button></div>`;
     case 'mock1': return `<div class="grid2"><button class="btn focus" data-act="openMock" data-n="1">📰 Read</button><button class="btn" data-act="preFinish" data-k="mock1">⏭ Skip</button></div>`;
