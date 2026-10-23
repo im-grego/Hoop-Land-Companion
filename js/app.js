@@ -36,8 +36,8 @@ import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } f
 import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillHallOfFame, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
-import { leagueLook, generateName } from './recruits.js';
-import { isForeign, nameFor, lookFor } from './names.js';
+import { leagueLook } from './recruits.js';
+import { isForeign, lookFor, groupFor, makeNamer } from './names.js';
 import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.175.0';
+const APP_VERSION = '0.176.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4877,15 +4877,14 @@ actions.namesMake = () => {
   const L = league(), cls = L.draftClass || [];
   if (!cls.length) { toast('No draft class to rename'); return; }
   const rng = mulberry32((saveSalt() ^ 0x4a3e5) >>> 0);
-  const used = new Set(leaguePlayers(L, true).map(e => `${e.p.fn} ${e.p.ln}`.toLowerCase()));
-  for (const p of cls) used.delete(`${p.fn} ${p.ln}`.toLowerCase());
-  const before = [];
+  // Everyone else in the save (every league, retirees too): new surnames skip theirs, and a brother comes from them.
+  const ids = new Set(cls.map(p => p.id));
+  const active = state.data.seasonLeagues.flatMap(x => leaguePlayers(x, true).map(e => e.p)).filter(p => !ids.has(p.id));
+  const namer = makeNamer(active, rng, state.data.seasonLeagues.flatMap(x => x.retirees || []));
+  const before = [], done = [];
   for (const p of cls) {
     const abroad = isForeign(p);
-    const n = (abroad && nameFor(rng, p.ctry, used)) || generateName(rng, used);
-    used.add(`${n.fn} ${n.ln}`.toLowerCase());
-    before.push({ p, fn: p.fn, ln: p.ln, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories) });
-    p.fn = n.fn; p.ln = n.ln;
+    before.push({ p, fn: p.fn, ln: p.ln, home: p.home, ctry: p.ctry, loc: p.loc && { ...p.loc }, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories) });
     // A player from abroad gets a skin tone (and matching eye, brow and hair colors) that fits his country.
     const look = abroad ? lookFor(rng, p.ctry, APPEARANCE_POOL.players) : null;
     if (look) {
@@ -4893,6 +4892,9 @@ actions.namesMake = () => {
       p.appearance = { ...p.appearance, ...look };
       if (Array.isArray(p.accessories) && was) p.accessories = p.accessories.map(o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v === was ? look.skinC : v])));
     }
+    // Then the name: a brother or twin takes the family's coloring and hometown.
+    namer.name(p, (abroad && groupFor(p.ctry)) || undefined, done);
+    done.push(p);
   }
   (state.names ||= {})[seasonKey()] = before;
   state.dirty = true;
@@ -4900,7 +4902,7 @@ actions.namesMake = () => {
   render();
 };
 actions.namesUndo = () => {
-  for (const x of state.names?.[seasonKey()] || []) { x.p.fn = x.fn; x.p.ln = x.ln; if (x.appearance) x.p.appearance = x.appearance; if (x.accessories) x.p.accessories = x.accessories; }
+  for (const x of state.names?.[seasonKey()] || []) { x.p.fn = x.fn; x.p.ln = x.ln; if (x.home !== undefined) Object.assign(x.p, { home: x.home, ctry: x.ctry, loc: x.loc }); if (x.appearance) x.p.appearance = x.appearance; if (x.accessories) x.p.accessories = x.accessories; }
   delete state.names[seasonKey()];
   state.dirty = true;
   render();

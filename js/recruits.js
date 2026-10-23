@@ -6,6 +6,7 @@
 
 import { jerseyNumber } from './savefile.js';
 import POOL from './appearance-pool.js';
+import { US_FIRST, US_LAST } from './names.js';
 
 const SK = ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE', 'DRE', 'STL', 'BLK'];
 // Skill weights by position group (relative ceilings).
@@ -15,9 +16,7 @@ const SHAPE = {
   big: { LAY: 0.95, DNK: 1.15, INS: 1.25, MID: 0.6, TPT: 0.45, FTS: 0.7, DRB: 0.45, PAS: 0.6, ORE: 1.2, DRE: 1.3, STL: 0.55, BLK: 1.25 },
 };
 const HT = [[73, 76], [74, 77], [75, 78], [77, 79], [78, 80], [79, 81], [80, 82], [81, 83], [82, 86]];   // by POSITIONS index
-const FIRST = ['Jalen', 'Marcus', 'Darius', 'Tyrese', 'Caleb', 'Isaiah', 'Jordan', 'Malik', 'Andre', 'Cameron', 'Elijah', 'Xavier', 'Trey', 'Devin', 'Josiah', 'Micah', 'Amari', 'Jaylen', 'Kobe', 'Zion', 'Bryce', 'Kendrick', 'Dominic', 'Quentin', 'Rashad', 'Terrence', 'Corey', 'Desmond', 'Nolan', 'Luka', 'Mateo', 'Owen', 'Grant', 'Tristan', 'Keegan'];
-const LAST = ['Johnson', 'Williams', 'Brown', 'Jackson', 'Harris', 'Thompson', 'Robinson', 'Walker', 'Mitchell', 'Carter', 'Bryant', 'Coleman', 'Hayes', 'Reed', 'Brooks', 'Wallace', 'Foster', 'Simmons', 'Hughes', 'Griffin', 'Barnes', 'Fisher', 'Hunter', 'Porter', 'Dawson', 'Sutton', 'Holloway', 'Pierce', 'Maddox', 'Vaughn', 'Okafor', 'Diallo', 'Novak', 'Petrov'];
-
+const FIRST = US_FIRST, LAST = US_LAST;
 // A fresh name from the same pool the recruiting classes draw on, one nobody
 // in `used` ("first last", lowercase) already has.
 export function generateName(rng, used = new Set()) {

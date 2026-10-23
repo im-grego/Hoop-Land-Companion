@@ -10,6 +10,7 @@
 import { generateRecruit, signToSchool } from './recruits.js';
 import { generateTraits, TRAIT_KEYS } from './traits.js';
 import { levelOf } from './savefile.js';
+import { makeNamer } from './names.js';
 
 export const WEEKS = 4;
 export const LIMITS = { calls: 12, homes: 3, officials: 5 };
@@ -57,23 +58,6 @@ const CITIES = [
   ['Toledo', 'OH', 41.65, -83.54, 1], ['Savannah', 'GA', 32.08, -81.09, 2], ['Mobile', 'AL', 30.69, -88.04, 2], ['Shreveport', 'LA', 32.53, -93.75, 2],
   ['Baton Rouge', 'LA', 30.45, -91.19, 2], ['Toronto', 'ON', 43.65, -79.38, 2],
 ];
-const FIRST = ['Jalen', 'Marcus', 'Darius', 'Tyrese', 'Caleb', 'Isaiah', 'Jordan', 'Malik', 'Andre', 'Cameron', 'Elijah', 'Xavier', 'Trey', 'Devin', 'Josiah', 'Micah',
-  'Amari', 'Jaylen', 'Kobe', 'Bryce', 'Kendrick', 'Dominic', 'Quentin', 'Rashad', 'Terrence', 'Corey', 'Desmond', 'Nolan', 'Mateo', 'Owen', 'Grant', 'Tristan',
-  'Keegan', 'DeShawn', 'Jamal', 'Tariq', 'Khalil', 'Darnell', 'Jerome', 'Cedric', 'Brandon', 'Tyler', 'Austin', 'Cole', 'Connor', 'Ethan', 'Mason', 'Logan',
-  'Aiden', 'Carter', 'Hunter', 'Chase', 'Blake', 'Reid', 'Jace', 'Kai', 'Zaire', 'Kyrie', 'Ja\'Kobe', 'Dametri', 'Trevon', 'Marquis', 'Javon', 'Kameron',
-  'Isaac', 'Gavin', 'Landon', 'Julian', 'Adrian', 'Victor', 'Omari', 'Nasir', 'Jabari', 'Kwame', 'Emeka', 'Tobi', 'Ayo', 'Luca', 'Nikola', 'Ivan',
-  'Marco', 'Diego', 'Rafael', 'Jamir', 'Kellen', 'Bennett', 'Wyatt', 'Sawyer', 'Asher', 'Silas', 'Rowan', 'Elias', 'Miles', 'Jett', 'Brooks', 'Reggie',
-  'Lamar', 'Cortez', 'Montez', 'Dorian', 'Ty', 'RJ', 'AJ', 'Cam', 'Dejuan', 'Keon', 'Shamar', 'Tavion', 'Jayden', 'Zion', 'Paolo', 'Cooper'];
-const LAST = ['Johnson', 'Williams', 'Brown', 'Jackson', 'Harris', 'Thompson', 'Robinson', 'Walker', 'Mitchell', 'Carter', 'Bryant', 'Coleman', 'Hayes', 'Reed',
-  'Brooks', 'Wallace', 'Foster', 'Simmons', 'Hughes', 'Griffin', 'Barnes', 'Fisher', 'Hunter', 'Porter', 'Dawson', 'Sutton', 'Holloway', 'Pierce', 'Maddox',
-  'Vaughn', 'Okafor', 'Diallo', 'Novak', 'Petrov', 'Davis', 'Miller', 'Wilson', 'Moore', 'Taylor', 'Anderson', 'Thomas', 'White', 'Martin', 'Lewis', 'Lee',
-  'Young', 'Allen', 'King', 'Wright', 'Scott', 'Green', 'Baker', 'Adams', 'Nelson', 'Hill', 'Campbell', 'Roberts', 'Turner', 'Phillips', 'Parker', 'Evans',
-  'Edwards', 'Collins', 'Stewart', 'Morris', 'Rogers', 'Cook', 'Morgan', 'Bell', 'Murphy', 'Bailey', 'Rivera', 'Cooper', 'Richardson', 'Cox', 'Howard',
-  'Ward', 'Torres', 'Peterson', 'Gray', 'Ramirez', 'James', 'Watson', 'Kelly', 'Sanders', 'Price', 'Bennett', 'Wood', 'Ross', 'Henderson', 'Jenkins',
-  'Perry', 'Powell', 'Long', 'Patterson', 'Washington', 'Butler', 'Alexander', 'Russell', 'Ford', 'Graham', 'Sullivan', 'Wells', 'Hamilton', 'Fletcher',
-  'Gordon', 'Mack', 'Battle', 'Council', 'Holmes', 'Boykin', 'Mobley', 'Ivey', 'Cade', 'Sharpe', 'Okoro', 'Adebayo', 'Nwosu', 'Mensah', 'Traore', 'Sy',
-  'Kovac', 'Jovic', 'Bianchi', 'Ferreira', 'Lindqvist', 'McCray', 'Lockett', 'Whitfield', 'Pruitt', 'Dupree', 'Tate', 'Merriweather', 'Strickland', 'Bledsoe'];
-
 // Distance in miles between two save locations (latitude and longitude x 100).
 export function miles(a, b) {
   if (!a || !b) return 9999;
@@ -126,6 +110,8 @@ export function buildClass(C, li, M) {
   const template = C.teams.flatMap(t => t.roster).reduce((a, p) => (!a || p.id < a.id ? p : a), null);
   const archPool = {};
   for (const p of [...everyone].sort((a, b) => a.id - b.id)) if (p.id <= M.baseId) (archPool[p.pos] ||= []).push([p.pri, p.sec]);
+  // Names on their own stream (so the class itself is unchanged), against the players the save had when the period opened.
+  const namer = makeNamer(everyone.filter(p => p.id <= M.baseId), rngOf((M.seed ^ 0x5eed) >>> 0));
   const n = M.size;
   const pots = Object.keys(POT_W).map(Number);
   const hs = [];
@@ -134,19 +120,20 @@ export function buildClass(C, li, M) {
     const tier = pot >= 9 ? 5 : pot >= 8 ? 4 : pot >= 6 ? 3 : 2;
     const { p, polish } = generateRecruit(C, li, r, { stars: tier, pot, id: M.baseId + 1 + i, template });
     const city = pickW(r, CITIES, c => c[4]);
-    p.fn = FIRST[Math.floor(r() * FIRST.length)];
-    p.ln = LAST[Math.floor(r() * LAST.length)];
+    r(); r();   // the old name draws, so the rest of the class comes out as it always has
     // Stored like the game's own players: "City, ST" with country US, or
     // "City, CC" (country code) abroad, e.g. "Toronto, CA" with country CA.
     p.ctry = city[1] === 'ON' ? 'CA' : 'US';
     p.home = `${city[0]}, ${p.ctry === 'US' ? city[1] : p.ctry}`;
     p.loc = { x: Math.round(city[2] * 100 + gauss(r) * 25), y: Math.round(city[3] * 100 + gauss(r) * 25) };
+    namer.name(p, undefined, hs.map(x => x.p));   // a brother or twin takes the family's hometown
     const arch = archPool[p.pos]?.length ? archPool[p.pos][Math.floor(r() * archPool[p.pos].length)] : [p.pri, p.sec];
     [p.pri, p.sec] = arch;
     setTraits(p);
     const lv = levelOf(p);
     const grade = pot + (lv - 45) / 10 + gauss(r) * 0.7;
-    hs.push({ id: p.id, p, polish, city: city[0], st: city[1], lv, grade, hs: hsLine(p, lv, r), w: motivesOf(p, false, r), ready: 0, transfer: false });
+    const [hc, hst] = String(p.home).split(', ');
+    hs.push({ id: p.id, p, polish, city: hc || city[0], st: p.ctry === 'US' ? hst || city[1] : city[1], lv, grade, hs: hsLine(p, lv, r), w: motivesOf(p, false, r), ready: 0, transfer: false });
   }
   // Rank by the scouts' grade; stars by rank.
   hs.sort((a, b) => b.grade - a.grade);
