@@ -1432,7 +1432,7 @@ main.panel.bare { margin-top: 10px; }
 .trade .tsel-team .status, .tsel-team .status { font-size: 10px; padding: 1px 6px; }
 .trade-sending { margin: 2px 0 0; color: var(--cyan); line-height: 1.25; }
 /* Combine on a prospect's page: summary up top, drop-downs for measurables and drills. */
-.cmb-fold { margin-top: 6px; border: 2px solid var(--btn-edge); background: var(--btn-shadow); padding: 4px 8px; }
+.cmb-fold { margin-top: 6px; padding: 2px 0; }
 .cmb-fold > summary { cursor: pointer; font-weight: 700; font-size: 13px; list-style: none; }
 .cmb-fold > summary::-webkit-details-marker { display: none; }
 .cmb-fold > summary::after { content: ' ▾'; color: var(--cyan); }
