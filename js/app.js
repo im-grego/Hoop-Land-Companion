@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.154.1';
+const APP_VERSION = '0.154.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9215,11 +9215,14 @@ function extAsk(p, team) {
   let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
   if (isUserTeam(team)) sal = Math.round(sal * fxNow().askMult * FX.facilityFx(team).askMult);
   // Holding out: an unhappy player whose traits say money or no loyalty asks
-  // for a market-resetting deal, above the best-paid peers at his position.
+  // for a market-resetting deal: above the best-paid peers of his own level at
+  // his position, but never more than 1.75 times what he's worth.
   const holdout = isComplete() && morale < 35 && tr(p, 'loyalty') < 16 && (tr(p, 'money') >= 13 || tr(p, 'loyalty') <= 6);
   if (holdout) {
-    const peers = league().teams.flatMap(x => x.roster).filter(x => x !== p && Math.abs(x.pos - p.pos) <= 1 && shownLevel(x) >= shownLevel(p) - 2 && x.contract?.sal);
-    sal = Math.round(Math.max(sal * (1.3 + (tr(p, 'money') - 10) * 0.01), peers.reduce((m, x) => Math.max(m, x.contract.sal), 0) * 1.03));
+    const lv = shownLevel(p);
+    const peers = league().teams.flatMap(x => x.roster).filter(x => x !== p && Math.abs(x.pos - p.pos) <= 1 && Math.abs(shownLevel(x) - lv) <= 2 && x.contract?.sal);
+    const reset = peers.reduce((m, x) => Math.max(m, x.contract.sal), 0) * 1.03;
+    sal = Math.round(Math.min(Math.max(sal * (1.3 + (tr(p, 'money') - 10) * 0.01), reset), base * 1.75));
   }
   sal = Math.max(FA.minFor(p) + 1, Math.min(FA.maxSalary(league(), p, true, p.contract?.yrs || 1), sal));
   const yrs = holdout ? [2, 3] : p.age <= 25 ? [4, 5] : p.age <= 28 ? [3, 5] : p.age <= 31 ? [2, 4] : [1, 2];

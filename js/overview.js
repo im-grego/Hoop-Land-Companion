@@ -169,7 +169,7 @@ export function rosterNeeds(L, team, { level = levelOf, li = 0 } = {}) {
     const name = GROUPS[g];
     const want = g === 'wings' ? 3 : 2;
     if (rot.length < want) out.push({ group: g, kind: 'Depth', sev: rot.length === 0 ? 3 : want - rot.length >= 2 ? 3 : 2,
-      text: `Only ${rot.length || 'no'} rotation-quality ${name.toLowerCase()} signed for next season` });
+      text: rot.length ? `Only ${rot.length} rotation-quality ${name.toLowerCase().slice(0, rot.length === 1 ? -1 : undefined)} signed for next season` : `No rotation-quality ${name.toLowerCase()} signed for next season` });
     if (!best || level(best) < cuts.starter) out.push({ group: g, kind: 'Starter', sev: !best || level(best) < cuts.rotation ? 3 : 2,
       text: best ? `No starting-caliber ${name.toLowerCase().slice(0, -1)}: ${playerName(best)} (Lv ${level(best)}) is your best` : `No ${name.toLowerCase()} on the roster` });
     if (!young.length) out.push({ group: g, kind: 'Upside', sev: 1, text: `No ${name.toLowerCase().slice(0, -1)} 24 or younger with Starter-level or better potential` });
