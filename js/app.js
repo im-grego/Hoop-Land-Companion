@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.155.0';
+const APP_VERSION = '0.156.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -525,6 +525,7 @@ async function loadFile(file) {
       return;
     }
     freshSaveCheck();
+    recallSetup();
     unstampDraftYear();
     const reopened = reopenOptions();
     const reext = reopenExtensions();
@@ -1220,9 +1221,60 @@ actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st
 // A franchise save at the start of a season (no games played yet): set it up as the real NBA before the first
 // season. Pick moves and the forfeited firsts go into the file; protections, swaps and dead cap are kept on this
 // device under the save's name, so the offseason saves that come back from the game find them.
-const setupKey = () => `hlc:setup:${league().shortName}:${league().meta?.saveName || ''}`;
+const setupKey = (L = league()) => `hlc:setup:${L.shortName}:${L.meta?.saveName || ''}`;
 function setupFlags() { try { return JSON.parse(localStorage.getItem(setupKey())) || {}; } catch { return {}; } }
-function setSetupFlag(k) { try { localStorage.setItem(setupKey(), JSON.stringify({ ...setupFlags(), [k]: true })); } catch { /* ignore */ } }
+// Who this save is, so it can be recognized later even under another name or slot: the user team plus the two best
+// players of every team (id and last name). Players retire over the years, so a match only needs most of them.
+const setupAnchors = L => L.teams.flatMap(t => [...t.roster].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 2).map(p => `${p.id}|${p.ln}`));
+function setSetupFlag(k) {
+  const L = league(), cur = setupFlags();
+  try { localStorage.setItem(setupKey(), JSON.stringify({ ...cur, [k]: true, anchors: cur.anchors || setupAnchors(L), team: L.season.teamId, year: L.season.currentYear, short: L.shortName, name: L.meta?.saveName || '' })); } catch { /* ignore */ }
+  if (!state.setupCheck) state.setupCheck = { kind: 'verified', score: 1 };
+}
+function setupScore(rec, L = league()) {
+  const ids = new Map();
+  for (const p of [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.retirees || []), ...(L.hallOfFame || [])]) ids.set(p.id, p.ln);
+  const a = rec.anchors || [];
+  return a.length ? a.filter(x => { const [id, ln] = x.split('|'); return ids.get(+id) === ln; }).length / a.length : 0;
+}
+const unionBy = (a, b, f) => { const out = [...a]; for (const x of b) if (!out.some(y => f(x, y))) out.push(x); return out; };
+// After a save loads: check the setup records under its own name against the save, and when there are none (the
+// save was renamed or exported to a new slot), find the setup that matches it by who is in it and move the
+// protections, swaps and dead cap across.
+function recallSetup() {
+  state.setupCheck = null;
+  const L = league();
+  if (isCollege() || state.leagueFile) return;
+  const own = setupFlags();
+  if (own.anchors) { const sc = own.team === L.season.teamId ? setupScore(own, L) : 0; state.setupCheck = { kind: sc >= 0.6 ? 'verified' : 'other', score: sc }; if (sc >= 0.6) return; }
+  let best = null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k?.startsWith('hlc:setup:') || k === setupKey()) continue;
+      const rec = JSON.parse(localStorage.getItem(k));
+      if (!rec?.anchors || rec.team !== L.season.teamId || (rec.year || 0) > L.season.currentYear) continue;
+      const sc = setupScore(rec, L);
+      if (sc >= 0.6 && (!best || sc > best.sc)) best = { rec, sc, k };
+    }
+  } catch { /* ignore */ }
+  if (!best) return;
+  const { rec } = best, read = key => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } };
+  const from = n => `hlc:${n}:${rec.short}:${rec.name}`;
+  saveProt(unionBy(protLedger(), read(from('prot')), (x, y) => x.otid === y.otid && x.yr === y.yr));
+  saveSwaps(unionBy(swapLedger(), read(from('swap')), (x, y) => x.yr === y.yr && x.rd === y.rd && x.x === y.x && x.y === y.y));
+  saveDead(unionBy(deadLedger(), read(from('dead')), (x, y) => x.tag && x.tag === y.tag));
+  try { localStorage.setItem(setupKey(), JSON.stringify({ ...rec, short: L.shortName, name: L.meta?.saveName || '' })); } catch { /* ignore */ }
+  state.setupCheck = { kind: 'recalled', score: best.sc, from: rec.name };
+  setTimeout(() => toast('Recognized this save', `Matched your Franchise Setup for "${rec.name}" (${Math.round(best.sc * 100)}% of the same players). Protections, swaps and dead cap carried over.`, 6000), 600);
+}
+const setupStatus = () => {
+  const c = state.setupCheck;
+  if (!c) return setupFlags().anchors ? '' : '<p class="note small muted">No Franchise Setup on record for this save.</p>';
+  return c.kind === 'other' ? `<p class="note small down">⚠ The setup records under this save's name came from a different save (${Math.round(c.score * 100)}% match). Don't trust the protections, swaps or dead cap here.</p>`
+    : c.kind === 'recalled' ? `<p class="note small up">✓ Recognized from your setup of "${esc(c.from)}" (${Math.round(c.score * 100)}% same players).</p>`
+    : `<p class="note small up">✓ Verified: this is the save you set up (${Math.round(c.score * 100)}% same players).</p>`;
+};
 const seasonUnplayed = (L = league()) => L.teams.every(t => !((t.season || []).find(r => r.yr === L.season.currentYear)?.seasonStats?.GP > 0));
 function setupCard() {
   const f = setupFlags(), L = league();
@@ -1233,7 +1285,7 @@ function setupCard() {
     <p class="note small muted">Moves every pick to its real holder, adds the real protections and best/worst swaps, and removes the Clippers' forfeited firsts. ${done('picks', 'Done')}</p>
     <button class="btn ${f.dead ? 'off' : 'focus'}" data-act="addRealDead">💸 Add Real Dead Cap</button>
     <p class="note small muted">Lillard's stretched deal: $21M a year on Milwaukee through 2029-30. ${done('dead', 'Done')}</p>
-    <p class="note small">${isComplete() ? '' : '<span class="down">Protections and swaps need Complete rules (Settings). </span>'}This device remembers the protections, swaps and dead cap for this save by its name (<b>${esc(L.meta?.saveName || L.shortName)}</b>), so when the offseason save comes back from the game they're waiting. History starts at ${state.params.startYear || 'the file\'s own year'} on export.</p>
+    <p class="note small">${isComplete() ? '' : '<span class="down">Protections and swaps need Complete rules (Settings). </span>'}This device remembers the protections, swaps and dead cap for this save, and recognizes it later by its players even if you rename it or start a new slot. History starts at ${state.params.startYear || 'the file\'s own year'} on export.</p>${setupStatus()}
     <button class="btn big ${f.picks && f.dead ? 'focus' : ''}" data-act="download">💾 Save the File</button>
   </div></fieldset>`;
 }
