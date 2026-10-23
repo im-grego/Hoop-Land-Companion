@@ -1,5 +1,5 @@
 import {
-  parseSave, serializeSave, injuryHistory, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies,
+  parseSave, serializeSave, injuryHistory, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies, draftYear,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.157.3';
+const APP_VERSION = '0.158.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ async function packPrompt(pack) {
   try { if (localStorage.getItem(key)) return; } catch {}
   const picks = packPickDiffs(pack, L), teams = packTeamDiffs(pack, L);
   if (!picks.length && !teams.length) return;
-  const lines = [...picks.slice(0, 6).map(d => `${dispYr(d.yr)} R${d.rd} (${L.teams.find(t => t.id === d.otid)?.shortName}) back to ${L.teams.find(t => t.id === d.tid)?.shortName}`), ...(picks.length > 6 ? [`and ${picks.length - 6} more picks`] : []), ...(teams.length ? [`${teams.length} teams' fans or tags`] : [])];
+  const lines = [...picks.slice(0, 6).map(d => `${d.yr} R${d.rd} (${L.teams.find(t => t.id === d.otid)?.shortName}) back to ${L.teams.find(t => t.id === d.tid)?.shortName}`), ...(picks.length > 6 ? [`and ${picks.length - 6} more picks`] : []), ...(teams.length ? [`${teams.length} teams' fans or tags`] : [])];
   const r = await choiceBox(`<b>${esc(pack.name)}</b> had some things the game dropped:<br><span class="small muted">${lines.map(esc).join('<br>')}</span>`, [['no', 'Leave As Is', 'off'], ['yes', 'Apply My League', 'focus']]);
   try { localStorage.setItem(key, '1'); } catch {}
   if (r !== 'yes') return;
@@ -525,6 +525,7 @@ async function loadFile(file) {
       return;
     }
     freshSaveCheck();
+    if (repairPickYears()) toast('Draft picks moved back a year', 'This save had its picks a year ahead; they now carry the real draft year.');
     recallSetup();
     unstampDraftYear();
     const reopened = reopenOptions();
@@ -681,10 +682,12 @@ function gameCapCheck(L, cap) {
   const overpaid = p => sal(p) - fairSalary(shownLevel(p));
   const room = t => cap - filePay(t);
   for (const t of L.teams.filter(x => !isUserTeam(x))) {
-    dumpSalary(L, t, cap, filePay, log);
+    // Under the cap with room left for the minimum deals a short roster still needs.
+    const roomFor = () => Math.max(0, MIN_ROSTER - FA.signedRoster(t).length) * 3;
+    dumpSalary(L, t, cap - roomFor(), filePay, log);
     // Nobody could take enough: waive the worst value for the money (it stays on the app's books as dead money).
     const core = new Set([...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(p => p.id));
-    for (let guard = 0; room(t) < 0 && guard < 10; guard++) {
+    for (let guard = 0; room(t) < roomFor() && guard < 10; guard++) {
       const p = FA.signedRoster(t).filter(x => !core.has(x.id) && sal(x) > 0).sort((a, b) => (cheapYoung(a) - cheapYoung(b)) || overpaid(b) - overpaid(a) || sal(b) - sal(a))[0];
       if (!p) break;
       const c = { ...p.contract };
@@ -728,6 +731,7 @@ function buildExport() {
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
   if (!isCollege() && league().season.phase === 6) gameCapCheck(league(), league().season.salaryCap);
+  if (!isCollege()) pickWindow(league());
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
   // don't want. A file leaving free agency goes out with everyone's extension
@@ -1038,6 +1042,31 @@ actions.resetProgress = async () => {
   toast('Offseason progress cleared');
   goHome();
 };
+// Pick years carry the real draft's year (the draft in the save's year Y uses the picks marked Y - 1), kept that
+// way every season. A save from an older version (or one the game moved on a year) whose next draft has no picks
+// marked for it gets every pick moved back a year. Either way the league always holds seven drafts of picks: a draft
+// year nobody has picks for is filled with each team's own (a single missing pick, like a forfeited one, stays gone).
+function pickWindow(L = league()) {
+  if (!L || L.leagueType !== 0) return 0;
+  const dy = draftYear(L), drafted = L.season.phase >= PHASE_POST_DRAFT && L.season.phase !== 9 && L.season.phase !== 11 ? 1 : 0;
+  const from = dy + drafted, has = (yr, rd) => L.teams.some(t => t.draftPicks.some(pk => pk.yr === yr && pk.rd === rd));
+  let added = 0;
+  for (let yr = from; yr < from + 7; yr++) for (const rd of [1, 2]) {
+    if (has(yr, rd)) continue;
+    for (const t of L.teams) { t.draftPicks.push({ pk: 0, rd, tid: t.id, otid: t.id, yr }); added++; }
+  }
+  return added;
+}
+function repairPickYears() {
+  const L = league();
+  if (!L || isCollege() || L.leagueType !== 0 || L.season.phase > PHASE_PRE_DRAFT) return 0;
+  const dy = draftYear(L), any = yr => L.teams.some(t => t.draftPicks.some(pk => pk.yr === yr));
+  let moved = 0;
+  if (!any(dy) && any(dy + 1)) for (const t of L.teams) for (const pk of t.draftPicks) { pk.yr--; moved++; }
+  const added = pickWindow(L);
+  if (moved || added) state.dirty = true;
+  return moved;
+}
 function freshSaveCheck() {
   const fp = saveFingerprint();
   let known = null;
@@ -4840,7 +4869,7 @@ function outlookCard() {
     const now = order.length ? order.filter(q => q.owner.id === t.id).map(q => `#${q.overall}${q.orig.id !== t.id ? ` <span class="muted">(${esc(q.orig.shortName)})</span>` : ''}`)
       : draftPosition(L, t, state.params.lotteryFormat).map(x => `${x.lottery ? `Proj #${x.likely}` : `#${x.slot}`}${x.orig.id !== t.id ? ` <span class="muted">(${esc(x.orig.shortName)})</span>` : ''}`);
     const byYear = new Map();
-    for (const pk of [...t.draftPicks].filter(pk => pk.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
+    for (const pk of [...t.draftPicks].filter(pk => pk.yr > draftYear(L)).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
       if (!byYear.has(pk.yr)) byYear.set(pk.yr, []);
       byYear.get(pk.yr).push(`R${pk.rd}${pk.otid !== t.id ? ` <span class="muted">(${esc(tname(pk.otid))})</span>` : ''}`);
     }
@@ -5678,7 +5707,7 @@ function frontOfficeOffers(team, { only = null, max = 3 } = {}) {
     if (o.owner.id !== team.id) return;
     for (const x of tradeUpOffers(L, order, idx, { value: futureValue, slot: slotValue, rng, count: 1, eager: 0.7, frozen: frozenFn })) {
       out.push({ team: x.team, kind: 'up',
-        give: x.give.map(pk => ({ pick: pk, key: pk.yr === L.season.currentYear ? `c:${order.find(q => slotPick(L, q) === pk)?.overall}` : `f:${pk.yr}:${pk.rd}:${pk.otid}`, text: pk.yr === L.season.currentYear ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk) })),
+        give: x.give.map(pk => ({ pick: pk, key: pk.yr === draftYear(L) ? `c:${order.find(q => slotPick(L, q) === pk)?.overall}` : `f:${pk.yr}:${pk.rd}:${pk.otid}`, text: pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk) })),
         get: [{ pick: x.get, key: `c:${o.overall}`, text: `#${o.overall}` }] });
     }
   });
@@ -6240,7 +6269,7 @@ const dispYr = y => (isCollege() ? y : y - 1);
 const pickLabel = (pk, L = league()) => {
   const t = L.teams.find(x => x.id === pk.otid);
   const pr = protOf(pk);
-  return `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}${pr ? ` · ${protName(pr.top)} prot.` : ''}${(() => { const w = swapOf(pk); if (!w) return ''; const o = L.teams.find(x => x.id === (w.x === pk.otid ? w.y : w.x)); return ` · ⇄ ${o?.shortName || '?'} swap`; })()}`;
+  return `${pk.yr} R${pk.rd}${pk.otid !== pk.tid ? ` (${t?.shortName || '?'})` : ''}${pr ? ` · ${protName(pr.top)} prot.` : ''}${(() => { const w = swapOf(pk); if (!w) return ''; const o = L.teams.find(x => x.id === (w.x === pk.otid ? w.y : w.x)); return ` · ⇄ ${o?.shortName || '?'} swap`; })()}`;
 };
 
 // ---- Trade rules (CBA)
@@ -6301,7 +6330,7 @@ function tradeLock(p) {
   return x && x.tid === p.tid ? x.why : null;
 }
 // Lottery picks are off the table from the day before the lottery.
-const lotteryLocked = pk => league().season.phase === 2 && pk.rd === 1 && pk.yr === league().season.currentYear;
+const lotteryLocked = pk => league().season.phase === 2 && pk.rd === 1 && pk.yr === draftYear(league());
 // Everything a trade has to clear besides value. Sides: { team, players, picks }.
 function tradeRulesErr(L, A, B) {
   if (!isComplete()) return null;
@@ -6341,7 +6370,7 @@ async function physicals(L, A, B) {
     if (!r || !(r.chance >= 10 || (r.cls === 'structural' && r.games >= 20))) continue;
     const what = `${injuryName(r.worst)}, ${r.games} games out${r.chance ? `, ${Math.round(r.chance)}% risk` : ''}`;
     if (isUserTeam(me.team) && !isUserTeam(them.team)) {
-      const second = me.team.draftPicks.filter(pk => pk.rd === 2 && pk.yr > L.season.currentYear && !(me.picks || []).includes(pk)).sort((a, b) => b.yr - a.yr)[0];
+      const second = me.team.draftPicks.filter(pk => pk.rd === 2 && pk.yr > draftYear(L) && !(me.picks || []).includes(pk)).sort((a, b) => b.yr - a.yr)[0];
       if (r.chance >= 25 || !second) { toast('Trade off', `${playerName(p)} failed his physical with ${them.team.shortName}`, 3600, true); return false; }
       if (!(await confirmBox(`${esc(playerName(p))}'s physical raised flags (${esc(what)}). ${esc(them.team.shortName)} want ${esc(pickLabel(second))} added.`, 'Add It'))) return false;
       (me.picks ||= []).push(second);
@@ -6354,13 +6383,13 @@ async function physicals(L, A, B) {
 // Lottery night: protected picks that land in their protection go back.
 function settleProt(L) {
   const sw = swapLedger();
-  if (sw.some(x => !x.done && x.yr === L.season.currentYear)) {
+  if (sw.some(x => !x.done && x.yr === draftYear(L))) {
     const res = TR.settleSwaps(L, sw);
     saveSwaps(sw);
-    for (const r of res) if (isUserTeam(r.a) || isUserTeam(r.b)) toast('⇄ Pick swap', `${r.a.shortName} get the ${r.entry.mode === 'best' ? 'better' : 'worse'} of the two ${dispYr(r.entry.yr)} R${r.entry.rd} picks (#${r.slotA}); ${r.b.shortName} take #${r.slotB}`);
+    for (const r of res) if (isUserTeam(r.a) || isUserTeam(r.b)) toast('⇄ Pick swap', `${r.a.shortName} get the ${r.entry.mode === 'best' ? 'better' : 'worse'} of the two ${r.entry.yr} R${r.entry.rd} picks (#${r.slotA}); ${r.b.shortName} take #${r.slotB}`);
   }
   const led = protLedger();
-  if (!led.some(x => !x.done && x.yr === L.season.currentYear)) return;
+  if (!led.some(x => !x.done && x.yr === draftYear(L))) return;
   const res = TR.settleProtections(L, led, lotN());
   saveProt(led);
   for (const r of res) if (isUserTeam(r.holder) || (r.from && isUserTeam(r.from))) {
@@ -6398,7 +6427,7 @@ function draftLive() {
           <span class="needs-line">${needChips(teamOutlook(o.owner).needs)}</span></span>
       </div>
       ${user ? `<button class="btn big focus" data-act="liveChoose">🎯 Make Pick #${o.overall}</button>` : ''}
-      ${offers.map((x, i) => `<div class="offer"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${x.give.map(pk => pk.yr === L.season.currentYear ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
+      ${offers.map((x, i) => `<div class="offer"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${x.give.map(pk => pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
         <button class="btn small" data-act="liveOffer" data-i="${i}">Accept</button></div>`).join('')}
       <div class="grid2">
         <button class="btn" data-act="liveSim" data-m="one" ${user ? 'disabled' : ''}>▶ Next Pick</button>
@@ -6554,7 +6583,7 @@ function liveExecute(A, B, cpu = false) {
   }
   const order = liveOrder();
   const label = (side) => [
-    ...side.picks.map(pk => pk.yr === L.season.currentYear ? `#${order.find(q => slotPick(L, q) === pk)?.overall ?? '?'}` : pickLabel(pk)),
+    ...side.picks.map(pk => pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall ?? '?'}` : pickLabel(pk)),
     ...side.players.map(playerName),
     ...(side.prospects || []).map(ov => `${playerName(prospectById(live.sel[ov].pid))} (#${ov})`),
   ].join(', ') || 'nothing';
@@ -6683,7 +6712,7 @@ function liveAssets(team) {
     const pk = slotPick(L, o);
     if (pk) out.push({ key: `c:${o.overall}`, label: `#${o.overall} (R${o.rd}${o.orig.id !== team.id ? `, via ${o.orig.shortName}` : ''})`, value: slotValue(o.overall), pick: pk });
   }
-  for (const pk of [...team.draftPicks].filter(x => x.yr > yr).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
+  for (const pk of [...team.draftPicks].filter(x => x.yr > draftYear(L)).sort((a, b) => a.yr - b.yr || a.rd - b.rd)) {
     const frozen = FA.pickFrozen(L, team, pk);
     out.push({ key: `f:${pk.yr}:${pk.rd}:${pk.otid}`, label: `${esc(pickLabel(pk))}${frozen ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}`, html: true, locked: frozen, value: futureValue(pk), pick: pk });
   }
@@ -6765,7 +6794,7 @@ screens.liveTrade = (args) => {
   let vA = sum(aa, selA), vB = sum(bb, selB);
   if (mode) { const [ca, cb] = swapValues(sw, mode, pv); vA += ca; vB += cb; }
   // Future firsts being sent can carry a protection.
-  const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => !inSw(x)).filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > L.season.currentYear);
+  const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => !inSw(x)).filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > draftYear(L));
   const protRows = !isComplete() ? [] : firsts.map(x => protOf(x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><span class="small muted">already protected</span></div>`
     : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${protName(v, true)}</button>`).join('')}</div></div>`).join('');
@@ -6789,7 +6818,7 @@ screens.liveTrade = (args) => {
         <div class="list">${list(aa, selA, 'a')}</div>
         <div class="list">${list(bb, selB, 'b')}</div>
       </div>
-      ${sw ? `<fieldset class="frame"><legend>Swap</legend><p class="note small muted">Instead of trading the two ${dispYr(sw.xa.pick.yr)} R${sw.xa.pick.rd} picks, each team keeps its own and the order decides who gets which.</p>
+      ${sw ? `<fieldset class="frame"><legend>Swap</legend><p class="note small muted">Instead of trading the two ${sw.xa.pick.yr} R${sw.xa.pick.rd} picks, each team keeps its own and the order decides who gets which.</p>
         <div class="seg">${[[null, 'No swap'], ['best', `${esc(A.shortName)} get best`], ['worst', `${esc(A.shortName)} get worst`]].map(([v, t]) => `<button class="btn ${(mode || null) === v ? 'on focus' : 'off'}" data-act="liveSwap" data-v="${v || ''}">${t}</button>`).join('')}</div></fieldset>` : ''}
       ${protRows ? `<fieldset class="frame"><legend>Protections</legend><p class="note small muted">Lands in the protection: it goes back and they get that year's 2nd.</p>${protRows}</fieldset>` : ''}
       ${commish ? `<div class="grid2">
@@ -6863,7 +6892,7 @@ async function physicals3(L, items) {
     const what = `${injuryName(r.worst)}, ${r.games} games out${r.chance ? `, ${Math.round(r.chance)}% risk` : ''}`;
     if (isUserTeam(i.from) && !isUserTeam(i.to)) {
       const used = new Set(items.filter(j => j.x.pick).map(j => j.x.pick));
-      const second = i.from.draftPicks.filter(pk => pk.rd === 2 && pk.yr > L.season.currentYear && !used.has(pk)).sort((a, b) => b.yr - a.yr)[0];
+      const second = i.from.draftPicks.filter(pk => pk.rd === 2 && pk.yr > draftYear(L) && !used.has(pk)).sort((a, b) => b.yr - a.yr)[0];
       if (r.chance >= 25 || !second) { toast('Trade off', `${playerName(p)} failed his physical with ${i.to.shortName}`, 3600, true); return false; }
       if (!(await confirmBox(`${esc(playerName(p))}'s physical raised flags (${esc(what)}). ${esc(i.to.shortName)} want ${esc(pickLabel(second))} added.`, 'Add It'))) return false;
       items.push({ x: { key: `f:${second.yr}:${second.rd}:${second.otid}`, pick: second, value: futureValue(second) }, from: i.from, to: i.to });
@@ -6900,7 +6929,7 @@ function liveTrade3(args, A, B, C, left) {
     const ok = cpuAccepts(g, r);
     return `<p class="note small"><b>${esc(t.shortName)}</b> sends ${Math.round(g)} · gets ${Math.round(r)}${cpu && items.length ? ` · ${ok ? '<span class="up">would accept</span>' : '<span class="down">would decline</span>'}` : ''}</p>`;
   }).join('');
-  const firsts = items.filter(i => i.x.pick && i.x.pick.rd === 1 && i.x.pick.yr > L.season.currentYear);
+  const firsts = items.filter(i => i.x.pick && i.x.pick.rd === 1 && i.x.pick.yr > draftYear(L));
   const protRows = !isComplete() ? [] : firsts.map(i => protOf(i.x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><span class="small muted">already protected</span></div>`
     : `<div class="prot-row"><span class="grow small">${esc(pickLabel(i.x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[i.x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${i.x.key}" data-v="${v}">${protName(v, true)}</button>`).join('')}</div></div>`).join('');
@@ -7073,7 +7102,7 @@ actions.liveTradeGo = async d => {
     const sl = swapLedger();
     sl.push({ yr: swapOut.xa.pick.yr, rd: swapOut.xa.pick.rd, a: A.id, b: B.id, x: swapOut.xa.pick.otid, y: swapOut.xb.pick.otid, mode: swapMode });
     saveSwaps(sl);
-    if (!sa.items.length && !sb.items.length) { toast('⇄ Swap set', `${A.shortName} get the ${swapMode === 'best' ? 'better' : 'worse'} of the two ${dispYr(swapOut.xa.pick.yr)} R${swapOut.xa.pick.rd} picks`); back(); return; }
+    if (!sa.items.length && !sb.items.length) { toast('⇄ Swap set', `${A.shortName} get the ${swapMode === 'best' ? 'better' : 'worse'} of the two ${(swapOut.xa.pick.yr)} R${swapOut.xa.pick.rd} picks`); back(); return; }
   }
   const entry = liveExecute(sa, sb);
   entry.protAdded = led.filter(e => !e.done && (sa.items.concat(sb.items)).some(x => x.pick && x.pick.otid === e.otid && x.pick.yr === e.yr && prot[x.key]));
@@ -7093,10 +7122,10 @@ function draftTrades(args) {
   const key = pk => `${pk.yr}:${pk.rd}:${pk.otid}`;
   const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const picks = (T, sel, side) => [...T.draftPicks]
-    .filter(pk => pk.yr >= L.season.currentYear)
+    .filter(pk => pk.yr >= draftYear(L))
     .sort((x, y) => x.yr - y.yr || x.rd - y.rd)
     .map(pk => { const fz = FA.pickFrozen(L, T, pk) || lotteryLocked(pk); return `<button class="pick ${sel.has(key(pk)) ? 'sel' : ''} ${fz ? 'locked' : ''}" ${fz ? 'disabled' : `data-act="togglePick" data-side="${side}" data-k="${key(pk)}"`}>
-      <span class="check"></span><span class="grow">${dispYr(pk.yr)} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}${protOf(pk) ? ` <span class="badge new">${protName(protOf(pk).top)} prot.</span>` : ''}${fz ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}</span>
+      <span class="check"></span><span class="grow">${pk.yr} R${pk.rd}${pk.otid !== T.id ? ` <span class="muted small">(${esc(tname(pk.otid))})</span>` : ''}${protOf(pk) ? ` <span class="badge new">${protName(protOf(pk).top)} prot.</span>` : ''}${fz ? ' <span class="badge lock" title="Over the 2nd apron: this pick can\'t be traded">🔒 Frozen</span>' : pickPenTag(pk)}</span>
       <span class="muted small">${Math.round(pickValue(L, pk))}</span></button>`; }).join('') || '<p class="note muted">No picks.</p>';
   const valueOf = (T, sel) => T.draftPicks.filter(pk => sel.has(key(pk))).reduce((a, pk) => a + pickValue(L, pk), 0);
   const vA = valueOf(A, selA), vB = valueOf(B, selB);
@@ -7148,7 +7177,7 @@ actions.makeTrade = async () => {
   const pErr = tradeRulesErr(L, { team: A, picks: fromA }, { team: B, picks: fromB });
   if (pErr) { toast('Trade not allowed', pErr, 3200, true); return; }
   const tname = id => L.teams.find(t => t.id === id)?.shortName || '?';
-  const desc = list => list.map(pk => `${dispYr(pk.yr)} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
+  const desc = list => list.map(pk => `${pk.yr} R${pk.rd}${pk.otid !== pk.tid ? ` (${tname(pk.otid)})` : ''}`).join(', ') || 'nothing';
   const text = `${A.shortName} send ${desc(fromA)} · ${B.shortName} send ${desc(fromB)}`;
   if (!(await confirmBox(esc(text), 'Trade'))) return;
   tradePicks(A, B, fromA, fromB);
@@ -7746,7 +7775,7 @@ function cpuBlockDeals(day) {
         const stars = new Set([...u.roster].sort((a, b) => playerValue(b, state.leagueIdx, ly) - playerValue(a, state.leagueIdx, ly)).slice(0, 2));
         const assets = [
           ...FA.signedRoster(u).filter(x => !stars.has(x) && !tradeLock(x) && x.contract?.yrs > 0).map(x => ({ player: x, value: playerValue(x, state.leagueIdx, ly) })),
-          ...u.draftPicks.filter(pk => pk.yr > yr && !FA.pickFrozen(L, u, pk)).map(pk => ({ pick: pk, value: futureValue(pk) })),
+          ...u.draftPicks.filter(pk => pk.yr > draftYear(L) && !FA.pickFrozen(L, u, pk)).map(pk => ({ pick: pk, value: futureValue(pk) })),
         ];
         const packs = [];
         for (let i = 0; i < assets.length; i++) {
@@ -8089,7 +8118,7 @@ function sntPackage(L, m, partner, deal, lean, s) {
   const fresh = new Set(s.signings.map(x => x.p.id));
   const players = FA.signedRoster(partner).filter(p => !fresh.has(p.id) && p.status === FA.STATUS_SIGNED)
     .map(p => ({ p, v: faValue(p), label: `${playerName(p)} (Lv ${shownLevel(p)}, $${p.contract.sal}M × ${p.contract.yrs})` }));
-  const picks = partner.draftPicks.filter(pk => pk.yr > yr && !FA.pickFrozen(L, partner, pk)).map(pk => ({ pk, v: pickValue(L, pk), label: pickLabel(pk, L) }));
+  const picks = partner.draftPicks.filter(pk => pk.yr > draftYear(L) && !FA.pickFrozen(L, partner, pk)).map(pk => ({ pk, v: pickValue(L, pk), label: pickLabel(pk, L) }));
   const pool = (lean === 'picks' ? [...picks, ...players] : [...players, ...picks]);
   const mine = L.teams.find(t => t.id === m.from.id);
   const room = FA.FA_DEFAULTS.rosterMax - FA.signedRoster(mine).length;  // offseason limit

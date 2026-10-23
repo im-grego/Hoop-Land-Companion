@@ -1,6 +1,6 @@
 // Draft tools: prospect comps, lottery simulation, mock drafts, pick trades.
 
-import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr } from './savefile.js';
+import { ATTRS, PHYSICAL, POSITIONS, playerName, heightStr, draftYear } from './savefile.js';
 import { shownLevel as levelOf } from './regression.js';
 import { mulberry32 } from './progression.js';
 
@@ -644,13 +644,13 @@ export function draftOrder(league, lottery, rounds = 2) {
 // After the lottery the game numbers this year's picks (pk, 0-based within
 // each round). Returns the real order, or null before the lottery.
 export function lotteryDone(league) {
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   return league.teams.some(t => t.draftPicks.some(pk => pk.yr === yr && pk.rd === 1 && pk.pk > 0));
 }
 
 export function actualDraftOrder(league) {
   if (!lotteryDone(league)) return null;
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   const byId = new Map(league.teams.map(t => [t.id, t]));
   const picks = [];
   for (const t of league.teams) for (const pk of t.draftPicks) if (pk.yr === yr) picks.push({ pk, owner: t });
@@ -805,7 +805,7 @@ export function projectionRanks(league, adjust = null) {
 // slot, pulled toward the middle (and spread wider) the further out it is.
 // A first with `top` protection pays a 2nd in the lands-in-the-top-N cases.
 export function pickValue(league, pk, opts = {}) {
-  const yrs = Math.max(0, pk.yr - league.season.currentYear);
+  const yrs = Math.max(0, pk.yr - draftYear(league));
   const proj = projectionRanks(league, opts.adjust).get(pk.otid);
   const slot = proj ? proj.slot : 15.5;
   const w = Math.max(0.3, 1 - 0.14 * yrs);

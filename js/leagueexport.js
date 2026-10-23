@@ -32,7 +32,9 @@ export function saveToLeague(L, { suffix = true, cap = null, maxContract = null,
     t.headToHeads = [];
     // The coming season's empty row isn't history yet; picks for drafts already held are spent.
     if (t.season) t.season = t.season.filter(r => !(r.yr >= Y && !(r.seasonStats?.GP > 0)));
-    if (t.draftPicks) t.draftPicks = t.draftPicks.filter(pk => keepDraft ? pk.yr >= Y : pk.yr > Y);
+    // Pick years are the real drafts': this summer's draft is Y - 1, so the league keeps everything from it (not drafted
+    // yet) or from the next one (Y) on.
+    if (t.draftPicks) t.draftPicks = t.draftPicks.filter(pk => pk.yr >= (keepDraft ? Y - 1 : Y));
   }
   for (const t of C.teams.concat(C.starTeams || [])) if (t.legacy === undefined) t.legacy = 0;
   for (const p of people) {

@@ -3,7 +3,7 @@
 
 import { pickValue, tradePicks, samePick } from './draft.js';
 import { seasonLine } from './storylines.js';
-import { jerseyNumber } from './savefile.js';
+import { jerseyNumber, draftYear } from './savefile.js';
 import { shownLevel as levelOf } from './regression.js';
 
 // Value of a pick in this draft by its overall slot (#1 ≈ 133, #10 ≈ 69,
@@ -80,7 +80,7 @@ export function playerValue(p, leagueIdx, year) {
 // [{ p, value }] } (prospects = already-drafted players in a live draft).
 export function assetsValue(league, a, leagueIdx, year, curPickValue = null) {
   let v = 0;
-  for (const pk of a.picks || []) v += pk.yr === league.season.currentYear && curPickValue ? curPickValue(pk) : pickValue(league, pk);
+  for (const pk of a.picks || []) v += pk.yr === draftYear(league) && curPickValue ? curPickValue(pk) : pickValue(league, pk);
   for (const p of a.players || []) v += playerValue(p, leagueIdx, year);
   for (const x of a.prospects || []) v += x.value;
   return v;

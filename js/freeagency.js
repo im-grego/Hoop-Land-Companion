@@ -12,7 +12,7 @@
 
 import { tr, traitsSet } from './traits.js';
 import { facilityFx } from './facilities.js';
-import { jerseyNumber, playerName } from './savefile.js';
+import { jerseyNumber, playerName, draftYear } from './savefile.js';
 import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
 import { shownLevel as levelOf } from './regression.js';
@@ -164,7 +164,7 @@ export function taxStance(league, team) {
 // can't be traded (the NBA freezes the one seven years out).
 export function frozenPick(league, team) {
   if (!CAP_ON || capTier(league, team) !== 'apron2') return null;
-  const own = team.draftPicks.filter(pk => pk.rd === 1 && pk.otid === team.id && pk.yr > league.season.currentYear);
+  const own = team.draftPicks.filter(pk => pk.rd === 1 && pk.otid === team.id && pk.yr > draftYear(league));
   return own.sort((a, b) => b.yr - a.yr)[0] || null;
 }
 export const pickFrozen = (league, team, pk) => !!pk && frozenPick(league, team) === pk;

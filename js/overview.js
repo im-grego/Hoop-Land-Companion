@@ -2,7 +2,7 @@
 // (depth, upside, age and play style), its draft position; plus the league
 // rumor mill and play-style reads from the save's tendencies.
 
-import { playerName } from './savefile.js';
+import { playerName, draftYear } from './savefile.js';
 import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus, lotterySetup, lotteryOdds, seedOrder, standings } from './draft.js';
 import { seasonLine } from './storylines.js';
@@ -206,7 +206,7 @@ export function draftPosition(L, team, format = 'auto') {
   const odds = setup.lotteryTeams.length ? lotteryOdds(L, format, setup.draws, 4000, 7) : [];
   const r2 = standings(L).map(r => r.team);
   const n = L.teams.length;
-  return team.draftPicks.filter(pk => pk.yr === yr).sort((a, b) => a.rd - b.rd).map(pk => {
+  return team.draftPicks.filter(pk => pk.yr === draftYear(L)).sort((a, b) => a.rd - b.rd).map(pk => {
     const orig = L.teams.find(t => t.id === pk.otid) || team;
     if (pk.rd === 1) {
       const seed = order.indexOf(orig);

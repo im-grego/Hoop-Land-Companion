@@ -157,6 +157,10 @@ export const PHASE_NAMES = {
 export const BUMP_PHASES = [PHASE_FREE_AGENCY];
 export const BUMP_DAY = 3;
 
+// Draft pick years carry the real draft's year: the draft held in a pro offseason (the save's year Y) uses the picks
+// marked Y - 1, the same way this year's draftees are marked (Y - 1). College leagues have no picks.
+export const draftYear = league => league.season.currentYear - (league.leagueType === 0 ? 1 : 0);
+
 // Regression starts once a player's age passes their regressionAge.
 export const POT_MIN = 4;
 export const POT_MAX = 10; // 11 exists as a secret level; never set by the app

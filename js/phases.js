@@ -14,7 +14,7 @@
 //   new-season stats row gets the salary; phase 6, day 1.
 // - Each day: currentDay + 1 (signings are the app's free agency).
 
-import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY } from './savefile.js';
+import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY, draftYear } from './savefile.js';
 import { seedOrder } from './draft.js';
 import { capLines } from './freeagency.js';
 
@@ -30,13 +30,13 @@ export function preLotteryOrder(league) {
 // round goes by record. Returns a record for undo.
 export function applyLottery(league, r1) {
   if (league.season.phase !== PHASE_PRE_LOTTERY) throw new Error('The save must be at the Pre-Lottery phase.');
-  const yr = league.season.currentYear;
+  const yr = league.season.currentYear, dy = draftYear(league);
   const r2 = preLotteryOrder(league);
   const slot1 = new Map(r1.map((t, i) => [t.id, i]));
   const slot2 = new Map(r2.map((t, i) => [t.id, i]));
   for (const t of league.teams) {
     for (const pk of t.draftPicks) {
-      if (pk.yr !== yr) continue;
+      if (pk.yr !== dy) continue;
       const s = (pk.rd === 1 ? slot1 : slot2).get(pk.otid);
       if (s != null) pk.pk = s;
     }

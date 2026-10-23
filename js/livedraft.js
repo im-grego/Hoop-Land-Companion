@@ -15,7 +15,7 @@
 // - one news item per pick; the phase goes 4 → 5.
 
 import { draftDrop, SKILL_ATTRS } from './draft.js';
-import { PHASE_PRE_DRAFT, PHASE_POST_DRAFT, jerseyNumber } from './savefile.js';
+import { PHASE_PRE_DRAFT, PHASE_POST_DRAFT, jerseyNumber, draftYear } from './savefile.js';
 
 const KEEP = new Set(['tid', 'num']);
 
@@ -119,7 +119,13 @@ export function applyDraft(league, picks, leagueIdx = 0) {
     league.freeAgents.push(p);
   }
   league.draftClass.length = 0;
-  for (const t of league.teams) t.draftPicks = t.draftPicks.filter(pk => pk.yr > year);
+  // This draft's picks are spent; the year seven drafts out is added for every team (its own two picks), so the
+  // league always looks seven drafts ahead.
+  const dy = draftYear(league);
+  for (const t of league.teams) {
+    t.draftPicks = t.draftPicks.filter(pk => pk.yr > dy);
+    for (const rd of [1, 2]) if (!league.teams.some(x => x.draftPicks.some(pk => pk.yr === dy + 7 && pk.rd === rd && pk.otid === t.id))) t.draftPicks.push({ pk: 0, rd, tid: t.id, otid: t.id, yr: dy + 7 });
+  }
   league.season.phase = PHASE_POST_DRAFT;
   return { drafted, undrafted: undrafted.length };
 }
@@ -165,7 +171,7 @@ export function livePicks(live, order) {
 
 // This year's pick object behind a slot in the order.
 export function slotPick(league, o) {
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   return o.owner.draftPicks.find(pk => pk.yr === yr && pk.rd === o.rd && pk.otid === o.orig.id);
 }
 
@@ -180,7 +186,7 @@ export function tradeUpOffers(league, order, idx, { value, slot, rng, min = 3, m
   const here = order[idx];
   const target = slotPick(league, here);
   if (!target) return [];
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   const want = slot(here.overall);
   const offers = [];
   const seen = new Set([here.owner.id, ...exclude]);
@@ -221,7 +227,7 @@ export function rightsTradeOffer(league, order, ov, { value, slot, rng, exclude 
   const at = order.findIndex(o => o.overall === ov);
   const here = order[at];
   if (!here) return null;
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   const want = slot(ov);
   const seen = new Set([here.owner.id, ...exclude]);
   for (let j = at + 2; j <= Math.min(order.length - 1, at + 6); j++) {

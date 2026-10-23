@@ -3,6 +3,7 @@
 // protections. Sides are { team, players, picks }.
 
 import { signedRoster, FA_DEFAULTS } from './freeagency.js';
+import { draftYear } from './savefile.js';
 
 // A team taking back more players than it sends needs the roster spots.
 export function rosterErrTeam(team, outN, inN, max = FA_DEFAULTS.rosterMax) {
@@ -56,7 +57,7 @@ export const PROTECTIONS = [0, 3, 8, LOTTERY_PROT];
 // 0-based slot). `ledger` is [{ otid, yr, top, from }]; returns what
 // happened: [{ entry, kept, holder, back }].
 export function settleProtections(league, ledger, lotteryN = 14) {
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   const out = [];
   for (const e of ledger.filter(x => x.yr === yr && !x.done)) {
     const holder = league.teams.find(t => t.draftPicks.some(pk => pk.yr === yr && pk.rd === 1 && pk.otid === e.otid));
@@ -82,7 +83,7 @@ export function settleProtections(league, ledger, lotteryN = 14) {
 // Pick swaps: { yr, rd, a, b, x, y, mode } - team a holds pick x, team b holds pick y; once the order is set,
 // a gets the better ('best') or worse ('worst') of the two and b gets the other.
 export function settleSwaps(league, ledger) {
-  const yr = league.season.currentYear;
+  const yr = draftYear(league);
   const out = [];
   for (const e of ledger.filter(v => v.yr === yr && !v.done)) {
     const find = otid => { for (const t of league.teams) { const pk = t.draftPicks.find(q => q.yr === yr && q.rd === e.rd && q.otid === otid); if (pk) return { t, pk }; } return null; };
