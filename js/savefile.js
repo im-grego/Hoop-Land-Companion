@@ -325,7 +325,8 @@ export function jerseyNumber(team, p, want = p.num) {
     ...(team.retiredNumbers || []).map(r => r.num),
   ]);
   if (want >= 0 && !taken.has(want)) return want;
-  if (want >= 10 && !taken.has(want % 10)) return want % 10;
+  // #00 (saved as 100) already counts as a low number: no single-digit step for it.
+  if (want >= 10 && want !== 100 && !taken.has(want % 10)) return want % 10;
   for (let n = 0; n < 100; n++) if (!taken.has(n)) return n;
   return want;
 }

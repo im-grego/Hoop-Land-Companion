@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.168.0';
+const APP_VERSION = '0.169.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4358,6 +4358,7 @@ screens.settings = (args) => {
         options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']]),
         options('CPU draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]),
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
+        options('Trade values', 'tradeValues', [[false, 'Hide'], [true, 'Show']], 'Show each player and pick\'s trade value, and each side\'s total, alongside the balance bar.'),
       ]) +
       setGroup('Contracts', [
         options('Game option decisions', 'redoOptions', [[true, 'Re-run here'], [false, 'Keep the game\'s']], 'The game decides options before it exports; Re-run reopens them so you and the app decide.'),
@@ -6693,6 +6694,13 @@ function liveExecuteMulti(teams, items) {
   toast('🚨 Three-Team Trade', text);
   return entry;
 }
+// Settings → Trade values: each asset shows its value (and each side its total), as a rough guide next to the bar.
+const showVals = () => !!state.params.tradeValues;
+const valTag = v => showVals() ? `<span class="muted small">${Math.round(v)}</span>` : '';
+// What a side is sending, by name, under its team at the top (so you can see it without scrolling the list).
+const sendingLine = (items, v) => items.length ? `<p class="note small center trade-sending">${items.map(x => esc(itemText(x))).join(', ')}${showVals() ? ` <span class="muted">· ${Math.round(v)}</span>` : ''}</p>` : '';
+// The team's direction tag (Contending, Selling, ...) under its name.
+const tradeTag = T => { try { return teamTag(teamStanding(league(), T).tier); } catch { return ''; } };
 function itemText(x, order = liveOrder()) {
   const L = league();
   if (x.player) return playerName(x.player);
@@ -6858,19 +6866,19 @@ screens.liveTrade = (args) => {
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><span class="small muted">already protected</span></div>`
     : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${protName(v, true)}</button>`).join('')}</div></div>`).join('');
   const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
-      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
+      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span>${valTag(pv(x))}</button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
   const select = (side, cur) => {
     const T = L.teams.find(t => t.id === cur);
     const many = side === 'b' || left.length > 1;
     const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : `<span class="tsel-arrow off" aria-hidden="true"></span>`;
-    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span></span>${arrow(1, '▶')}</div>`;
+    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span>${tradeTag(T)}</span>${arrow(1, '▶')}</div>`;
   };
   layout({
     title: order.length ? 'Draft-Day Trade' : 'Trade',
     body: `
       <div class="grid2 trade">
-        <div class="stack">${select('a', aId)}${tradeCap(A, aa.filter(x => selA.has(x.key) && x.player).map(x => x.player), bb.filter(x => selB.has(x.key) && x.player).map(x => x.player))}</div>
-        <div class="stack">${select('b', bId)}${tradeCap(B, bb.filter(x => selB.has(x.key) && x.player).map(x => x.player), aa.filter(x => selA.has(x.key) && x.player).map(x => x.player))}</div>
+        <div class="stack">${select('a', aId)}${sendingLine(aa.filter(x => selA.has(x.key)), vA)}${tradeCap(A, aa.filter(x => selA.has(x.key) && x.player).map(x => x.player), bb.filter(x => selB.has(x.key) && x.player).map(x => x.player))}</div>
+        <div class="stack">${select('b', bId)}${sendingLine(bb.filter(x => selB.has(x.key)), vB)}${tradeCap(B, bb.filter(x => selB.has(x.key) && x.player).map(x => x.player), aa.filter(x => selA.has(x.key) && x.player).map(x => x.player))}</div>
       </div>
       ${tradeBar(A, B, vA, vB)}
       <div class="grid2 trade">
@@ -6980,13 +6988,13 @@ function liveTrade3(args, A, B, C, left) {
   const list = assets.get(tab.id).map(x => {
     const dest = sel[x.key] != null && +sel[x.key] !== tab.id ? teams.find(t => t.id === +sel[x.key]) : null;
     return `<button class="pick ${dest ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle3" data-k="${x.key}"`}>
-      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span>${dest ? `<span class="badge new">→ ${esc(dest.shortName)}</span>` : ''}</button>`;
+      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span>${valTag(pickItemValue(x, prot, adjust))}${dest ? `<span class="badge new">→ ${esc(dest.shortName)}</span>` : ''}</button>`;
   }).join('') || '<p class="note muted">Nothing to trade.</p>';
   const verdict = teams.map(t => {
     const g = give(t), r = get(t);
     const cpu = !isUserTeam(t);
     const ok = cpuAccepts(g, r);
-    return `<p class="note small"><b>${esc(t.shortName)}</b> sends ${Math.round(g)} · gets ${Math.round(r)}${cpu && items.length ? ` · ${ok ? '<span class="up">would accept</span>' : '<span class="down">would decline</span>'}` : ''}</p>`;
+    return `<p class="note small"><b>${esc(t.shortName)}</b>${showVals() ? ` sends ${Math.round(g)} · gets ${Math.round(r)}` : ''}${cpu && items.length ? ` · ${ok ? '<span class="up">would accept</span>' : '<span class="down">would decline</span>'}` : ''}</p>`;
   }).join('');
   const firsts = items.filter(i => i.x.pick && i.x.pick.rd === 1 && i.x.pick.yr > draftYear(L));
   const protRows = !isComplete() ? [] : firsts.map(i => protOf(i.x.pick)
@@ -6997,7 +7005,8 @@ function liveTrade3(args, A, B, C, left) {
     body: `
       <div class="tabs">${teams.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="liveTab3" data-id="${t.id}">${esc(t.shortName)}${items.filter(i => i.from === t).length ? ` · ${items.filter(i => i.from === t).length}` : ''}</button>`).join('')}</div>
       <fieldset class="frame"><legend>Cap</legend>${teams.map(t => tradeCap(t, items.filter(i => i.from === t && i.x.player).map(i => i.x.player), items.filter(i => i.to === t && i.x.player).map(i => i.x.player), true)).join('')}</fieldset>
-      ${many(tab) ? `<div class="tsel">${arrow(-1, '◀', side)}<span class="tsel-team"><span class="tsel-name"><b>${esc(tab.shortName)}</b></span></span>${arrow(1, '▶', side)}</div>` : ''}
+      ${many(tab) ? `<div class="tsel">${arrow(-1, '◀', side)}<span class="tsel-team"><span class="tsel-name"><b>${esc(tab.shortName)}</b></span>${tradeTag(tab)}</span>${arrow(1, '▶', side)}</div>` : `<div class="center">${tradeTag(tab)}</div>`}
+      ${items.filter(i => i.from === tab).length ? `<p class="note small center trade-sending">${items.filter(i => i.from === tab).map(i => `${esc(itemText(i.x))} → ${esc(i.to.shortName)}`).join(', ')}</p>` : ''}
       <p class="note small muted">Tap to send to ${esc(others[0].shortName)}, again for ${esc(others[1].shortName)}.</p>
       <div class="list">${list}</div>
       <fieldset class="frame"><legend>The Deal</legend>

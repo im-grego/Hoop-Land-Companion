@@ -1427,3 +1427,7 @@ main.panel.bare { margin-top: 10px; }
 .infl-row.mine .infl-bar i { background: var(--cyan); }
 .infl-row.mine { font-weight: 800; }
 .tend-row.tend-edit2 { grid-template-columns: 110px 1fr 28px auto; }
+/* Trade screens: the team's direction tag under its name, and what each side is sending. */
+.trade .tsel-team { flex-direction: column; gap: 2px; }
+.trade .tsel-team .status, .tsel-team .status { font-size: 10px; padding: 1px 6px; }
+.trade-sending { margin: 2px 0 0; color: var(--cyan); line-height: 1.25; }

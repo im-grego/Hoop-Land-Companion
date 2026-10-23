@@ -128,6 +128,7 @@ export const DEFAULT_PARAMS = {
   liveCpuTradeChance: 10,  // % chance of a CPU trade around each CPU pick in the live draft
   draftTradeWindow: 8,
   commissioner: false,     // trades: work any team's side and force trades through
+  tradeValues: false,      // trades: show asset values next to the balance bar
   rookieR2Years: 2,
   startYear: 1977,         // history starts: the merger year by default (0 keeps the file's own); written as the starting year on export so the game scrolls back that far
   faClearCpuOffers: true,  // clear the game's pending CPU offers after the app's free agency day        // second-round rookie deals (team option); the game gives 4     // picks after being drafted that a rookie can still be traded (draft-and-trade)
