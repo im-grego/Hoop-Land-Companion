@@ -1443,3 +1443,11 @@ main.panel.bare { margin-top: 10px; }
 .pay-grid .pay-name { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pay-grid .pay-name .linkish { font-size: 13px; }
 .rc-grade { display: inline-block; min-width: 30px; font-size: 18px; text-align: center; }
+/* Payroll cells colored by kind of money. */
+.pay-cell { display: inline-block; min-width: 2.2em; padding: 1px 4px; border-radius: 3px; text-align: center; }
+.pc-po { background: #6a3fc8; color: #fff; }
+.pc-to { background: #148a5c; color: #fff; }
+.pc-ext { background: #b8860b; color: #fff; }
+.pc-dead { background: #b83232; color: #fff; }
+.pay-key { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0 8px; }
+.pay-key .pay-cell { min-width: 0; }

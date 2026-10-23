@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.177.0';
+const APP_VERSION = '0.177.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3552,15 +3552,17 @@ screens.payroll = (args = {}) => {
     const c = FA.capLines(L, k), v = total(k);
     return v > c.apron2 ? ['down', '2nd apron'] : v > c.apron1 ? ['down', '1st apron'] : v > c.tax ? ['gold', 'Tax'] : v > c.cap ? ['muted', 'Over cap'] : ['up', `$${c.cap - v}M room`];
   };
-  const cell = x => !x ? '<span class="muted">·</span>' : `<span class="${x.ext ? 'gold' : ''}">${x.v}${x.opt ? `<sup class="small muted">${x.opt}</sup>` : ''}</span>`;
+  // Color by kind: player option, team option, extension money (an extension's own option year keeps its option color).
+  const cell = x => !x ? '<span class="muted">·</span>' : `<span class="pay-cell ${x.opt === 'PO' ? 'pc-po' : x.opt === 'TO' ? 'pc-to' : x.ext ? 'pc-ext' : ''}">${x.v}</span>`;
   layout({
     title: 'Payroll',
     body: `<h2 class="team-title">${esc(teamFull(t))}</h2>
-      <p class="note small muted">$M by season. <span class="gold">Gold</span> = an extension kicking in. PO/TO = an option year. Dead money from cuts, buyouts and stretched deals counts too.</p>
+      <p class="note small muted">$M by season. Dead money from cuts, buyouts and stretched deals counts too.</p>
+      <div class="pay-key small"><span class="pay-cell">Guaranteed</span><span class="pay-cell pc-po">Player option</span><span class="pay-cell pc-to">Team option</span><span class="pay-cell pc-ext">Extension</span><span class="pay-cell pc-dead">Dead money</span></div>
       <div class="pay-grid" style="--n:${N}">
         <span></span>${Array.from({ length: N }, (_, k) => `<b class="small">${lab(k)}</b>`).join('')}
         ${rows.map(r => `<span class="pay-name"><button class="linkish" data-act="openPlayer" data-id="${r.p.id}">${esc(playerName(r.p))}</button></span>${r.cells.map(cell).join('')}`).join('')}
-        ${Array.from({ length: N }, (_, k) => dead(k)).some(Boolean) ? `<span class="pay-name down">Dead money</span>${Array.from({ length: N }, (_, k) => dead(k) ? `<span class="down">${dead(k)}</span>` : '<span class="muted">·</span>').join('')}` : ''}
+        ${Array.from({ length: N }, (_, k) => dead(k)).some(Boolean) ? `<span class="pay-name down">Dead money</span>${Array.from({ length: N }, (_, k) => dead(k) ? `<span class="pay-cell pc-dead">${dead(k)}</span>` : '<span class="muted">·</span>').join('')}` : ''}
         <span class="pay-name"><b>Total</b></span>${Array.from({ length: N }, (_, k) => `<b>${total(k)}</b>`).join('')}
         <span class="pay-name muted small">Status</span>${Array.from({ length: N }, (_, k) => { const [cls, w] = line(k); return `<span class="small ${cls}">${w}</span>`; }).join('')}
         <span class="pay-name muted small">Cap · Tax</span>${Array.from({ length: N }, (_, k) => { const c = FA.capLines(L, k); return `<span class="small muted">${c.cap}·${c.tax}</span>`; }).join('')}
