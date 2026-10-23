@@ -121,6 +121,14 @@ export function mleFor(league, team, day, used = {}, o = FA_DEFAULTS) {
   return null;
 }
 export const teamCommitted = team => payroll(team) + deadMoney(team);
+// Room before the next tax bracket (tax line, 1st apron, 2nd apron): a team fills its roster with minimum deals only
+// while a signing doesn't push it into the next one. Past the 2nd apron there is none.
+export function bracketRoom(league, team) {
+  if (!CAP_ON) return Infinity;
+  const c = capLines(league), pay = teamCommitted(team);
+  const next = [c.tax, c.apron1, c.apron2].find(x => x >= pay);
+  return next == null ? -1 : next - pay;
+}
 // Where a team sits: 'under' | 'over' | 'tax' | 'apron1' | 'apron2'.
 export function capTier(league, team, extra = 0) {
   const L = capLines(league), pay = teamCommitted(team) + extra;
@@ -408,11 +416,13 @@ export function offerKind(league, team, p, offer, day, used = {}, o = FA_DEFAULT
 // CPU bidding
 
 // How much a CPU team wants a player: value plus need at the position.
-function teamWant(league, team, p, ly) {
+// A rebuilding team takes its swings on youth and passes on veterans.
+function teamWant(league, team, p, ly, st = teamStatus(league, team)) {
   const groups = { guard: 0, wing: 0, big: 0 };
   const role = x => (x.pos <= 2 ? 'guard' : x.pos <= 5 ? 'wing' : 'big');
   for (const x of signedRoster(team)) groups[role(x)]++;
-  return playerValue(p, 0, ly) + Math.max(0, 5 - groups[role(p)]) * 4;
+  const age = st === 'rebuilding' ? (p.age <= 24 ? 1.35 : p.age >= 29 ? 0.5 : 1) : 1;
+  return (playerValue(p, 0, ly) + Math.max(0, 5 - groups[role(p)]) * 4) * age;
 }
 
 // Opening CPU bids. `market` = [{ p, from, ask, motive }]. `bids` = Map pid ->
@@ -421,8 +431,12 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
   const ly = lastYear(league);
   const teams = league.teams.filter(t => !userTeams.has(t.id)).sort(() => rng() - 0.5);
   for (const team of teams) {
-    let budget = Math.max(0, capSpace(league, team));
+    const st = teamStatus(league, team);
+    // Rebuilders keep their space (it's for absorbing contracts for picks), spending about 60% of it.
+    let budget = Math.max(0, capSpace(league, team)) * (st === 'rebuilding' ? 0.6 : 1);
     let slots = o.cpuRosterMax - signedRoster(team).length;
+    // A team in the tax fills out with minimum deals; its own free agents stay only if young, cheap or worth a 2nd-apron bill.
+    const taxed = CAP_ON && teamCommitted(team) > capLines(league).tax;
     // Best player they can afford first, then the best value for money.
     const cost = m => m.min ?? m.ask;
     const canPay = m => m.from?.id === team.id || cost(m) <= budget * 1.05 ||
@@ -431,7 +445,7 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
     // Teams cool on players who already have a crowd of suitors.
     const crowd = m => 1 + 0.15 * (bids.get(m.p.id)?.length || 0);
     const pool = market
-      .map(m => ({ ...m, want: teamWant(league, team, m.p, ly) / crowd(m) }))
+      .map(m => ({ ...m, want: teamWant(league, team, m.p, ly, st) / crowd(m) }))
       .filter(m => m.want > 6 + rng() * 6 && canPay(m));
     const byWant = [...pool].sort((a, b) => b.want - a.want);
     const byValue = [...pool].sort((a, b) => b.want / Math.max(3, cost(b)) - a.want / Math.max(3, cost(a)));
@@ -460,6 +474,11 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
       if (checkOffer(league, team, m.p, offer, day, used, o)) continue;
       // Only a contender goes into the tax for a free agent.
       if (CAP_ON && offer.sal > minFor(m.p, o) && taxStance(league, team) !== 'pay' && teamCommitted(team) + offer.sal > capLines(league).tax) continue;
+      if (taxed && offer.sal > minFor(m.p, o) * 1.5) {
+        if (!bird) continue;
+        const keep = m.p.age <= 25 || offer.sal <= 12 || (st === 'contending' && levelOf(m.p) >= 85);
+        if (!keep || teamCommitted(team) + offer.sal > capLines(league).apron2) continue;
+      }
       const list = bids.get(m.p.id) || [];
       if (list.some(b => b.tid === team.id)) continue;
       list.push(offer);
@@ -488,6 +507,8 @@ export function raiseRound(league, market, bids, day, rng, used = {}, o = FA_DEF
       const next = { ...b, sal, yrs: m.motive === 'security' ? Math.min(b.tid === m.from?.id ? o.birdMaxYears : o.maxYears, b.yrs + 1) : b.yrs, opt: m.motive === 'control' ? OPT_PLAYER : b.opt };
       if (next.yrs >= 5 && !next.opt) next.opt = OPT_PLAYER;
       if (sal <= b.sal || checkOffer(league, team, m.p, next, day, used, o)) continue;
+      // Nobody raises their way into the tax for someone else's free agent, and a rebuilder doesn't get into bidding wars.
+      if (CAP_ON && b.tid !== m.from?.id && (teamCommitted(team) + sal > capLines(league).tax || teamStatus(league, team) === 'rebuilding' && b.raised)) continue;
       Object.assign(b, next, { raised: (b.raised || 0) + 1 });
       raises++;
     }

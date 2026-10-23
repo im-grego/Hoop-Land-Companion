@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.158.0';
+const APP_VERSION = '0.159.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -653,27 +653,72 @@ const filePay = t => t.roster.reduce((a, p) => a + (p.contract?.sal || 0), 0);
 // Salary relief the way a capped-out front office does it: overpaid veterans are moved to teams with room, for
 // nothing back if that's the price. The core (three best players) and cheap young talent stay. Returns the log.
 const cheapYoung = p => p.age <= 25 && (p.contract?.sal || 0) <= 12;
-function dumpSalary(L, t, limit, pay = filePay, log = []) {
+function dumpSalary(L, t, limit, pay = filePay, log = [], o = {}) {
   const sal = p => p.contract?.sal || 0;
   const overpaid = p => sal(p) - fairSalary(shownLevel(p));
   const core = new Set([...t.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(p => p.id));
+  // Rebuilding teams with room take the contracts first (that's what their space is for), then whoever has the most room.
   const others = L.teams.filter(x => x !== t && !isUserTeam(x));
+  const reb = x => teamStatus(L, x) === 'rebuilding' ? 0 : 1;
+  // A full team makes room by releasing a one-year minimum (a camp deal: nothing owed).
+  const camp = x => FA.signedRoster(x).filter(q => (q.contract?.yrs || 0) <= 1 && sal(q) <= lateMin(q) + 1 && !core.has(q.id)).sort((a, b) => fillScore(a) - fillScore(b))[0];
+  const spot = x => FA.signedRoster(x).length < FA.FA_DEFAULTS.seasonMax || !!camp(x);
+  const fits = (x, p) => o.picks ? FA.capSpace(L, x) >= sal(p) && (FA.signedRoster(x).length < FA.FA_DEFAULTS.cpuRosterMax || spot(x)) : limit - pay(x) >= sal(p) + 4 && spot(x);
   for (let guard = 0; pay(t) > limit && guard < 10; guard++) {
     const over = pay(t) - limit;
-    const cands = FA.signedRoster(t).filter(p => !core.has(p.id) && !cheapYoung(p) && sal(p) > 0 && !tradeLock(p)).sort((a, b) => overpaid(b) - overpaid(a) || sal(b) - sal(a));
+    const cands = FA.signedRoster(t).filter(p => !core.has(p.id) && !cheapYoung(p) && sal(p) > 0 && !tradeLock(p) && (!o.onlyOverpaid || overpaid(p) >= 3)).sort((a, b) => overpaid(b) - overpaid(a) || sal(b) - sal(a));
     const order = [...cands.filter(p => sal(p) >= over && overpaid(p) > -3), ...cands];
     let moved = false;
     for (const p of order) {
-      const to = others.filter(x => limit - pay(x) >= sal(p) + 4 && x.roster.length < 15).sort((a, b) => pay(a) - pay(b))[0];
+      const to = others.filter(x => fits(x, p)).sort((a, b) => reb(a) - reb(b) || pay(a) - pay(b))[0];
       if (!to) continue;
-      executeTrade({ team: t, players: [p], picks: [], prospects: [] }, { team: to, players: [], picks: [], prospects: [] }, L.season.currentYear);
-      log.push(`${t.shortName} dumped ${playerName(p)} ($${sal(p)}M) on ${to.shortName}`);
+      const picks = o.picks ? dumpPicks(L, t, Math.max(0, overpaid(p)) * Math.max(1, p.contract?.yrs || 1)) : [];
+      executeTrade({ team: t, players: [p], picks, prospects: [] }, { team: to, players: [], picks: [], prospects: [] }, L.season.currentYear);
+      const max = o.picks ? FA.FA_DEFAULTS.cpuRosterMax : FA.FA_DEFAULTS.seasonMax;
+      if (FA.signedRoster(to).length > max) { const c = camp(to); if (c) { FA.cutPlayer(L, to, c); log.push(`${to.shortName} released ${playerName(c)} to make room`); } }
+      log.push(`${t.shortName} dumped ${playerName(p)} ($${sal(p)}M) on ${to.shortName}${picks.length ? ` with ${picks.map(pk => `a ${pk.yr} ${pk.rd === 1 ? '1st' : '2nd'}`).join(' and ')}` : ''}`);
       moved = true;
       break;
     }
     if (!moved) break;
   }
   return log;
+}
+// The price of a salary dump in picks, by how much dead weight goes out (overpay × years): a 2nd for a modest one,
+// a 1st for a big one, both for the worst. Own picks only, furthest out first, never a frozen, protected or lottery-locked one.
+function dumpPicks(L, t, weight) {
+  const own = rd => t.draftPicks.filter(pk => pk.rd === rd && pk.otid === t.id && pk.yr > draftYear(L) && !FA.pickFrozen(L, t, pk) && !isProt(pk) && !lotteryLocked(pk)).sort((a, b) => b.yr - a.yr)[0];
+  const out = [];
+  if (weight >= 25) { const f = own(1); if (f) out.push(f); }
+  if (weight >= 6 && (weight >= 45 || !out.length)) { const s2 = own(2); if (s2) out.push(s2); }
+  return out;
+}
+// Late in free agency the teams at the top of the cap (over the 1st apron, or over the tax and not contending) move
+// their overpaid veterans to rebuilding teams with space, paying in picks, even for less back.
+function apronDumps(L) {
+  if (!FA.capSystemOn()) return [];
+  const c = FA.capLines(L), log = [];
+  for (const t of L.teams.filter(x => !isUserTeam(x))) {
+    const pay = FA.teamCommitted(t);
+    const limit = pay > c.apron1 ? c.apron1 : pay > c.tax && teamStatus(L, t) !== 'contending' ? c.tax : null;
+    if (limit != null) dumpSalary(L, t, limit, FA.teamCommitted, log, { picks: true, onlyOverpaid: true });
+  }
+  if (log.length) (calFlags().dumpLog ||= []).push(...log);
+  return log;
+}
+// Filling out a roster: the best minimum-deal players left, with a lean to youth, as long as the signing doesn't
+// push the team into its next tax bracket (or, for the game's floor, past the 2nd apron).
+const fillScore = p => shownLevel(p) + (p.age <= 23 ? 4 : p.age <= 25 ? 2 : 0) + Math.min(4, p.pot || 0);
+function fillRoster(L, t, to, list, { floor = 0, skip = new Set() } = {}) {
+  while (FA.signedRoster(t).length < to) {
+    const need = FA.signedRoster(t).length < floor;
+    const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && !skip.has(x.id)).sort((a, b) => fillScore(b) - fillScore(a))
+      .find(x => !FA.capSystemOn() || (need ? FA.teamCommitted(t) + lateMin(x) <= FA.capLines(L).apron2 : lateMin(x) <= FA.bracketRoom(L, t)));
+    if (!p) break;
+    FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: 1, opt: 0 }, L.season.currentDay || 3);
+    lockSigning(p, 'Signed this offseason');
+    list?.push({ p, t });
+  }
 }
 function gameCapCheck(L, cap) {
   if (!cap) return [];
@@ -697,11 +742,15 @@ function gameCapCheck(L, cap) {
       log.push(`${t.shortName} waived ${playerName(p)} ($${c.sal}M)`);
     }
     while (FA.signedRoster(t).length < MIN_ROSTER) {
-      const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && !waived.has(x.id) && lateMin(x) <= room(t)).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
+      const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && !waived.has(x.id) && lateMin(x) <= room(t)).sort((a, b) => fillScore(b) - fillScore(a))[0];
       if (!p) break;
       FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: 1, opt: 0 }, L.season.currentDay || 3);
       log.push(`${t.shortName} filled with ${playerName(p)} ($${lateMin(p)}M)`);
     }
+    // Then up to 15 on one-year minimums, as long as nobody pushes the team into its next tax bracket or past the game's cap.
+    const adds = [];
+    fillRoster(L, t, FA.FA_DEFAULTS.seasonMax, adds, { skip: waived });
+    for (const { p } of adds) if (filePay(t) > cap) { FA.cutPlayer(L, t, p); waived.add(p.id); } else log.push(`${t.shortName} filled with ${playerName(p)} ($${lateMin(p)}M)`);
   }
   if (log.length) { calFlags().capCheckLog = log; state.dirty = true; }
   return log;
@@ -10555,7 +10604,8 @@ actions.reqAnswer = d => {
 // and under the 2nd apron); when you wrap up, CPU teams with open spots
 // fill them with the best who are left.
 const lateMin = p => FA.minFor(p);
-const lateYears = p => (p.age <= 24 ? 2 : 1);
+// Late signings are camp deals: one year, nothing owed if cut (they come in, and may not make the team).
+const lateYears = () => 1;
 screens.latefa = (args = {}) => {
   const L = league(), O = FA.FA_DEFAULTS;
   const done = !!calFlags().latefa;
@@ -10566,9 +10616,9 @@ screens.latefa = (args = {}) => {
   const log = calFlags().lateLog;
   layout({
     title: 'Late Free Agency',
-    body: `<p class="note small">Last call before final cuts. Everyone left takes a minimum deal now: 1 year, or 2 for players 24 and under.</p>
+    body: `<p class="note small">Last call before final cuts. Everyone left takes a one-year minimum now, a camp deal with nothing owed if he's cut. Teams at the top of the cap move overpaid veterans to rebuilders (paying in picks), and every CPU team fills to 15 unless the next signing would put it into another tax bracket.</p>
       ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)} · ${FA.signedRoster(t).length}/${O.rosterMax}</legend>${capBar(t)}</fieldset>`).join('')}
-      ${done && log ? `<fieldset class="frame"><legend>Around the League</legend><div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.name)}</b> ${esc(x.lv)} → ${esc(x.team)} · $${x.sal}M × ${x.yrs}</p>`).join('') || '<p class="note small muted">Nobody else signed.</p>'}</div></fieldset>` : ''}
+      ${done && log ? `<fieldset class="frame"><legend>Around the League</legend><div class="stack">${(calFlags().dumpLog || []).map(x => `<p class="note small">🔁 ${esc(x)}</p>`).join('')}${log.list.map(x => `<p class="note small"><b>${esc(x.name)}</b> ${esc(x.lv)} → ${esc(x.team)} · $${x.sal}M × ${x.yrs}</p>`).join('') || '<p class="note small muted">Nobody else signed.</p>'}</div></fieldset>` : ''}
       <div class="tabs fa-tabs">${[['all', 'Best'], ['young', 'Young'], ['vets', 'Vets']].map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="lateView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(p => {
         const l = seasonLine(p, state.leagueIdx, lastYear());
@@ -10600,15 +10650,13 @@ actions.lateSign = d => {
 actions.lateFinish = () => {
   const L = league(), O = FA.FA_DEFAULTS;
   const list = [];
-  // CPU teams under 15 add the best players left, by need for a body.
+  // Teams at the top of the cap move overpaid veterans (with picks) to rebuilders with space, then every CPU team fills
+  // to 15 with one-year minimums, short only where the next signing would cross a tax line.
+  apronDumps(L);
   for (const t of L.teams.filter(x => !isUserTeam(x)).sort(() => Math.random() - 0.5)) {
-    while (FA.signedRoster(t).length < O.seasonMax) {
-      const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
-      if (!p || (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2)) break;
-      FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
-      lockSigning(p, 'Signed this offseason');
-      list.push({ name: playerName(p), lv: `Lv ${shownLevel(p)}`, team: t.shortName, sal: lateMin(p), yrs: lateYears(p) });
-    }
+    const adds = [];
+    fillRoster(L, t, O.seasonMax, adds);
+    for (const { p } of adds) list.push({ name: playerName(p), lv: `Lv ${shownLevel(p)}`, team: t.shortName, sal: lateMin(p), yrs: 1 });
   }
   calFlags().latefa = true;
   calFlags().lateLog = { n: list.length + (calFlags().lateMine || []).length, mine: (calFlags().lateMine || []).length, list };
@@ -10702,16 +10750,12 @@ actions.cutsFinish = async () => {
   }
   saveDead(ledger);
   state.buyoutSel = {};
-  // CPU teams short of a full roster pick up the best cut and unsigned players (minimum deals, nobody over the 2nd apron).
+  // CPU teams short of a full roster pick up the best cut and unsigned players (one-year minimums, never into the next tax bracket).
   const waiver = [];
   for (const t of L.teams.filter(x => !isUserTeam(x)).sort(() => Math.random() - 0.5)) {
-    while (FA.signedRoster(t).length < O.seasonMax) {
-      const p = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE).sort((x, y) => shownLevel(y) - shownLevel(x))[0];
-      if (!p || (FA.capSystemOn() && FA.teamCommitted(t) + lateMin(p) > FA.capLines(L).apron2)) break;
-      FA.signPlayer(L, p, t, { tid: t.id, sal: lateMin(p), yrs: lateYears(p), opt: 0 }, L.season.currentDay || 3);
-      lockSigning(p, 'Signed this offseason');
-      waiver.push({ team: t.shortName, name: playerName(p), lv: shownLevel(p) });
-    }
+    const adds = [];
+    fillRoster(L, t, O.seasonMax, adds, { floor: 13 });
+    for (const { p } of adds) waiver.push({ team: t.shortName, name: playerName(p), lv: shownLevel(p) });
   }
   calFlags().waiverLog = waiver;
   roleMorale(L);
