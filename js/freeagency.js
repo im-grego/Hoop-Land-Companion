@@ -316,8 +316,11 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   const option = offer.opt === OPT_PLAYER ? 1 : offer.opt === OPT_TEAM ? -0.5 : 0;
   return w.greed * money + w.security * years + w.control * option +
     w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0) +
-    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + loadTaste(p, offer, motive);
+    (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + loadTaste(p, offer, motive) + (offer.tid === oldTid ? liferPull(league, p, oldTid) : 0);
 }
+// A franchise lifer is set on finishing at home: anyone else needs about double his team's money (half again more for
+// a money chaser) to pry him loose.
+const liferPull = (league, p, tid) => isLifer(league, p, league.teams.find(t => t.id === tid)) ? 1.2 : 0;
 
 // How he feels about when the money comes: front-loaded pays the ones who
 // chase it and want security; back-loaded suits winners who help the team's
@@ -337,7 +340,8 @@ export function seasonsWith(league, p, team) {
   return (p.stats || []).filter(s => s.league === 0 && s.yr < cur && (s.season || []).some(x => x.tid === team.id)).length;
 }
 // A franchise lifer: 8+ straight seasons with the team, 35 and over, and into his 2nd year of regression or later.
-// He finishes his career there: never shopped, dumped or cut, and his team brings him back when his deal is up.
+// He finishes his career there: never shopped, dumped or cut, his team brings him back when his deal is up, and it
+// takes an outlandish offer from anyone else to get him to leave.
 export function isLifer(league, p, team) {
   if (!team || p.age <= 35 || p.age < (p.regressionAge || 32) + 1) return false;
   const rows = (p.stats || []).filter(s => s.league === 0 && s.yr <= league.season.currentYear).sort((a, b) => b.yr - a.yr);
@@ -455,8 +459,8 @@ export function cpuBids(league, market, bids, day, userTeams, rng, used = {}, o 
     const crowd = m => 1 + 0.15 * (bids.get(m.p.id)?.length || 0);
     const pool = market
       .map(m => ({ ...m, want: teamWant(league, team, m.p, ly, st) / crowd(m) }))
-      .filter(m => m.want > 6 + rng() * 6 && canPay(m) && !(m.from && m.from.id !== team.id && isLifer(league, m.p, m.from)));
-    // A franchise lifer's team brings him back first; nobody else calls.
+      .filter(m => m.want > 6 + rng() * 6 && canPay(m));
+    // A franchise lifer's team brings him back first.
     const lifers = market.filter(m => m.from?.id === team.id && isLifer(league, m.p, team));
     const byWant = [...pool].sort((a, b) => b.want - a.want);
     const byValue = [...pool].sort((a, b) => b.want / Math.max(3, cost(b)) - a.want / Math.max(3, cost(a)));
