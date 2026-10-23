@@ -1,0 +1,60 @@
+# Gear that differs from the app's accessory rule in NBA_2027_19 (Oct 23). Kept on purpose: these players already look right.
+# Team Player: jersey slot, item, the color he keeps
+BOS Devin Carter: J2 L_Shin 141020, J2 sockC 141020
+CHI Buddy Hield: J4 headAccC 141020, J4 R_Elbow 141020, J4 R_Wrist 141020, J4 L_Shin 141020, J4 sockC 141020
+CHI Jalen Smith: J1 headAccC 202020, J2 headAccC 202020, J4 headAccC 202020
+DAL Daniel Gafford: J3 headAccC 00843D
+DET Caris LeVert: J4 headAccC D50032
+DET Ron Holland II: J4 headAccC D50032
+FA/other Bill Laimbeer: J1 headAccC DBE0E7, J2 headAccC DBE0E7, J3 headAccC DBE0E7, J4 headAccC DBE0E7
+FA/other James Worthy: J1 headAccC 303030, J2 headAccC 303030, J3 headAccC 303030, J4 headAccC 303030
+FA/other Kareem Abdul-Jabbar: J1 headAccC 82635B, J2 headAccC 82635B, J3 headAccC 82635B, J4 headAccC 82635B
+GSW Brandon Williams: J3 headAccC 0040BC
+GSW Gary Payton II: J3 headAccC 0040BC
+GSW Gui Santos: J3 headAccC 0040BC
+GSW Moses Moody: J3 headAccC 0040BC
+GSW Seth Curry: J3 headAccC 0040BC
+LAC Bradley Beal: J4 headAccC 7DC5FD
+LAC Brandon Ingram: J4 headAccC 7DC5FD
+LAC Isaiah Jackson: J4 headAccC 7DC5FD
+LAC Max Strus: J4 headAccC 7DC5FD
+MIA Bam Adebayo: J4 headAccC 41B6E6
+MIA Bobby Portis: J4 headAccC 41B6E6
+MIA Ryan Conwell: J4 headAccC 41B6E6
+MIL Gary Trent Jr.: J4 headAccC EEE1C6
+MIL Jaime Jaquez Jr.: J4 headAccC EEE1C6
+MIL Myles Turner: J4 headAccC EEE1C6
+MIL Pete Nance: J1 sockC TER, J2 sockC TER, J4 sockC TER
+NOP Jaron Pierre Jr.: J3 headAccC CF0629
+NOP Jeremiah Fears: J3 headAccC CF0629
+OKC Alex Caruso: J4 headAccC 002D62
+ORL Anthony Black: J4 headAccC DBE0E7
+ORL Izaiyah Nelson: J4 headAccC DBE0E7
+ORL Jalen Suggs: J4 headAccC DBE0E7
+ORL Paolo Banchero: J4 headAccC DBE0E7
+ORL Wendell Carter Jr.: J4 headAccC DBE0E7
+PHI Adem Bona: J3 headAccC D7083B, J4 headAccC FFEECC
+PHI Ariel Hukporti: J3 headAccC D7083B, J4 headAccC FFEECC
+PHI Labaron Philon Jr.: J3 headAccC D7083B, J4 headAccC FFEECC
+PHI V.J. Edgecombe: J3 headAccC D7083B
+PHX Jordan Goodwin: J1 headAccC FFFFFF, J2 headAccC FFFFFF, J3 headAccC 141020, J4 headAccC 141020
+POR Jrue Holiday: J3 headAccC B2202D
+POR Robert Williams III: J3 headAccC B2202D
+POR Sidy Cissoko: J3 headAccC B2202D
+SAC Daeqwon Plowden: J3 headAccC 452584
+UTA Jaxson Hayes: J4 headAccC 393A56
+WAS AJ Dybantsa: J3 headAccC FFFFFF, J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 R_Wrist FFFFFF, J3 sockC FFFFFF
+WAS Alex Sarr: J3 L_Elbow FFFFFF, J3 L_Wrist FFFFFF, J3 L_Knee FFFFFF, J3 R_Knee FFFFFF, J3 L_Shin FFFFFF, J3 R_Shin FFFFFF, J3 sockC FFFFFF
+WAS Anthony Davis: J1 headAcc2C 141020, J2 headAcc2C 141020, J3 headAccC FFFFFF, J3 headAcc2C 141020, J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 L_Knee FFFFFF, J3 R_Knee FFFFFF, J3 L_Shin FFFFFF, J3 R_Shin FFFFFF, J3 sockC FFFFFF, J4 headAcc2C 141020
+WAS Anthony Gill: J3 L_Knee FFFFFF, J3 L_Shin FFFFFF, J3 sockC FFFFFF
+WAS Bilal Coulibaly: J3 headAccC FFFFFF, J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 L_Shin FFFFFF, J3 sockC FFFFFF
+WAS Bub Carrington: J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 L_Elbow FFFFFF, J3 sockC FFFFFF
+WAS Deandre Ayton: J3 L_Elbow FFFFFF, J3 R_Elbow FFFFFF, J3 L_Wrist FFFFFF, J3 R_Knee FFFFFF, J3 R_Shin FFFFFF, J3 sockC FFFFFF
+WAS Felix Okpara: J3 sockC FFFFFF
+WAS Justin Champagnie: J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 sockC FFFFFF
+WAS Khris Middleton: J3 R_Elbow FFFFFF, J3 R_Wrist FFFFFF, J3 R_Knee FFFFFF, J3 sockC FFFFFF
+WAS Kyshawn George: J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 L_Shin FFFFFF, J3 sockC FFFFFF
+WAS Trae Young: J3 L_Elbow FFFFFF, J3 L_Wrist FFFFFF, J3 R_Knee FFFFFF, J3 L_Shin FFFFFF, J3 sockC FFFFFF
+WAS Tre Johnson: J3 headAccC FFFFFF, J3 sockC FFFFFF
+WAS Tre Mann: J3 headAccC FFFFFF, J3 L_Elbow FFFFFF, J3 sockC FFFFFF
+WAS Will Riley: J3 L_Shoulder FFFFFF, J3 R_Shoulder FFFFFF, J3 sockC FFFFFF

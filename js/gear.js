@@ -2,7 +2,10 @@
 // accessory color with each of the four jerseys.
 //
 // - Every jersey: black when the jersey is black or close to it, otherwise white. Never a team color.
-// - Head accessories follow the same rule, except glasses (0005, 0006, 0024), which stay black (202020).
+// - Headbands and other head gear: white or black by the same rule. Glasses (0005, 0006, 0024) keep one color on
+//   all four jerseys (his first pair's, or 202020).
+// Only new faces get this: the rookie class, and players who changed teams when the old team's jersey colors differ.
+// Everyone else already looks the way the league file has him (a few colored headbands on purpose).
 // Tattoos, bare skin and rubber wristbands (one color on every jersey) are left alone.
 
 export const BLACK = '141020';
@@ -49,12 +52,31 @@ function kind(v, skin, tattoos, known) {
   return 'odd';
 }
 
+// One color for a player's glasses on every jersey: the first pair he wears, or 202020.
+function glassesColor(p, k) {
+  const first = (p.accessories || []).map(a => GLASSES.has(a[k]) ? String(a[k + 'C'] || '') : '').find(c => HEX.test(c));
+  return first ? first.toUpperCase() : GLASSES_C;
+}
+// The last team he played for (pro stats), to tell a team change.
+function lastTid(p) {
+  const rows = (p.stats || []).filter(s => s.league === 0).sort((a, b) => a.yr - b.yr).flatMap(s => (s.season || []).filter(r => r.GP > 0));
+  return rows.length ? rows[rows.length - 1].tid : null;
+}
+// New faces only: rookies, and players who changed teams to one whose jersey colors differ from the old one's.
+export function newLook(p, team, league) {
+  if ((p.yrs ?? 0) === 0) return true;
+  const was = lastTid(p);
+  if (was == null || was === team.id) return false;
+  const old = league.teams.find(t => t.id === was);
+  return !old || targets(old).join() !== targets(team).join();
+}
 // Recolor one team's players. `tattoos` maps a skin tone to its tattoo colors.
 // Returns [{ p, i, key, was }] for undo.
-export function matchTeam(team, known, tattoos = {}) {
+export function matchTeam(team, known, tattoos = {}, only = () => true) {
   const want = targets(team), log = [];
   const set = (p, a, i, key, val) => { if (a[key] !== val) { log.push({ p, i, key, was: a[key] }); a[key] = val; } };
   for (const p of team.roster) {
+    if (!only(p)) continue;
     const skin = p.appearance?.skinC, tat = (tattoos[skin] || tattoos[String(skin).toUpperCase()] || []).map(x => String(x).toUpperCase());
     // A wristband in the same color with all four jerseys (not white) is a rubber band he wears for himself: it stays.
     const rubber = new Set(BODY.filter(k => k.endsWith('Wrist')).filter(k => {
@@ -66,8 +88,11 @@ export function matchTeam(team, known, tattoos = {}) {
       if (!w) return;
       // Head gear and sleeves in a color from some old team still count as team gear; only a wrist color can be a one-off.
       const head = v => ['gear', 'odd'].includes(kind(v, skin, tat, known));
-      if (hasHead(a.headAcc) && head(a.headAccC)) set(p, a, i, 'headAccC', GLASSES.has(a.headAcc) ? GLASSES_C : w);
-      if (hasHead(a.headAcc2) && head(a.headAcc2C)) set(p, a, i, 'headAcc2C', GLASSES.has(a.headAcc2) ? GLASSES_C : w);
+      for (const k of ['headAcc', 'headAcc2']) {
+        if (!hasHead(a[k])) continue;
+        if (GLASSES.has(a[k])) set(p, a, i, k + 'C', glassesColor(p, k));
+        else if (head(a[k + 'C'])) set(p, a, i, k + 'C', w);
+      }
       for (const k of BODY) {
         if (rubber.has(k)) continue;
         const kd = kind(a[k], skin, tat, known);
@@ -90,8 +115,7 @@ export function matchGlasses(league) {
 }
 export function matchLeague(league, tattoos) {
   const known = knownColors(league);
-  const log = league.teams.flatMap(t => matchTeam(t, known, tattoos));
-  return [...log, ...matchGlasses(league)];
+  return league.teams.flatMap(t => matchTeam(t, known, tattoos, p => newLook(p, t, league)));
 }
 export function undoMatch(log) { for (const x of [...log].reverse()) x.p.accessories[x.i][x.key] = x.was; }
 
@@ -104,10 +128,11 @@ export function suitTie(team) {
   const i = [0, 1, 2].find(k => c[k] && !isBlackish(String(c[k])) && !isWhiteish(String(c[k])));
   return ['PRI', 'SEC', 'TER'][i ?? 0];
 }
-export function matchSuits(people, { jacket = BLACK, tie = 'PRI' } = {}) {
+export const SUIT_BLACK = '202020';      // the black for suits
+export function matchSuits(people, { jacket = SUIT_BLACK, tie = 'PRI' } = {}) {
   const log = [];
   for (const m of people) for (const [i, s] of (m.suits || []).entries())
-    for (const [key, val] of [['jacketC', jacket], ['pantC', BLACK], ['shirtC', 'FFFFFF'], ['tieC', tie]])
+    for (const [key, val] of [['jacketC', jacket], ['pantC', SUIT_BLACK], ['shirtC', 'FFFFFF'], ['tieC', tie]])
       if (s[key] !== val) { log.push({ m, i, key, was: s[key] }); s[key] = val; }
   return log;
 }
@@ -153,14 +178,9 @@ export function matchPoolCoachShoes(league) {
   });
   return log;
 }
+// Player suits, for new faces only (rookies and players on a new team with other colors). Coaches, free agents,
+// retirees and hall of famers keep theirs: the league file's coaching setup stands on its own.
 export function matchSuitsLeague(league) {
-  return [
-    ...league.teams.flatMap(t => matchCoachSuits(t)),
-    ...matchPoolCoachShoes(league),
-    ...league.teams.flatMap(t => matchSuits(t.roster, { tie: suitTie(t) })),
-    ...matchSuits(league.freeAgents || []),
-    ...matchSuits(league.retirees || []),
-    ...matchSuits(league.hallOfFame || [], { jacket: HOF_JACKET, tie: BLACK }),
-  ];
+  return league.teams.flatMap(t => matchSuits(t.roster.filter(p => newLook(p, t, league)), { tie: suitTie(t) }));
 }
 export function undoSuits(log) { for (const x of [...log].reverse()) x.m.suits[x.i][x.key] = x.was; }

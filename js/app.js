@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.153.0';
+const APP_VERSION = '0.154.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1629,8 +1629,7 @@ function gearCard() {
     const log = GEAR.matchLeague(L, APPEARANCE_POOL.tattoos), suits = GEAR.matchSuitsLeague(L);
     const n = log.length, players = new Set(log.map(x => x.p)).size, suited = new Set(suits.map(x => x.m)).size;
     GEAR.undoMatch(log); GEAR.undoSuits(suits);
-    body = n || suited ? `<p class="note">${players} players have socks, sleeves or head gear that don't match their team's jerseys (${n} items). Every jersey gets white (black on a black jersey), never a team color; glasses stay black. Tattoos and rubber wristbands (the same color with every jersey) stay.
-      ${suited} players' suits differ from the standard: black jacket and pants, white shirt, a team-color tie (hall of famers: gold jacket, black tie). The head coach and assistant wear their team's jersey colors (202020 tops when the main jersey is red, purple or yellow or the third is red or purple, else a dark third jersey's color), 202020 pants and glasses, white shoes; the other two coaches wear the player suit with black shoes.</p>
+    body = n || suited ? `<p class="note">${players} new faces (rookies, or players on a new team with other colors) have socks, sleeves or head gear that don't match their jerseys (${n} items): white on every jersey (black on a black jersey), headbands white or black, glasses one color throughout. ${suited} of them need the suit: 202020 jacket and pants, white shirt, team-color tie. Everyone else, and every coach, keeps his look.</p>
       <button class="btn" data-act="matchGear">🧦 Match Socks, Sleeves &amp; Suits</button>`
       : '<p class="note">🧦 Every sock, sleeve and suit already matches.</p>';
   }
