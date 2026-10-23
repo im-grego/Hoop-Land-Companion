@@ -1062,7 +1062,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .opts.wrap.ld-keys .btn { min-height: 34px; padding: 4px 0; font-size: 13px; flex: none; }
 
 .opt-btns { display: flex; gap: 4px; flex: none; }
-.opt-btns .btn { min-height: 32px; padding: 0 8px; font-size: 13px; }
+.opt-btns .btn { min-height: 28px; padding: 0 8px; font-size: 12px; }
 
 /* Star icons */
 .st-row { display: inline-flex; gap: 1px; vertical-align: -2px; width: 79px; justify-content: flex-start; }
@@ -1410,7 +1410,11 @@ main.panel.bare { margin-top: 10px; }
 .exp-deals .prow { cursor: default; }
 .xbtns { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
 .xbtns .btn { min-width: 96px; padding: 6px 8px; }
-.opt-btns .btn { min-width: 92px; }
+/* Expiring deals and your offers: one compact line each, buttons side by side on the right. */
+.exp-deals .prow.rrow { grid-template-columns: 1fr auto; padding: 6px 10px; gap: 2px 8px; }
+.exp-deals .xbtns { flex-direction: row; align-items: center; }
+.exp-deals .prow .name { white-space: normal; }
+.exp-deals .xbtns .btn { min-width: 0; min-height: 28px; padding: 2px 8px; font-size: 12px; }
 .bottom.two { justify-content: space-between; }
 .bottom .action.alt { min-width: 130px; font-size: 18px; background: var(--btn); }
 .tx-block { background: var(--btn); border: 3px solid var(--btn-edge); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }

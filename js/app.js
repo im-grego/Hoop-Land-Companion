@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.166.0';
+const APP_VERSION = '0.167.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -7354,6 +7354,7 @@ screens.fa = (args = {}) => {
     title: `Free Agency · Week ${s.day}`,
     body: `
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
+      ${s.stage !== 'open' ? yourOffers(s) : ''}
       ${expiringSection(s)}
       ${FA.capSystemOn() ? capNote(L) : ''}
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
@@ -7373,6 +7374,28 @@ screens.fa = (args = {}) => {
       ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`,
   });
 };
+
+// Once bidding opens, the offers you made (other than your own expiring deals) sit at the top: where you stand on
+// each, tap to raise.
+function yourOffers(s) {
+  const L = league();
+  const rows = s.market.filter(m => !(m.from && isUserTeam(m.from)) && (s.bids.get(m.p.id) || []).some(b => isUserTeam({ id: b.tid })));
+  if (!rows.length) return '';
+  const done = s.stage === 'done';
+  return `<h4 class="ov-h">Your Offers (${rows.length})</h4><div class="list exp-deals">${rows.map(m => {
+    const mineBid = (s.bids.get(m.p.id) || []).find(b => isUserTeam({ id: b.tid }));
+    const best = faBest(s, m), signed = s.signings.find(x => x.p === m.p);
+    const others = (s.bids.get(m.p.id) || []).length - 1;
+    const where = signed ? (isUserTeam(signed.team) ? '<span class="up">Signed with you</span>' : `<span class="down">Signed with ${esc(signed.team.shortName)}</span>`)
+      : best === mineBid ? `<span class="up">You lead</span>${others ? ` · ${others} other${others > 1 ? 's' : ''}` : ''}`
+      : `<span class="down">Behind ${esc(L.teams.find(t => t.id === best.tid)?.shortName || '?')}</span> ${offerText(best)}`;
+    return `<div class="prow rrow ${best === mineBid ? 'sel' : ''}">
+      <span class="name">${esc(playerName(m.p))} ${lvTag(m.p)}</span>
+      <span class="right xbtns"><button class="btn small ${best === mineBid ? 'off' : 'focus'}" data-act="faOffer" data-id="${m.p.id}" ${done || signed ? 'disabled' : ''}>${best === mineBid ? 'Edit' : 'Raise'}</button></span>
+      <span class="meta">${offerText(mineBid)} · ${where}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
 
 // Your expiring deals, first thing on the screen, biggest asks first. Tap
 // one to re-sign him (or let him walk) from the offer pop-up.
@@ -7448,6 +7471,7 @@ actions.faOpen = () => {
   FA.cpuBids(L, s.market, s.bids, s.day, state.userTeams, s.rng, s.used);
   FA.raiseRound(L, s.market, s.bids, s.day, s.rng, s.used);
   s.stage = 'bidding';
+  state.toTop = true;   // your offers sit at the top of the page now
   render();
 };
 
