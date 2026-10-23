@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.172.0';
+const APP_VERSION = '0.173.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4482,7 +4482,7 @@ function saveSalt() {
 }
 const scoutFog = () => state.params.scoutVariance * FX.facilityFx(myTeam()).fog;
 const revealed = id => !!preStore().reveals?.[id];
-const scoutPot = p => workoutDone(p.id) || revealed(p.id) ? p.pot : scoutedPot(p, saveSalt(), scoutFog());
+const scoutPot = p => workoutDone(p.id) || revealed(p.id) ? p.pot : scoutedPot(p, saveSalt(), scoutFog() * (scouted(p.id) ? 0.4 : 1));
 // Rating ceilings stay hidden until scouted: a few come out during
 // scouting, more at the combine (athletic ones most), and a private workout
 // shows them all. Which ones is fixed per save + prospect.
@@ -4496,7 +4496,7 @@ function ceilStage(p, k) {
 function ceilKnown(p, k) {
   if (!league().draftClass?.some(x => x.id === p.id)) return true;   // drafted: everything shows
   if (workoutDone(p.id)) return true;
-  const reached = combineOn() ? 2 : preDone('mock1') ? 1 : 0;
+  const reached = combineOn() || scouted(p.id) ? 2 : preDone('mock1') ? 1 : 0;
   return ceilStage(p, k) <= reached;
 }
 // Draft board value: projected ceiling at the scouted tier first, then the
@@ -4758,7 +4758,8 @@ screens.draft = (args) => {
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   const preview = isStep('mock1');
-  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + (preview && !isCollege() ? looksCard() : '') + tabs + body.html, action: preview ? { act: 'preFinish', label: 'Continue to Scouting', k: 'mock1' } : body.action });
+  const tripsCard = isStep('scout') && tab !== 'live' ? `<fieldset class="frame"><legend>🔎 Scouting Trips</legend><p class="note small"><b>${tripsLeft()} of ${scoutTrips()}</b> left. Open a prospect and send a scout: his athletic ceilings come out early, his potential reads truer, and you get a preview of his combine (length, testing, shooting, medical).</p></fieldset>` : '';
+  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + (preview && !isCollege() ? looksCard() : '') + tripsCard + tabs + body.html, action: preview ? { act: 'preFinish', label: 'Continue to Scouting', k: 'mock1' } : body.action });
   if (tab === 'live') centerBoard();
   if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
@@ -4960,7 +4961,7 @@ const prospectRow = (p, extra = '', { mine = false } = {}) => {
   const comp = (label, x) => x ? `<span class="pr-comp"><span class="muted">${label}</span><span>${esc(x.name)}</span></span>` : '';
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
   return `<button class="prow cprow ${star ? 'sel' : ''} ${gone ? 'gone' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
-  <span class="name">${star ? '<span class="gold">★</span> ' : ''}<span class="nm">${esc(playerName(p))}</span>${gone ? ` <span class="small muted">#${gone.overall}${gone.team ? ` · ${esc(gone.team.shortName)}` : ''}</span>` : ''}</span>
+  <span class="name">${star ? '<span class="gold">★</span> ' : ''}<span class="nm">${esc(playerName(p))}</span>${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}${gone ? ` <span class="small muted">#${gone.overall}${gone.team ? ` · ${esc(gone.team.shortName)}` : ''}</span>` : ''}</span>
   <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
@@ -5183,20 +5184,91 @@ function posRank(p, d) {
   return ` <span class="pos-rank${rank <= 3 ? ' top' : ''}">#${rank} of ${same.length} ${esc(posName(p))}</span>`;
 }
 
+// ---- Scouting trips
+//
+// During Scouting you send scouts to see prospects in person (a few trips per team you run). A scouted prospect's
+// athletic ceilings come out early, his potential reads truer, and the scouts tell you what to expect at the combine:
+// his length, how he'll test and how he'll shoot, and any medical worry. The combine then shows who they read right.
+const scoutTrips = () => ((state.params.workoutSlots ?? 4) + 2) * Math.max(1, state.userTeams.size) + FX.facilityFx(myTeam()).workouts;
+const scoutedMap = () => (preStore().scouted ||= {});
+function scouted(id) { return !!preStore().scouted?.[id]; }
+const tripsLeft = () => scoutTrips() - Object.keys(scoutedMap()).length;
+actions.sendScout = d => {
+  const id = +d.id;
+  if (!isStep('scout') || scouted(id)) return;
+  if (tripsLeft() <= 0) { toast('No scouting trips left', '', 2400, true); return; }
+  scoutedMap()[id] = true;
+  savePre();
+  state.compCache = {};   // ceilings and potential reads change
+  render();
+  const p = league().draftClass.find(x => x.id === id);
+  toast(`🔎 Scouts saw ${p ? playerName(p) : 'him'} in person`, `${tripsLeft()} trip${tripsLeft() === 1 ? '' : 's'} left`);
+};
+// What the scouts expect at the combine, from the real results with a scout's margin (fixed per save + prospect).
+const TIER_WORDS = z => z == null ? null : z >= 1 ? 'elite' : z >= 0.4 ? 'above average' : z > -0.4 ? 'about average' : z > -1 ? 'below average' : 'poor';
+function combineOutlook(p) {
+  const x = combineData().byId.get(p.id);
+  if (!x) return null;
+  const rng = mulberry32((saveSalt() ^ Math.imul(p.id + 99, 2246822519)) >>> 0);
+  const miss = z => z == null ? null : z + (rng() < 0.25 ? (rng() < 0.5 ? -0.7 : 0.7) : 0) * FX.facilityFx(myTeam()).fog;
+  const off = Math.round((rng() * 2 - 1) * 2) / 2;
+  return {
+    ws: [x.ws + off - 1, x.ws + off + 1], ape: Math.round(x.wingDiff + off),
+    ath: TIER_WORDS(miss(x.athZ)), shoot: TIER_WORDS(miss(x.shootZ)),
+    skip: x.skip ? (rng() < 0.7) : false,
+    med: x.medical && x.medical.level !== 'note' ? x.medical.level : null,
+  };
+}
+const tierCls = w => /elite|above/.test(w || '') ? 'up' : /below|poor/.test(w || '') ? 'down' : 'muted';
+function outlookBox(p) {
+  if (combineOn() || !scouted(p.id)) return '';
+  const o = combineOutlook(p);
+  if (!o) return '';
+  return `<fieldset class="frame"><legend>🔎 Combine Outlook</legend>
+    <p class="note small">Wingspan ${inchStr(o.ws[0])}–${inchStr(o.ws[1])} <span class="muted">(about ${o.ape >= 0 ? '+' : ''}${o.ape}")</span>
+      · Tester: <span class="${tierCls(o.ath)}">${o.skip ? 'may sit out' : esc(o.ath || '—')}</span>
+      · Shooter: <span class="${tierCls(o.shoot)}">${esc(o.shoot || '—')}</span></p>
+    ${o.med ? `<p class="note small ${o.med === 'red' ? 'down' : 'gold'}">🩺 Our doctors want a closer look at the combine.</p>` : ''}
+    <p class="note muted small">What our scouts expect. The combine has the real numbers.</p>
+  </fieldset>`;
+}
+// The scouting trip button on a prospect's page (Scouting step only).
+function scoutBtn(p) {
+  if (!isStep('scout')) return '';
+  if (scouted(p.id)) return '<p class="note small up">🔎 Scouted in person.</p>';
+  const left = tripsLeft();
+  return `<button class="btn small ${left ? 'focus' : 'off'}" data-act="sendScout" data-id="${p.id}" ${left ? '' : 'disabled'}>🔎 Send a Scout · ${left} trip${left === 1 ? '' : 's'} left</button>`;
+}
+
+// The combine on a prospect's page: one summary line, with drop-downs for the measurables and the drills.
 function combineBox(p) {
-  if (!combineOn()) return '';
+  if (!combineOn()) return outlookBox(p);
   const x = combineData().byId.get(p.id);
   if (!x) return '';
+  const best = DRILLS.map(d => ({ d, r: posRankN(p, d) })).filter(r => r.r).sort((a, b) => a.r.rank - b.r.rank)[0];
+  const o = scouted(p.id) ? combineOutlook(p) : null;
+  const read = o && !o.skip ? (TIER_WORDS(x.athZ) === o.ath ? '<span class="up">scouts called it</span>' : `<span class="gold">scouts had him ${esc(o.ath)}</span>`) : '';
   return `<fieldset class="frame"><legend>Draft Combine</legend>
-    <div class="combine-grid">
-      <span>Height (no shoes)</span><b>${inchStr(x.htNs)}</b><span>Wingspan</span><b>${inchStr(x.ws)} <span class="small ${x.wingDiff < 0 ? 'down' : 'muted'}">(${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}")</span></b>
+    <p class="note small">${inchStr(x.htNs)} · WS ${inchStr(x.ws)} <span class="${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">(${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}")</span> · ${x.wt} lb</p>
+    <p class="note small">${x.skip ? `<span class="muted">Sat out testing: ${esc(x.skip)}</span>` : `Tester: <span class="${tierCls(TIER_WORDS(x.athZ))}">${esc(TIER_WORDS(x.athZ) || '—')}</span> · Shooter: <span class="${tierCls(TIER_WORDS(x.shootZ))}">${esc(TIER_WORDS(x.shootZ))}</span>${best && best.r.rank <= 3 ? ` · Best: ${esc(best.d.short || best.d.name)} <span class="pos-rank top">#${best.r.rank} ${esc(posName(p))}</span>` : ''}`}${read ? ` · ${read}` : ''}</p>
+    ${x.medical && x.medical.level !== 'note' ? `<p class="note small ${x.medical.level === 'red' ? 'down' : 'gold'}">🩺 ${esc(x.medical.text)}</p>` : ''}
+    <details class="cmb-fold"><summary>📏 Measurables</summary><div class="combine-grid">
+      <span>Height (no shoes)</span><b>${inchStr(x.htNs)}</b><span>Wingspan</span><b>${inchStr(x.ws)}</b>
       <span>Standing Reach</span><b>${inchStr(x.reach)}</b><span>Weight</span><b>${x.wt} lb</b>
       <span>Vs avg pro ${esc(posName(p))}</span><b>${sizeLine(p, x, false)}</b>
+    </div></details>
+    ${x.skip ? '' : `<details class="cmb-fold"><summary>⏱ Drills</summary><div class="combine-grid">
       ${DRILLS.map(d => `<span>${esc(d.name)}</span><b>${fmtDrill(d, x[d.k])}${posRank(p, d)}</b>`).join('')}
-    </div>
-    ${x.skip ? `<p class="note small muted" style="margin-top:6px">Sat out testing: ${esc(x.skip)}.</p>` : ''}
-    ${x.medical && x.medical.level !== 'note' ? `<p class="note small ${x.medical.level === 'red' ? 'down' : 'gold'}" style="margin-top:6px">🩺 ${esc(x.medical.text)}</p>` : ''}
+    </div></details>`}
   </fieldset>`;
+}
+// Where a result ranks among prospects at his position: { rank, of } or null.
+function posRankN(p, d) {
+  const C = combineData();
+  const v = C.byId.get(p.id)?.[d.k];
+  if (v == null) return null;
+  const same = league().draftClass.filter(x => x.pos === p.pos).map(x => C.byId.get(x.id)?.[d.k]).filter(y => y != null);
+  return { rank: 1 + same.filter(y => (d.low ? y < v : y > v)).length, of: same.length };
 }
 
 // ---- Private workouts
@@ -5872,7 +5944,7 @@ screens.prospect = (args) => {
         <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span></p>
       </div>
       ${collegeBox(p)}
-      <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
+      <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}${scoutBtn(p) ? `<div style="margin-top:8px">${scoutBtn(p)}</div>` : ''}</fieldset>
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
       ${playStyleBox(p)}
       ${traitsBox(p, true)}
