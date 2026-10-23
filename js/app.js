@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.176.1';
+const APP_VERSION = '0.177.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -525,6 +525,7 @@ async function loadFile(file) {
       goHome();
       return;
     }
+    if (!isCollege()) state.fileCheck = fileCheck(league());   // before the app touches anything
     freshSaveCheck();
     if (repairPickYears()) toast('Draft picks moved back a year', 'This save had its picks a year ahead; they now carry the real draft year.');
     recallSetup();
@@ -671,9 +672,10 @@ function dumpSalary(L, t, limit, pay = filePay, log = [], o = {}) {
     const order = [...cands.filter(p => sal(p) >= over && overpaid(p) > -3), ...cands];
     let moved = false;
     for (const p of order) {
-      const to = others.filter(x => fits(x, p)).sort((a, b) => reb(a) - reb(b) || pay(a) - pay(b))[0];
+      const to = others.filter(x => fits(x, p) && cpuPhysical(p, x) !== 'fail').sort((a, b) => reb(a) - reb(b) || pay(a) - pay(b))[0];
       if (!to) continue;
       const picks = o.picks ? dumpPicks(L, t, Math.max(0, overpaid(p)) * Math.max(1, p.contract?.yrs || 1)) : [];
+      if (cpuPhysical(p, to) === 'flag') { const sw = sweetener2nd(L, t, picks); if (sw) picks.push(sw); }
       executeTrade({ team: t, players: [p], picks, prospects: [] }, { team: to, players: [], picks: [], prospects: [] }, L.season.currentYear);
       if (reb(to) === 0 && p.age >= 28 && !FA.isLifer(L, p, to) && p.season && p.season.onTradeBlock !== 2) p.season.onTradeBlock = 1;
       const max = o.picks ? FA.FA_DEFAULTS.cpuRosterMax : FA.FA_DEFAULTS.seasonMax;
@@ -804,6 +806,7 @@ function buildExport() {
   state.data.seasonLeagues.forEach(usePlaybooks);
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
+  if (!isCollege()) saveManifest(league());
   const text = serializeSave(state.data);
   if (startWas) state.data.seasonLeagues.forEach((x, i) => { x.season.startingYear = startWas[i]; });
   if (restoreCap) { [league().season.salaryCap, league().season.maxContract] = restoreCap; restoreCap = null; }
@@ -950,6 +953,8 @@ const CALENDAR = [
     done: () => calFlags().office },
   { key: 'review', date: 'May 2', title: 'Season in Review', blurb: 'How your season ended, the league picture, your team leaders and the awards.',
     done: () => !!calFlags().review || phaseRank(league().season) >= 2 },
+  { key: 'hof', date: 'May 2', title: 'Hall of Fame Class', blurb: 'The newest inductees, the teams they made their names with, and who\'s on next year\'s ballot.',
+    done: () => !!calFlags().hof || phaseRank(league().season) >= 2 || !hofClass(league()).length },
   { key: 'overview', date: 'May 3', title: 'Offseason Overview', blurb: 'Where you stand: the books, real roster needs, your draft position and the league rumor mill.',
     done: () => !!calFlags().overview || phaseRank(league().season) >= 2 },
   { key: 'lottery', date: 'May 10', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
@@ -1140,6 +1145,48 @@ function rememberExport() {
   if (!(known.exports ||= []).includes(fp)) known.exports.push(fp);
   try { localStorage.setItem(fpKey(), JSON.stringify(known)); } catch { /* ignore */ }
 }
+// Season file check: what went out on export is remembered (per league), and the next file loaded is compared with it,
+// so anything the game changed on its own (a release, a contract, a number, a pick that disappeared) gets flagged.
+const manifestKey = L => `hlc:manifest:${L.shortName}`;
+function saveManifest(L) {
+  const players = {};
+  for (const t of L.teams) for (const p of t.roster) players[p.id] = [t.id, p.contract?.sal || 0, p.contract?.yrs || 0, p.contract?.ext?.yrs || 0, p.contract?.ext?.sal || 0, p.num, p.status];
+  const picks = L.teams.flatMap(t => t.draftPicks.map(pk => `${pk.otid}:${pk.yr}:${pk.rd}`));
+  try { localStorage.setItem(manifestKey(L), JSON.stringify({ yr: L.season.currentYear, save: L.meta?.saveName || '', players, picks })); } catch { /* ignore */ }
+}
+function fileCheck(L) {
+  let m; try { m = JSON.parse(localStorage.getItem(manifestKey(L))); } catch { m = null; }
+  const cur = L.season.currentYear;
+  if (!m || (m.yr !== cur && m.yr !== cur - 1)) return null;
+  const next = m.yr === cur - 1, items = [];
+  const where = new Map(L.teams.flatMap(t => t.roster.map(p => [p.id, { p, t }])));
+  const fas = new Map((L.freeAgents || []).map(p => [p.id, p]));
+  const nm = id => L.teams.find(t => t.id === id)?.shortName || '?';
+  for (const [id, [tid, sal, yrs, extYrs, extSal, num, status]] of Object.entries(m.players)) {
+    const now = where.get(+id), fa = fas.get(+id);
+    if (fa && status === 3 && yrs >= (next ? 2 : 1)) { items.push({ kind: 'release', text: `${playerName(fa)} was released by ${nm(tid)} with ${yrs - (next ? 1 : 0)} year${yrs - (next ? 1 : 0) === 1 ? '' : 's'} left` }); continue; }
+    if (!now || now.t.id !== tid) continue;   // traded or retired: the game's call
+    const c = now.p.contract || {};
+    const want = !next ? [sal, yrs] : yrs === 1 && extYrs ? [extSal, extYrs] : yrs >= 2 ? [sal, yrs - 1] : null;
+    if (want && status === 3 && (c.sal !== want[0] || c.yrs !== want[1])) items.push({ kind: 'contract', text: `${playerName(now.p)} (${now.t.shortName}): $${c.sal}M × ${c.yrs}, expected $${want[0]}M × ${want[1]}` });
+    if (now.p.num !== num) items.push({ kind: 'number', text: `${playerName(now.p)} (${now.t.shortName}) wears #${now.p.num === 100 ? '00' : now.p.num}, was #${num === 100 ? '00' : num}` });
+  }
+  const have = new Set(L.teams.flatMap(t => t.draftPicks.map(pk => `${pk.otid}:${pk.yr}:${pk.rd}`)));
+  const dy = draftYear(L);
+  for (const k of m.picks) { const [otid, yr, rd] = k.split(':').map(Number); if (yr > dy - (next ? 0 : 1) && !have.has(k)) items.push({ kind: 'pick', text: `${nm(otid)}'s ${yr} ${rd === 1 ? '1st' : '2nd'} is missing` }); }
+  return { next, items, from: m.yr };
+}
+function fileCheckCard() {
+  const c = state.fileCheck;
+  if (!c) return '';
+  const ico = { release: '✂️', contract: '📃', number: '👕', pick: '🎟️' };
+  return `<fieldset class="frame"><legend>🔎 Season File Check</legend>
+    ${c.items.length ? `<p class="note small">${c.items.length} thing${c.items.length === 1 ? '' : 's'} changed ${c.next ? 'over the season' : 'since your export'} that the app didn't do:</p>
+      <details class="cmb-fold"><summary>Show them</summary><div class="stack">${c.items.slice(0, 60).map(x => `<p class="note small" style="margin:0">${ico[x.kind]} ${esc(x.text)}</p>`).join('')}</div></details>`
+    : `<p class="note small up">✓ Everything matches what you exported${c.next ? ' (trades and retirements during the season aside)' : ''}.</p>`}
+    <button class="btn small off" data-act="fileCheckOk" style="margin-top:6px">Got it</button></fieldset>`;
+}
+actions.fileCheckOk = () => { state.fileCheck = null; render(); };
 const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.title}`); };
 // Franchise saves (one team, the game's own mode 0) skip Front Office: the
 // team is the one the save is built around, like college.
@@ -1151,6 +1198,7 @@ const isStep = key => currentStep()?.key === key;
 // What finished steps show.
 function stepSummary(key) {
   const L = league();
+  if (key === 'hof') { const c = hofClass(L); return c.length ? `Class of ${c[0].history.yearInducted}: ${c.map(p => p.ln).join(', ')}.` : 'No class this year.'; }
   const yr = L.season.currentYear;
   if (key === 'office') return `Running ${L.teams.filter(isUserTeam).map(t => t.shortName).join(', ') || 'no teams'}.`;
   if (key === 'lottery') {
@@ -1222,6 +1270,7 @@ function stepActions(key) {
     case 'seniors': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="seniors">🎓 Senior Send-off</button><button class="btn" data-act="calDone" data-k="seniors">✅ Wrap Up</button></div>`;
     case 'departures': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="departures">🎓 Draft Departures</button><button class="btn" data-act="calDone" data-k="departures">✅ Wrap Up</button></div>`;
     case 'review': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="review">📜 Begin</button><button class="btn" data-act="calDone" data-k="review">⏭ Skip</button></div>`;
+    case 'hof': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="hofClass">🏛️ Ceremony</button><button class="btn" data-act="calDone" data-k="hof">⏭ Skip</button></div>`;
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
     case 'overview': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="overview">📊 Begin</button><button class="btn" data-act="calDone" data-k="overview">⏭ Skip</button></div>`;
@@ -1240,12 +1289,10 @@ function stepActions(key) {
     case 'camp': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="camp">🌴 Begin</button><button class="btn" data-act="homeSimCamp">⏭ Sim</button></div>`;
     case 'fa1': case 'fa2': case 'fa3': {
       const day = +key[2];
-      if (s.phase === 5) return `<button class="btn big focus" data-act="advFreeAgency">✍️ Open Free Agency</button>`;
-      if (s.currentDay < day) return `<button class="btn big focus" data-act="advDay">▶ Start Day ${day}</button>`;
-      // Trades open after the July moratorium (week 1).
-      return day >= 2 && isComplete() ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>` : `<button class="btn big focus" data-act="nav" data-to="fa">✍️ Day ${day} Market</button>`;
+      // One button a week: it opens free agency or starts the week as needed and goes straight to the market.
+      return `<button class="btn big focus" data-act="faWeek">✍️ ${s.phase === 5 ? 'Open Free Agency' : `Week ${day} Market`}</button>`;
     }
-    case 'dev': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="offseason">🏋️ Begin Training Camp</button><button class="btn" data-act="calDev" ${state.auto[state.leagueIdx] ? '' : 'disabled'}>✅ Wrap Up</button></div>`;
+    case 'dev': return `<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn focus" data-act="nav" data-to="survey">📋 GM Survey</button></div>
       <button class="btn small off" data-act="mediaDone" style="margin-top:8px">✅ Wrap Up</button>`;
     case 'cuts': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Camp Deals</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>
@@ -1257,7 +1304,7 @@ function stepActions(key) {
 
 // ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
 // finished and passed dates crossed off, the current topic on top.
-const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', hof: '🏛️', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1473,13 +1520,14 @@ actions.calDev = () => { ensureMeetings(); calFlags().dev = true; applySchemeEvo
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
+  hof: ['hofClass', 'player'],
   office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options', 'extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
   meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'payroll', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1547,6 +1595,25 @@ actions.advFreeAgency = async () => {
   toast(`Free agency is open: ${signed.length} rookies signed`);
 };
 
+actions.faWeek = async () => {
+  const L = league(), s = L.season, key = currentStep()?.key || '';
+  if (!key.startsWith('fa')) return;
+  const day = +key[2] || 1;
+  if (s.phase === 5) return actions.advFreeAgency();
+  if (s.currentDay < day) { checkpoint(`Day ${s.currentDay + 1}`); nextFreeAgencyDay(L); state.dirty = true; }
+  go('fa');
+};
+// From the market, once players have decided: straight into next week (or back to the calendar after the last).
+actions.faNext = () => {
+  const L = league();
+  if (L.season.currentDay >= (L.season.signingDays || 3)) { goHome(); nextUp(); return; }
+  checkpoint(`Day ${L.season.currentDay + 1}`);
+  nextFreeAgencyDay(L);
+  state.dirty = true;
+  state.toTop = true;
+  replace('fa', {});
+  toast(`Week ${L.season.currentDay} is open`);
+};
 actions.advDay = async () => {
   const L = league();
   const fa = state.fa[state.leagueIdx];
@@ -1605,6 +1672,7 @@ screens.main = () => {
         <div class="grow"><b>${esc(L.leagueName || L.shortName)}</b>
           <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}</span></div>
       </div>
+      ${fileCheckCard()}
       ${calendarCard()}
       <div class="grid2">
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
@@ -2354,6 +2422,17 @@ actions.coachExtend = () => {
   toast(`${c.fn} ${c.ln} extended`, `$${o.sal}M for ${o.yrs} years`);
   render();
 };
+// Coaches on the hot seat before anything happens: the CPU teams whose coach is under the most pressure (results
+// against what the roster should do, and his recent run). These are the ones who may be let go this summer.
+function hotSeatBox(L) {
+  if (state.params.cpuCoachChanges === false || offGet('coachMoves').done || !(L.coaches || []).some(c => c.attributes)) return '';
+  const rows = L.teams.filter(t => !isUserTeam(t) && headCoachOf(t)).map(t => ({ t, c: headCoachOf(t), pr: pressureOn(L, t, headCoachOf(t)) }))
+    .filter(x => x.pr.pressure >= 0.45).sort((a, b) => b.pr.pressure - a.pr.pressure).slice(0, 6);
+  if (!rows.length) return '';
+  const heat = p => p >= 0.8 ? '🔥🔥🔥' : p >= 0.6 ? '🔥🔥' : '🔥';
+  return `<fieldset class="frame"><legend>Hot Seat</legend><div class="stack">${rows.map(x => `<p class="note small" style="margin:0">${heat(x.pr.pressure)} <b>${esc(x.c.fn)} ${esc(x.c.ln)}</b> <span class="muted">${esc(x.t.shortName)} · ${x.pr.gap < 0 ? `${Math.round(-x.pr.gap * 82)} wins under what the roster should do` : 'results have stalled'}</span></p>`).join('')}</div>
+    <p class="note muted small" style="margin-top:6px">Fired coaches go into the pool, where you can hire them.</p></fieldset>`;
+}
 // What the CPU did this offseason.
 function coachChangesBox() {
   const list = offGet('coachMoves').list || [];
@@ -2835,6 +2914,17 @@ screens.camp = () => {
   });
 };
 actions.calCampBack = () => { calFlags().camp = true; state.undo = null; goHome(); toast('Next up: Free Agency'); };
+// One tap: progression runs (the first time) and camp opens on its results; Wrap Up is at the bottom of camp.
+actions.devBegin = async () => {
+  if (!state.auto[state.leagueIdx]) {
+    const o = overlay('<div class="spinner"></div><p class="note">Running training camp…</p>');
+    await nextFrame();
+    applyBump(state.params.seed);
+    o.remove();
+  }
+  go('offseason');
+  if (state.tendMoved) toast(`🎛️ ${state.tendMoved} players' play styles shifted`, 'Tendencies follow ratings and age.', 3200);
+};
 actions.calDevBack = () => {
   if (isCollege()) { calFlags().summer = true; state.undo = null; goHome(); nextUp(); return; }
   ensureMeetings();
@@ -3433,10 +3523,96 @@ screens.roster = (args) => {
         <h2 class="team-title">${esc(teamFull(t))}</h2>
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
       </div>
+      ${!isCollege() ? `<button class="btn small" data-act="nav" data-to="payroll" data-arg="${t.id}" style="margin-bottom:8px">📒 Five-Year Payroll</button>` : ''}
       ${movesBox(L, t)}
       ${rosterBreakdownBox(t)}
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
   });
+};
+
+// The books five seasons out: each deal year by year (its option year marked, an extension where it kicks in), dead
+// money, and where each season lands against the cap, tax line and aprons.
+screens.payroll = (args = {}) => {
+  const L = league();
+  const t = L.teams.find(x => x.id === +(args.arg ?? args.id)) || L.teams.find(isUserTeam) || L.teams[0];
+  const yr0 = FA.seasonStart(L), N = 5, cur = L.season.currentYear;
+  const lab = k => `${String(yr0 + k).slice(2)}-${String(yr0 + k + 1).slice(2)}`;
+  const rows = FA.signedRoster(t).map(p => {
+    const c = p.contract || {}, cells = [];
+    for (let k = 0; k < N; k++) {
+      if (k < (c.yrs || 0)) cells.push({ v: c.sal, opt: k === c.yrs - 1 && c.opt ? (c.opt === FA.OPT_PLAYER ? 'PO' : 'TO') : '' });
+      else if (c.ext?.yrs && k < (c.yrs || 0) + c.ext.yrs) cells.push({ v: c.ext.sal, ext: true, opt: k === c.yrs + c.ext.yrs - 1 && c.ext.opt ? (c.ext.opt === FA.OPT_PLAYER ? 'PO' : 'TO') : '' });
+      else cells.push(null);
+    }
+    return { p, cells };
+  }).sort((a, b) => (b.cells[0]?.v || 0) - (a.cells[0]?.v || 0));
+  const dead = k => deadFor(t.id, cur + k);
+  const total = k => rows.reduce((a, r) => a + (r.cells[k]?.v || 0), 0) + dead(k);
+  const line = k => {
+    const c = FA.capLines(L, k), v = total(k);
+    return v > c.apron2 ? ['down', '2nd apron'] : v > c.apron1 ? ['down', '1st apron'] : v > c.tax ? ['gold', 'Tax'] : v > c.cap ? ['muted', 'Over cap'] : ['up', `$${c.cap - v}M room`];
+  };
+  const cell = x => !x ? '<span class="muted">·</span>' : `<span class="${x.ext ? 'gold' : ''}">${x.v}${x.opt ? `<sup class="small muted">${x.opt}</sup>` : ''}</span>`;
+  layout({
+    title: 'Payroll',
+    body: `<h2 class="team-title">${esc(teamFull(t))}</h2>
+      <p class="note small muted">$M by season. <span class="gold">Gold</span> = an extension kicking in. PO/TO = an option year. Dead money from cuts, buyouts and stretched deals counts too.</p>
+      <div class="pay-grid" style="--n:${N}">
+        <span></span>${Array.from({ length: N }, (_, k) => `<b class="small">${lab(k)}</b>`).join('')}
+        ${rows.map(r => `<span class="pay-name"><button class="linkish" data-act="openPlayer" data-id="${r.p.id}">${esc(playerName(r.p))}</button></span>${r.cells.map(cell).join('')}`).join('')}
+        ${Array.from({ length: N }, (_, k) => dead(k)).some(Boolean) ? `<span class="pay-name down">Dead money</span>${Array.from({ length: N }, (_, k) => dead(k) ? `<span class="down">${dead(k)}</span>` : '<span class="muted">·</span>').join('')}` : ''}
+        <span class="pay-name"><b>Total</b></span>${Array.from({ length: N }, (_, k) => `<b>${total(k)}</b>`).join('')}
+        <span class="pay-name muted small">Status</span>${Array.from({ length: N }, (_, k) => { const [cls, w] = line(k); return `<span class="small ${cls}">${w}</span>`; }).join('')}
+        <span class="pay-name muted small">Cap · Tax</span>${Array.from({ length: N }, (_, k) => { const c = FA.capLines(L, k); return `<span class="small muted">${c.cap}·${c.tax}</span>`; }).join('')}
+        <span class="pay-name muted small">Aprons</span>${Array.from({ length: N }, (_, k) => { const c = FA.capLines(L, k); return `<span class="small muted">${c.apron1}·${c.apron2}</span>`; }).join('')}
+      </div>`,
+  });
+};
+
+// Hall of Fame: the game inducts at the end of the season; the ceremony shows the newest class, the team each made his
+// name with (yours can retire his number), and next year's ballot (retired in the last five years, peak 93+).
+function hofClass(L) {
+  const hof = L.hallOfFame || [];
+  const yr = Math.max(0, ...hof.map(p => p.history?.yearInducted || 0));
+  return yr >= L.season.currentYear - 1 ? hof.filter(p => p.history?.yearInducted === yr) : [];
+}
+function mainTeam(L, p) {
+  const n = new Map();
+  for (const s of p.stats || []) if (s.league === 0) for (const r of s.season || []) if (r.GP > 0) n.set(r.tid, (n.get(r.tid) || 0) + 1);
+  const [tid, yrs] = [...n].sort((a, b) => b[1] - a[1])[0] || [];
+  return tid != null ? { t: L.teams.find(t => t.id === tid), yrs, num: (p.stats || []).flatMap(s => s.season || []).filter(r => r.tid === tid && r.num >= 0).map(r => r.num).pop() } : null;
+}
+screens.hofClass = () => {
+  const L = league(), cls = hofClass(L), cur = L.season.currentYear;
+  const tot = (p, k) => p.careerStats?.season?.[k] || 0;
+  const avg = (p, k) => (tot(p, 'GP') ? (tot(p, k) / tot(p, 'GP')).toFixed(1) : '—');
+  const titles = p => ((p.awards || []).find(a => a.id === 0)?.yearsWon || []).length;
+  const ids = new Set((L.hallOfFame || []).map(p => p.id));
+  const ballot = (L.retirees || []).filter(p => !ids.has(p.id) && (p.history?.yearRetired || 0) >= cur - 5 && levelOf(p) >= 93).sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 8);
+  layout({
+    title: 'Hall of Fame',
+    body: `${cls.length ? `<h2 class="team-title">Class of ${cls[0].history.yearInducted}</h2>` : '<p class="note">No new class this year.</p>'}
+      <div class="stack">${cls.map(p => {
+        const m = mainTeam(L, p);
+        const retired = m?.t && (m.t.retiredNumbers || []).some(r => r.pid === p.id);
+        return `<fieldset class="frame"><legend>${esc(playerName(p))}</legend>
+          <p class="note small">${esc(POSITIONS[p.pos] ?? '')} · peak <span class="gold">${levelOf(p)}</span> · ${avg(p, 'PTS')} / ${avg(p, 'REB')} / ${avg(p, 'AST')} over ${tot(p, 'GP')} games${titles(p) ? ` · 🏆 ${titles(p)}` : ''}</p>
+          ${m?.t ? `<p class="note small">Made his name with the ${esc(teamFull(m.t))} (${m.yrs} season${m.yrs > 1 ? 's' : ''}${m.num != null ? `, #${m.num === 100 ? '00' : m.num}` : ''}).${retired ? ' <span class="up">Number retired.</span>' : ''}</p>` : ''}
+          <div class="grid2"><button class="btn small" data-act="openPlayer" data-id="${p.id}">🏛️ Profile</button>${m?.t && isUserTeam(m.t) && m.num != null && !retired ? `<button class="btn small focus" data-act="retireNum" data-id="${p.id}">🏟️ Retire #${m.num === 100 ? '00' : m.num}</button>` : ''}</div>
+        </fieldset>`;
+      }).join('')}</div>
+      ${ballot.length ? `<fieldset class="frame"><legend>On Next Year's Ballot</legend><div class="stack">${ballot.map(p => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> <span class="gold small">Peak ${levelOf(p)}</span><br><span class="small muted">Retired ${p.history?.yearRetired || '—'}${tot(p, 'GP') ? ` · ${avg(p, 'PTS')} / ${avg(p, 'REB')} / ${avg(p, 'AST')}` : ''}</span></span></div>`).join('')}</div></fieldset>` : ''}`,
+    action: isStep('hof') ? { act: 'hofDone', label: 'Wrap Up the Ceremony' } : null,
+  });
+};
+actions.hofDone = () => { calFlags().hof = true; state.undo = null; goHome(); nextUp(); };
+actions.retireNum = d => {
+  const L = league(), p = (L.hallOfFame || []).find(x => x.id === +d.id), m = p && mainTeam(L, p);
+  if (!m?.t || m.num == null || !isUserTeam(m.t)) return;
+  (m.t.retiredNumbers ||= []).push({ num: m.num, pid: p.id, yr: L.season.currentYear });
+  state.dirty = true;
+  render();
+  toast(`🏟️ ${m.t.shortName} retire #${m.num === 100 ? '00' : m.num}`, `${playerName(p)}'s number goes to the rafters.`);
 };
 
 // Everyone who joined or left a team since last season, judged by the team on
@@ -4348,6 +4524,7 @@ screens.settings = (args) => {
         options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]),
         options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']]),
         options('CPU draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]),
+        options('CPU coaching changes', 'cpuCoachChanges', [[true, 'On'], [false, 'Off']], 'CPU teams can fire coaches on the hot seat and hire from the pool. Off keeps every coach where your file has him.'),
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
         options('Trade values', 'tradeValues', [[false, 'Hide'], [true, 'Show']], 'Show each player and pick\'s trade value, and each side\'s total, alongside the balance bar.'),
       ]) +
@@ -6524,6 +6701,16 @@ function ntcRefusal(L, A, B) {
 // Physicals: a player with a bad injury history headed to a CPU team can
 // fail it (deal off) or cost a 2nd-round sweetener; one coming to you
 // comes with a warning. Adds the sweetener to the side's picks. → bool.
+// The same physical between CPU teams (block deals and salary dumps): a bad injury history (25%+ risk) fails it with
+// a contender or a team in the middle (a rebuilder taking a contract for picks will live with it); a flag (10%+ or a
+// long structural injury) costs the sending team a 2nd. → 'fail' | 'flag' | null.
+function cpuPhysical(p, to) {
+  if (!isComplete()) return null;
+  const r = injuryRisk(p, lastSeasonYear(), state.params);
+  if (!r || !(r.chance >= 10 || (r.cls === 'structural' && r.games >= 20))) return null;
+  return r.chance >= 25 && teamStatus(league(), to) !== 'rebuilding' ? 'fail' : 'flag';
+}
+const sweetener2nd = (L, t, taken = []) => t.draftPicks.filter(pk => pk.rd === 2 && pk.otid === t.id && pk.yr > draftYear(L) && !taken.includes(pk) && !lotteryLocked(pk)).sort((a, b) => b.yr - a.yr)[0];
 async function physicals(L, A, B) {
   if (!isComplete()) return true;
   const yr = lastSeasonYear();
@@ -7444,7 +7631,7 @@ screens.fa = (args = {}) => {
     ? '<button class="btn big focus" data-act="faOpen">🔨 Open Bidding</button>'
     : s.stage === 'bidding'
       ? '<button class="btn big focus" data-act="faDecide">✅ Players Decide</button>'
-      : `${state.params.commissioner ? '<button class="btn small" data-act="faUndo">↺ Undo Today</button>' : ''}`;
+      : `<button class="btn big focus" data-act="faNext">${s.day >= (L.season.signingDays || 3) ? '🏁 Finish Free Agency' : `▶ On to Week ${s.day + 1}`}</button>${state.params.commissioner ? '<button class="btn small" data-act="faUndo">↺ Undo Today</button>' : ''}`;
   const row = m => {
     const list = s.bids.get(m.p.id) || [];
     const best = faBest(s, m);
@@ -7478,7 +7665,7 @@ screens.fa = (args = {}) => {
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${mine.length ? faRosterBox(s, mine) : ''}
       ${s.stage === 'done' ? faResults(s) : ''}
-      <div class="stack">${stageBtn}</div>
+      <div class="stack">${stageBtn}${s.day >= 2 && isComplete() && s.stage !== 'done' ? '<button class="btn small" data-act="liveTrade">🔁 Trade</button>' : ''}</div>
       ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
       <div class="tabs fa-tabs fa-tabs6">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(row).join('')}</div>
@@ -7916,7 +8103,7 @@ function coachChangeMorale(L, team, old, next) {
 function cpuCoachMoves() {
   const L = league();
   const store = offGet('coachMoves');
-  if (store.done || !(L.coaches || []).some(c => c.attributes)) return store.list || [];
+  if (store.done || state.params.cpuCoachChanges === false || !(L.coaches || []).some(c => c.attributes)) return store.list || [];
   const list = [];
   const cpu = L.teams.filter(t => !isUserTeam(t) && headCoachOf(t));
   const order = cpu.map(t => ({ t, p: pressureOn(L, t, headCoachOf(t)).pressure })).sort((x, y) => y.p - x.p);
@@ -7988,6 +8175,10 @@ function cpuBlockDeals(day) {
         if (best && best.score < want * 0.1) break;
       }
       if (!best) continue;
+      // The physical: a failed one kills the deal, a flagged one costs the shopping team a 2nd.
+      const ph = cpuPhysical(p, best.B.team);
+      if (ph === 'fail') { done.push(`${best.B.team.shortName} backed out of a deal for ${playerName(p)} after his physical`); if (p.season) p.season.onTradeBlock = 1; continue; }
+      if (ph === 'flag') { const sw = sweetener2nd(L, t, best.A.picks); if (sw) best.A.picks.push(sw); else continue; }
       const rec = executeTrade(best.A, best.B, yr);
       for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
       markAway(rec.moved);
@@ -8149,6 +8340,28 @@ function settleIncentives() {
   saveIncStore(led);
   if (hit.length) setTimeout(() => toast(`💰 Incentives earned`, hit.join(' · '), 5200), 3600);
 }
+// Pitch meetings: once per free agent, sell him one thing. It lands by how true it is for your team and how much he
+// cares about it, and a pitch that lands moves him toward your offer (a miss costs a little).
+const FA_PITCHES = {
+  role: { label: '🎯 A big role', say: 'a big role' }, winning: { label: '🏆 Winning now', say: 'winning now' },
+  market: { label: '🌆 The market', say: 'the market' }, dev: { label: '📈 Development', say: 'his development' }, culture: { label: '🤝 The culture', say: 'the culture' },
+};
+function faPitchOdds(L, team, m, kind) {
+  const p = m.p, t10 = k => (traitsSet(p) ? tr(p, k) - 10 : 0);
+  const parts = destinationParts(L, team, p), part = k => parts.find(x => x.k === k)?.v || 0;
+  let o;
+  if (kind === 'role') o = 0.15 + 0.6 * FA.roleFit(L, team, p) + (m.motive === 'role' ? 0.15 : 0);
+  else if (kind === 'winning') o = 0.1 + 0.65 * FA.teamStrength(L, team) + (m.motive === 'contender' ? 0.15 : 0) + t10('winning') * 0.01;
+  else if (kind === 'market') o = 0.35 + part('market') * 5 + t10('money') * 0.012;
+  else if (kind === 'dev') o = p.age <= 25 ? 0.3 + part('upside') * 6 + (p.pot >= 8 ? 0.1 : 0) : 0.08;
+  else { const mo = FA.signedRoster(team).reduce((a, x) => a + (x.season?.morale ?? 60), 0) / Math.max(1, FA.signedRoster(team).length); o = 0.1 + (mo - 40) / 80 + t10('loyalty') * 0.01 + FX.facilityFx(team).fa * 2; }
+  return Math.max(0.05, Math.min(0.9, o));
+}
+function pitchLine(L, team, m, s) {
+  const done = s.fpitch?.[m.p.id];
+  if (done) return `<p class="note small ${done.ok ? 'up' : 'down'}">🗣️ Pitched ${esc(FA_PITCHES[done.kind].say)}: ${done.ok ? 'it landed, he leans your way.' : 'it fell flat.'}</p>`;
+  return `<p class="note small">🗣️ Pitch meeting (one try):</p><div class="opt-btns" style="flex-wrap:wrap">${Object.entries(FA_PITCHES).map(([k, v]) => `<button class="btn small" data-k="fpitch" data-v="${k}">${v.label} · ${Math.round(faPitchOdds(L, team, m, k) * 100)}%</button>`).join('')}</div>`;
+}
 // What the city and team mean to him besides the money (state tax, weather, market, stage, roster, picks).
 function destinationLine(L, team, p) {
   const parts = destinationParts(L, team, p).filter(x => x.text);
@@ -8230,6 +8443,7 @@ ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load &
       <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
       <p class="note small">${standing}</p>
       ${isComplete() ? destinationLine(L, team, m.p) : ''}
+      ${isComplete() && !ownExpiring && s.stage !== 'done' ? pitchLine(L, team, m, s) : ''}
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
       <div class="grid2">
         <button class="btn off" data-k="close">${existing ? 'Withdraw' : 'Cancel'}</button>
@@ -8245,6 +8459,13 @@ ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load &
     else if (k === 'load') draft.load = b.dataset.v;
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
     else if (k === 'opt') draft.opt = +b.dataset.v;
+    else if (k === 'fpitch') {
+      const t0 = L.teams.find(t => t.id === draft.tid), odds = faPitchOdds(L, t0, m, b.dataset.v);
+      const ok = Math.random() < odds;
+      (s.fpitch ||= {})[m.p.id] = { kind: b.dataset.v, ok, tid: t0.id, bonus: ok ? 0.12 : -0.04 };
+      const bid = list().find(x => x.tid === t0.id); if (bid) bid.pitch = s.fpitch[m.p.id].bonus;
+      toast(ok ? `${playerName(m.p)} liked what he heard` : `${playerName(m.p)} wasn't sold`, FA_PITCHES[b.dataset.v].label, 2600, !ok);
+    }
     else if (k === 'cut') {
       const r = cutPitch(m.p, L.teams.find(t => t.id === draft.tid));
       (s.cutPitch ||= {})[m.p.id] = r;
@@ -8274,7 +8495,8 @@ ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load &
       box.remove(); render(); return;
     } else if (k === 'submit') {
       const rest = list().filter(x => x !== existing && x.tid !== draft.tid);
-      s.bids.set(m.p.id, [...rest, { ...draft, cpu: false }]);
+      const pitched = s.fpitch?.[m.p.id];
+      s.bids.set(m.p.id, [...rest, { ...draft, cpu: false, pitch: pitched && pitched.tid === draft.tid ? pitched.bonus : 0 }]);
       box.remove(); render(); return;
     }
     paint();
@@ -9232,6 +9454,7 @@ function overviewRumors(L) {
   return `<fieldset class="frame"><legend>Team Directions</legend>
       ${Object.keys(TIER_NAMES).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTag(k)}</h4><div class="dir-row">${col(k).map(x => `<button class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}" data-act="nav" data-to="roster" data-arg="${x.t.id}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></button>`).join('')}</div>`).join('')}
     </fieldset>
+    ${hotSeatBox(L)}
     <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 12).map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div></fieldset>`;
 }
 // A rumor as a Hoop Gram post: the wording varies by player so a list of
@@ -10976,6 +11199,44 @@ function capWarn() {
   const log = calFlags().capCheckLog || [];
   return rows || log.length ? `<fieldset class="frame"><legend>Rosters &amp; the Game's Cap</legend>${rows}${log.length ? `<details><summary class="note small muted">CPU teams fixed on export (${log.length})</summary><div class="stack" style="margin-top:6px">${log.map(x => `<p class="note small">${esc(x)}</p>`).join('')}</div></details>` : ''}</fieldset>` : '';
 }
+// Offseason report card: every team's summer graded on who came and went (by level, with youth and upside counting
+// for the young ones), the draft, and the books it ends up with.
+function offseasonGrades(L) {
+  const val = p => { const lv = shownLevel(p); return Math.max(0, lv - 62) ** 1.4 * (p.age <= 24 ? 1 + ((p.pot || 5) - 6) * 0.08 : p.age >= 32 ? 0.75 : 1); };
+  const rows = L.teams.map(t => {
+    const { ins, outs } = teamMoves(L, t);
+    const adds = ins.filter(x => !x.back), draft = adds.filter(x => x.from === 'Draft');
+    const gain = adds.reduce((a, x) => a + val(x.p), 0) - outs.reduce((a, x) => a + val(x.p), 0);
+    const draftV = draft.reduce((a, x) => a + ((x.p.pot || 5) - 5) * 2, 0);
+    let books = 0;
+    if (FA.capSystemOn()) { const c = FA.capLines(L), pay = FA.teamCommitted(t); books = pay > c.apron2 ? -12 : pay > c.apron1 ? -5 : pay > c.tax && teamStatus(L, t) !== 'contending' ? -6 : 0; }
+    return { t, ins: adds, outs, score: gain + draftV + books, books };
+  });
+  const xs = rows.map(r => r.score), m = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length) || 1;
+  for (const r of rows) {
+    const z = (r.score - m) / sd;
+    r.grade = z >= 1.5 ? 'A+' : z >= 0.9 ? 'A' : z >= 0.45 ? 'B+' : z >= 0 ? 'B' : z >= -0.45 ? 'C+' : z >= -0.9 ? 'C' : z >= -1.5 ? 'D' : 'F';
+    const best = r.ins[0], lost = r.outs[0];
+    r.line = [best ? `added ${playerName(best.p)} (${best.from.replace('Trade · ', 'trade, ')})` : 'stood pat', lost ? `lost ${playerName(lost.p)}` : '', r.books <= -12 ? 'past the 2nd apron' : r.books <= -5 ? 'deep in the tax' : ''].filter(Boolean).join('; ');
+  }
+  return rows.sort((a, b) => b.score - a.score);
+}
+const sentence = t => { const x = String(t || '').trim(); return x ? `${x[0].toUpperCase()}${x.slice(1)}${/[.!?]$/.test(x) ? '' : '.'}` : ''; };
+const gradeCls = g => /^A/.test(g) ? 'up' : /^B/.test(g) ? 'gold' : /^C/.test(g) ? 'muted' : 'down';
+function reportCard() {
+  if (isCollege()) return '';
+  const L = league(), rows = offseasonGrades(L);
+  const mine = rows.filter(r => isUserTeam(r.t));
+  const top = rows[0], low = rows[rows.length - 1];
+  const row = r => `<div class="drill-row tap ${isUserTeam(r.t) ? 'r1' : ''}" data-act="nav" data-to="roster" data-arg="${r.t.id}"><b class="rc-grade ${gradeCls(r.grade)}">${r.grade}</b><span class="grow"><b>${esc(r.t.shortName)}</b> <span class="small muted">${esc(r.line)}</span></span></div>`;
+  return `<fieldset class="frame"><legend>Offseason Report Card</legend>
+    ${mine.map(row).join('')}
+    <div class="hg-post"><div class="hg-head"><span class="hg-avatar">HG</span><b>@CapSpaceGuy</b></div><p class="hg-text">Winner of the summer: ${esc(top.t.city || top.t.shortName)}. ${esc(sentence(top.line))}</p></div>
+    <div class="hg-post"><div class="hg-head"><span class="hg-avatar">HG</span><b>@LeagueWhispers</b></div><p class="hg-text">Rough offseason in ${esc(low.t.city || low.t.shortName)}. ${esc(sentence(low.line))}</p></div>
+    <details class="cmb-fold"><summary>Every team</summary><div class="stack">${rows.map(row).join('')}</div></details>
+  </fieldset>`;
+}
 screens.export = () => {
   syncScoringOptions(true);
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
@@ -10983,6 +11244,7 @@ screens.export = () => {
   layout({
     title: 'Opening Night',
     body: `
+      ${reportCard()}
       ${jerseyCard()}
       ${gearCard()}
       ${capWarn()}

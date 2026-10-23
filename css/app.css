@@ -1438,3 +1438,8 @@ main.panel.bare { margin-top: 10px; }
 .cmb-fold > summary::after { content: ' ▾'; color: var(--cyan); }
 .cmb-fold[open] > summary::after { content: ' ▴'; }
 .cmb-fold .combine-grid { margin-top: 6px; }
+/* Five-year payroll: player names, then one column a season. */
+.pay-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) repeat(var(--n), minmax(0, 1fr)); gap: 4px 6px; align-items: baseline; font-size: 13px; text-align: right; }
+.pay-grid .pay-name { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pay-grid .pay-name .linkish { font-size: 13px; }
+.rc-grade { display: inline-block; min-width: 30px; font-size: 18px; text-align: center; }

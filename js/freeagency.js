@@ -319,7 +319,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   return w.greed * money + w.security * years + w.control * option +
     w.contender * teamStrength(league, team) + w.role * roleFit(league, team, p) + (offer.tid === oldTid ? 0.05 + Math.max(0, tr(p, 'loyalty') - 10) * 0.04 : 0) +
     (offer.ntc ? 0.08 : 0) + (COMPLETE ? facilityFx(team).fa : 0) + loadTaste(p, offer, motive) + (offer.tid === oldTid ? liferPull(league, p, oldTid) : 0) +
-    (COMPLETE ? destinationValue(league, team, p) : 0);
+    (COMPLETE ? destinationValue(league, team, p) : 0) + (offer.pitch || 0);   // a pitch meeting that landed (or fell flat)
 }
 // A franchise lifer is set on finishing at home: anyone else needs about double his team's money (half again more for
 // a money chaser) to pry him loose. Loyalty moves it: a Committed (16+) one is close to immovable, a Mercenary one
