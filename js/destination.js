@@ -4,7 +4,6 @@
 import { tr, traitsSet } from './traits.js';
 import { teamStatus } from './draft.js';
 import { shownLevel as levelOf } from './regression.js';
-import { draftYear } from './savefile.js';
 
 // By team abbreviation: top state (and city) income tax %, warm weather 0..1, market size 0..1. Teams not listed
 // (custom leagues) are neutral.
@@ -19,6 +18,9 @@ const CITY = {
 };
 const AVG_TAX = 6.5;
 export const cityOf = team => CITY[team?.shortName] || null;
+// A roster's potential: its players 25 and under, by how far above average their potential is (7 = 1 … 10 = 4).
+const upside = team => team.roster.filter(x => (x.status === 3 || x.status === 2) && x.age <= 25).reduce((a, x) => a + Math.max(0, (x.pot || 0) - 6), 0);
+const leagueUpside = league => league.teams.reduce((a, t) => a + upside(t), 0) / Math.max(1, league.teams.length);
 const t10 = (p, k) => (traitsSet(p) ? tr(p, k) - 10 : 0);   // -10..10, 0 when unknown
 
 // What he keeps of each dollar there, against a typical city (1 = average).
@@ -37,13 +39,18 @@ export function destinationParts(league, team, p) {
     const star = levelOf(p) >= 85 ? 1 : levelOf(p) >= 78 ? 0.5 : 0.2;
     add('market', 'Market', (c[2] - 0.5) * (0.04 + 0.04 * star + Math.max(0, t10(p, 'money')) * 0.004), c[2] >= 0.8 ? 'a big market' : c[2] <= 0.3 ? 'a small market' : '');
   }
-  // Stage: veterans and competitors want a team going for it; young players want a team with room to grow into.
+  // Stage: veterans and competitors want a team going for it. Young players want a team with a lot of potential, a
+  // core still rising they can grow with, whether it's winning yet or not.
   const st = teamStatus(league, team);
   const win = Math.max(0, t10(p, 'winning'));
   const stage = st === 'contending' ? 1 : st === 'competing' ? 0.4 : st === 'developing' ? -0.3 : -1;
   if (p.age >= 29) add('stage', 'Team stage', stage * (0.04 + win * 0.006), stage > 0 ? 'a team built to win now' : 'a team that is rebuilding');
-  else if (p.age <= 25) add('stage', 'Team stage', (stage < 0 ? 0.02 : 0) - (stage > 0.5 ? 0.01 : 0) + stage * win * 0.003, stage < 0 ? 'room to grow with a young team' : '');
-  else add('stage', 'Team stage', stage * (0.02 + win * 0.005), '');
+  else if (p.age >= 26) add('stage', 'Team stage', stage * (0.02 + win * 0.005), '');
+  else {
+    const up = upside(team) - leagueUpside(league);
+    add('upside', 'Potential', Math.max(-0.05, Math.min(0.05, up * 0.006)) + Math.max(0, stage) * win * 0.003,
+      up >= 3 ? 'a roster full of potential' : up <= -3 ? 'little upside on the roster' : '');
+  }
   // Construction: a star wants a co-star; anyone avoids a logjam of better players at his spot.
   const roster = team.roster.filter(x => x.status === 3 || x.status === 2);
   const lv = levelOf(p);
@@ -52,10 +59,6 @@ export function destinationParts(league, team, p) {
   const blocked = better.filter(x => grp(x) === grp(p)).length;
   if (lv >= 84) add('build', 'Roster', better.length || roster.some(x => levelOf(x) >= lv - 3) ? 0.04 : -0.03, better.length ? 'a co-star to play with' : 'no co-star yet');
   if (blocked >= 2) add('build', 'Playing time', -0.02 * (blocked - 1), `${blocked} better players at his spot`);
-  // Future assets: a team that holds its picks can keep building around him (matters more to younger players).
-  const dy = draftYear(league);
-  const firsts = team.draftPicks.filter(pk => pk.rd === 1 && pk.yr > dy).length;
-  add('assets', 'Future assets', (firsts - 6) * (p.age <= 28 ? 0.01 : 0.004), firsts >= 8 ? `${firsts} first-round picks to build with` : firsts <= 4 ? `only ${firsts} first-round picks left` : '');
   return out;
 }
 export function destinationValue(league, team, p) {
