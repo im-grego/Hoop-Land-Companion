@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.154.2';
+const APP_VERSION = '0.155.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1217,9 +1217,30 @@ function calendarGrid(cal, cur) {
 }
 actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st) { const c = activeCal(), cu = currentStep(); toast(`${st.date} · ${st.title}`, c.indexOf(st) < (cu ? c.indexOf(cu) : c.length) ? 'Done.' : st.blurb, 3200); } };
 
+// A franchise save at the start of a season (no games played yet): set it up as the real NBA before the first
+// season. Pick moves and the forfeited firsts go into the file; protections, swaps and dead cap are kept on this
+// device under the save's name, so the offseason saves that come back from the game find them.
+const setupKey = () => `hlc:setup:${league().shortName}:${league().meta?.saveName || ''}`;
+function setupFlags() { try { return JSON.parse(localStorage.getItem(setupKey())) || {}; } catch { return {}; } }
+function setSetupFlag(k) { try { localStorage.setItem(setupKey(), JSON.stringify({ ...setupFlags(), [k]: true })); } catch { /* ignore */ } }
+const seasonUnplayed = (L = league()) => L.teams.every(t => !((t.season || []).find(r => r.yr === L.season.currentYear)?.seasonStats?.GP > 0));
+function setupCard() {
+  const f = setupFlags(), L = league();
+  const done = (k, label) => (f[k] ? `<span class="up small">✓ ${label}</span>` : '');
+  return `<fieldset class="frame"><legend>🏗️ Franchise Setup</legend><div class="stack">
+    <p class="note small">A new season, nothing played yet. Make it the real NBA before you start, then export and play the season in Hoop Land.</p>
+    <button class="btn ${f.picks ? 'off' : 'focus'}" data-act="applyRealPicks">🏀 Apply Real Picks</button>
+    <p class="note small muted">Moves every pick to its real holder, adds the real protections and best/worst swaps, and removes the Clippers' forfeited firsts. ${done('picks', 'Done')}</p>
+    <button class="btn ${f.dead ? 'off' : 'focus'}" data-act="addRealDead">💸 Add Real Dead Cap</button>
+    <p class="note small muted">Lillard's stretched deal: $21M a year on Milwaukee through 2029-30. ${done('dead', 'Done')}</p>
+    <p class="note small">${isComplete() ? '' : '<span class="down">Protections and swaps need Complete rules (Settings). </span>'}This device remembers the protections, swaps and dead cap for this save by its name (<b>${esc(L.meta?.saveName || L.shortName)}</b>), so when the offseason save comes back from the game they're waiting. History starts at ${state.params.startYear || 'the file\'s own year'} on export.</p>
+    <button class="btn big ${f.picks && f.dead ? 'focus' : ''}" data-act="download">💾 Save the File</button>
+  </div></fieldset>`;
+}
 function calendarCard() {
   const s = league().season;
   if (phaseRank(s) === 0 && !isCollege()) {
+    if (seasonUnplayed()) return setupCard();
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
@@ -10113,6 +10134,7 @@ actions.addRealDead = () => {
     added++;
   }
   if (added) { saveDead(led); state.dirty = true; }
+  setSetupFlag('dead');
   render();
   toast(added ? 'Real dead cap added' : 'Already on the books', added ? 'Lillard: $21M a year on Milwaukee through 2029-30' : 'Nothing new to add');
 };
@@ -10131,6 +10153,7 @@ actions.applyRealPicks = async () => {
     saveSwaps(sl);
   }
   state.dirty = true;
+  setSetupFlag('picks');
   render();
   toast('Real picks applied', `${r.moved} moved · ${r.kept} already traded in the game stayed · ${r.voided} forfeited removed · ${isComplete() ? `${r.protections.length} protections · ${r.swaps.length} swaps` : 'protections and swaps need Complete mode'}`);
 };
