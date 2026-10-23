@@ -2,14 +2,14 @@
 // accessory color with each of the four jerseys.
 //
 // - Every jersey: black when the jersey is black or close to it, otherwise white. Never a team color.
-// - Headbands and other head gear: white or black by the same rule. Glasses (0005, 0006, 0024) keep one color on
-//   all four jerseys (his first pair's, or 202020).
-// Only new faces get this: the rookie class, and players who changed teams when the old team's jersey colors differ.
-// Everyone else already looks the way the league file has him (a few colored headbands on purpose).
+// - Headbands (every head accessory but glasses): white or black by the same rule, on every player.
+// - Glasses (0004, 0005, 0006, 0024) keep one color on all four jerseys (his first pair's, or 202020).
+// Socks, sleeves, glasses and suits only change for new faces: the rookie class, and players who changed teams
+// when the old team's jersey colors differ. Everyone else already looks the way the league file has him.
 // Tattoos, bare skin and rubber wristbands (one color on every jersey) are left alone.
 
 export const BLACK = '141020';
-export const GLASSES = new Set(['0005', '0006', '0024']), GLASSES_C = '202020';
+export const GLASSES = new Set(['0004', '0005', '0006', '0024']), GLASSES_C = '202020';
 const hasHead = v => !!v && v !== 'none' && v !== '0000';
 const HEX = /^[0-9a-f]{6}$/i;
 const rgb = h => [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
@@ -76,7 +76,7 @@ export function matchTeam(team, known, tattoos = {}, only = () => true) {
   const want = targets(team), log = [];
   const set = (p, a, i, key, val) => { if (a[key] !== val) { log.push({ p, i, key, was: a[key] }); a[key] = val; } };
   for (const p of team.roster) {
-    if (!only(p)) continue;
+    const fresh = only(p);
     const skin = p.appearance?.skinC, tat = (tattoos[skin] || tattoos[String(skin).toUpperCase()] || []).map(x => String(x).toUpperCase());
     // A wristband in the same color with all four jerseys (not white) is a rubber band he wears for himself: it stays.
     const rubber = new Set(BODY.filter(k => k.endsWith('Wrist')).filter(k => {
@@ -90,9 +90,10 @@ export function matchTeam(team, known, tattoos = {}, only = () => true) {
       const head = v => ['gear', 'odd'].includes(kind(v, skin, tat, known));
       for (const k of ['headAcc', 'headAcc2']) {
         if (!hasHead(a[k])) continue;
-        if (GLASSES.has(a[k])) set(p, a, i, k + 'C', glassesColor(p, k));
-        else if (head(a[k + 'C'])) set(p, a, i, k + 'C', w);
+        if (GLASSES.has(a[k])) { if (fresh) set(p, a, i, k + 'C', glassesColor(p, k)); }
+        else if (head(a[k + 'C'])) set(p, a, i, k + 'C', w);      // headbands: white or black on everyone
       }
+      if (!fresh) return;
       for (const k of BODY) {
         if (rubber.has(k)) continue;
         const kd = kind(a[k], skin, tat, known);
