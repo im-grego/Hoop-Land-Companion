@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.174.0';
+const APP_VERSION = '0.175.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5572,23 +5572,50 @@ function workoutAnswer(p, k) {
     return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a really good team.']),
       staff: `Trainers: ${reg >= 33 ? 'built to last, holding his peak into his mid-30s.' : reg >= 31 ? 'takes care of his body, should hold his peak into his early 30s.' : reg >= 29 ? 'a normal arc, holding his peak until about 30.' : 'peaks early, decline could start in his late 20s.'}` };
   }
-  const idol = idolFor(p);
-  if (!idol) return { quote: 'Nobody. I want to be the first me.', staff: '' };
+  const idols = idolFor(p, true);
+  const idol = idols[0];
+  if (!idol) return { quote: vary2(p, 7, ['Nobody. I want to be the first me.', 'I don\'t really have one. I just watch whoever\'s winning.', 'My dad. He played overseas and he taught me everything.']), staff: '' };
   const sim = Math.max(0, Math.round(100 - idol.dist * 3));
   // Sometimes the room reads the comparison as a reach: his ceiling is below the idol's.
   const gap = (idol.pot || 0) - (p.pot || 0);
   const roll = ((p.id * 2654435761) >>> 0) % 100;
   const stretch = gap >= 2 ? roll < 80 : gap >= 1 ? roll < 55 : sim < 40 ? roll < 25 : false;
-  if (stretch) return { quote: vary2(p, 7, [`${idol.name}. I grew up watching him.`, `${idol.name}, for sure. I had his poster on my wall.`]),
-    staff: vary2(p, 8, [`Scouts: that's a stretch. ${idol.last} is a lofty comparison for a player with this ceiling.`, `Scouts: nice to dream, but ${idol.last} is a lofty comparison. Don't count on that ceiling.`, `Scouts: he'd love to be ${idol.last}, but that's a reach for where his game tops out.`]) };
-  return { quote: vary2(p, 7, [`${idol.name}. I grew up watching him.`, `${idol.name}, for sure. I had his poster on my wall.`, `${idol.name}. I used to study his tape as a kid.`]),
-    staff: sim >= 60 ? `Scouts: you can see a lot of ${idol.last} in his game.` : sim >= 40 ? `Scouts: there are flashes of ${idol.last} in his game.` : `Scouts: different players, but you can see where the inspiration comes from.` };
+  const read = stretch
+    ? vary2(p, 8, [`Scouts: that's a stretch. ${idol.last} is a lofty comparison for a player with this ceiling.`, `Scouts: nice to dream, but ${idol.last} is a lofty comparison. Don't count on that ceiling.`, `Scouts: he'd love to be ${idol.last}, but that's a reach for where his game tops out.`, `Scouts: every kid wants to be ${idol.last}. Not many get there.`])
+    : sim >= 60 ? vary2(p, 8, [`Scouts: you can see a lot of ${idol.last} in his game.`, `Scouts: it shows. Same ${idol.skill} as ${idol.last}.`, `Scouts: he didn't just watch ${idol.last}, he studied him. It's all over his tape.`])
+    : sim >= 40 ? vary2(p, 8, [`Scouts: there are flashes of ${idol.last} in his game.`, `Scouts: a little ${idol.last} in the ${idol.skill}. Not the whole package yet.`])
+    : vary2(p, 8, ['Scouts: different players, but you can see where the inspiration comes from.', `Scouts: not much of ${idol.last} in his game, but it tells you what he's chasing.`]);
+  // Five kinds of answer, fixed per prospect: one idol, a mix of two, a skill he borrowed, someone in the league now, or
+  // a family member first and then the idol.
+  const kind = (((p.id + 7) * 2246822519) >>> 0) % 10;
+  const two = idols.find(x => x.last !== idol.last && x.skill !== idol.skill);
+  const active = idols.find(x => x.active);
+  let quote;
+  if (kind <= 3 || (kind === 4 && !two) || (kind === 6 && !active)) quote = vary2(p, 7, [`${idol.name}. I grew up watching him.`, `${idol.name}, for sure. I had his poster on my wall.`, `${idol.name}. I used to study his tape as a kid.`, `${idol.name}. My whole game started with trying to copy him in the driveway.`, `Easy. ${idol.name}. I wore his number in high school.`, `${idol.name}. I've watched every playoff game he ever played.`]);
+  else if (kind <= 5 && two) quote = vary2(p, 9, [`A little of both: ${idol.last}'s ${idol.skill} and ${two.last}'s ${two.skill}.`, `I took ${idol.last}'s ${idol.skill} and ${two.last}'s ${two.skill}. Put that together and that's me.`, `${idol.last} and ${two.last}. One taught me the ${idol.skill}, the other the ${two.skill}.`]);
+  else if (kind === 6 && active) quote = vary2(p, 9, [`Right now? ${active.name}. I watch everything he does.`, `${active.name}. He's doing it at the highest level right now and I want to be in that conversation.`, `${active.name}. I want to guard him one day, honestly.`]);
+  else if (kind <= 8) quote = vary2(p, 9, [`My ${idol.skill} comes from watching ${idol.name}. Hours of it.`, `On the floor, ${idol.name}. Especially the ${idol.skill}.`, `I studied ${idol.name}'s ${idol.skill} more than anything. That's the part of my game I'm proudest of.`]);
+  else quote = vary2(p, 9, [`My older brother, first. He never let me win. But on TV it was ${idol.name}.`, `My mom, because she never missed a game. As a player, ${idol.name}.`, `My high school coach taught me how to work. The player I copied was ${idol.name}.`]);
+  return { quote, staff: read };
 }
 
 // Who a prospect grew up idolizing: a star (All-Star tier or better) about
 // 10–20 years older who was playing in this league while the prospect was a
 // kid (ages 8–18), with a game like his. Not his ceiling comp.
-function idolFor(p) {
+// The skill a player is known for, as a prospect would put it.
+const IDOL_SKILL = { LAY: 'touch around the rim', DNK: 'bounce', INS: 'footwork in the post', MID: 'pull-up', TPT: 'jumper', FTS: 'shooting stroke',
+  DRB: 'handle', PAS: 'vision', ORE: 'motor on the glass', DRE: 'rebounding', STL: 'hands', BLK: 'timing at the rim', DEF: 'defense' };
+// What stands out most against the rest of the pool (not just his highest rating: lots of players finish well).
+function idolSkill(x) {
+  const pool = compPool();
+  const avg = (pool.idolAvg ||= Object.fromEntries(Object.keys(IDOL_SKILL).map(k => [k, pool.reduce((a, e) => a + (e.p.attributes?.[k]?.[1] || e.p.attributes?.[k]?.[0] || 0), 0) / Math.max(1, pool.length)])));
+  const val = k => x.attributes?.[k]?.[1] || x.attributes?.[k]?.[0] || 0;
+  const best = Object.keys(IDOL_SKILL).filter(k => x.attributes?.[k]).sort((a, b) => (val(b) - avg[b]) - (val(a) - avg[a]))[0];
+  return IDOL_SKILL[best] || 'game';
+}
+const plainLast = x => (x.ln || playerName(x)).replace(/\s+(Jr\.?|Sr\.?|II|III|IV)$/i, '');
+// `all`: the closest few, ordered with a little chance (fixed per prospect) so similar prospects don't all name the same star.
+function idolFor(p, all = false) {
   const L = league();
   const cur = L.season.currentYear;
   const born = cur - p.age;
@@ -5601,18 +5628,28 @@ function idolFor(p) {
     if (ys.length) return Math.min(...ys) - 20;
     return cur - (x.age || 0);
   };
-  let best = null;
+  const active = new Set(L.teams.flatMap(t => t.roster).map(x => x.id));
+  const cands = [];
   for (const e of compPool()) {
     const x = e.p;
     if (x.id === p.id || (x.pot || 0) < 8) continue;
     const gap = born - bornOf(x);
-    if (gap < 10 || gap > 20) continue;
+    if (gap < 8 || gap > 22) continue;
     const ys = proYears(x);
     if (ys.length && ys.filter(y => y >= kid[0] && y <= kid[1]).length < 2) continue;
-    const d = compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e) - ((x.pot || 8) - 8) * 2.5;
-    if (!best || d < best.score) best = { score: d, dist: compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e), name: playerName(x), last: x.ln || playerName(x), pot: x.pot || 0 };
+    const dist = compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e);
+    cands.push({ score: dist - ((x.pot || 8) - 8) * 2.5, dist, name: playerName(x), last: plainLast(x), pot: x.pot || 0, skill: idolSkill(x), active: active.has(x.id) });
   }
-  return best;
+  cands.sort((a, b) => a.score - b.score);
+  const top = cands.slice(0, 6);
+  if (!top.length) return all ? [] : null;
+  // Weighted pick among the closest six: the best match half the time.
+  const rng = mulberry32((saveSalt() ^ Math.imul(p.id + 13, 2654435761)) >>> 0);
+  const w = [0.5, 0.2, 0.12, 0.08, 0.06, 0.04].slice(0, top.length);
+  let r = rng() * w.reduce((a, b) => a + b, 0), i = 0;
+  while (i < w.length - 1 && (r -= w[i]) > 0) i++;
+  const order = [top[i], ...top.filter((_, j) => j !== i)];
+  return all ? order : order[0];
 }
 const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote">"${esc(a.quote)}"</span>${a.staff ? `<br><span class="muted">${esc(a.staff)}</span>` : ''}${a.scout ? `<br><span class="muted">${esc(a.scout)}</span>` : ''}`;
 
