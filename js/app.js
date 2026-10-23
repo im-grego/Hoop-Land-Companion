@@ -46,7 +46,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.170.0';
+const APP_VERSION = '0.171.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1437,7 +1437,7 @@ function setupCard() {
     <button class="btn ${f.picks ? 'off' : 'focus'}" data-act="applyRealPicks">🏀 Apply Real Picks</button>
     <p class="note small muted">Moves every pick to its real holder, adds the real protections and best/worst swaps, and removes the Clippers' forfeited firsts. ${done('picks', 'Done')}</p>
     <button class="btn ${f.dead ? 'off' : 'focus'}" data-act="addRealDead">💸 Add Real Dead Cap</button>
-    <p class="note small muted">Lillard's stretched deal: $21M a year on Milwaukee through 2029-30. ${done('dead', 'Done')}</p>
+    <p class="note small muted">Stretched deals through 2029-30: Lillard $21M a year on Milwaukee, Beal $22M a year on Phoenix. ${done('dead', 'Done')}</p>
     <p class="note small">${isComplete() ? '' : '<span class="down">Protections and swaps need Complete rules (Settings). </span>'}This device remembers the protections, swaps and dead cap for this save, and recognizes it later by its players even if you rename it or start a new slot. History starts at ${state.params.startYear || 'the file\'s own year'} on export.</p>${setupStatus()}
     <button class="btn big ${f.picks && f.dead ? 'focus' : ''}" data-act="download">💾 Save the File</button>
   </div></fieldset>`;
@@ -4365,7 +4365,7 @@ screens.settings = (args) => {
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
       ]) +
-      (isCollege() ? '' : setGroup('Realistic NBA', [options('History starts', 'startYear', [[1977, '1977 (merger)'], [0, 'As is']], 'Written as the save\'s starting year on export, so the game lets you scroll back through the history from that season.'), '<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<button class="btn" data-act="addRealDead">💸 Add Real Dead Cap</button>', '<span class="note muted small">Lillard\'s stretched contract: $21M a year on Milwaukee\'s cap through 2029-30.</span>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 3 and lottery protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>']));
+      (isCollege() ? '' : setGroup('Realistic NBA', [options('History starts', 'startYear', [[1977, '1977 (merger)'], [0, 'As is']], 'Written as the save\'s starting year on export, so the game lets you scroll back through the history from that season.'), '<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<button class="btn" data-act="addRealDead">💸 Add Real Dead Cap</button>', '<span class="note muted small">Stretched contracts through 2029-30: Lillard $21M a year on Milwaukee, Beal $22M a year on Phoenix.</span>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 3 and lottery protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>']));
   } else {
     body = setGroup('Skills From the Bump', [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
   }
@@ -10391,7 +10391,7 @@ actions.addRealDead = () => {
   if (added) { saveDead(led); state.dirty = true; }
   setSetupFlag('dead');
   render();
-  toast(added ? 'Real dead cap added' : 'Already on the books', added ? 'Lillard: $21M a year on Milwaukee through 2029-30' : 'Nothing new to add');
+  toast(added ? 'Real dead cap added' : 'Already on the books', added ? 'Lillard $21M (MIL), Beal $22M (PHX) a year through 2029-30' : 'Nothing new to add');
 };
 actions.applyRealPicks = async () => {
   if (!state.data || isCollege()) return;

@@ -42,8 +42,12 @@ export const SWAPS = [
 ];
 // Dead cap that is really on a team's books: Damian Lillard, waived and stretched by Milwaukee (about $21.3M a
 // year after the set-off from his Portland deal, rounded down to $21M), five seasons: 2025-26 through 2029-30.
-// `yr` is the first season's ending year.
-export const REAL_DEAD = [{ team: 'MIL', name: 'Damian Lillard', sal: 21, yr: 2026, yrs: 5, tag: 'real:lillard' }];
+// Bradley Beal, bought out and stretched by Phoenix: $22M a season, 2025-26 through 2029-30 (this season and three
+// more). `yr` is the first season's ending year.
+export const REAL_DEAD = [
+  { team: 'MIL', name: 'Damian Lillard', sal: 21, yr: 2026, yrs: 5, tag: 'real:lillard' },
+  { team: 'PHX', name: 'Bradley Beal', sal: 22, yr: 2026, yrs: 5, tag: 'real:beal' },
+];
 // Forfeited first-rounders (the Clippers' scandal penalty): these picks don't exist, so they're taken out.
 // IND's 2029 first was owed to LAC and goes with it.
 export const FORFEITED = [{ yr: 2029, rd: 1, team: 'IND' }, { yr: 2030, rd: 1, team: 'LAC' }, { yr: 2031, rd: 1, team: 'LAC' }, { yr: 2032, rd: 1, team: 'LAC' }, { yr: 2033, rd: 1, team: 'LAC' }];
