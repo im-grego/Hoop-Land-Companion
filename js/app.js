@@ -45,7 +45,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.159.0';
+const APP_VERSION = '0.160.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -674,6 +674,7 @@ function dumpSalary(L, t, limit, pay = filePay, log = [], o = {}) {
       if (!to) continue;
       const picks = o.picks ? dumpPicks(L, t, Math.max(0, overpaid(p)) * Math.max(1, p.contract?.yrs || 1)) : [];
       executeTrade({ team: t, players: [p], picks, prospects: [] }, { team: to, players: [], picks: [], prospects: [] }, L.season.currentYear);
+      if (reb(to) === 0 && p.age >= 28 && p.season && p.season.onTradeBlock !== 2) p.season.onTradeBlock = 1;
       const max = o.picks ? FA.FA_DEFAULTS.cpuRosterMax : FA.FA_DEFAULTS.seasonMax;
       if (FA.signedRoster(to).length > max) { const c = camp(to); if (c) { FA.cutPlayer(L, to, c); log.push(`${to.shortName} released ${playerName(c)} to make room`); } }
       log.push(`${t.shortName} dumped ${playerName(p)} ($${sal(p)}M) on ${to.shortName}${picks.length ? ` with ${picks.map(pk => `a ${pk.yr} ${pk.rd === 1 ? '1st' : '2nd'}`).join(' and ')}` : ''}`);
@@ -719,6 +720,12 @@ function fillRoster(L, t, to, list, { floor = 0, skip = new Set() } = {}) {
     lockSigning(p, 'Signed this offseason');
     list?.push({ p, t });
   }
+}
+// A rebuilding team shops its veterans who could help a contender (28 and up, rotation level or better), the contracts
+// it took on included, so they're on the game's trading block when the season starts. Untouchables stay put.
+function rebuildBlock(L) {
+  for (const t of L.teams.filter(x => !isUserTeam(x) && teamStatus(L, x) === 'rebuilding'))
+    for (const p of FA.signedRoster(t)) if (p.season && p.season.onTradeBlock === 0 && p.age >= 28 && shownLevel(p) >= 70 && !tradeLock(p)) p.season.onTradeBlock = 1;
 }
 function gameCapCheck(L, cap) {
   if (!cap) return [];
@@ -779,7 +786,7 @@ function buildExport() {
     const s = league().season;
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
-  if (!isCollege() && league().season.phase === 6) gameCapCheck(league(), league().season.salaryCap);
+  if (!isCollege() && league().season.phase === 6) { gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); }
   if (!isCollege()) pickWindow(league());
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
