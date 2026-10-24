@@ -47,7 +47,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.178.0';
+const APP_VERSION = '0.179.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -928,9 +928,32 @@ actions.share = async () => {
 // Offseason timeline: advance the save phase by phase inside the app
 
 // Keep the file as it was before an advance, so it can be undone once.
+// Checkpoints before big moves: the last three are kept (each is a full copy of the save, so no more than that on a
+// phone), and Settings → Data can go back to any of them.
 function checkpoint(label) {
-  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty };
+  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty, at: Date.now(), cal: JSON.stringify(state.cal || {}) };
+  state.undoList = [state.undo, ...(state.undoList || [])].slice(0, 3);
 }
+function undoHistoryBox() {
+  const list = state.undoList || [];
+  const ago = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
+  return setGroup('Undo History', [list.length ? list.map((u, i) => `<div class="set-row"><span class="grow small">${esc(u.label)} <span class="muted">· ${ago(u.at)}</span></span><button class="btn small" data-act="undoTo" data-i="${i}">↺ Back to before this</button></div>`).join('')
+    : '<p class="note small muted">Nothing to undo yet. Big moves (the lottery, the draft, free agency days, cuts) save a checkpoint first.</p>', '<span class="note muted small">The last three checkpoints this session. Going back drops anything done after it.</span>']);
+}
+actions.undoTo = async d => {
+  const u = (state.undoList || [])[+d.i];
+  if (!u || !(await confirmBox(`Go back to before <b>${esc(u.label)}</b>? Everything done since is dropped.`, 'Go Back'))) return;
+  const o = overlay('<div class="spinner"></div><p class="note">Restoring…</p>');
+  await nextFrame();
+  installData(parseSave(u.text), true);
+  try { state.cal = JSON.parse(u.cal || '{}'); } catch { /* keep */ }
+  state.undoList = state.undoList.slice(+d.i + 1);
+  state.undo = state.undoList[0] || null;
+  state.dirty = u.dirty;
+  o.remove();
+  goHome();
+  toast(`Back to before ${u.label}`);
+};
 
 // ---------------------------------------------------------------------------
 // Offseason calendar: one step at a time, June to October
@@ -1496,7 +1519,7 @@ function calendarCard() {
         <div class="cal-body">
           <b>${state_ === 'done' ? '✓ ' : state_ === 'locked' ? '🔒 ' : ''}${esc(st.title)}</b>
           <p class="note small">${esc(state_ === 'done' ? stepSummary(st.key) : st.blurb).replace(/\n/g, '<br>')}</p>
-          ${state_ === 'now' ? stepActions(st.key) : ''}
+          ${state_ === 'now' ? stepActions(st.key) + nextLine(st) : ''}
         </div>
       </li>`;
   };
@@ -1528,7 +1551,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1675,11 +1698,16 @@ screens.main = () => {
       </div>
       ${fileCheckCard()}
       ${calendarCard()}
+      ${coachMarketCard()}
       <div class="grid2">
         ${L.teams.some(isUserTeam) ? '<button class="btn left" data-act="nav" data-to="roster"><span class="ico">👥</span> My Team</button>' : ''}
         <button class="btn left" data-act="nav" data-to="editor"><span class="ico">🏀</span> League</button>
       </div>
-      ${isCollege() ? '' : '<div class="grid2"><button class="btn left" data-act="nav" data-to="rumors"><span class="ico">🗣️</span> Rumors</button><button class="btn left" data-act="nav" data-to="transactions"><span class="ico">🔁</span> Transactions</button></div>'}
+      <div class="grid2">
+        ${myTeam() ? '<button class="btn left" data-act="nav" data-to="coaching"><span class="ico">🧑‍🏫</span> Coaching</button>' : ''}
+        ${isCollege() ? '' : '<button class="btn left" data-act="nav" data-to="rumors"><span class="ico">📰</span> League News</button>'}
+      </div>
+      <input type="search" class="sel-team" placeholder="🔎 Find any player" data-change="pSearch" style="margin-top:8px">
       <div class="grid3">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
@@ -3524,6 +3552,7 @@ screens.roster = (args) => {
         <h2 class="team-title">${esc(teamFull(t))}</h2>
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
       </div>
+      ${rosterCoachLine(t)}
       ${!isCollege() ? `<button class="btn small" data-act="nav" data-to="payroll" data-arg="${t.id}" style="margin-bottom:8px">📒 Five-Year Payroll</button>` : ''}
       ${movesBox(L, t)}
       ${rosterBreakdownBox(t)}
@@ -3689,6 +3718,119 @@ actions.labUndo = async () => {
   toast('Original class restored');
 };
 
+// ---- Coaching, all in one place: your staff and strategy (the same card Training Camp shows), the arena, this
+// summer's coaching moves and the hot seat, and the coaches you could hire.
+screens.coaching = () => {
+  const L = league();
+  const { pool } = allCoaches();
+  const field = allCoaches().staff.map(x => x.c);
+  const best = pool.map(x => ({ ...x, g: coachGrade(x.c, field) })).sort((a, b) => (b.g.now ?? 0) - (a.g.now ?? 0)).slice(0, 4);
+  layout({
+    title: 'Coaching',
+    body: `${coachCard()}
+      ${best.length ? `<fieldset class="frame"><legend>On the Market</legend><div class="stack">${best.map(({ c, g }) => `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}"><span class="coach-top"><b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${esc(coachArch(c))} · ${esc(g.tier)}</span></span><span class="small muted">📒 ${esc(signatureOf(c))}</span></button>`).join('')}</div>
+        <button class="btn small" data-act="nav" data-to="coaches" style="margin-top:6px">🧑‍🏫 Every Coach</button></fieldset>` : ''}
+      ${isCollege() ? '' : hotSeatBox(L)}
+      ${coachChangesBox()}`,
+  });
+};
+// A team's coach at the top of its roster: name, scheme, and how its stars fit his system.
+function rosterCoachLine(t) {
+  const c = CO.headCoach(t);
+  if (!c) return '';
+  const stars = FA.signedRoster(t).filter(isStarPlayer).map(p => playerCoachFit(p, t, c));
+  const clash = stars.filter(r => r.clash).length, sync = stars.filter(r => !r.clash && r.fit >= 0.7).length;
+  return `<p class="note small"><button class="linkish" data-act="nav" data-to="coach" data-arg="${c.id}">🧑‍🏫 ${esc(`${c.fn} ${c.ln}`)}</button> <span class="muted">· 📒 ${esc(signatureOf(c))}</span>${stars.length ? ` · ${sync ? `<span class="up">${sync} in sync</span>` : ''}${sync && clash ? ', ' : ''}${clash ? `<span class="down">${clash} clashing</span>` : ''}${!sync && !clash ? '<span class="muted">stars fit okay</span>' : ''}` : ''}</p>`;
+}
+// When a coach can still be hired (Season in Review through Contracts), the best of the pool shows on the home screen.
+function coachMarketCard() {
+  if (isCollege() || !myTeam() || !['review', 'hof', 'overview', 'options'].includes(currentStep()?.key)) return '';
+  const { pool, staff } = allCoaches();
+  if (!pool.length) return '';
+  const field = staff.map(x => x.c);
+  const top = pool.map(x => ({ ...x, g: coachGrade(x.c, field) })).sort((a, b) => (b.g.now ?? 0) - (a.g.now ?? 0)).slice(0, 3);
+  return `<fieldset class="frame"><legend>Coaches Available</legend><p class="note small">${top.map(({ c, g }) => `<button class="linkish" data-act="nav" data-to="coach" data-arg="${c.id}">${esc(`${c.fn} ${c.ln}`)}</button> <span class="muted">(${esc(g.tier)})</span>`).join(' · ')}</p>
+    <button class="btn small" data-act="nav" data-to="coaching">🧑‍🏫 Coaching</button></fieldset>`;
+}
+
+// ---- League News: rumors, transactions, coaching moves, CPU trades and (at Opening Night) the report card, as tabs.
+const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
+const newsTabs = cur => `<div class="tabs fa-tabs news-tabs">${NEWS_TABS.filter(([k]) => k !== 'report' || league().season.phase === 6).map(([k, l]) => `<button class="btn small ${k === cur ? 'on focus' : 'off'}" data-act="newsTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+actions.newsTab = d => (d.t === 'rumors' || d.t === 'transactions' ? replace(d.t, {}) : replace('news', { tab: d.t }));
+screens.news = (args = {}) => {
+  const tab = args.tab || 'coachnews';
+  let body = '';
+  if (tab === 'coachnews') body = (hotSeatBox(league()) + coachChangesBox()) || '<p class="note small muted">No coaching news yet. CPU teams make their moves once free agency opens.</p>';
+  else if (tab === 'cputrades') { const log = offGet('cpuTrades'); const list = Array.isArray(log) ? log : []; body = list.length ? `<div class="stack">${list.map(x => `<p class="note small" style="margin:0">🔁 ${esc(x)}</p>`).join('')}${(calFlags().dumpLog || []).map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : (calFlags().dumpLog || []).length ? `<div class="stack">${calFlags().dumpLog.map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : '<p class="note small muted">No CPU trades yet.</p>'; }
+  else body = reportCard() || '<p class="note small muted">The report card comes out at Opening Night.</p>';
+  layout({ title: 'League News', body: newsTabs(tab) + body });
+};
+
+// Quick actions on a player's page, only what the current step allows: trade for him (or shop him), the block,
+// extend him, cut him.
+function quickActions(p, team) {
+  if (isCollege() || !state.data || !team) return '';
+  const me = myTeam(), mine = isUserTeam(team), b = [];
+  if (screenAllowed('liveTrade') && me && p.status === FA.STATUS_SIGNED) b.push(`<button class="btn small" data-act="quickTrade" data-id="${p.id}">🔁 ${mine ? 'Trade him' : 'Trade for him'}</button>`);
+  if (mine && p.season) b.push(`<button class="btn small ${p.season.onTradeBlock === 1 ? 'on focus' : 'off'}" data-act="quickBlock" data-id="${p.id}">📌 ${p.season.onTradeBlock === 1 ? 'On the block' : p.season.onTradeBlock === 2 ? 'Untouchable' : 'Shop him'}</button>`);
+  if (mine && screenAllowed('extensions') && extEligible(league(), team).includes(p)) b.push(`<button class="btn small" data-act="nav" data-to="extensions">✍️ Extend</button>`);
+  if (mine && screenAllowed('cuts')) b.push(`<button class="btn small" data-act="nav" data-to="cuts">✂️ Cuts</button>`);
+  return b.length ? `<div class="opt-btns" style="flex-wrap:wrap;margin-top:6px">${b.join('')}</div>` : '';
+}
+actions.quickTrade = d => {
+  const e = findPlayer(+d.id), me = myTeam();
+  if (!e?.team || !me) return;
+  tradeBarPos = 50;
+  if (isUserTeam(e.team)) go('liveTrade', { a: e.team.id, selA: [`p:${e.p.id}`] });
+  else go('liveTrade', { a: me.id, b: e.team.id, selB: [`p:${e.p.id}`] });
+};
+// Off the block → on the block → untouchable → off.
+actions.quickBlock = d => { const e = findPlayer(+d.id); if (!e?.p.season) return; const v = e.p.season.onTradeBlock || 0; e.p.season.onTradeBlock = v === 0 ? 1 : v === 1 ? 2 : 0; state.dirty = true; render(); };
+
+// ---- Player search: anyone in the save (every league, free agents, prospects, retirees, Hall of Famers).
+screens.search = (args = {}) => {
+  const q = String(args.q || '').trim().toLowerCase();
+  const rows = [];
+  if (q.length >= 2 && state.data) {
+    state.data.seasonLeagues.forEach((L, li) => {
+      const add = (p, where, kind) => { if (`${p.fn} ${p.ln}`.toLowerCase().includes(q)) rows.push({ p, where, kind, li }); };
+      for (const t of L.teams) for (const p of t.roster) add(p, `${L.shortName} · ${t.shortName}`, 'player');
+      for (const p of L.freeAgents || []) add(p, `${L.shortName} · Free agent`, 'player');
+      for (const p of L.draftClass || []) add(p, `${L.shortName} · Draft prospect`, 'prospect');
+      for (const p of L.retirees || []) add(p, `${L.shortName} · Retired`, 'retired');
+      for (const p of L.hallOfFame || []) if (!(L.retirees || []).some(x => x.id === p.id)) add(p, `${L.shortName} · Hall of Fame`, 'hof');
+    });
+  }
+  const open = r => r.li !== state.leagueIdx || r.kind === 'retired' ? '' : r.kind === 'prospect' ? `data-act="openProspect" data-id="${r.p.id}"` : `data-act="openPlayer" data-id="${r.p.id}"`;
+  layout({
+    title: 'Find a Player',
+    body: `<input type="search" class="sel-team" placeholder="🔎 Name" value="${esc(args.q || '')}" data-change="pSearch">
+      <div class="stack" style="margin-top:8px">${rows.slice(0, 60).map(r => `<div class="drill-row ${open(r) ? 'tap' : ''}" ${open(r)}><span class="grow"><b>${esc(playerName(r.p))}</b> ${r.kind === 'hof' ? '🏛️' : ''}<br><span class="small muted">${esc(r.where)} · ${esc(POSITIONS[r.p.pos] ?? '')} · ${r.p.age}y</span></span></div>`).join('') || (q.length >= 2 ? '<p class="note small muted">Nobody by that name.</p>' : '<p class="note small muted">Type at least two letters.</p>')}</div>`,
+  });
+};
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'pSearch') return;
+  const q = e.target.value;
+  if (state.stack[state.stack.length - 1]?.name === 'search') replace('search', { q }); else go('search', { q });
+});
+
+// The line under the current step: what comes after it, and anything still waiting on you here.
+function nextLine(st) {
+  const cal = activeCal(), i = cal.indexOf(st), nx = cal[i + 1];
+  const L = league(), wait = [];
+  try {
+    if (st.key === 'options' && !optStore().done) {
+      const o = optionPlayers(L).filter(x => isUserTeam(x.team) && x.p.contract.opt === 1 && !optStore().team[x.p.id]).length;
+      const q = L.teams.filter(isUserTeam).flatMap(t => t.roster.filter(p => FA.qoEligible(L, p))).filter(p => optStore().qo[p.id] == null).length;
+      if (o) wait.push(`${o} team option${o > 1 ? 's' : ''}`); if (q) wait.push(`${q} qualifying offer${q > 1 ? 's' : ''}`);
+    }
+    if (st.key === 'cuts') for (const t of L.teams.filter(isUserTeam)) { const n = FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax; if (n > 0) wait.push(`${n} cut${n > 1 ? 's' : ''} for ${t.shortName}`); }
+    if (st.key.startsWith('fa')) for (const t of L.teams.filter(isUserTeam)) { const n = FA.signedRoster(t).length; if (n < 13) wait.push(`${t.shortName} has ${n} players`); }
+  } catch { /* the line is a convenience */ }
+  if (!nx && !wait.length) return '';
+  return `<p class="note small muted" style="margin-top:6px">${wait.length ? `<span class="gold">Waiting on you: ${esc(wait.join(', '))}.</span> ` : ''}${nx ? `Then: ${esc(nx.title)} (${esc(nx.date)}).` : ''}</p>`;
+}
+
 // Everyone who joined or left a team since last season, judged by the team on
 // each player's last stats line.
 function teamMoves(L, t) {
@@ -3756,8 +3898,8 @@ screens.transactions = (args = {}) => {
   rows.sort((x, y) => shownLevel(y.p) - shownLevel(x.p));
   const note = { sign: 'Free agents and portal moves this offseason, best first.', trade: 'Trades this offseason, the best player involved first.', block: 'Players teams are shopping. They could be on the move.' }[tab];
   layout({
-    title: 'Transactions',
-    body: `<div class="tabs fa-tabs">${[['sign', 'Signings'], ['trade', 'Trades'], ['block', 'The Block']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="txTab" data-v="${k}">${l}</button>`).join('')}</div>
+    title: 'League News',
+    body: `${newsTabs('transactions')}<div class="tabs fa-tabs">${[['sign', 'Signings'], ['trade', 'Trades'], ['block', 'The Block']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="txTab" data-v="${k}">${l}</button>`).join('')}</div>
       <p class="note small muted">${note}</p>
       ${tab === 'trade' ? tradeBlocks(L) : `<div class="list">${rows.slice(0, 60).map(r => card(r.p, r.a, r.b)).join('') || '<p class="note small muted">Nothing yet.</p>'}</div>`}`,
   });
@@ -3799,8 +3941,8 @@ screens.rumors = () => {
   }
   list.sort((x, y) => y.heat - x.heat || y.level - x.level);
   layout({
-    title: 'Rumors',
-    body: `<p class="note small muted">Whispers about who could be on the move. Some of it comes true, some doesn't.</p>
+    title: 'League News',
+    body: `${newsTabs('rumors')}<p class="note small muted">Whispers about who could be on the move. Some of it comes true, some doesn't.</p>
       <div class="stack">${list.slice(0, 30).map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div>`,
   });
 };
@@ -4215,6 +4357,7 @@ screens.player = (args) => {
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
+        ${quickActions(p, team)}
       </div>
       ${tabsRow}
       ${content}`,
@@ -4529,98 +4672,121 @@ const STEP_FIELDS = {
 // buttons underneath) on the right.
 const setStep = (label, act, data, value) => `<div class="set-row"><span class="grow">${esc(label)}</span>
   <button class="mvbtn" data-act="${act}" ${data} data-dir="-1" aria-label="Decrease">−</button><b>${esc(value)}</b><button class="mvbtn" data-act="${act}" ${data} data-dir="1" aria-label="Increase">+</button></div>`;
-const field = k => { const f = [...STEP_FIELDS.general, ...STEP_FIELDS.skills].find(x => x[0] === k); return setStep(f[1], 'step', `data-k="${k}" data-s="${f[2]}"`, state.params[k]); };
+// A setting moved off its default gets a gold dot (and counts on its tab).
+const changed = k => JSON.stringify(state.params[k]) !== JSON.stringify(DEFAULT_PARAMS[k]);
+const dot = k => (changed(k) ? ' <span class="gold" title="Changed from the default">•</span>' : '');
+const field = k => { const f = [...STEP_FIELDS.general, ...STEP_FIELDS.skills].find(x => x[0] === k); return setStep(f[1], 'step', `data-k="${k}" data-s="${f[2]}"`, state.params[k]).replace(`<span class="grow">${esc(f[1])}</span>`, `<span class="grow">${esc(f[1])}${dot(k)}</span>`); };
 function options(label, key, opts, note = '') {
   const v = state.params[key];
-  return `<div class="set-row col"><span class="grow">${esc(label)}</span><div class="seg">
+  return `<div class="set-row col"><span class="grow">${esc(label)}${dot(key)}</span><div class="seg">
     ${opts.map(([val, text]) => `<button class="btn small ${v === val ? 'on focus' : 'off'}" data-act="setOpt" data-k="${key}" data-v='${JSON.stringify(val)}'>${esc(text)}</button>`).join('')}
   </div>${note ? `<span class="note muted small">${note}</span>` : ''}</div>`;
 }
 const setGroup = (title, rows) => `<fieldset class="frame"><legend>${esc(title)}</legend><div class="set-list">${rows.join('')}</div></fieldset>`;
-const SETTINGS_TABS = [['general', 'General'], ['progress', 'Progression'], ['injury', 'Injuries'], ['rookies', 'Draft'], ['ages', 'Ages'], ['skills', 'Skills']];
+// Tuning most people never touch: folded away, with its own reset.
+const advGroup = (title, keys, rows) => `<details class="cmb-fold adv-fold"><summary>⚙️ ${esc(title)}${keys.some(changed) ? ' <span class="gold">•</span>' : ''}</summary><div class="set-list">${rows.join('')}</div>
+  ${keys.some(changed) ? `<button class="btn small off" data-act="resetKeys" data-keys="${keys.join(',')}">↺ Reset ${esc(title)}</button>` : ''}</details>`;
+const SETTINGS_TABS = [['basics', 'Basics'], ['ai', 'League AI'], ['draft', 'Draft'], ['nba', 'Real NBA'], ['dev', 'Development'], ['data', 'Data']];
+const F_MENTOR = ['mentorMinAge', 'menteeMaxAge', 'mentorPosRange', 'mentorMaxMentees', 'mentorshipChance'];
+const F_REG = ['regFirstYearChance', 'regLaterChance', 'naturalGamesPct', 'naturalMinutesPct', 'naturalMinAge'];
+const F_TRAIN = ['regDownStructural', 'regDownNagging', 'regDownStandard', 'regDownProdChance'];
+const F_POT = ['potUpChance', 'potUpMaxAge', 'prodPotUpPerZ', 'prodPotDownChance'];
+const F_INJ = ['injuryMinGames', 'injuryPotPerGame', 'injuryPotMax', 'injuryLowerBodyMult', 'injuryLongevityCut'];
+const F_INJC = ['naggingRiskMult', 'naggingPointsMult', 'structuralRiskMult', 'structuralLongevityCut'];
+const F_MIN = ['starterMpg', 'benchMpg', 'starterMult', 'benchMult'];
+const TAB_KEYS = {
+  basics: ['capSystem', 'commissioner', 'tradeValues'],
+  ai: ['liveCpuTradeChance', 'cpuCoachChanges', 'redoOptions', 'faClearCpuOffers', 'spendCpuPoints'],
+  draft: ['scoutVariance', 'workoutSlots', 'rookieBands', 'rookieIncludeUndrafted', 'recoveryBands'],
+  nba: ['startYear'],
+  dev: ['bumpMode', 'strengthBias', 'includeFreeAgents', 'seed', 'mentorTeachElite', ...F_MENTOR, ...F_MIN, ...F_REG, ...F_TRAIN, ...F_POT, ...F_INJ, ...F_INJC, 'ageBands', ...STEP_FIELDS.skills.map(x => x[0])],
+  data: [],
+};
 
 screens.settings = (args) => {
-  const tab = SETTINGS_TABS.some(([k]) => k === args.tab) ? args.tab : 'general';
+  const tab = SETTINGS_TABS.some(([k]) => k === args.tab) ? args.tab : 'basics';
   const P = state.params;
   let body = '';
   const band = (act, i, j, v) => `<span class="band-step"><button class="mvbtn" data-act="${act}" data-i="${i}" data-j="${j}" data-dir="-1" aria-label="Decrease">−</button><b>${v}</b><button class="mvbtn" data-act="${act}" data-i="${i}" data-j="${j}" data-dir="1" aria-label="Increase">+</button></span>`;
-  if (tab === 'general') {
+  const pro = state.data && !isCollege();
+  if (tab === 'basics') {
     body = `
-      ${state.data && state.data.seasonLeagues.length > 1 ? setGroup('League', [`<div class="seg">${state.data.seasonLeagues.map((L, i) => `<button class="btn small ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}</div>`]) : ''}
-      ${!ALWAYS_COMPLETE && state.data && !isCollege() ? setGroup('Rules', [`<div class="seg">${[['simple', 'Simple'], ['complete', 'Complete']].map(([k, l]) => `<button class="btn small ${(state.depth || 'complete') === k ? 'on focus' : 'off'}" data-act="setDepth" data-v="${k}">${l}</button>`).join('')}</div>`, '<span class="note muted small">Simple: no aprons, tax, pick protections, no-trade clauses or trade restrictions.</span>']) : ''}
-      ${state.data && !isCollege() ? setGroup('Offseason Progress', ['<button class="btn small" data-act="resetProgress">↺ Start This Offseason Over</button>', '<span class="note muted small">Clears the steps marked done (mocks, scouting, options, extensions, ...) for this save.</span>']) : ''}
-      ${setGroup('Offseason Bump', [
-        options('Bump gives', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']]),
-        options('Point focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']]),
-        options('Include free agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']]),
-        options('CPU points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']], 'Commissioner saves: "Spend Now" applies CPU points to ratings here.'),
-        field('seed'),
-      ])}
-      ${setGroup('Minutes', [
-        field('starterMpg'), field('benchMpg'),
-        options('Starter multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]),
-        options('Bench multiplier', 'benchMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']]),
-      ])}
-      ${setGroup('Mentorship', [field('mentorMinAge'), field('menteeMaxAge'), field('mentorPosRange'), field('mentorMaxMentees'), field('mentorshipChance'),
-        options('Teach elite skills', 'mentorTeachElite', [[false, 'No'], [true, 'Yes']])])}`;
-  } else if (tab === 'progress') {
-    body = setGroup('Regression', [field('regFirstYearChance'), field('regLaterChance'), field('naturalGamesPct'), field('naturalMinutesPct'), field('naturalMinAge')]) +
-      setGroup('Trainer', [field('regDownStructural'), field('regDownNagging'), field('regDownStandard'), field('regDownProdChance')]) +
-      setGroup('Potential', [field('potUpChance'), field('potUpMaxAge'), field('prodPotUpPerZ'), field('prodPotDownChance')]);
-  } else if (tab === 'injury') {
-    body = setGroup('Injury Risk', [field('injuryMinGames'), field('injuryPotPerGame'), field('injuryPotMax'), field('injuryLowerBodyMult'), field('injuryLongevityCut')]) +
-      setGroup('Injury Classes', [field('naggingRiskMult'), field('naggingPointsMult'), field('structuralRiskMult'), field('structuralLongevityCut')]);
-  } else if (tab === 'ages') {
-    let lo = 0;
-    body = setGroup('Points by Age', [
-      '<div class="band-head"><span>Ages</span><span>Up to</span><span>Min</span><span>Max</span></div>',
-      ...P.ageBands.map((b, i) => {
-        const label = `${lo === 0 ? '≤' : `${lo}–`}${b[0]}`;
-        lo = b[0] + 1;
-        return `<div class="band-row"><span>${label}</span>${band('band', i, 0, b[0])}${band('band', i, 1, b[1])}${band('band', i, 2, b[2])}</div>`;
-      }),
-      '<p class="note muted small">Upgrade points a player earns this offseason by age, before minutes. Older than the last band: none.</p>',
-    ]);
-  } else if (tab === 'rookies') {
-    let lo = 0;
-    body = setGroup('Rookie Bump', [
-      '<div class="band-head three"><span>Ages</span><span>Min</span><span>Max</span></div>',
-      ...P.rookieBands.map((b, i) => {
-        const last = i === P.rookieBands.length - 1;
-        const label = last ? `${lo}+` : `${lo === 0 ? '≤' : `${lo}–`}${b[0]}`;
-        lo = b[0] + 1;
-        return `<div class="band-row three"><span>${label}</span>${band('rband', i, 1, b[1])}${band('rband', i, 2, b[2])}</div>`;
-      }),
-      options('Undrafted rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']]),
-    ]) +
-      setGroup('Age Adjustment', P.recoveryBands.map((b, i) => setStep(`Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}: points back`, 'recBand', `data-i="${i}"`, `+${b[1]}`))) +
-      setGroup('Scouting & Draft', [
-        options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']]),
-        options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']]),
-        options('CPU draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']]),
-        options('CPU coaching changes', 'cpuCoachChanges', [[true, 'On'], [false, 'Off']], 'CPU teams can fire coaches on the hot seat and hire from the pool. Off keeps every coach where your file has him.'),
-        options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
-        options('Trade values', 'tradeValues', [[false, 'Hide'], [true, 'Show']], 'Show each player and pick\'s trade value, and each side\'s total, alongside the balance bar.'),
-      ]) +
-      setGroup('Contracts', [
-        options('Game option decisions', 'redoOptions', [[true, 'Re-run here'], [false, 'Keep the game\'s']], 'The game decides options before it exports; Re-run reopens them so you and the app decide.'),
+      ${state.data && state.data.seasonLeagues.length > 1 ? setGroup('League', [`<div class="seg">${state.data.seasonLeagues.map((L, i) => `<button class="btn small ${i === state.leagueIdx ? 'on focus' : 'off'}" data-act="setLeague" data-i="${i}">${esc(L.shortName)}</button>`).join('')}</div>`, '<span class="note muted small">Which league in the save you are working on.</span>']) : ''}
+      ${!ALWAYS_COMPLETE && pro ? setGroup('Rules', [`<div class="seg">${[['simple', 'Simple'], ['complete', 'Complete']].map(([k, l]) => `<button class="btn small ${(state.depth || 'complete') === k ? 'on focus' : 'off'}" data-act="setDepth" data-v="${k}">${l}</button>`).join('')}</div>`, '<span class="note muted small">Simple: no aprons, tax, pick protections, no-trade clauses or trade restrictions.</span>']) : ''}
+      ${setGroup('Money & Trades', [
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
-        options('Game\'s CPU offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']]),
-      ]) +
-      (isCollege() ? '' : setGroup('Realistic NBA', [options('History starts', 'startYear', [[1977, '1977 (merger)'], [0, 'As is']], 'Written as the save\'s starting year on export, so the game lets you scroll back through the history from that season.'), '<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<button class="btn" data-act="addRealDead">💸 Add Real Dead Cap</button>', '<span class="note muted small">Stretched contracts through 2029-30: Lillard $21M a year on Milwaukee, Beal $22M a year on Phoenix.</span>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 3 and lottery protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>']));
+        options('Trade values', 'tradeValues', [[false, 'Hide'], [true, 'Show']], 'Show each player and pick\'s trade value, and each side\'s total, alongside the balance bar.'),
+        options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
+      ])}`;
+  } else if (tab === 'ai') {
+    body = setGroup('CPU Teams', [
+      options('Draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']], 'How often CPU teams trade picks around each CPU pick in the live draft.'),
+      options('Coaching changes', 'cpuCoachChanges', [[true, 'On'], [false, 'Off']], 'CPU teams can fire coaches on the hot seat and hire from the pool. Off keeps every coach where your file has him.'),
+      options('Upgrade points', 'spendCpuPoints', [[false, 'Hold for Game'], [true, 'Spend Now']], 'CPU players\' offseason upgrade points: left for the game to spend, or spent on ratings here.'),
+    ]) + setGroup('The Game\'s Own Decisions', [
+      options('Option decisions', 'redoOptions', [[true, 'Re-run here'], [false, 'Keep the game\'s']], 'The game decides options before it exports; Re-run reopens them so you and the app decide.'),
+      options('CPU contract offers', 'faClearCpuOffers', [[true, 'Clear daily'], [false, 'Keep']], 'The game queues its own CPU offers in the save. Clearing them each day leaves free agency to the app.'),
+    ]);
+  } else if (tab === 'draft') {
+    let lo = 0;
+    body = setGroup('Scouting', [
+      options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']], 'How often your scouts misread a prospect\'s potential before the workouts.'),
+      options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']], 'Workouts per team you run (scouting trips are this plus two).'),
+      ...(pro && league().draftClass?.length && phaseRank(league().season) < 3 ? ['<button class="btn" data-act="nav" data-to="classLab">🧪 Draft Class Lab</button>'] : []),
+    ]) + setGroup('Rookies', [options('Undrafted rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']], 'Whether undrafted rookies get the rookie bump and the age adjustment.')]) +
+      advGroup('Rookie Bump', ['rookieBands'], [
+        '<div class="band-head three"><span>Ages</span><span>Min</span><span>Max</span></div>',
+        ...P.rookieBands.map((b, i) => {
+          const last = i === P.rookieBands.length - 1;
+          const label = last ? `${lo}+` : `${lo === 0 ? '≤' : `${lo}–`}${b[0]}`;
+          lo = b[0] + 1;
+          return `<div class="band-row three"><span>${label}</span>${band('rband', i, 1, b[1])}${band('rband', i, 2, b[2])}</div>`;
+        })]) +
+      advGroup('Age Adjustment', ['recoveryBands'], P.recoveryBands.map((b, i) => setStep(`Age ${i === 0 ? `up to ${b[0]}` : b[0] >= 99 ? `${P.recoveryBands[i - 1][0] + 1}+` : `${P.recoveryBands[i - 1][0] + 1}–${b[0]}`}: points back`, 'recBand', `data-i="${i}"`, `+${b[1]}`)));
+  } else if (tab === 'nba') {
+    body = isCollege() ? '<p class="note">Real NBA settings are for pro saves.</p>' : setGroup('Realistic NBA', [options('History starts', 'startYear', [[1977, '1977 (merger)'], [0, 'As is']], 'Written as the save\'s starting year on export, so the game lets you scroll back through the history from that season.'), '<button class="btn" data-act="applyRealPicks">🏀 Apply Real Picks</button>', '<span class="note muted small">Moves 2027-2033 picks to where they really are, matched by team name. Picks already traded in the game stay put. Top 3 and lottery protections are added where the real deal has one. The five forfeited Clippers first-rounders are removed. Swaps and rollovers are left to the app.</span>', '<button class="btn" data-act="addRealDead">💸 Add Real Dead Cap</button>', '<span class="note muted small">Stretched contracts through 2029-30: Lillard $21M a year on Milwaukee, Beal $22M a year on Phoenix.</span>']);
+  } else if (tab === 'dev') {
+    let lo = 0;
+    body = setGroup('Offseason Bump', [
+      options('Bump gives', 'bumpMode', [['train', 'Rating Upgrades'], ['points', 'Upgrade Points']], 'Ratings go up directly, or players get points to spend.'),
+      options('Point focus', 'strengthBias', [[0, 'Room to Grow'], [0.5, 'Balanced'], [1, 'Strengths']], 'Where upgrades land: weaknesses with room, a mix, or what he already does well.'),
+      options('Include free agents', 'includeFreeAgents', [[false, 'Off'], [true, 'On']], 'Unsigned players develop too.'),
+      field('seed'),
+    ]) + setGroup('Mentorship', [options('Teach elite skills', 'mentorTeachElite', [[false, 'No'], [true, 'Yes']], 'Veterans can pass on their top-level skills.')]) +
+      advGroup('Mentorship Rules', F_MENTOR, F_MENTOR.map(field)) +
+      advGroup('Minutes', F_MIN, [field('starterMpg'), field('benchMpg'),
+        options('Starter multiplier', 'starterMult', [[1, '×1.0'], [1.25, '×1.25'], [1.5, '×1.5']]),
+        options('Bench multiplier', 'benchMult', [[0.5, '×0.5'], [0.75, '×0.75'], [1, '×1.0']])]) +
+      advGroup('Points by Age', ['ageBands'], [
+        '<div class="band-head"><span>Ages</span><span>Up to</span><span>Min</span><span>Max</span></div>',
+        ...P.ageBands.map((b, i) => {
+          const label = `${lo === 0 ? '≤' : `${lo}–`}${b[0]}`;
+          lo = b[0] + 1;
+          return `<div class="band-row"><span>${label}</span>${band('band', i, 0, b[0])}${band('band', i, 1, b[1])}${band('band', i, 2, b[2])}</div>`;
+        }),
+        '<p class="note muted small">Upgrade points a player earns this offseason by age, before minutes. Older than the last band: none.</p>']) +
+      advGroup('Regression', F_REG, F_REG.map(field)) +
+      advGroup('Trainer', F_TRAIN, F_TRAIN.map(field)) +
+      advGroup('Potential', F_POT, F_POT.map(field)) +
+      advGroup('Injury Risk', F_INJ, F_INJ.map(field)) +
+      advGroup('Injury Classes', F_INJC, F_INJC.map(field)) +
+      advGroup('Skills From the Bump', STEP_FIELDS.skills.map(x => x[0]), [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
   } else {
-    body = setGroup('Skills From the Bump', [...STEP_FIELDS.skills.map(([k]) => field(k)), '<p class="note muted small">Off (0%) by default. New skills fit each player\'s best ratings.</p>']);
+    body = `${pro ? setGroup('This Offseason', ['<button class="btn small" data-act="resetProgress">↺ Start This Offseason Over</button>', '<span class="note muted small">Clears the steps marked done (mocks, scouting, options, extensions, ...) for this save.</span>']) : ''}
+      ${state.data ? undoHistoryBox() : ''}
+      ${setGroup('Settings', ['<button class="btn small off" data-act="resetParams">↺ Reset Every Setting to Default</button>'])}`;
   }
+  const count = k => (TAB_KEYS[k] || []).filter(changed).length;
   layout({
     title: 'Settings',
     body: `
-      <div class="sv-tabs">${SETTINGS_TABS.map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="setTab" data-t="${k}">${l}</button>`).join('')}</div>
+      <div class="sv-tabs">${SETTINGS_TABS.map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="setTab" data-t="${k}">${l}${count(k) ? ` <span class="gold">•${count(k)}</span>` : ''}</button>`).join('')}</div>
       ${body}
-      ${state.auto[state.leagueIdx] ? '<p class="note gold small">The bump already ran. Changes apply the next time you run or re-roll it.</p>' : ''}`,
-    action: { act: 'resetParams', label: 'Defaults' },
+      ${tab === 'dev' && state.auto[state.leagueIdx] ? '<p class="note gold small">The bump already ran. Changes apply the next time you run or re-roll it.</p>' : ''}`,
   });
 };
 
+actions.resetKeys = d => { for (const k of String(d.keys).split(',')) state.params[k] = structuredClone(DEFAULT_PARAMS[k]); saveParams(); render(); toast('Reset to defaults'); };
 actions.setTab = d => replace('settings', { tab: d.t });
 actions.setOpt = d => {
   state.params[d.k] = JSON.parse(d.v);
@@ -4667,7 +4833,7 @@ actions.rband = d => {
   render();
 };
 actions.resetParams = async () => {
-  if (!(await confirmBox('Reset all bump settings to defaults?', 'Reset'))) return;
+  if (!(await confirmBox('Reset every setting to its default?', 'Reset'))) return;
   state.params = structuredClone(DEFAULT_PARAMS);
   saveParams();
   render();

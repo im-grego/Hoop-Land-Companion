@@ -1457,3 +1457,5 @@ main.panel.bare { margin-top: 10px; }
 .lab-bar i { display: block; height: 100%; background: var(--gold); }
 .lab-seg { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .lab-seg .btn { flex: 1 1 auto; min-width: 0; }
+.news-tabs { grid-template-columns: repeat(3, 1fr); }
+.adv-fold .set-list { margin-top: 6px; }
