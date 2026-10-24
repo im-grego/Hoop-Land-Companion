@@ -1,0 +1,37 @@
+# To do: retired-number honorees with no stats in NBA_2027_16 (36 of 228). Team #number Name
+BOS #1 Walter A. Brown
+BKN #25 Bill Melchionni
+CHI #10 Bob Love
+CLE #7 Bingo Smith
+CLE #34 Austin Carr
+DEN #12 Fat Lever
+DEN #40 Byron Beck
+DET #15 Vinnie Johnson
+DET #32 Richard Hamilton
+DET #40 Bill Laimbeer
+GSW #14 Tom Meschery
+MIA #40 Udonis Haslem
+MIL #2 Junior Bridgeman
+MIL #14 Jon McGlocklin
+MIL #32 Brian Winters
+NYK #12 Dick Barnett
+NYK #24 Bill Bradley
+OKC #4 Nick Collison
+OKC #43 Fred Brown
+PHX #9 Dan Majerle
+POR #13 Dave Twardzik
+POR #14 Lionel Hollins
+POR #15 Larry Steele
+POR #20 Maurice Lucas
+POR #30 Terry Porter
+POR #36 Lloyd Neal
+POR #45 Geoff Petrie
+SAC #16 Peja Stojakovic
+SAC #44 Sam Lacey
+SAS #100 (00) Johnny Moore
+SAS #6 Avery Johnson
+SAS #12 Bruce Bowen
+SAS #13 James Silas
+UTA #9 Larry Miller
+UTA #14 Jeff Hornacek
+UTA #35 Darrell Griffith
