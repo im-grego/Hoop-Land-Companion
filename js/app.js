@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.183.0';
+const APP_VERSION = '0.183.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9402,8 +9402,8 @@ const moraleTag = p => `<span title="${moraleWord(p.season?.morale)}">${moraleFa
 const egoChip = p => { const t = egoTag(p); return t ? `<span class="ego-chip ${isAlpha(p) ? 'alpha' : 'humble'}" data-act="egoWhy" data-id="${p.id}">${t}</span>` : ''; };
 actions.egoWhy = d => {
   const e = findPlayer(+d.id); if (!e) return;
-  const r = egoRead(e.p), a = r.v >= 15;
-  toast(`${a ? EGO.hiIcon : EGO.loIcon} ${playerName(e.p)}: ${a ? EGO.hi : EGO.lo} (ego ${r.v})`, `${a ? 'Wants the ball and a featured role: unhappy as a sidekick, clashes with another Alpha.' : 'Takes whatever role helps: content off the bench, easy to fit next to stars.'} Why: ${r.why.join(', ')}.`, 5200);
+  const r = egoRead(e.p), a = r.v >= 15, h = r.v <= 6;
+  toast(`${a ? EGO.hiIcon : h ? EGO.loIcon : EGO.icon} ${playerName(e.p)}: ${a ? EGO.hi : h ? EGO.lo : 'Balanced'} (ego ${r.v})`, `${a ? 'Wants the ball and a featured role: unhappy as a sidekick, clashes with another Alpha.' : h ? 'Takes whatever role helps: content off the bench, easy to fit next to stars.' : 'Wants a fair role, no more: neither an Alpha nor Humble.'}${a || h ? ` Why: ${r.why.join(', ')}.` : ''}`, 5200);
 };
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
@@ -9858,22 +9858,33 @@ function rangeCard() {
 // Personality traits (1–20, kept in the save's unused trait fields).
 // Prospects show what scouts can see (durability, motor) until a private
 // workout; the rest read "?". Tap − / + to adjust.
+// The All traits list in two groups, like the tendencies. Ego is read from his career, so it has no − / +.
+const TRAIT_GROUPS = [['Personality', ['loyalty', 'money', 'winning', 'lockerRoom', 'ego']], ['On the Court', ['motor', 'roadWarrior', 'durability', 'playoffRiser']]];
+function egoRow(p, seen) {
+  if (!seen) return `<div class="trait-row"><span class="small">${EGO.icon} Ego</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
+  const v = egoRead(p).v;
+  return `<div class="trait-row"><span class="small">${EGO.icon} Ego</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 15 ? 'top' : v >= 10 ? 'hi' : v <= 6 ? 'lo' : ''}"></span></span>
+    <span class="small"><b>${v}</b> <span class="${v >= 15 ? 'gold' : 'muted'}">${v >= 15 ? EGO.hi : v <= 6 ? EGO.lo : 'Balanced'}</span></span>
+    <span class="trait-ctl"><button class="btn tiny" data-act="egoWhy" data-id="${p.id}" aria-label="Why">?</button></span></div>`;
+}
 function traitsBox(p, prospect = false) {
   if (!p.traits || !traitsSet(p)) return '';
   // Prospects: durability and motor show; coachability once a scout has seen him; the rest after a workout.
   const seen = k => !prospect || k === 'durability' || k === 'motor' || (k === 'roadWarrior' && scouted(p.id)) || workoutDone(p.id);
   const known = TRAITS.filter(t => seen(t.k));
   const tags = known.map(t => traitTag(t, p.traits[t.k] || 0)).filter(Boolean);
-  return `<fieldset class="frame"><legend>Personality</legend>
+  if (seen('ego') && egoTag(p)) tags.splice(4, 0, { icon: '', label: egoTag(p) });
+  return `<fieldset class="frame"><legend>Traits</legend>
     ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
-    <details class="tend-wrap" data-anchor="traits-all" data-keep="traits-all" ${state.keepOpen?.['traits-all'] ? 'open' : ''}><summary class="small">All traits</summary><div class="stack" style="margin-top:6px">${TRAITS.map(t => {
-    const v = p.traits[t.k] || 0;
+    <details class="tend-wrap" data-anchor="traits-all" data-keep="traits-all" ${state.keepOpen?.['traits-all'] ? 'open' : ''}><summary class="small">All traits</summary>${TRAIT_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4><div class="stack">${ks.map(k => {
+    if (k === 'ego') return egoRow(p, seen('ego'));
+    const t = TRAITS.find(x => x.k === k), v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
     return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'top' : v >= 10 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
       <span class="small"><b>${v}</b> <span class="${v >= 16 ? 'gold' : 'muted'}">${traitLabel(t, v)}</span></span>
       <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
-  }).join('')}</div></details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
+  }).join('')}</div>`).join('')}</details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
 actions.tendAdj = d => {
   const L = league();
