@@ -118,6 +118,20 @@ export function askingContract(c, field = []) {
 }
 
 // Swap the pool coach in as the team's head coach; the old one goes to the pool.
+// The free-agent coach pool, the way the game keeps it: no team, free (status 3), an empty contract. A coach who goes
+// back to the pool with pieces of his old job (still marked hired, his team or his own id left on the contract)
+// doesn't show up as available in the game. Returns how many were cleaned.
+export function cleanCoachPool(league) {
+  let n = 0;
+  for (const c of league.coaches || []) {
+    const ok = c.tid === 0 && c.status === 3 && c.contract && !c.contract.tid && !c.contract.pid && !c.contract.yrs && !c.contract.sal;
+    if (ok) continue;
+    c.tid = 0; c.status = 3;
+    c.contract = { tid: 0, pid: 0, type: 0, yrs: 0, sal: 0, nil: 0, opt: 0, noTrd: 0, canExt: true, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } };
+    n++;
+  }
+  return n;
+}
 export function hireHeadCoach(league, team, coach) {
   const staff = team.frontOffice?.staff || [];
   const i = staff.findIndex(s => s.pos === 1);

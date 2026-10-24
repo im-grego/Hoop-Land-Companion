@@ -27,7 +27,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import * as RP from './realpicks.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
-import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach } from './coachprofile.js';
+import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach, cleanCoachPool } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
 import { runMeeting, traitName } from './influence.js';
 import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.195.1';
+const APP_VERSION = '0.195.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -581,6 +581,7 @@ async function loadFile(file) {
     if (pack) { const n = applyPackTraits(pack, data.seasonLeagues[0]); if (n) toast(`Your traits restored for ${n} players`, pack.name); setTimeout(() => packPrompt(pack), 700); }
     // This save's own traits as you left them (edits, Ego, changes from events): the game doesn't keep them.
     if (!isCollege()) { loadTraitStore(data.seasonLeagues[0]); setTimeout(pullTraits, 0); }
+    if (!state.leagueFile) { const n = cleanCoachPool(data.seasonLeagues[0]); if (n) state.coachPoolFixed = n; }
     const signedIn = isCollege() ? applyRecruiting() : 0;
     o.remove();
     if (!ALWAYS_COMPLETE && !isCollege() && !state.depth) setTimeout(depthPrompt, 400);
@@ -842,7 +843,7 @@ function buildExport() {
   state.data.seasonLeagues.forEach(usePlaybooks);
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
-  if (!isCollege()) { saveManifest(league()); saveTraitStore(); pushTraits(); }
+  if (!isCollege()) { saveManifest(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
   const nudged = !isCollege() ? applyMindNudges(league()) : [];
   const text = serializeSave(state.data);
   for (const [p, k, d] of nudged) p.tendencies[k] -= d;
@@ -927,6 +928,7 @@ actions.downloadLeague = async () => {
   if (L.season.phase === BUMP_PHASES[0]) spendAllPoints(L);
   const C = saveToLeague(L, { keepDraft: L.season.phase < 5, settle, ...(leagueCapSettings(L) || {}) });
   usePlaybooks(C);
+  cleanCoachPool(C);
   if (!isCollege() && state.params.startYear > 0) C.season.startingYear = state.params.startYear;
   const name = `${state.fileName.replace(/\.[a-z0-9]{2,4}$/i, '')} LEAGUE`;
   const file = new File([serializeSave(C)], name, { type: 'application/octet-stream' });
@@ -12566,6 +12568,7 @@ function leagueTraitsIn(L) {
 }
 function buildLeagueExport() {
   const L = state.data.seasonLeagues[0];
+  cleanCoachPool(L);   // free-agent coaches go out clean, so the game lists them
   const keep = new Map();
   for (const p of edPlayers(L)) {
     if (!p.traits) continue;
