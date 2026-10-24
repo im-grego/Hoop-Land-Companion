@@ -53,7 +53,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.202.0';
+const APP_VERSION = '0.202.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2113,7 +2113,7 @@ function careerYearly() {
   // The All-Star bonus in his deal.
   if (st.bonus && st.bonus.until >= y - 1 && CL.goalContext(L, p, y - 1).allStar && st.bonus.paid !== y) { careerCoins(st.bonus.coins); st.bonus.paid = y; careerFeed(cy, 'Hoop Land', `${playerName(p)} cashes his All-Star bonus: +${st.bonus.coins} coins.`); }
   // A nickname for a big season.
-  if (!st.nick && CL2.earnsNickname(L, p, y - 1)) { st.nick = { ...CL2.nicknameFor(p, careerSeed(4)), yr: y - 1 }; careerFeed(cy, 'Hoop Land', `They're calling him "${st.nick.nick}" now, and nobody can stop ${st.nick.move}.`); }
+  if (!st.nick && !st.nickOpts && CL2.earnsNickname(L, p, y - 1)) { st.nickOpts = { yr: y - 1, list: CL2.nicknameOptions(p, careerSeed(4), careerNickCtx(L, p, team)) }; careerFeed(cy, 'Hoop Land', `After that season, the fans want a nickname for ${playerName(p)}.`); }
   // A new rank.
   const r = CAR.rankIdx(p);
   if (st.rank != null && r > st.rank) { (st.moments ||= []).push({ r, yr: y }); careerCoach(team, 3); if (team) for (const m of team.roster) if (m.id !== p.id) careerBond(m, 2); careerFeed(cy, 'Hoop Land', `${playerName(p)} is now ${CAR.RANKS[r].startsWith('A') ? 'an' : 'a'} ${CAR.RANKS[r]}. ${CL.RANK_MOMENTS[r] || ''}`); }
@@ -2487,10 +2487,26 @@ actions.careerGive = d => {
 };
 
 // 4. Nickname
+const careerNickCtx = (L, p, team) => { const t = CAR.trophies(p); const l = CAR.careerLog(p).slice(-1)[0]?.l; return { city: p.home, team: team ? (team.city || CITY_FALLBACK[team.name] || '') : '', rings: t.rings, fmvp: t.fmvp, ppg: l?.ppg || 0 }; };
 function careerNickBox(L, p) {
-  const n = careerStore().nick;
-  return n ? `<fieldset class="frame"><legend>Nickname</legend><p class="note small">The fans call you <b>"${esc(n.nick)}"</b> (since ${n.yr}). Signature move: ${esc(n.move)}.</p></fieldset>` : '';
+  const st = careerStore(), n = st.nick;
+  if (n) return `<fieldset class="frame"><legend>Nickname</legend><p class="note small">The fans call you <b>"${esc(n.nick)}"</b> (since ${n.yr}). Signature move: ${esc(n.move)}.</p></fieldset>`;
+  if (!st.nickOpts) return '';
+  return `<fieldset class="frame"><legend>Nickname</legend><p class="note small">The fans have three ideas. Pick the one that sticks${st.nickRerolled ? '' : ', or hear more'}.</p>
+    <div class="stack">${st.nickOpts.list.map((x, i) => `<button class="btn left small" data-act="careerNick" data-i="${i}">"${esc(x.nick)}"</button>`).join('')}
+    ${st.nickRerolled ? '' : '<button class="btn small off" data-act="careerNick" data-i="-1">🎲 Hear more</button>'}</div></fieldset>`;
 }
+actions.careerNick = d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me) return;
+  const { p, team } = me, st = careerStore(); if (!st.nickOpts || st.nick) return;
+  if (+d.i < 0) { st.nickRerolled = true; st.nickOpts.list = CL2.nicknameOptions(p, careerSeed(44), careerNickCtx(L, p, team)); careerSave(st); render(); return; }
+  const x = st.nickOpts.list[+d.i];
+  st.nick = { ...x, yr: st.nickOpts.yr }; delete st.nickOpts;
+  const y = L.season.currentYear, cy = ((st.years ||= {})[y] ||= {});
+  careerFeed(cy, 'Hoop Land', `It's official: they call him "${x.nick}", and nobody can stop ${x.move}.`);
+  careerFans(0.02);
+  careerSave(st); render();
+};
 
 // 5. Teammate asks
 function careerAskBox(L, p, team) {

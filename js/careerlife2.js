@@ -59,8 +59,26 @@ export const FOUNDATION_AWARD = 500;
 // ---------------------------------------------------------------------------
 // 4. Nickname and signature move: earned by a big season.
 const MOVES = { TPT: 'the step-back three', DNK: 'the tomahawk', LAY: 'the Euro step', MID: 'the fadeaway', INS: 'the dream shake', DRB: 'the killer crossover', PAS: 'the no-look dime', STL: 'the pickpocket', BLK: 'the chase-down block', DRE: 'the outlet', ORE: 'the putback' };
-const NICK_A = { TPT: ['Splash', 'Range', 'Deep'], DNK: ['Air', 'Flight', 'Hammer'], LAY: ['Silk', 'Glide', 'Smooth'], MID: ['Money', 'Clutch', 'Ice'], INS: ['Big', 'Block', 'Dream'], DRB: ['Handles', 'Shake', 'Ankles'], PAS: ['Magic', 'Vision', 'Dime'], STL: ['Thief', 'Glove', 'Swipe'], BLK: ['Wall', 'Shade', 'Denied'], DRE: ['Glass', 'Board', 'Brick'], ORE: ['Second', 'Putback', 'Tip'] };
-const NICK_B = ['', ' Man', ' King', ' Kid', ' Boss', ' God'];
+// Full nicknames by his best skill ({f} first name, {l} last name, {i} first initial).
+const NICK = {
+  TPT: ['Splash', 'The Rainmaker', 'The Flamethrower', 'Logo {l}', 'Deep {f}', 'Range Rover', '{i}-Splash', 'The Microwave', 'Chef {l}', 'Downtown {f}', 'The Sniper', 'Bombs Away', 'Heat Check', 'Limitless'],
+  DNK: ['Air {l}', 'The Human Highlight', 'Skywalker', 'Rim Wrecker', 'Flight {l}', 'Thunder', 'The Jetpack', 'Poster {f}', 'Sky {l}', 'The Hammer', 'Vertical Limit', 'Liftoff'],
+  LAY: ['Silk', 'The Glider', 'Smooth Operator', 'The Magician', 'Butter', 'The Escape Artist', 'Slick {f}', 'Smoke', 'Finger Roll {f}', 'The Ghost'],
+  MID: ['Mr. Clutch', 'The Ice Man', 'Money {l}', 'The Closer', 'Cold Blooded', 'Automatic', 'The Professor', 'Cash {f}', 'The Executioner', 'Pull-Up {f}'],
+  INS: ['The Dream', 'Big Fella', 'The Bully', 'Brick House', 'Block Party', 'Post Office', 'Big Body {l}', 'The Hook', 'Low Post {f}'],
+  DRB: ['Ankle Breaker', 'The Professor', 'Mixtape', 'Yo-Yo', 'Shake {l}', 'Crossover King', 'Shifty {f}', 'Wiggle', 'Handles', 'The Puppeteer'],
+  PAS: ['The Maestro', 'Point God', 'Magic {l}', 'The Conductor', 'Floor General', 'Dime Dropper', 'The Quarterback', 'No-Look {f}', 'Vision', 'The Architect'],
+  STL: ['The Glove', 'The Pickpocket', 'Sticky Fingers', 'The Burglar', 'Clamps', 'The Bandit', 'Swipe {l}', 'Quick Hands', 'The Thief'],
+  BLK: ['The Wall', 'The Eraser', 'Stop Sign', 'The Swat Team', 'Shot Doctor', 'Denied', 'Not In My House', 'The Tower', 'Rejection {l}'],
+  DRE: ['Glass Cleaner', 'The Vacuum', 'Board Man', 'The Worm', 'The Mailman', 'Double-Double {f}', 'Mr. Rebound'],
+  ORE: ['Putback King', 'The Motor', 'Second Chance {f}', 'Hustle {l}', 'Garbage Man', 'Energizer', 'Tip Drill'],
+};
+const fill = (s, p) => s.replace('{f}', p.fn).replace('{l}', p.ln).replace('{i}', p.fn[0]);
+const WINNER = ['The Closer', 'Big Game {l}', 'Ice in His Veins', 'Mr. June', 'Ringmaster', 'The Finisher', 'Trophy {f}'];
+const BIG = ['Big {l}', 'The Tower', 'Skyscraper', 'Mount {l}', 'Big Country'];
+const SMALL = ['Little {f}', 'Pocket Rocket', 'Mighty Mouse', 'Tiny', 'Small Package'];
+const SCORER = ['Bucket {f}', 'Buckets', 'Walking Bucket', 'Mr. 30', 'Microwave', 'Instant Offense'];
+const ALLIT = { A: ['Air', 'Ace', 'Assassin'], B: ['Bucket', 'Big', 'Boom'], C: ['Clutch', 'Cold', 'Cash'], D: ['Dime', 'Dream', 'Deadeye'], E: ['Easy', 'Electric'], F: ['Flash', 'Fadeaway'], G: ['Glass', 'Ghost', 'Greedy'], H: ['Handles', 'Hammer', 'Hollywood'], I: ['Ice', 'Iron'], J: ['Jet', 'Jumper'], K: ['King', 'Killer'], L: ['Laser', 'Lights-Out'], M: ['Money', 'Magic', 'Microwave'], N: ['Nasty', 'No-Look'], O: ['Ocho', 'Outlaw'], P: ['Pistol', 'Prime'], R: ['Range', 'Rocket'], S: ['Splash', 'Silk', 'Smooth'], T: ['Thunder', 'Torch'], V: ['Vision', 'Velvet'], W: ['Wizard', 'Wheels', 'Wet'], Y: ['Yo-Yo'], Z: ['Zoom'] };
 export function bestSkill(p) {
   return Object.keys(MOVES).filter(k => p.attributes?.[k]).sort((a, b) => p.attributes[b][0] - p.attributes[a][0])[0] || 'MID';
 }
@@ -69,13 +87,31 @@ export function earnsNickname(L, p, yr) {
   const has = id => (p.awards || []).some(a => a.id === id && (a.league ?? 0) === 0 && (a.yearsWon || []).includes(yr));
   return !!((l && l.ppg >= 28) || has(0) || has(2) || has(1) || (t.allNba >= 2));
 }
-export function nicknameFor(p, seed) {
-  const k = bestSkill(p), a = NICK_A[k] || ['Mr.'];
-  const style = roll(seed, 5);
-  const nick = style < 0.4 ? `${a[Math.floor(roll(seed, 6) * a.length)]}${NICK_B[Math.floor(roll(seed, 7) * NICK_B.length)]}`
-    : style < 0.7 ? `The ${a[Math.floor(roll(seed, 6) * a.length)]} ${p.ln}` : `${p.fn[0]}-${a[Math.floor(roll(seed, 6) * a.length)]}`;
-  return { nick: nick.trim(), move: MOVES[k] };
+// Every nickname that fits him: his best two skills, his name, his size, his scoring, his city, his team, his
+// trophies. ctx: { city (home town), team (city name), rings, fmvp, ppg }.
+export function nicknamePool(p, ctx = {}) {
+  const skills = Object.keys(MOVES).filter(x => p.attributes?.[x]).sort((a, b) => p.attributes[b][0] - p.attributes[a][0]);
+  const out = new Set();
+  for (const n of NICK[skills[0]] || NICK.MID) out.add(fill(n, p));
+  for (const n of (NICK[skills[1]] || []).slice(0, 5)) out.add(fill(n, p));
+  for (const nm of [p.fn, p.ln]) for (const a of ALLIT[nm?.[0]?.toUpperCase()] || []) out.add(`${a} ${nm}`);
+  if (p.ht >= 84) for (const b of BIG) out.add(fill(b, p));
+  if (p.ht <= 74) for (const b of SMALL) out.add(fill(b, p));
+  if ((ctx.ppg || 0) >= 25) for (const b of SCORER) out.add(fill(b, p));
+  if (ctx.rings || ctx.fmvp) for (const w of WINNER) out.add(fill(w, p));
+  const city = (ctx.city || '').split(',')[0].trim();
+  if (city) { out.add(`The Pride of ${city}`); out.add(`${city}'s Own`); }
+  if (ctx.team) { out.add(`King of ${ctx.team}`); out.add(`Mr. ${ctx.team}`); }
+  out.add(`${p.fn[0]}${p.ln[0]}`); out.add(`${p.ln[0]}-${['Train', 'Money', 'Dawg', 'Time'][p.id % 4]}`);
+  return [...out];
 }
+// Three to choose from, stable for the season.
+export function nicknameOptions(p, seed, ctx = {}) {
+  const pool = nicknamePool(p, ctx), out = [];
+  for (let i = 0; out.length < 3 && i < 60; i++) { const n = pool[Math.floor(roll(seed, 20 + i) * pool.length)]; if (!out.includes(n)) out.push(n); }
+  return out.map(nick => ({ nick, move: MOVES[bestSkill(p)] }));
+}
+export function nicknameFor(p, seed, ctx) { return nicknameOptions(p, seed, ctx)[0]; }
 
 // ---------------------------------------------------------------------------
 // 5. Teammate asks: one a summer. { kind, m, text, yes: { t, bond, fx }, no: { t, bond, fx } }
