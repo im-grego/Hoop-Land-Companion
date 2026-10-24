@@ -18,7 +18,7 @@ export const TRAITS = [
   { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'Relentless', loIcon: '😴', hiIcon: '🔋', loSays: 'coasts when he can', hiSays: 'never stops working' },
   { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', loIcon: '☣️', hiIcon: '🗣️', loSays: 'is a problem in the locker room', hiSays: 'sets the tone in the locker room' },
   { k: 'playoffRiser', label: 'Ego', icon: '🎭', lo: 'Humble', hi: 'Alpha', loIcon: '🙏', hiIcon: '🎭', loSays: 'takes whatever role helps', hiSays: 'needs to be the man' },
-  { k: 'roadWarrior', label: 'Coachability', icon: '🧱', lo: 'Stubborn', hi: 'Coachable', loIcon: '🪨', hiIcon: '🧠', loSays: 'does things his own way', hiSays: 'soaks up coaching' },
+  { k: 'roadWarrior', label: 'Coachability', icon: '🧱', lo: 'Stubborn', hi: 'Coachable', loIcon: '🪨', hiIcon: '📚', loSays: 'does things his own way', hiSays: 'soaks up coaching' },
 ];
 // Coachability as a development multiplier: Coachable (16+) ×1.25, Stubborn (4 or less) ×0.8, in between a little
 // either side of ×1. Unset counts as average.
