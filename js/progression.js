@@ -3,7 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
-import { coachMult } from './traits.js';
+import { coachMult, durMult, durLongevity } from './traits.js';
 // Confidence (the app's read of how he played) scales offseason growth; set by the app so this file stays standalone.
 let CONF = null; export const setConfidence = f => { CONF = f; };
 import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, MINOR_INJURY, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
@@ -397,8 +397,9 @@ export function maybeLongevity(p, mult, params, rng, injury = null, z = null, cu
   if (year < 0) return false;
   if (year > 1 && !(z != null && z >= 0.5)) return false;
   const pct = injury === 'structural' ? params.structuralLongevityCut : injury ? params.injuryLongevityCut : 0;
-  const cut = 1 - pct * cutMult / 100;
-  const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut;
+  const cut = 1 - pct * cutMult * durMult(p) / 100;
+  // Durability: an Ironman's body holds off decline longer (about ×1.25), an injury-prone one less (about ×0.78).
+  const chance = (year === 1 ? params.regFirstYearChance : params.regLaterChance) * mult * cut * durLongevity(p);
   if (rng() * 100 >= chance) return false;
   p.regressionAge++;
   return true;
@@ -447,7 +448,8 @@ export function injuryRisk(p, year, params) {
   const repeat = 1 + h.sameType * params.injuryRepeatType + h.sameArea * params.injuryRepeatArea;
   const clsMult = cls === 'nagging' ? params.naggingRiskMult : cls === 'structural' ? params.structuralRiskMult : 1;
   const age = p.age >= params.injuryOldAge ? 1.25 : 1;
-  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * clsMult * age);
+  // Durability: an Ironman shrugs off about half the damage, an injury-prone body takes about half again more.
+  const chance = Math.min(params.injuryPotMax, h.games * params.injuryPotPerGame * sev * area * repeat * clsMult * age * durMult(p));
   return { ...h, chance, cls };
 }
 

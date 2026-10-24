@@ -21,6 +21,11 @@ export const TRAITS = [
 // either side of ×1. Unset counts as average.
 export const coachVal = p => (p?.traits?.roadWarrior > 0 ? p.traits.roadWarrior : 10);
 export const coachMult = p => { const c = coachVal(p); return c >= 16 ? 1.25 : c <= 4 ? 0.8 : 1 + (c - 10) * 0.025; };
+// Durability on the body: an Ironman's injuries do about half the lasting damage (potential loss, failed physicals)
+// and he holds off regression better; an injury-prone player about half again more, and he fades sooner.
+export const durVal = p => (p?.traits?.durability > 0 ? p.traits.durability : 10);
+export const durMult = p => Math.max(0.5, Math.min(1.5, 1 + (10 - durVal(p)) * 0.05));
+export const durLongevity = p => 1 + (durVal(p) - 10) * 0.025;
 export const traitLabel = (t, v) => (v >= 16 ? t.hi : v <= 4 ? t.lo : v <= 9 ? 'Low' : 'Solid');
 // The tag a trait earns at either end of the scale: { icon, label } or null.
 export const traitTag = (t, v) => (v >= 16 ? { icon: t.hiIcon, label: t.hiTag || t.hi } : v > 0 && v <= 4 ? { icon: t.loIcon, label: t.loTag || t.lo } : null);
