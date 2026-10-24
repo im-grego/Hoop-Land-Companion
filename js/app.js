@@ -45,7 +45,8 @@ import * as CAR from './career.js';
 import * as CL from './careerlife.js';
 import * as TK from './talks.js';
 import * as CL2 from './careerlife2.js';
-import { setGameClock, secsOf } from './gameclock.js';
+import * as LU from './lineups.js';
+import { setGameClock, secsOf, minScale } from './gameclock.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
@@ -53,7 +54,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.202.1';
+const APP_VERSION = '0.203.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1601,7 +1602,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['career', 'careerFA', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['career', 'careerFA', 'lineup', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -5044,6 +5045,57 @@ actions.openPlayer = d => go('player', { id: +d.id });
 // ---------------------------------------------------------------------------
 // Your team roster
 
+// ---------------------------------------------------------------------------
+// Lineup and minutes (lineups.js): an auto-sorted rotation by mode and size, minutes you can set by hand, written
+// into the save's starting lineup.
+const gameMinutes = () => Math.round(48 / minScale(state.leagueIdx));
+const lineupMode = t => { const s = teamStatus(league(), t); return s === 'contending' || s === 'competing' ? 'compete' : s === 'rebuilding' || s === 'developing' ? 'develop' : 'normal'; };
+screens.lineup = (args = {}) => {
+  const L = league(), t = L.teams.find(x => x.id === +(args.arg ?? args.tid)) || myTeam() || L.teams[0];
+  const mode = args.mode || lineupMode(t), size = args.size || 9, over = args.over || {}, game = gameMinutes();
+  const plan = LU.planLineup(t, { mode, size, game, over });
+  const step = game >= 40 ? 2 : 1;
+  const posN = p => POSITIONS[p.pos] || '';
+  const row = r => {
+    const p = r.p, inRot = r.minutes[0] > 0, now = p.minutes?.[0] ?? 0;
+    const split = r.minutes.slice(1).map((m, i) => (m ? `${LU.SLOTS[i]} ${m}` : '')).filter(Boolean).join(' · ');
+    return `<div class="drill-row wrap ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}</span>
+      <br><span class="small ${inRot ? '' : 'muted'}">${inRot ? `${split}` : 'Out of the rotation'}${now !== r.minutes[0] ? ` <span class="muted">(now ${now})</span>` : ''}${r.hand ? ' <span class="gold">✋ set by hand</span>' : ''}</span></span>
+      ${inRot || r.hand ? `<span class="trait-ctl"><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="-${step}" aria-label="Fewer minutes">−</button><b class="small" style="min-width:2.2em;text-align:center">${r.minutes[0]}</b><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="${step}" aria-label="More minutes">+</button></span>` : `<button class="btn tiny off" data-act="luMin" data-id="${p.id}" data-d="${step * 4}">Play him</button>`}</div>`;
+  };
+  const total = plan.rows.reduce((s, r) => s + r.minutes[0], 0);
+  layout({
+    title: 'Lineup & Minutes',
+    body: `<p class="note small">${logoImg(t)} <b>${esc(teamFull(t))}</b> · ${game}-minute games: every position plays ${game}, ${5 * game} minutes in all.</p>
+      <div class="tabs fa-tabs">${Object.entries(LU.MODES).map(([k, m]) => `<button class="btn small ${k === mode ? 'on focus' : 'off'}" data-act="luSet" data-k="mode" data-v="${k}">${esc(m.label)}</button>`).join('')}</div>
+      <p class="note small muted">${esc(LU.MODES[mode].says)}${mode === lineupMode(t) ? ' (fits where this team is)' : ''}</p>
+      <div class="drill-row"><span class="grow small">Players in the rotation</span><span class="trait-ctl"><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.max(7, size - 1)}">−</button><b class="small" style="min-width:2em;text-align:center">${size}</b><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.min(12, size + 1)}">+</button></span></div>
+      <fieldset class="frame"><legend>Rotation · ${total} of ${5 * game} minutes</legend><div class="stack">${plan.rows.map(row).join('')}</div>
+        ${plan.short.length ? `<p class="note small down">Short at ${plan.short.map(x => `${x.slot} (${x.v})`).join(', ')}: add a player or minutes.</p>` : ''}</fieldset>
+      <div class="grid2"><button class="btn off" data-act="luSet" data-k="over" data-v="">↩ Clear hand edits</button><button class="btn focus" data-act="luApply">✅ Set this lineup</button></div>
+      <p class="note muted small">Writes the starting five, the bench order and every player's minutes by position into the save.</p>`,
+  });
+};
+const luArgs = () => state.stack[state.stack.length - 1].args || {};
+actions.luSet = d => { const a = { ...luArgs() }; if (d.k === 'over') a.over = {}; else a[d.k] = d.k === 'size' ? +d.v : d.v; replace('lineup', a); };
+actions.luMin = d => {
+  const a = { ...luArgs() }, L = league(), t = L.teams.find(x => x.id === +(a.arg ?? a.tid)) || myTeam();
+  const game = gameMinutes(), plan = LU.planLineup(t, { mode: a.mode || lineupMode(t), size: a.size || 9, game, over: a.over || {} });
+  const r = plan.rows.find(x => x.p.id === +d.id); if (!r) return;
+  a.over = { ...(a.over || {}), [d.id]: Math.max(0, Math.min(game, r.minutes[0] + +d.d)) };
+  if (r.linePos >= (a.size || 9) && +d.d > 0) a.size = Math.min(12, (a.size || 9) + 1);   // "Play him": he joins the rotation
+  replace('lineup', a);
+};
+actions.luApply = async () => {
+  const a = luArgs(), L = league(), t = L.teams.find(x => x.id === +(a.arg ?? a.tid)) || myTeam();
+  const plan = LU.planLineup(t, { mode: a.mode || lineupMode(t), size: a.size || 9, game: gameMinutes(), over: a.over || {} });
+  if (plan.short.length && !(await confirmBox('Some positions are short of a full game. Set it anyway?', 'Set it'))) return;
+  LU.applyLineup(t, plan);
+  state.dirty = true;
+  toast('🔁 Lineup set', `${t.shortName}: ${plan.rot.length}-man rotation, ${LU.MODES[a.mode || lineupMode(t)].label.toLowerCase()}.`);
+  render();
+};
+
 screens.roster = (args) => {
   const L = league();
   const mine = L.teams;
@@ -5066,7 +5118,7 @@ screens.roster = (args) => {
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${nextT.id}" aria-label="Next team">▶</button>` : '<span></span>'}
       </div>
       ${rosterCoachLine(t)}
-      ${!isCollege() ? `<button class="btn small" data-act="nav" data-to="payroll" data-arg="${t.id}" style="margin-bottom:8px">📒 Five-Year Payroll</button>` : ''}
+      ${!isCollege() ? `<div class="grid2" style="margin-bottom:8px"><button class="btn small" data-act="nav" data-to="payroll" data-arg="${t.id}">📒 Five-Year Payroll</button><button class="btn small" data-act="nav" data-to="lineup" data-arg="${t.id}">🔁 Lineup & Minutes</button></div>` : ''}
       ${movesBox(L, t)}
       ${rosterBreakdownBox(t)}
       <div class="list">${rows.map(({ p, d }) => playerRow(p, d)).join('')}</div>`,
