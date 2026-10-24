@@ -49,7 +49,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.196.2';
+const APP_VERSION = '0.197.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -145,6 +145,7 @@ function loadUserTeams() {
   let ids = null;
   // Franchise saves: always the team the save is built around.
   { const L = league(); if (L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId)) { state.userTeams = new Set([L.season.teamId]); return; } }
+  if (CAR.isCareer(league())) { state.userTeams = new Set(); return; }   // career: you're a player, every team is the CPU's
   try { ids = JSON.parse(localStorage.getItem(teamsKey())); } catch { /* ignore */ }
   if (!Array.isArray(ids)) {
     const L = league();
@@ -161,7 +162,8 @@ const league = () => state.data.seasonLeagues[state.leagueIdx];
 // league + season so they survive switching save files.
 // Which save a stored thing belongs to. Every save made from the same league carries the same save name (the league
 // template's), so your team is part of it: two franchises in one league never share offseason state.
-const saveTag = (L = league()) => `${L.meta?.saveName || ''}#${L.season.teamId ?? ''}`;
+// A career save follows its player instead (his team changes when he moves).
+const saveTag = (L = league()) => `${L.meta?.saveName || ''}#${L.season.mode === 2 && L.season.playerId > 0 ? `p${L.season.playerId}` : L.season.teamId ?? ''}`;
 const seasonKey = (L = league()) => `${L.shortName}:${saveTag(L)}:${L.season.currentYear}`;
 function loadOriginals(L = league()) {
   try { return JSON.parse(localStorage.getItem(`hlc:orig:${seasonKey(L)}`)) || {}; } catch { return {}; }
@@ -406,6 +408,7 @@ function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); }   // once an offseason each
+  if (state.data && !isCollege()) careerSync();
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -1257,7 +1260,7 @@ const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.ti
 // Franchise saves (one team, the game's own mode 0) skip Front Office: the
 // team is the one the save is built around, like college.
 const isFranchise = () => { const L = league(); return L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId); };
-const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR.filter(st => (st.key !== 'office' || !isFranchise()) && (st.key !== 'latefa' || isComplete())));
+const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR.filter(st => (st.key !== 'office' || !(isFranchise() || CAR.isCareer(league()))) && (st.key !== 'latefa' || isComplete())));   // a career save runs no team
 const currentStep = () => activeCal().find(st => !st.done());
 const isStep = key => currentStep()?.key === key;
 
@@ -1593,7 +1596,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['career', 'careerFA', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1736,7 +1739,7 @@ screens.main = () => {
       <div class="league-card compact">
         ${leagueBadge(L)}
         <div class="grow"><b>${esc(L.leagueName || L.shortName)}</b>
-          <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}</span></div>
+          <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · ${CAR.isCareer(L) ? 'Career mode' : `Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}`}</span></div>
       </div>
       ${fileCheckCard()}
       ${careerCard()}
@@ -1797,6 +1800,9 @@ screens.career = () => {
           ${r < CAR.RANKS.length - 1 ? `<p class="muted">Next: ${CAR.RANK_ICONS[r + 1]} ${esc(CAR.RANKS[r + 1])}</p>` : ''}
         </div></div>
       </fieldset>
+      ${careerAgentBox(p)}
+      ${careerFABox(p, team)}
+      ${careerFightBox(p, team)}
       ${st ? `<fieldset class="frame"><legend>Standing</legend>
         <p class="small"><b>${esc(st.security)}</b> · #${st.rank} of ${st.of} on the roster${coach ? ` · Coach ${esc(coach)}` : ''}</p>
         ${st.coach ? `<p class="note small">Coach relationship <b>${CAR.coachBond(st.coach)}</b><span class="muted">/${CAR.BOND_CAP}</span>${CAR.coachBond(st.coach) < 10 ? ' <span class="muted">(10 unlocks Edit Playbook)</span>' : ''}</p>` : ''}
@@ -1811,6 +1817,206 @@ screens.career = () => {
       ${log.length ? `<fieldset class="frame"><legend>Career</legend><div class="stack">${log.map(({ y, l }) => { const t = L.teams.find(x => x.id === l.tid); return `<p class="small"><b>${y}</b> ${esc(t?.shortName || '')} · ${l.gp} GP · ${l.ppg.toFixed(1)} / ${l.rpg.toFixed(1)} / ${l.apg.toFixed(1)} <span class="muted">${l.mpg.toFixed(0)} min</span></p>`; }).join('')}</div></fieldset>` : ''}`,
   });
 };
+
+// ---------------------------------------------------------------------------
+// Career mode: the agent, free agency on your terms, role fights and asking out.
+const careerKey = () => `hlc:career:${saveTag()}`;
+function careerStore() { try { return JSON.parse(localStorage.getItem(careerKey())) || {}; } catch { return {}; } }
+function careerSave(st) { try { localStorage.setItem(careerKey(), JSON.stringify(st)); } catch { /* ignore */ } }
+const careerYear = () => { const st = careerStore(), y = league().season.currentYear; return { st, y, cy: ((st.years ||= {})[y] ||= {}) }; };
+const isCareerMe = p => { const L = league(); return CAR.isCareer(L) && p?.id === L.season.playerId; };
+const careerAgent = () => CAR.CAREER_AGENTS[careerStore().agent] || null;
+const careerOffseason = () => { const ph = league().season.phase; return ph >= 2 && ph <= 6; };
+const careerRoll = (salt) => mulberry32((saveSalt() ^ Math.imul(league().season.playerId + salt, 2654435761) ^ league().season.currentYear) >>> 0)();
+const clampRp = v => Math.max(-CAR.BOND_CAP, Math.min(CAR.BOND_CAP, Math.round(v)));
+function careerMorale(p, n) { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); }
+function careerBond(m, n) { if (m?.season) m.season.relationship = CAR.clampBond((m.season.relationship || 0) + n); }
+function careerCoach(team, n) { const c = (team?.frontOffice?.staff || []).find(x => x.pos === 1); if (c) c.rp = clampRp((c.rp || 0) + n); }
+
+// Keep the save's team pointer on his team (a trade or a signing moves him), keep the CPU market's hands off him, and
+// give the market his agent's style.
+function careerSync() {
+  const L = league();
+  if (!CAR.isCareer(L)) { FA.setHeld([]); FA.setAgentFor(null); return; }
+  const me = CAR.careerPlayer(L);
+  FA.setHeld([L.season.playerId]);
+  FA.setAgentFor(L.season.playerId, careerAgent()?.fa || null);
+  if (me?.team && L.season.teamId !== me.team.id) { L.season.teamId = me.team.id; state.dirty = true; }
+}
+
+function careerAgentBox(p) {
+  const ag = careerAgent(), { cy } = careerYear();
+  if (!ag) return `<fieldset class="frame"><legend>Hire an Agent</legend><p class="note small">An agent runs your free agency, pushes for more money, and can get you out of town. Pick the style you want on the phone. The fee comes out of your coins when a deal is signed.</p>
+    <div class="stack">${CAR.AGENT_KEYS.map(k => { const a = CAR.CAREER_AGENTS[k]; return `<button class="btn left" data-act="careerHire" data-k="${k}"><span class="ico">${a.icon}</span><span><b>${esc(a.name)}</b> · ${esc(a.label)}<br><span class="note small">${esc(a.says)} Fee ${a.fee} coins.</span></span></button>`; }).join('')}</div></fieldset>`;
+  return `<fieldset class="frame"><legend>Agent</legend><p class="small">${ag.icon} <b>${esc(ag.name)}</b> · ${esc(ag.label)} <span class="muted">· fee ${ag.fee} coins a deal</span></p><p class="note small">${esc(ag.says)}</p>
+    ${careerOffseason() && !cy.fired ? '<button class="btn small off" data-act="careerFire">Fire him and hire someone else</button>' : ''}</fieldset>`;
+}
+actions.careerHire = d => { const st = careerStore(); st.agent = d.k; careerSave(st); toast(`${CAR.CAREER_AGENTS[d.k].icon} You signed with ${CAR.CAREER_AGENTS[d.k].name}`); render(); };
+actions.careerFire = async () => {
+  if (!(await confirmBox('Fire your agent? You can hire a new one right away, once an offseason.', 'Fire'))) return;
+  const { st, cy } = careerYear(); cy.fired = true; delete st.agent; careerSave(st); render();
+};
+
+// Free agency: his agent's offers, open from the draft until he signs.
+function careerOffersNow(p) {
+  const L = league(), ag = careerStore().agent || 'brand', { st, cy } = careerYear();
+  const day = L.season.phase === 6 ? L.season.currentDay || 1 : 1;
+  if (!cy.seed) { cy.seed = Math.floor(Math.random() * 1e9); careerSave(st); }   // the same market all offseason
+  const offers = CAR.careerOffers(L, p, ag, day, tid => mulberry32((cy.seed ^ Math.imul(tid + 3, 2654435761)) >>> 0)());
+  return offers.map(o => ({ ...o, ...(cy.counter?.[o.tid] || {}) })).filter(o => !o.gone);
+}
+function careerFABox(p, team) {
+  const L = league();
+  if (!(p.status === FA.STATUS_EXPIRING || p.status === FA.STATUS_FREE) || !careerOffseason()) return '';
+  const ag = careerAgent();
+  if (L.season.phase < 5) return `<fieldset class="frame"><legend>Free Agency</legend><p class="note small">Your deal is up. ${ag ? `${esc(ag.name)} is working the phones; offers come in after the draft.` : 'Hire an agent before offers come in after the draft.'} He reads your market at about <b>$${FA.baseAsk(L, p)}M</b> a year.</p></fieldset>`;
+  return `<fieldset class="frame"><legend>Free Agency</legend><p class="note small">${careerOffersNow(p).length} teams have made offers.${ag ? '' : ' <span class="gold">You have no agent: you take what they offer.</span>'}</p>
+    <button class="btn big focus" data-act="nav" data-to="careerFA">📞 Take the Meetings</button></fieldset>`;
+}
+screens.careerFA = () => {
+  const L = league(), me = CAR.careerPlayer(L);
+  if (!me) return goHome();
+  const { p } = me, ag = careerAgent(), key = careerStore().agent || 'brand', { cy } = careerYear();
+  const offers = careerOffersNow(p).map(o => ({ o, x: CAR.careerPitch(L, p, o, key) })).sort((a, b) => b.x.score - a.x.score);
+  const pick = ag ? offers[0]?.o.tid : null;
+  const row = ({ o, x }) => {
+    const c = cy.counter?.[o.tid];
+    const coach = x.coach ? `${x.coach.fn || ''} ${x.coach.ln || ''}`.trim() : '';
+    const names = a => a.map(m => esc(m.ln || playerName(m))).join(', ');
+    return `<fieldset class="frame ${o.tid === pick ? 'sel' : ''}"><legend>${logoImg(x.team)} ${esc(teamFull(x.team))}${o.own ? ' · your team' : ''}</legend>
+      <p><b>$${o.sal}M × ${o.yrs}</b> <span class="muted">($${x.total}M${o.opt === FA.OPT_PLAYER ? ', player option' : ''})</span>${c?.res ? ` <span class="${c.res === 'won' ? 'up' : 'down'} small">${c.res === 'won' ? 'they came up' : 'they held firm'}</span>` : ''}</p>
+      <p class="note small">🏀 ${esc(x.role)} · 🏆 ${x.stage} (${Math.round(x.ring * 100)}) · 🏙️ ${x.market >= 0.8 ? 'Big market' : x.market <= 0.3 ? 'Small market' : 'Mid market'}${coach ? ` · 🧑‍🏫 ${esc(coach)} <span class="muted">${x.coach.rp || 0}/50</span>` : ''}</p>
+      ${x.alphas.length ? `<p class="note small">🎭 Shares the ball with ${names(x.alphas)}</p>` : ''}
+      ${x.friends.length ? `<p class="note small up">🤝 ${names(x.friends)}</p>` : ''}${x.rivals.length ? `<p class="note small down">⚔️ ${names(x.rivals)}</p>` : ''}
+      ${o.tid === pick ? `<p class="note small gold">${ag.icon} ${esc(ag.name)}: "${esc({ money: 'This is the best money on the table. Take it.', market: 'This is the stage. The money is fine, and the fans will follow.', fit: "This is where you'll be happiest. Trust me." }[ag.wants])}"</p>` : ''}
+      <div class="grid2"><button class="btn small" data-act="careerCounter" data-tid="${o.tid}" ${!ag || c ? 'disabled' : ''}>💬 Counter</button><button class="btn small focus" data-act="careerSign" data-tid="${o.tid}">✍️ Sign</button></div></fieldset>`;
+  };
+  layout({ title: 'Free Agency', body: `<p class="note small">${ag ? `${ag.icon} ${esc(ag.name)} set up the meetings. One counter a team: ${ag.wants === 'money' ? 'he pushes hard, and some teams walk.' : 'a push for a little more.'}` : 'No agent: one take-it-or-leave-it offer a team.'}</p>${offers.map(row).join('') || '<p class="note">Nobody has called. Your agent says to wait for the market to settle.</p>'}` });
+};
+actions.careerCounter = d => {
+  const L = league(), me = CAR.careerPlayer(L), ag = careerAgent();
+  if (!me || !ag) return;
+  const o = careerOffersNow(me.p).find(x => x.tid === +d.tid); if (!o) return;
+  const { st, cy } = careerYear(), r = careerRoll(o.tid * 31 + 7);
+  const odds = ag.counter * (0.5 + o.interest * 0.6);
+  let res;
+  if (r < odds) { const sal = Math.min(o.max, Math.round(o.sal * (ag.wants === 'money' ? 1.15 : 1.08) + 1)); res = sal > o.sal ? { sal, res: 'won' } : { yrs: Math.min(o.own ? 5 : 4, o.yrs + 1), res: 'won' }; }
+  else res = r > 1 - ag.walk && !o.own ? { gone: true, res: 'lost' } : { res: 'lost' };
+  (cy.counter ||= {})[o.tid] = res;
+  careerSave(st);
+  const t = L.teams.find(x => x.id === o.tid);
+  toast(res.res === 'won' ? `${t.shortName} came up` : res.gone ? `${t.shortName} walked away` : `${t.shortName} held firm`, res.sal ? `$${res.sal}M a year now.` : res.yrs ? `${res.yrs} years now.` : '');
+  render();
+};
+actions.careerSign = async d => {
+  const L = league(), me = CAR.careerPlayer(L);
+  if (!me) return;
+  const { p } = me, o = careerOffersNow(p).find(x => x.tid === +d.tid);
+  if (!o) return;
+  const team = L.teams.find(t => t.id === o.tid), ag = careerAgent();
+  if (!(await confirmBox(`Sign with the ${esc(teamFull(team))} for $${o.sal}M × ${o.yrs}?${ag ? ` ${esc(ag.name)} takes ${ag.fee} coins.` : ''}`, 'Sign'))) return;
+  const pitch = CAR.careerPitch(L, p, o, careerStore().agent || 'brand');
+  const ask = FA.baseAsk(L, p);
+  FA.signPlayer(L, p, team, { sal: o.sal, yrs: o.yrs, opt: o.opt }, L.season.phase === 6 ? L.season.currentDay || 1 : 1);
+  Object.assign(p.contract, { tid: team.id, pid: p.id, canExt: false });   // how the game writes a career player's deal
+  L.season.teamId = team.id;
+  const cr = (L.career ||= {});
+  if (ag) cr.coins = Math.max(0, (cr.coins || 0) - ag.fee);
+  const fans = Math.round((cr.fans || 0) * Math.max(0, pitch.fans));
+  if (fans) cr.fans = (cr.fans || 0) + fans;
+  if (ag?.coach) careerCoach(team, ag.coach);
+  if (ag?.bond) for (const m of team.roster) if (m.id !== p.id) careerBond(m, ag.bond);
+  if (o.own) careerMorale(p, 4); else careerMorale(p, pitch.rank <= 2 ? 6 : 2);
+  dealDrift(p, o.sal, ask, 'career:deal');
+  const { st, cy } = careerYear(); cy.signed = { tid: team.id, sal: o.sal, yrs: o.yrs }; careerSave(st);
+  state.dirty = true;
+  toast(`✍️ Signed with ${team.shortName}`, `$${o.sal}M × ${o.yrs}${fans ? ` · +${fans.toLocaleString()} fans` : ''}`);
+  replace('career');
+};
+
+// A role fight: once an offseason, when his spot or his shots are in question.
+function careerFightBox(p, team) {
+  if (!careerOffseason() || !team) return '';
+  const L = league(), { cy } = careerYear();
+  if (cy.fight?.done) return `<fieldset class="frame"><legend>Your Role</legend><p class="note small">${esc(cy.fight.text)}</p><p class="note small ${cy.fight.good ? 'up' : 'down'}">${esc(cy.fight.result)}</p></fieldset>`;
+  const f = CAR.roleFight(L, p, team);
+  if (!f) return '';
+  const coach = (team.frontOffice?.staff || []).find(x => x.pos === 1);
+  const odds = CAR.demandOdds(p, f, coach), ag = careerAgent();
+  return `<fieldset class="frame"><legend>Your Role</legend><p class="note small">${esc(f.text)}</p>
+    <div class="stack">
+      <button class="btn left" data-act="careerFight" data-v="accept"><span class="ico">🤝</span><span>Accept the role<br><span class="note small">The coach likes it${f.rival ? `, so does ${esc(f.rival.ln)}` : ''}. Your ego takes a hit.</span></span></button>
+      <button class="btn left" data-act="careerFight" data-v="demand"><span class="ico">🔥</span><span>Demand the ball<br><span class="note small">${odds >= 0.6 ? 'You have the leverage' : odds >= 0.4 ? 'It could go either way' : 'A long shot'}. Win it and you're the first option.</span></span></button>
+      <button class="btn left" data-act="careerFight" data-v="out" ${ag ? '' : 'disabled'}><span class="ico">📞</span><span>Ask out${ag ? '' : ' (hire an agent)'}<br><span class="note small">${ag ? `${esc(ag.name)} finds you a new team. It burns bridges.` : 'You need an agent to shop yourself.'}</span></span></button>
+    </div></fieldset>`;
+}
+actions.careerFight = async d => {
+  const L = league(), me = CAR.careerPlayer(L);
+  if (!me?.team) return;
+  const { p, team } = me, f = CAR.roleFight(L, p, team);
+  if (!f) return;
+  const coach = (team.frontOffice?.staff || []).find(x => x.pos === 1);
+  const { st, cy } = careerYear();
+  let result, good;
+  if (d.v === 'accept') {
+    careerCoach(team, 5); careerMorale(p, -4); careerBond(f.rival, 6); drift(p, 'career:role', EGO_KEY, -1, 'took the role the team asked for');
+    result = `You took it. The coach respects it (+5)${f.rival ? `, and you and ${f.rival.ln} are good (+6)` : ''}.`; good = true;
+  } else if (d.v === 'demand') {
+    if (careerRoll(97) < CAR.demandOdds(p, f, coach)) {
+      careerFirstOption(team, p); careerCoach(team, 2); careerMorale(p, 6); careerBond(f.rival, -8); drift(p, 'career:role', EGO_KEY, 1, 'won the fight for the ball');
+      result = `You won it: you're the first option now.${f.rival ? ` ${f.rival.ln} isn't thrilled (-8).` : ''}`; good = true;
+    } else {
+      careerCoach(team, -6); careerMorale(p, -6); careerBond(f.rival, -6);
+      result = `The coach shut it down (-6). Nothing changed, except the mood in the room.`; good = false;
+    }
+  } else {
+    const done = await careerAskOut(p, team);
+    if (done == null) return;
+    result = done; good = false;
+  }
+  cy.fight = { done: true, kind: f.kind, choice: d.v, text: f.text, result, good };
+  careerSave(st);
+  state.dirty = true;
+  render();
+};
+// Make him the first scoring option: his usage takes the top spot, the rest give way.
+function careerFirstOption(team, p) {
+  const opts = Array.isArray(team.scoringOptions) ? team.scoringOptions.filter(o => o.pid !== p.id) : [];
+  const top = Math.max(25, ...opts.map(o => o.usageRate || 0));
+  const mine = { pid: p.id, usageRate: Math.min(MAX_USAGE, top), focus: focusFor(p), playSelection: 1 };
+  const rest = opts.slice(0, 2);
+  let left = MAX_TOTAL - mine.usageRate;
+  for (const o of rest) { o.usageRate = Math.max(MIN_USAGE, Math.min(o.usageRate || MIN_USAGE, left - MIN_USAGE * (rest.length - 1 - rest.indexOf(o)))); left -= o.usageRate; }
+  team.scoringOptions = [mine, ...rest];
+}
+// Ask out: his agent shops him and steers him to one of up to three teams. Returns the result line, or null if he
+// backed out.
+async function careerAskOut(p, team) {
+  const L = league(), ag = careerAgent();
+  const st = careerStore(); st.askedOut = L.season.currentYear; careerSave(st);
+  draftState().offerSeed = Math.floor(Math.random() * 1e9);
+  const offers = frontOfficeOffers(team, { only: `p:${p.id}`, max: 6 }).filter(o => o.kind === 'block' && o.team !== team).slice(0, 3);
+  careerCoach(team, -10); careerMorale(p, -3);
+  for (const m of team.roster.filter(x => x.id !== p.id && tr(x, 'lockerRoom') >= 14)) careerBond(m, -4);
+  if (!offers.length) return `You asked out. ${ag.name} called around and nobody bit, so you're staying, and everyone knows you wanted out (coach -10).`;
+  const pickIdx = await new Promise(resolve => {
+    const box = overlay(`<p class="note">${ag.icon} <b>${esc(ag.name)}</b>: "These are the teams that called. I can steer it to one."</p>
+      <div class="stack">${offers.map((o, i) => `<button class="btn left" data-i="${i}">${logoImg(o.team)} <span><b>${esc(teamFull(o.team))}</b><br><span class="note small">${esc(o.team.shortName)} send ${esc(o.give.map(x => x.text).join(' + '))}</span></span></button>`).join('')}</div>
+      <button class="btn off" data-i="-1" style="margin-top:8px">Stay put after all</button>`);
+    box.addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (!b) return; box.remove(); resolve(+b.dataset.i); });
+  });
+  if (pickIdx < 0) return `You asked out, then pulled it back. The coach heard about it anyway (-10).`;
+  const o = offers[pickIdx];
+  const side = (t, items) => ({ team: t, picks: items.filter(x => x.pick).map(x => x.pick), players: items.filter(x => x.player).map(x => x.player), prospects: [] });
+  const sa = side(team, o.get), sb = side(o.team, o.give);
+  const err = tradeRulesErr(L, sa, sb) || ntcRefusal(L, sa, sb);
+  if (err) { toast('The deal fell through', err, 3200, true); return `You asked out. The deal with ${o.team.shortName} fell through (coach -10).`; }
+  liveExecute(sa, sb, true);
+  L.season.teamId = o.team.id;
+  if (ag.coach) careerCoach(o.team, ag.coach);
+  careerMorale(p, 8);
+  return `Traded to the ${teamFull(o.team)}. Fresh start.`;
+}
 
 function phaseWarning(s) {
   if (BUMP_PHASES.includes(s.phase) && s.currentDay === BUMP_DAY) return '';
@@ -7567,6 +7773,7 @@ const signingLock = x => x.matched ? 'Matched offer sheet'
   : 'Signed this offseason';
 const stepPast = key => { const cal = activeCal(), cur = cal.indexOf(currentStep()); return cur < 0 || cur >= cal.findIndex(st => st.key === key); };
 function tradeLock(p) {
+  if (isCareerMe(p) && careerStore().askedOut !== league().season.currentYear) return 'Career player';   // he moves when he asks to
   if (!isComplete() || p.status !== FA.STATUS_SIGNED) return null;
   // A signed rookie waits 30 days (draft rights trade any time).
   if (p.history?.draft?.yr === league().season.currentYear && !stepPast('cuts')) return 'Rookie deal';

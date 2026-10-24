@@ -53,10 +53,13 @@ const lastYear = league => Math.max(...league.teams.map(t => teamRecord(t).yr ||
 // ---------------------------------------------------------------------------
 // Market, payroll, asks
 
+// Players the CPU market leaves alone: a career save's player picks his own deal (through his agent).
+let HELD = new Set();
+export const setHeld = ids => { HELD = new Set(ids); };
 export function marketPlayers(league) {
   const out = [];
-  for (const t of league.teams) for (const p of t.roster) if (p.status === STATUS_EXPIRING) out.push({ p, from: t });
-  for (const p of league.freeAgents || []) if (p.status === STATUS_FREE) out.push({ p, from: null });
+  for (const t of league.teams) for (const p of t.roster) if (p.status === STATUS_EXPIRING && !HELD.has(p.id)) out.push({ p, from: t });
+  for (const p of league.freeAgents || []) if (p.status === STATUS_FREE && !HELD.has(p.id)) out.push({ p, from: null });
   return out;
 }
 
@@ -266,7 +269,11 @@ export const AGENTS = {
   fair: { icon: '💼', label: 'Straight-shooter agent', ask: 1, says: 'asks for what his client is worth' },
   friendly: { icon: '🏠', label: 'Team-friendly agent', ask: 0.95, says: 'wants a deal done more than the last dollar' },
 };
+// A career player hires his own (career.js maps it to one of these styles).
+let AGENT_FOR = new Map();
+export const setAgentFor = (pid, kind) => { AGENT_FOR = new Map(kind ? [[pid, kind]] : []); };
 export function agentOf(p) {
+  if (AGENT_FOR.has(p.id)) return AGENT_FOR.get(p.id);
   const r = hash(p.id, 7707), m = traitsSet(p) ? tr(p, 'money') : 10, l = traitsSet(p) ? tr(p, 'loyalty') : 10;
   const shark = 0.14 + Math.max(0, m - 12) * 0.06, friendly = 0.14 + Math.max(0, l - 13) * 0.05 + Math.max(0, 8 - m) * 0.05;
   return r < shark ? 'shark' : r > 1 - friendly ? 'friendly' : 'fair';

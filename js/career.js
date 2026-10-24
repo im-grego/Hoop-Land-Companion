@@ -7,6 +7,9 @@ import { shownLevel as levelOf } from './regression.js';
 import { tr, traitsSet } from './traits.js';
 import { egoVal } from './ego.js';
 import { seasonLine } from './storylines.js';
+import * as FA from './freeagency.js';
+import { cityOf } from './destination.js';
+import { teamStatus } from './draft.js';
 
 export const RANKS = ['Rookie', 'Bench Warmer', 'Role Player', 'Star Player', 'All Star', 'Superstar', 'Hall of Famer', 'Legend', 'Greatest of All Time'];
 export const RANK_ICONS = ['🐣', '🪑', '🧩', '⭐', '🌟', '💫', '🏛️', '👑', '🐐'];
@@ -100,4 +103,94 @@ export function careerLog(p) {
   const yrs = [...new Set((p.stats || []).filter(s => s.league === 0).map(s => s.yr))].sort((a, b) => a - b);
   return yrs.map(y => ({ y, l: seasonLine(p, 0, y) })).filter(x => x.l);
 }
+
+// ---------------------------------------------------------------------------
+// Agents. He hires one; the style decides what he asks for, what deals he chases, what a counter risks, and what the
+// people around him think of the man on the phone. The fee comes out of his coins when a deal is signed.
+export const CAREER_AGENTS = {
+  shark: { icon: '🦈', name: 'Marcus Vane', label: 'The Shark', fa: 'shark', fee: 150, counter: 0.7, walk: 0.35, coach: -3, bond: 0, fans: 0,
+    says: 'Gets every dollar. Teams brace when he calls, and coaches remember it.', wants: 'money' },
+  brand: { icon: '📣', name: 'Dana Holt', label: 'The Brand Builder', fa: 'fair', fee: 100, counter: 0.5, walk: 0.15, coach: 0, bond: 0, fans: 0.1,
+    says: 'Thinks in markets and followers. Big city, bigger stage, more fans.', wants: 'market' },
+  family: { icon: '🏠', name: 'Uncle Ray', label: 'The Family Friend', fa: 'friendly', fee: 25, counter: 0.35, walk: 0.05, coach: 3, bond: 4, fans: 0,
+    says: 'Has known you since AAU. Cheap and loyal, and teams like dealing with him. He leaves money on the table.', wants: 'fit' },
+};
+export const AGENT_KEYS = Object.keys(CAREER_AGENTS);
+
+// The market he'd see: every team that can and wants to pay him, as offers { tid, sal, yrs, opt, interest, own }.
+// Interest: how much he'd help them (where he'd rank on their roster), his upside, and whether they're built to spend.
+// day: the free agency day (1 before it opens). rnd(team id) → 0..1, stable for the offseason.
+export function careerOffers(L, p, agentKey, day, rnd) {
+  const ag = CAREER_AGENTS[agentKey] || CAREER_AGENTS.brand;
+  const ask = FA.baseAsk(L, p), from = L.teams.find(t => t.roster.includes(p)) || null;
+  const out = [];
+  for (const t of L.teams) {
+    const own = from?.id === t.id;
+    const room = FA.offerRoom(L, t, p, day);
+    if (room.full || room.max < FA.minFor(p)) continue;
+    const role = FA.roleFit(L, t, p), st = teamStatus(L, t);
+    let interest = 0.35 * role + 0.15 * Math.min(1, Math.max(0, (p.pot - 6) / 4)) * (p.age <= 25 ? 1 : 0.4) + 0.38 * rnd(t.id) + (st === 'rebuilding' && p.age <= 24 ? 0.08 : 0) + (own ? 0.15 : 0);
+    if (ag.wants === 'market') interest += ((cityOf(t)?.[2] ?? 0.5) - 0.5) * 0.15;   // she gets the big markets on the phone
+    if (ag.wants === 'fit') interest += Math.min(0.12, bondsOn(p, t).friends.length * 0.04);   // he knows the people there
+    if (interest < 0.42 && !own) continue;
+    // The keenest teams pay his number; the rest come in under it.
+    const want = ask * Math.min(1.05, 0.55 + 0.55 * Math.min(1, interest));
+    let sal = Math.max(FA.minFor(p), Math.min(room.max, Math.round(want)));
+    if (interest < 0.85 && !own) sal = Math.min(sal, Math.round(FA.maxSalary(L, p) * 0.88));   // only the teams that really want him go to the max
+    if (sal < ask * 0.6 && !own) continue;
+    const yrs = p.age <= 25 ? (interest >= 0.7 ? 4 : 3) : p.age <= 29 ? 3 : p.age <= 32 ? 2 : 1;
+    out.push({ tid: t.id, sal, yrs, opt: p.age <= 25 && ag.wants === 'money' && interest >= 0.75 ? FA.OPT_PLAYER : FA.OPT_NONE, interest, own, max: room.max });
+  }
+  return out.sort((a, b) => b.interest - a.interest).filter((o, i) => i < 6 || o.own);   // the six keenest, and always his own team
+}
+
+// The people he'd join: friends (bond 20+) and bad blood (-5 or lower) on a roster.
+export function bondsOn(p, team) {
+  const mates = team.roster.filter(x => x.id !== p.id && x.status !== 7);
+  return { friends: mates.filter(x => (x.season?.relationship || 0) >= 20), rivals: mates.filter(x => (x.season?.relationship || 0) <= -5) };
+}
+
+// Everything a pitch meeting covers.
+export function careerPitch(L, p, offer, agentKey) {
+  const team = L.teams.find(t => t.id === offer.tid);
+  const roster = team.roster.filter(x => x.id !== p.id && (x.status === 3 || x.status === 2));
+  const lv = levelOf(p);
+  const rank = roster.filter(x => levelOf(x) > lv).length + 1;
+  const role = rank === 1 ? 'The No. 1 option' : rank <= 2 ? 'The No. 2 option' : rank <= 5 ? 'A starter' : rank <= 8 ? 'Rotation minutes' : 'Bench';
+  const alphas = roster.filter(x => egoVal(x) >= 16 && levelOf(x) >= lv - 4);
+  const coach = (team.frontOffice?.staff || []).find(s => s.pos === 1) || null;
+  const ring = FA.teamStrength(L, team), market = cityOf(team)?.[2] ?? 0.5;
+  const b = bondsOn(p, team);
+  const ag = CAREER_AGENTS[agentKey] || CAREER_AGENTS.brand;
+  const total = offer.sal * offer.yrs;
+  const money = offer.sal / Math.max(1, FA.baseAsk(L, p));
+  const fit = (rank <= 2 ? 0.3 : rank <= 5 ? 0.15 : -0.1) + b.friends.length * 0.08 - b.rivals.length * 0.1 - alphas.length * (egoVal(p) >= 13 ? 0.12 : 0.04) + (coach ? (coach.rp || 0) / 250 : 0) + (offer.own ? 0.08 : 0);
+  const score = ag.wants === 'money' ? money * 1.4 + fit * 0.3 + ring * 0.2
+    : ag.wants === 'market' ? money + market * 0.6 + ring * 0.2 + fit * 0.3
+    : money * 0.7 + fit * 1.2 + ring * 0.3;
+  return { team, role, rank, alphas, coach, ring, market, friends: b.friends, rivals: b.rivals, total, score,
+    fans: Math.round(((market - 0.5) * 0.3 + ag.fans) * 1000) / 1000, stage: teamStatus(L, team) };
+}
+
+// ---------------------------------------------------------------------------
+// Role fights: once an offseason, when his spot or his shots are in question.
+export function roleFight(L, p, team) {
+  if (!team || p.status !== 3) return null;
+  const st = standing(L, p, team);
+  const lv = levelOf(p);
+  const alpha = team.roster.filter(x => x.id !== p.id && x.status !== 7 && egoVal(x) >= 16 && levelOf(x) >= lv - 2).sort((a, b) => levelOf(b) - levelOf(a))[0];
+  const yrs = careerLog(p);
+  const last = yrs[yrs.length - 1]?.l, prev = yrs[yrs.length - 2]?.l;
+  if (alpha && egoVal(p) >= 12) return { kind: 'alpha', rival: alpha, text: `${playerName(alpha)} wants the ball in the big moments, and so do you. There's one ball.` };
+  if (st?.push && levelOf(st.push) >= lv - 1) return { kind: 'push', rival: st.push, text: `${playerName(st.push)} is coming for your spot, and the coaches have noticed.` };
+  if (last && prev && last.mpg < prev.mpg - 4 && last.gp >= 20) return { kind: 'minutes', rival: null, text: `Your minutes fell from ${prev.mpg.toFixed(0)} to ${last.mpg.toFixed(0)} a night.` };
+  if (p.linePos > 4 && lv >= 78) return { kind: 'bench', rival: st?.push || null, text: 'You came off the bench, and you think you should start.' };
+  return null;
+}
+// Can he win it? His level against the rival's, his bond with the coach, his ego.
+export function demandOdds(p, fight, coach) {
+  const gap = fight.rival ? levelOf(p) - levelOf(fight.rival) : 3;
+  return Math.max(0.1, Math.min(0.85, 0.45 + gap * 0.06 + (coach?.rp || 0) / 150));
+}
+
 export { playerName };
