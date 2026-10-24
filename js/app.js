@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.193.0';
+const APP_VERSION = '0.194.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -404,7 +404,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); }   // once an offseason each
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); }   // once an offseason each
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -3515,6 +3515,7 @@ function retirementsBox() {
     return `<div class="pod-row"><span class="pod-who tap" data-act="openPlayer" data-id="${r.p.id}"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br><span class="small muted">${r.p.age} · ${r.team ? `${esc(r.team.shortName)}${r.run >= 2 ? ` (${r.run} yrs)` : ''}` : 'free agent'}${note}</span></span>${btns}</div>`;
   };
   return `${back.length ? `<fieldset class="frame"><legend>One More Season</legend><div class="stack">${back.map(({ b, f }) => `<p class="note small">${RETURN[b.kind].icon} <b>${esc(playerName(f.p))}</b> is back with ${esc(f.team?.shortName || '')} for ${RETURN[b.kind].say}. This season is his last.</p>`).join('')}</div></fieldset>` : ''}
+    ${numbersBox()}
     <fieldset class="frame"><legend>Retired This Offseason</legend>
       <p class="note small muted">Your former players can be talked into one more season: a farewell tour (loyalty, years with you) or one last run (a competitor on a team that can win). One call each.</p>
       <div class="pod-list">${list.filter(notableRetiree).map(row).join('') || '<p class="note small muted">Nobody notable retired this year.</p>'}</div>
@@ -3557,6 +3558,106 @@ function comebackPosts() {
   return comebackStore().back.map(b => { const f = findPlayer(b.pid); if (!f?.team) return null; const n = playerName(f.p);
     return { team: f.team, score: 99, tag: '📣 Comeback', pid: f.p.id, handle: '@HoopGramNBA', likes: 9000 + (f.p.id * 37) % 4000,
       text: b.kind === 'farewell' ? `${n} announced he's playing one more season in ${f.team.city || f.team.name}, but it's his last. The farewell tour starts opening night.` : `${n} is unretiring for one last run at a ring with ${f.team.city || f.team.name}. He says this season is his last.` }; }).filter(Boolean);
+}
+
+
+// ---- Retired numbers
+// The game retires numbers only from its template, so franchise icons who retire in your league never get theirs.
+// A player's case with one team: seasons there plus what he won there (MVP, Finals MVP, titles, All-NBA, All-Star in
+// years he played for them). CPU teams raise the number on their own once he's retired; your team gets the button.
+// Covers anyone whose last season was 2023 or later (the template already holds the real league's).
+const AWARD_YEARS = (p, id) => (p.awards || []).filter(a => a.id === id && (a.league == null || a.league === 0)).flatMap(a => a.yearsWon || []);
+function iconCase(p, team) {
+  const yrs = new Set(), nums = new Map(), tidByYr = new Map();
+  let gp = 0, pts = 0;
+  for (const st of p.stats || []) if (st.league === 0) for (const r of st.season || []) if (r.GP > 0) { tidByYr.set(st.yr, r.tid); if (r.tid === team.id) { yrs.add(st.yr); gp += r.GP; pts += r.PTS || 0; if (r.num >= 0) nums.set(r.num, (nums.get(r.num) || 0) + r.GP); } }
+  if (yrs.size < 6) return null;
+  const here = id => AWARD_YEARS(p, id).filter(y => tidByYr.get(y) === team.id).length;
+  const mvp = here(2), fmvp = here(1), titles = here(0), allNba = here(13), allStar = here(23);
+  const score = yrs.size + mvp * 6 + fmvp * 5 + titles * 3 + allNba * 1.5 + allStar;
+  const num = [...nums].sort((a, b) => b[1] - a[1])[0]?.[0];
+  // A real case (accolades with them), a title-winning Finals MVP, or a long run as a real contributor (11+ seasons
+  // at 12+ points a game there: Conley in Memphis, not a career backup).
+  if (num == null || !(score >= 16 || (titles >= 2 && fmvp >= 1) || (yrs.size >= 11 && gp && pts / gp >= 12))) return null;
+  const why = [`${yrs.size} seasons`, mvp && `${mvp > 1 ? `${mvp}× ` : ''}MVP`, titles && `${titles > 1 ? `${titles} titles` : 'a title'}`, allStar && `${allStar}× All-Star`].filter(Boolean).join(', ');
+  return { p, team, num, yrs: yrs.size, score, why };
+}
+const lastPlayed = p => Math.max(0, ...(p.stats || []).filter(s => s.league === 0 && (s.season || []).some(r => r.GP > 0)).map(s => s.yr));
+const numText = n => (n === 100 ? '00' : String(n));
+// Retired players (retirees and Hall of Famers) with a case at some team that hasn't raised his number yet.
+function numberCandidates(L = league()) {
+  const seen = new Set(), out = [];
+  for (const p of [...(L.retirees || []), ...(L.hallOfFame || [])]) {
+    if (seen.has(p.id) || lastPlayed(p) < 2023) continue;
+    seen.add(p.id);
+    for (const t of L.teams) {
+      if ((t.retiredNumbers || []).some(r => r.pid === p.id)) continue;
+      const c = iconCase(p, t);
+      if (c && !(t.retiredNumbers || []).some(r => r.num === c.num)) out.push(c);
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+function raiseNumber(c, yr = league().season.currentYear) {
+  if ((c.team.retiredNumbers || []).some(r => r.num === c.num || r.pid === c.p.id)) return;   // two icons, one number: the first one up keeps it
+  (c.team.retiredNumbers ||= []).push({ num: c.num, pid: c.p.id, yr });
+  state.dirty = true;
+}
+function cpuNumbers() {
+  if (!state.data || !isComplete() || isCollege() || state.leagueIdx !== 0 || calFlags().numbersDone === seasonKey()) return;
+  calFlags().numbersDone = seasonKey();
+  for (const c of numberCandidates()) if (!isUserTeam(c.team)) raiseNumber(c);
+}
+actions.raiseNumber = d => {
+  const c = numberCandidates().find(x => x.p.id === +d.id && x.team.id === +d.tid);
+  if (!c || !isUserTeam(c.team)) return;
+  checkpoint(`Retire #${numText(c.num)}`);
+  raiseNumber(c);
+  render();
+  toast(`🏟️ ${c.team.shortName} retire #${numText(c.num)}`, `${playerName(c.p)}'s number goes to the rafters.`);
+};
+// This offseason's ceremonies, and your legends still waiting on theirs.
+function numbersBox() {
+  const L = league(), yr = L.season.currentYear;
+  const done = L.teams.flatMap(t => (t.retiredNumbers || []).filter(r => r.yr === yr).map(r => ({ t, r, p: findPlayer(r.pid)?.p || [...(L.retirees || []), ...(L.hallOfFame || [])].find(x => x.id === r.pid) })));
+  const mine = numberCandidates(L).filter(c => isUserTeam(c.team));
+  if (!done.length && !mine.length) return '';
+  return `<fieldset class="frame"><legend>🏟️ Retired Numbers</legend>
+    ${mine.length ? `<div class="pod-list">${mine.map(c => `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(c.p))}</b> <span class="gold">#${numText(c.num)}</span><br><span class="small muted">${esc(c.why)} with you</span></span><span class="pod-btns"><button class="btn tiny focus" data-act="raiseNumber" data-id="${c.p.id}" data-tid="${c.team.id}">🏟️ Retire #${numText(c.num)}</button></span></div>`).join('')}</div>` : ''}
+    ${done.length ? `<p class="note small" style="margin-top:6px">${done.map(x => `<b>${esc(x.t.shortName)}</b> #${numText(x.r.num)}${x.p ? ` ${esc(playerName(x.p))}` : ''}`).join(' · ')}</p>` : ''}
+  </fieldset>`;
+}
+const numberPosts = () => { const L = league(), yr = L.season.currentYear;
+  return L.teams.flatMap(t => (t.retiredNumbers || []).filter(r => r.yr === yr).map(r => { const p = [...(L.retirees || []), ...(L.hallOfFame || [])].find(x => x.id === r.pid) || findPlayer(r.pid)?.p; return p ? { team: t, score: 20, tag: '🏟️ Rafters', pid: p.id, handle: '@HoopGramNBA', likes: 12000 + (p.id * 53) % 6000, text: `The ${t.name} will raise ${playerName(p)}'s #${numText(r.num)} to the rafters. Nobody wears it again.` } : null; })).filter(Boolean).slice(0, 3); };
+
+// ---- Hoop Gram drama
+// Unhappy players let it show: they scrub the team from their account, post something cryptic on their story,
+// unfollow the team, or like a post about getting traded. Who does what follows his traits; it's the league talking,
+// and a hint at who might ask out next. One post a player, the same all summer.
+const BIOS = ['"God\'s plan 🙏"', '"Chapter closed."', '"Business is business."', '"Locked in. Solo."', '"Know your worth."', '"Free agent in spirit"'];
+const STORIES = ['a black screen with a single 👀', '"Know your worth"', 'a clip of a door closing', '"Loyalty is rare"', '"Some people only love you when you\'re winning"', 'a 🐍 emoji and nothing else', '"New chapter loading…"', 'an hourglass ⏳', '"Remember who was there"', 'a photo of an empty locker'];
+function dramaPosts() {
+  const L = league(), yr = L.season.currentYear, out = [];
+  const req = new Set((offGet('req').list || []).map(r => r.pid));
+  for (const t of L.teams) for (const p of FA.signedRoster(t)) {
+    const mo = p.season?.morale ?? 60;
+    if (shownLevel(p) < 72 || !(mo < 40 || req.has(p.id) || (p.season?.onTradeBlock === 1 && mo < 55))) continue;
+    const r = k => mulberry32((saveSalt() ^ Math.imul(p.id + k, 2654435761) ^ yr) >>> 0)();
+    if (r(3) > 0.55 && !req.has(p.id)) continue;   // not everyone goes public
+    const n = playerName(p), city = t.city || t.name, other = L.teams[Math.floor(r(9) * L.teams.length)];
+    // A weighted pick his traits lean: an alpha scrubs, a bad teammate unfollows, a mercenary likes the trade rumor.
+    const w = [['story', 3], ['scrub', 1 + (egoVal(p) >= 16 ? 3 : egoVal(p) >= 13 ? 1 : 0)], ['unfollow', 1 + (tr(p, 'lockerRoom') <= 6 ? 3 : 0)], ['like', 1 + (tr(p, 'loyalty') <= 6 ? 2 : 0)]];
+    let x = r(5) * w.reduce((a, [, v]) => a + v, 0), kind = 'story';
+    for (const [k, v] of w) if ((x -= v) <= 0) { kind = k; break; }
+    const text = {
+      scrub: `${n} scrubbed every ${t.name} photo from his Hoop Gram and changed his bio to ${BIOS[Math.floor(r(7) * BIOS.length)]}`,
+      story: `${n} posted a cryptic Hoop Gram story: ${STORIES[Math.floor(r(7) * STORIES.length)]}. ${city} fans are reading into it.`,
+      unfollow: `${n} unfollowed the ${t.name} on Hoop Gram. Teammates noticed.`,
+      like: `${n} liked a post about him getting traded to ${other === t ? 'a contender' : other.city || other.name}. Then unliked it. Too late.`,
+    }[kind];
+    out.push({ team: t, score: 9 + (40 - Math.min(40, mo)) / 5 + (req.has(p.id) ? 4 : 0), tag: kind === 'scrub' ? '🧹 Scrubbed' : kind === 'unfollow' ? '🚫 Unfollowed' : kind === 'like' ? '👍 Liked' : '📱 Story', pid: p.id, handle: '@LockerRoomLeaks', likes: 4000 + (p.id * 97) % 9000, text });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 4);
 }
 
 // ---- Mentorship
@@ -4045,13 +4146,14 @@ function coachMarketCard() {
 }
 
 // ---- League News: rumors, transactions, coaching moves, CPU trades and (at Opening Night) the report card, as tabs.
-const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['retire', 'Retirements'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
+const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['gram', 'Hoop Gram'], ['retire', 'Retirements'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
 const newsTabs = cur => `<div class="tabs fa-tabs news-tabs">${NEWS_TABS.filter(([k]) => k !== 'report' || league().season.phase === 6).map(([k, l]) => `<button class="btn small ${k === cur ? 'on focus' : 'off'}" data-act="newsTab" data-t="${k}">${l}</button>`).join('')}</div>`;
 actions.newsTab = d => (d.t === 'rumors' || d.t === 'transactions' ? replace(d.t, {}) : replace('news', { tab: d.t }));
 screens.news = (args = {}) => {
   const tab = args.tab || 'coachnews';
   let body = '';
   if (tab === 'retire') body = retirementsBox();
+  else if (tab === 'gram') body = leagueGramCard().replace('<h2 class="team-title">Trending on Hoop Gram</h2>', '') || '<p class="note small muted">Quiet on Hoop Gram so far.</p>';
   else if (tab === 'coachnews') body = (hotSeatBox(league()) + coachChangesBox()) || '<p class="note small muted">No coaching news yet. CPU teams make their moves once free agency opens.</p>';
   else if (tab === 'cputrades') { const log = offGet('cpuTrades'); const list = Array.isArray(log) ? log : []; body = list.length ? `<div class="stack">${list.map(x => `<p class="note small" style="margin:0">🔁 ${esc(x)}</p>`).join('')}${(calFlags().dumpLog || []).map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : (calFlags().dumpLog || []).length ? `<div class="stack">${calFlags().dumpLog.map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : '<p class="note small muted">No CPU trades yet.</p>'; }
   else body = reportCard() || '<p class="note small muted">The report card comes out at Opening Night.</p>';
@@ -10192,7 +10294,7 @@ actions.presserAnswer = d => {
 };
 
 function leagueGramCard() {
-  const posts = [...(isCollege() ? [] : [...comebackPosts(), ...traitPosts()]), ...leagueGram(league(), isUserTeam, state.leagueIdx)].slice(0, 10);
+  const posts = [...(isCollege() ? [] : [...comebackPosts(), ...numberPosts(), ...dramaPosts(), ...traitPosts()]), ...leagueGram(league(), isUserTeam, state.leagueIdx)].slice(0, 12);
   if (!posts.length) return '';
   return `<h2 class="team-title">Trending on Hoop Gram</h2>
     <div class="stack">${posts.map(x => `<${x.pid ? `button data-act="openPlayer" data-id="${x.pid}"` : 'div'} class="hg-post ${x.pid ? 'tap' : ''}">
