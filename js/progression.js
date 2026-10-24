@@ -117,6 +117,7 @@ export const DEFAULT_PARAMS = {
   rookieIncludeUndrafted: true,
   // Summer league right after the draft: [maxAge, drop points won back]
   recoveryBands: [[19, 0], [21, 1], [99, 2]],
+  readiness: 'motor',      // the draft drop by motor (Pro-Ready −2, Base −3, Project −4) or by age ('age': the bands above)
   // Draft room: % of scouting reports that read potential one step off
   scoutVariance: 25,
   workoutSlots: 4,        // private workouts before the draft, per team you run

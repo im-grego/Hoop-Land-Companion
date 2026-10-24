@@ -20,7 +20,14 @@ export const DEFAULT_RECOVERY = [[20, 0], [99, 2]];
 // A player-specific extra point (top-5 pick, hard worker): see the app.
 let BONUS = () => 0;
 export const setRecoveryBonus = f => { BONUS = f; };
-export const recoveryFor = (age, bands = DEFAULT_RECOVERY, p = null) => Math.min(2, (bands.find(b => age <= b[0]) || [0, 0])[1] + (p ? BONUS(p) : 0));
+// Readiness (set by the app): points back for a player by his makeup instead of his age; null falls back to age.
+let READY = null;
+export const setReadiness = f => { READY = f; };
+export const recoveryFor = (age, bands = DEFAULT_RECOVERY, p = null) => {
+  const r = p && READY ? READY(p) : null;
+  if (r != null) return r;
+  return Math.min(2, (bands.find(b => age <= b[0]) || [0, 0])[1] + (p ? BONUS(p) : 0));
+};
 
 // Where a pre-draft rating ends up after the drop and summer league.
 export const projectedRookie = (v, age, bands = DEFAULT_RECOVERY, p = null) =>

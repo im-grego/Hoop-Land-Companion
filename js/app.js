@@ -6,7 +6,7 @@ import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlo
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
-  recoveryFor, projectedRookie, originalRatings, setRecoveryBonus, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
+  recoveryFor, projectedRookie, originalRatings, setRecoveryBonus, setReadiness, applySummerLeague, tierFor, scoutingReport, projectedCeiling, scoutedPot, compDistance,
   assignClassComps, rookieFloorVector, collegeLine, rosterSlot,
   needBaseline, teamNeeds, needsFilled, isWinNow, teamStatus, STATUS_NAMES, classScales, draftScore, LOTTERY_FORMATS,
 } from './draft.js';
@@ -47,7 +47,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.180.0';
+const APP_VERSION = '0.181.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -123,6 +123,15 @@ setRecoveryBonus(p => {
   if (!g && !vecsBuilding) { try { if (league().season.phase === PHASE_PRE_DRAFT) g = gradeOf(p)[0]; } catch { /* no class to grade against */ } }
   return g === '#1 Pick' || g === 'Top 5' ? 1 : 0;
 });
+// Readiness: how much of the game's −4 draft drop a rookie wins back right away, by his motor, whatever his age.
+// Relentless workers (motor 15+) are Pro-Ready (−2 net), most are Base (−3), low-motor players (10 or less) are Projects (−4).
+const READINESS = { pro: { tag: 'Pro-Ready', icon: '🎯', back: 2, cls: 'up' }, base: { tag: 'Base', icon: '⚖️', back: 1, cls: 'muted' }, project: { tag: 'Project', icon: '🛠️', back: 0, cls: 'gold' } };
+function readinessOf(p) {
+  const m = traitsSet(p) ? tr(p, 'motor') : 10;
+  return m >= 15 ? READINESS.pro : m <= 10 ? READINESS.project : READINESS.base;
+}
+const readyChip = p => { const r = readinessOf(p); return `<span class="badge ${r.cls === 'up' ? 'lvl' : r.cls === 'gold' ? 'new' : ''}" title="Draft drop ${r.back - 4}">${r.icon} ${r.tag}</span>`; };
+setReadiness(p => (state.params.readiness === 'age' ? null : readinessOf(p).back));
 function saveParams() {
   try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 12 })); } catch { /* ignore */ }
 }
@@ -3065,9 +3074,10 @@ function ageSection() {
     const eligible = summerEligible();
     const total = leagueRookies(L).filter(r => r.round > 0 || state.params.rookieIncludeUndrafted).length;
     body = eligible.length
-      ? `<p class="note">Hoop Land knocks ${DRAFT_DROP} points off every rating at the draft. Older rookies have less time to grow, so they get part of it back right away, the same on every skill:</p>
-        <ul class="age-bands">${bandText}</ul>
-        <button class="btn big focus" data-act="runSummer">▶ Run Age Adjustment</button>`
+      ? `${state.params.readiness === 'age' ? `<p class="note">Hoop Land knocks ${DRAFT_DROP} points off every rating at the draft. Older rookies have less time to grow, so they get part of it back right away, the same on every skill:</p>
+        <ul class="age-bands">${bandText}</ul>` : `<p class="note">Hoop Land knocks ${DRAFT_DROP} points off every rating at the draft. How much comes back right away depends on how ready he is (his motor), not his age:</p>
+        <ul class="age-bands"><li><b>🎯 Pro-Ready</b> (motor 15+): −2 per skill <span class="up">(+2 back)</span></li><li><b>⚖️ Base</b>: −3 per skill <span class="up">(+1 back)</span></li><li><b>🛠️ Project</b> (motor 10 or lower): −4 per skill</li></ul>`}
+        <button class="btn big focus" data-act="runSummer">▶ Run ${state.params.readiness === 'age' ? 'Age' : 'Readiness'} Adjustment</button>`
       : `<p class="note">The age adjustment needs the rookies' pre-draft ratings. Load a save of this season from before the draft (it's only read, not changed).</p>`;
     if (eligible.length < total) body += `<label class="btn small">📂 Load Pre-Draft Save<input type="file" id="origInput"></label>`;
   }
@@ -4711,7 +4721,7 @@ const F_MIN = ['starterMpg', 'benchMpg', 'starterMult', 'benchMult'];
 const TAB_KEYS = {
   basics: ['capSystem', 'commissioner', 'tradeValues'],
   ai: ['liveCpuTradeChance', 'cpuCoachChanges', 'redoOptions', 'faClearCpuOffers', 'spendCpuPoints'],
-  draft: ['scoutVariance', 'workoutSlots', 'rookieBands', 'rookieIncludeUndrafted', 'recoveryBands'],
+  draft: ['scoutVariance', 'workoutSlots', 'readiness', 'rookieBands', 'rookieIncludeUndrafted', 'recoveryBands'],
   nba: ['startYear'],
   dev: ['bumpMode', 'strengthBias', 'includeFreeAgents', 'seed', 'mentorTeachElite', ...F_MENTOR, ...F_MIN, ...F_REG, ...F_TRAIN, ...F_POT, ...F_INJ, ...F_INJC, 'ageBands', ...STEP_FIELDS.skills.map(x => x[0])],
   data: [],
@@ -4747,7 +4757,8 @@ screens.settings = (args) => {
       options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']], 'How often your scouts misread a prospect\'s potential before the workouts.'),
       options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']], 'Workouts per team you run (scouting trips are this plus two).'),
       ...(pro && league().draftClass?.length && phaseRank(league().season) < 3 ? ['<button class="btn" data-act="nav" data-to="classLab">🧪 Draft Class Lab</button>'] : []),
-    ]) + setGroup('Rookies', [options('Undrafted rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']], 'Whether undrafted rookies get the rookie bump and the age adjustment.')]) +
+    ]) + setGroup('Rookies', [options('Draft drop', 'readiness', [['motor', 'By readiness (motor)'], ['age', 'By age']], 'The game takes 4 off every rating at the draft. By readiness, a rookie\'s motor decides how much comes back: Pro-Ready −2, Base −3, Project −4, at any age. By age: older rookies get more back (the bands under Age Adjustment).'),
+      options('Undrafted rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']], 'Whether undrafted rookies get the rookie bump and the drop adjustment.')]) +
       advGroup('Rookie Bump', ['rookieBands'], [
         '<div class="band-head three"><span>Ages</span><span>Min</span><span>Max</span></div>',
         ...P.rookieBands.map((b, i) => {
@@ -5395,7 +5406,7 @@ const prospectRow = (p, extra = '', { mine = false } = {}) => {
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
   return `<button class="prow cprow ${star ? 'sel' : ''} ${gone ? 'gone' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
   <span class="name">${star ? '<span class="gold">★</span> ' : ''}<span class="nm">${esc(playerName(p))}</span>${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}${gone ? ` <span class="small muted">#${gone.overall}${gone.team ? ` · ${esc(gone.team.shortName)}` : ''}</span>` : ''}</span>
-  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}</span>
+  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}${state.params.readiness !== 'age' && readinessOf(p) !== READINESS.base ? ` ${readyChip(p)}` : ''}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
 };
@@ -6175,7 +6186,7 @@ screens.workouts = (args) => {
     const h = hidden(p), r = rank.get(p.id), inRange = range && r >= range[0] && r <= range[1], fit = me && fillsFor(me, p).length;
     return `<div class="drill-row wk-row">
       <span class="grow"><button class="linkish" data-act="openProspect" data-id="${p.id}"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b></button> ${valueChip(p)}${fit ? ' <span title="Fills a need">🧩</span>' : ''}${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}<br>
-        <span class="small muted">#${r} consensus${inRange ? ' · <span class="up">in your range</span>' : ''} · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span><br>
+        <span class="small muted">#${r} consensus${inRange ? ' · <span class="up">in your range</span>' : ''} · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>${state.params.readiness !== 'age' ? ` ${readyChip(p)}` : ''}<br>
         <span class="small ${h ? 'gold' : 'muted'}">${revealed(p.id) ? 'Potential known' : 'Reveals potential'}${h ? ` + ${h} hidden ceiling${h > 1 ? 's' : ''}` : ''}</span></span>
       <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`;
   };
@@ -6440,7 +6451,7 @@ screens.prospect = (args) => {
         <button class="mvbtn pros-add ${onBoard(p.id) ? 'on' : ''}" data-act="toggleBoard" data-id="${p.id}" aria-label="${onBoard(p.id) ? 'Remove from' : 'Add to'} your board">${onBoard(p.id) ? '✓' : '+'}</button>
         <h2 class="team-title">${esc(playerName(p))}</h2>
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lb</p>
-        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span></p>
+        <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span> ${state.params.readiness === 'age' ? '' : readyChip(p)}</p>
       </div>
       ${uiTabs('prospect', [
         ['over', 'Overview', `${collegeBox(p)}
