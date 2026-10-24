@@ -16,6 +16,9 @@ import { egoVal } from './ego.js';
 // asks differently.
 const hashN = (...xs) => { let h = 2166136261; for (const x of xs) for (const c of String(x)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); h ^= h >>> 13; return ((Math.imul(h, 1274126177) >>> 0) % 100000) / 100000; };
 const pickV = (arr, ...seed) => arr[Math.floor(hashN(...seed) * arr.length)];
+// Who's holding out (the app knows asks and extensions): f(team) -> players.
+let HOLD = () => [];
+export const setHoldouts = f => { HOLD = f; };
 const WHO = ['Beat writer', 'Local TV', 'National insider', 'Team radio', 'Podcast host', 'Columnist', 'Sports talk radio', 'Team website'];
 const lastInj = (p, yr) => ((p.stats || []).find(s => s.league === 0 && s.yr === yr)?.season || []).reduce((a, r) => a + (r.INJ || 0), 0);
 
@@ -194,6 +197,11 @@ export function presserQuestions(league, team, li = 0) {
     q: pickV([`What's the plan for ${playerName(rk)} as a rookie?`, `Does ${playerName(rk)} start on opening night?`, `How much will you lean on ${playerName(rk)} this year?`], team.id, yr0, 'rookie'),
     options: [{ v: 'start', label: 'He\'ll start from day one' }, { v: 'earn', label: 'He\'ll have to earn it' }, { v: 'patience', label: 'We\'ll bring him along slowly' }], ctx: { pk: rk.history.draft.pk } });
   extra.sort((a, b) => hashN(team.id, yr0, a.key) - hashN(team.id, yr0, b.key));
+  // A holdout is always the first thing the room asks about.
+  const ho = HOLD(team)[0];
+  if (ho) extra.unshift({ key: 'holdout', pid: ho.id,
+    q: pickV([`${playerName(ho)} skipped camp. Is he holding out?`, `Where do things stand with ${playerName(ho)}? He wasn't at camp.`, `${playerName(ho)} wants a new deal and isn't showing up until he gets one. Your response?`], team.id, yr0, 'holdout'),
+    options: [{ v: 'pay', label: 'We\'ll get something done' }, { v: 'stand', label: 'He\'s under contract' }, { v: 'shop', label: 'Everything\'s on the table' }], ctx: {} });
   for (const x of extra.slice(0, out.length >= 3 ? 1 : 2)) out.push(x);
   // Three questions every time: if the roster gave too little to ask about,
   // ask what the season's goal is.
@@ -231,6 +239,15 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
   for (const q of frozen || presserQuestions(league, team, li)) {
     const a = answers?.[q.key];
     if (!a) continue;
+    const n0 = out.length;
+    try {
+    if (q.key === 'followup') {
+      const label = q.options.find(o => o.v === a)?.label || '';
+      out.push(a === 'clarify'
+        ? { kind: 'presser-contract', score: 50, icon: '🎙️', title: `${Place(team)} clarifies`, text: `Pressed on it, the front office added: "${label}."`, pid: q.pid ?? null }
+        : { kind: 'presser-contract', score: 50, icon: '🎙️', title: `${Place(team)} won't budge`, text: `Pressed again, the front office stuck to its answer: "${label}."`, pid: q.pid ?? null });
+      continue;
+    }
     const P = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid);
     if (q.key === 'contract' && P) {
       const n = playerName(P);
@@ -298,6 +315,14 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
       }[a];
       out.push({ kind: 'presser-contract', score: 56, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
     }
+    if (q.key === 'holdout' && P) {
+      const t = {
+        pay: [`${Place(team)} wants to end the ${P.fn} holdout`, `"We'll get something done." The ball is in the front office's court now, and ${P.fn}'s agent knows it.`],
+        stand: [`${Place(team)} won't blink on ${P.fn}`, `"He's under contract." The front office is calling ${playerName(P)}'s bluff.`],
+        shop: [`${playerName(P)} is available`, `"Everything's on the table." The holdout just turned into a trade market.`],
+      }[a];
+      out.push({ kind: 'presser-lockerroom', score: 64, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
     if (q.key === 'goal') {
       const t = {
         title: [`${Place(team)}: title or bust`, `"A championship." The front office set the bar at the top for ${place(team)}.`],
@@ -345,6 +370,11 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
         },
       }[q.ctx.mood][a] || [`"We have to be better" in ${place(team)}`, pickV([`No spin from the front office: last season wasn't good enough. The competitors in the room will like hearing it.`, `A blunt answer. ${sn === 'the stars' ? 'The locker room' : sn} heard the message.`], team.id, 'm', a)];
       out.push({ kind: 'presser-moves', score: sit.mood === 'normal' ? 46 : 60, icon: '🎙️', title: T[0], text: T[1], pid: s?.id ?? null });
+    }
+    } finally {
+      // The player gets the last word on the story about him.
+      const st = out.length > n0 ? out[out.length - 1] : null, r = st ? playerReplies(league, team, q, a)[0] : null;
+      if (st && r) st.text += ` ${r.name}: "${r.text}"`;
     }
   }
   return out;
@@ -399,4 +429,74 @@ export function leagueGram(league, skip, li = 0) {
     seenT.add(x.team.id); seenTag.set(x.tag, (seenTag.get(x.tag) || 0) + 1);
     return true;
   }).slice(0, 8);
+}
+
+// ---- Players answer back
+// After the press conference the players you talked about get a word in, in their own voice: ego, loyalty, money,
+// winning and the locker room decide how. [{ pid, text }].
+export function playerReplies(league, team, q, a) {
+  const all = league.teams.flatMap(t => t.roster);
+  const P = all.find(x => x.id === q.pid), B = all.find(x => x.id === q.pid2);
+  const ego = p => egoVal(p), out = [];
+  const say = (p, text) => { if (p && text) out.push({ pid: p.id, name: p.fn, text }); };
+  const by = (p, cases, dflt) => (cases.find(([ok]) => ok(p)) || [null, dflt])[1];
+  if (q.key === 'followup') say(P, a === 'clarify' ? by(P, [[p => ego(p) >= 16, 'About time.']], 'That\'s what I needed to hear.') : by(P, [[p => ego(p) >= 16, 'Noted.']], 'It is what it is.'));
+  if (q.key === 'holdout') say(P, {
+    pay: by(P, [[p => ego(p) >= 16, 'Then pay me.']], 'That\'s all I\'m asking for.'),
+    stand: by(P, [[p => ego(p) >= 16, 'Under contract. Not under their control.'], [p => tr(p, 'loyalty') >= 13, 'I hear them. I just want to be paid fairly.']], 'We\'ll see who blinks.'),
+    shop: by(P, [[p => tr(p, 'loyalty') >= 14, 'After everything? Wow.']], 'Good. Let\'s move on.'),
+  }[a]);
+  if (q.key === 'contract') say(P, {
+    commit: by(P, [[p => ego(p) >= 16, 'Good. I want to be here, and I want to be paid like it.'], [p => tr(p, 'loyalty') >= 16, 'This is home. I\'m not going anywhere.'], [p => tr(p, 'money') >= 16, 'Words are nice. We\'ll see what the offer looks like.']], 'Love hearing that. Let\'s get it done.'),
+    focus: by(P, [[p => ego(p) >= 16, 'Focus on the season? I\'m focused on my future too.'], [p => tr(p, 'loyalty') >= 15, 'I trust the front office. We\'ll talk when it\'s time.']], 'It\'s business. I\'ll play my game.'),
+    market: by(P, [[p => ego(p) >= 16, 'I heard it. Everybody heard it.'], [p => tr(p, 'loyalty') >= 15, 'That one hurt, honestly.'], [p => ego(p) <= 4, 'Whatever happens, happens.']], 'Guess we\'ll see, then.'),
+  }[a]);
+  if (q.key === 'expect') say(P, {
+    star: by(P, [[p => ego(p) >= 16, 'I\'ve been ready for this my whole life.'], [p => ego(p) <= 4, 'I just want to help us win. The spotlight isn\'t my thing.']], 'I\'ll embrace it.'),
+    fit: by(P, [[p => ego(p) >= 16, 'Fit in? I came here to lead.']], 'Whatever the team needs.'),
+    time: by(P, [[p => ego(p) >= 13, 'I don\'t need time. Put me out there.']], 'One day at a time.'),
+  }[a]);
+  if (q.key === 'battle' && P && B && a !== 'open') {
+    const [w, l] = a === 'b' ? [B, P] : [P, B];
+    say(w, by(w, [[p => ego(p) >= 16, 'Never doubted it.']], 'I\'ll earn it every night.'));
+    say(l, by(l, [[p => ego(p) >= 16, 'I\'m a starter in this league. Period.'], [p => ego(p) <= 6, 'Whatever helps us win.']], 'I\'ll be ready when my name is called.'));
+  }
+  if (q.key === 'battle' && a === 'open' && P) say(P, 'Good. Competition makes everybody better.');
+  if (q.key === 'lockerroom') say(P, {
+    fine: by(P, [[p => tr(p, 'lockerRoom') <= 6, 'Same page? Ask the coaches.']], 'We\'re good. Family business.'),
+    handled: 'We talked it out. Moving on.',
+    role: by(P, [[p => ego(p) >= 16, 'Now we\'re talking.']], 'I just want to know where I fit.'),
+  }[a]);
+  if (q.key === 'alphas' && P && B) {
+    if (a === 'pecking') { say(P, 'It\'s always been my team.'); say(B, by(B, [[p => ego(p) >= 17, 'Nobody told me.']], 'If that\'s what wins, fine.')); }
+    if (a === 'share') for (const x of [P, B]) say(x, by(x, [[p => tr(p, 'winning') >= 15, 'Ball moves, we win.']], 'We\'ll see how that works.'));
+    if (a === 'winning') for (const x of [P, B]) if (tr(x, 'winning') >= 15) say(x, 'That\'s all I care about.');
+  }
+  if (q.key === 'injury') say(P, {
+    ready: by(P, [[p => tr(p, 'motor') >= 15, 'I\'ve been ready for weeks.'], [p => tr(p, 'durability') <= 6, 'I feel good. For now.']], 'Ready to go.'),
+    ease: 'Smart. I want to be right for the playoffs.',
+    care: by(P, [[p => tr(p, 'motor') >= 15, 'I hate sitting. But I get it.']], 'My body will thank them.'),
+  }[a]);
+  if (q.key === 'vet') say(P, {
+    more: 'I\'ve still got it. Watch.',
+    year: 'I\'ll know when it\'s time.',
+    mentor: by(P, [[p => ego(p) <= 8 || tr(p, 'lockerRoom') >= 14, 'Passing it on is part of the job.']], 'Mentor? I\'m still a starter.'),
+  }[a]);
+  if (q.key === 'rookie') say(P, {
+    start: by(P, [[p => ego(p) >= 13, 'I\'m ready.']], 'I\'ll do everything I can to deserve it.'),
+    earn: 'Then I\'ll earn it.',
+    patience: by(P, [[p => ego(p) >= 13, 'I\'m ready now, but okay.']], 'I\'m in no rush.'),
+  }[a]);
+  if (q.key === 'goal' && P) say(P, {
+    title: by(P, [[p => tr(p, 'winning') >= 15, 'That\'s the only goal.']], 'Let\'s go get it.'),
+    playoffs: by(P, [[p => tr(p, 'winning') >= 15, 'Make the playoffs? I\'m here to win it all.']], ''),
+    develop: by(P, [[p => p.age >= 28, 'I\'m not here to develop.']], ''),
+  }[a]);
+  if (q.key === 'moves' && P) say(P, {
+    believe: by(P, [[p => ego(p) >= 16 && q.ctx?.mood === 'unsupported', 'Believe in this group? I believe I need help.']], 'We\'ve got what we need.'),
+    notdone: by(P, [[p => ego(p) >= 16, 'Good. We need help.']], ''),
+    longterm: by(P, [[p => p.age >= 29, 'I don\'t have long-term.']], ''),
+    better: by(P, [[p => tr(p, 'lockerRoom') <= 6, 'Better starts upstairs.'], [p => tr(p, 'winning') >= 15, 'He\'s right. We have to be better.']], ''),
+  }[a]);
+  return out;
 }

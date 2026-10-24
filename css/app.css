@@ -1473,3 +1473,4 @@ main.panel.bare { margin-top: 10px; }
 .pod-who { flex: 1; min-width: 0; line-height: 1.25; }
 .pod-btns { display: flex; flex-direction: column; gap: 3px; flex: none; }
 .pod-btns .btn.tiny { min-height: 20px; height: 20px; padding: 0 6px; font-size: 11px; width: 96px; white-space: nowrap; display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 4px; line-height: 1; }
+.pq-reply { font-style: italic; margin: 2px 0 0; }

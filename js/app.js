@@ -33,7 +33,7 @@ import { runMeeting, traitName } from './influence.js';
 import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
-import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillHallOfFame, isReal } from './traits.js';
+import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillTraitsList, fillHallOfFame, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
@@ -44,11 +44,11 @@ import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
-import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation } from './presser.js';
+import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation, playerReplies, setHoldouts } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.191.0';
+const APP_VERSION = '0.193.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -404,7 +404,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) seasonDrift();   // once an offseason
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); }   // once an offseason each
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -985,7 +985,7 @@ actions.undoTo = async d => {
   await nextFrame();
   installData(parseSave(u.text), true);
   try { state.cal = JSON.parse(u.cal || '{}'); } catch { /* keep */ }
-  if (!isCollege()) { saveDrift(); saveTraitStore(); }
+  if (!isCollege()) { saveDrift(); saveTraitStore(); saveComeback(); }
   state.undoList = state.undoList.slice(+d.i + 1);
   state.undo = state.undoList[0] || null;
   state.dirty = u.dirty;
@@ -1832,6 +1832,14 @@ function vetPlayers() {
   return leaguePlayers(league(), true).filter(e => !rk.has(e.p.id)).map(e => e.p);
 }
 
+// Holding out at camp: a starter-caliber player on his last year or two who's demanding a new deal (see extAsk)
+// and didn't get his extension skips camp. He grows about half as much, and Media Day asks about it.
+function campHoldouts(team) {
+  if (!isComplete() || isCollege() || !team) return [];
+  return FA.signedRoster(team).filter(p => shownLevel(p) >= 75 && (p.contract?.yrs ?? 0) >= 1 && (p.contract?.yrs ?? 0) <= 2 && !(p.contract?.ext?.yrs > 0) && !FA.isRookieScale(p) && extAsk(p, team).holdout)
+    .sort((a, b) => shownLevel(b) - shownLevel(a));
+}
+setHoldouts(t => (state.data && !isCollege() && isUserTeam(t) ? campHoldouts(t) : []));
 function applyBump(seed) {
   const li = state.leagueIdx;
   // Start from the original file each time so re-rolls don't stack.
@@ -1847,10 +1855,13 @@ function applyBump(seed) {
       const coachT = u ? devT : CO.coachTiers(headCoachOf(e.team)).dev;
       const dev = (coachT ? CO.devMult(coachT) * (u && a <= 23 ? f.labYoung : 1) * (u && a >= 24 && a <= 27 ? f.lateBloom : 1) : 1) * F.devMult;
       const pot = (coachT ? CO.potMult(coachT) * (u && a <= 21 ? f.labPot : 1) : 1) * (a <= 21 ? F.youngPot : 1);
-      return { ...(dev !== 1 ? { devMult: dev } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
+      const held = campHoldouts(e.team).includes(e.p);   // skipped camp: about half the work
+      if (held) moraleEvent(e.p, 'holdout', -4, 'holding out of camp');
+      return { ...(dev !== 1 || held ? { devMult: dev * (held ? 0.5 : 1) } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
         potLossMult: F.potLossMult, longCutMult: F.longCutMult, nagMult: F.nagMult, structStd: F.structStd };
     })() }));
   applyCulture();
+  mentorRubOff();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   state.potWhy = new Map(awards.why);
   // A potential bump brings new ratings room with it, adding up to the new potential.
@@ -1911,6 +1922,8 @@ actions.undoAuto = async () => {
   if (!(await confirmBox('Undo the offseason bump? Those players return to the original file.', 'Undo'))) return;
   for (const p of vetPlayers()) { restore(p, snapOf(p)); state.awards[state.leagueIdx]?.delete(p.id); }
   reapplyMentorship();
+  for (const [pid, e] of Object.entries(driftStore())) if (e.mentor) { const f = findPlayer(+pid); if (f) drift(f.p, 'mentor', e.mentor.k, 0, '', false); }
+  saveDrift(); saveTraitStore();
   delete state.auto[state.leagueIdx];
   render();
 };
@@ -3402,6 +3415,150 @@ function mediaMindMorale() {
   for (const p of FA.signedRoster(t)) if (driftsOf(p).some(x => x.src === 'media' && x.k === EGO_KEY)) moraleEvent(p, 'media', -4, 'called out in public');
 }
 
+
+// ---- Retirement comebacks
+// The players who retired this offseason (the game's news names the team each last played for). That team can try to
+// talk him into one more season: a farewell tour where he's played for years, or one last run at a ring with a team
+// that can win. If he says yes he's back on a one-year minimum, flagged as retiring (this season is his last), the
+// game's retirement news turns into his final-season announcement, and Hoop Gram hears about it. CPU teams try too.
+// The log rides with undo checkpoints: { tried: { pid: kind }, back: [{ pid, tid, kind, cpu }] }.
+const andList = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0] || '');
+const RETURN = { farewell: { icon: '🎤', label: 'Farewell Tour', say: 'a farewell tour' }, lastrun: { icon: '💍', label: 'One Last Run', say: 'one last run at a ring' } };
+const comebackKey = () => `hlc:comeback:${saveId()}:${league().season.currentYear}`;
+function comebackStore() {
+  const c = calFlags();
+  if (!c.comeback || c.comebackKey !== comebackKey()) { try { c.comeback = JSON.parse(localStorage.getItem(comebackKey())) || {}; } catch { c.comeback = {}; } c.comebackKey = comebackKey(); }
+  c.comeback.tried ||= {}; c.comeback.back ||= [];
+  return c.comeback;
+}
+const saveComeback = () => { try { localStorage.setItem(comebackKey(), JSON.stringify(comebackStore())); } catch { /* ignore */ } };
+// This offseason's retirees worth a phone call, with the team each last played for and how long he was there.
+function retirementsThisYear(L = league()) {
+  const yr = L.season.currentYear;
+  const lastTeam = new Map((L.season.news || []).filter(n => n.type === 17).map(n => [n.pid, n.tid]));
+  return (L.retirees || []).filter(p => p.history?.yearRetired === yr).map(p => {
+    // The team in the retirement news, else the one he last played games for.
+    const lastRow = (p.stats || []).filter(x => x.league === 0 && (x.season || []).some(r2 => r2.GP > 0)).sort((x, y) => y.yr - x.yr)[0]?.season.filter(r2 => r2.GP > 0).pop();
+    const team = L.teams.find(t => t.id === (lastTeam.get(p.id) || lastRow?.tid)) || null;
+    let run = 0;
+    for (let y = yr - 1; team; y--) { const r = (p.stats || []).find(x => x.league === 0 && x.yr === y)?.season; if (!r?.length || r[r.length - 1].tid !== team.id) break; run++; }
+    // Notability by his ratings as he left (the shown level docks him for age, and every retiree is old).
+    return { p, team, run, lv: levelOf(p) };
+  }).sort((a, b) => b.lv - a.lv);
+}
+// Worth a call: a real name (rated 80+ as he left, an All-Star once) or a long run with one team.
+const notableRetiree = r => r.team && (r.lv >= 80 || r.run >= 6 || (r.p.awards || []).some(a => a.id === 23 && (a.league == null || a.league === 0)));
+function comebackOdds(L, r, kind) {
+  const p = r.p, st = teamStatus(L, r.team);
+  let o = kind === 'farewell'
+    ? 0.15 + (tr(p, 'loyalty') - 10) * 0.03 + Math.min(0.25, r.run * 0.025) + (tr(p, 'lockerRoom') >= 15 ? 0.05 : 0)
+    : 0.08 + (tr(p, 'winning') - 10) * 0.035 + (st === 'contending' ? 0.25 : st === 'competing' ? 0.12 : -0.1);
+  o += (r.lv >= 78 ? 0.1 : r.lv < 65 ? -0.15 : 0) + (tr(p, 'motor') >= 15 ? 0.05 : 0) - (tr(p, 'durability') <= 5 ? 0.1 : 0) - Math.max(0, p.age - 36) * 0.05;
+  return Math.max(0.03, Math.min(0.8, o));
+}
+function unretire(L, r, kind, cpu = false) {
+  const p = r.p, team = r.team;
+  L.retirees.splice(L.retirees.indexOf(p), 1);
+  if (!p.traits || !traitsSet(p)) { fillTraitsList([p]); if (p.traits) p.traits[EGO_KEY] = egoRead(p).v; }
+  Object.assign(p, { status: FA.STATUS_FREE, tid: 0 });
+  if (p.history) p.history.yearRetired = 0;
+  (L.freeAgents ||= []).push(p);
+  FA.signPlayer(L, p, team, { sal: FA.minFor(p), yrs: 1, opt: 0 }, L.season.currentDay || 0);
+  if (p.season) { p.season.retiring = true; p.season.morale = Math.max(p.season.morale ?? 60, 80); }
+  // The game's "retired" news becomes his final-season announcement.
+  const n = (L.season.news || []).find(x => x.type === 17 && x.pid === p.id);
+  if (n) { n.type = 16; n.tid = team.id; }
+  comebackStore().back.push({ pid: p.id, tid: team.id, kind, cpu });
+  saveComeback(); saveTraitStore();
+  state.dirty = true;
+}
+// CPU teams make their calls once an offseason (a few say yes).
+function cpuComebacks() {
+  if (!state.data || !isComplete() || isCollege() || state.leagueIdx !== 0) return;
+  const st = comebackStore();
+  if (st.cpuDone) return;
+  st.cpuDone = true;
+  const L = league();
+  for (const r of retirementsThisYear(L).filter(x => notableRetiree(x) && !isUserTeam(x.team))) {
+    if (FA.signedRoster(r.team).length >= 15) continue;
+    const st2 = teamStatus(L, r.team), kind = st2 === 'contending' || st2 === 'competing' ? 'lastrun' : r.run >= 6 ? 'farewell' : null;
+    if (!kind) continue;
+    const roll = mulberry32((saveSalt() ^ Math.imul(r.p.id + 61, 2654435761) ^ 0x5eed) >>> 0)();
+    if (roll < comebackOdds(L, r, kind) * 0.5) unretire(L, r, kind, true);
+  }
+  saveComeback();
+}
+actions.comebackPitch = async d => {
+  const L = league(), r = retirementsThisYear(L).find(x => x.p.id === +d.id), st = comebackStore();
+  if (!r || !isUserTeam(r.team) || st.tried[r.p.id]) return;
+  const k = RETURN[d.k];
+  if (!(await confirmBox(`Pitch <b>${esc(playerName(r.p))}</b> on ${k.say} with the ${esc(r.team.name)}? One try: if he says no, he stays retired. A yes is a one-year minimum, and this season is his last.`, `${k.icon} Make the Call`))) return;
+  checkpoint(`${k.label}: ${playerName(r.p)}`);
+  st.tried[r.p.id] = d.k;
+  const roll = mulberry32((saveSalt() ^ Math.imul(r.p.id + 67, 2654435761) ^ (d.k === 'farewell' ? 0xfa1 : 0x1a57)) >>> 0)();
+  if (roll < comebackOdds(L, r, d.k)) { unretire(L, r, d.k); toast(`${k.icon} ${playerName(r.p)} is back`, `One more season with the ${r.team.name}. It's his last.`, 4200); }
+  else { saveComeback(); toast(`${playerName(r.p)} is staying retired`, d.k === 'lastrun' ? 'He\'s at peace with how it ended.' : 'He thanked you for the call.', 3600); }
+  render();
+};
+// League News → Retirements.
+function retirementsBox() {
+  if (isCollege()) return '<p class="note small muted">Retirements are for pro leagues.</p>';
+  cpuComebacks();
+  const L = league(), st = comebackStore(), open = phaseRank(L.season) < 7 && !calFlags().cuts;
+  const back = st.back.map(b => ({ b, f: findPlayer(b.pid) })).filter(x => x.f);
+  const list = retirementsThisYear(L);
+  const finals = [...L.teams.flatMap(t => t.roster.map(p => ({ p, t }))), ...(L.freeAgents || []).map(p => ({ p, t: null }))].filter(x => x.p.season?.retiring && !st.back.some(b => b.pid === x.p.id)).sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
+  const row = r => {
+    const mine = isUserTeam(r.team), tried = st.tried[r.p.id];
+    const btns = mine && open && !tried ? `<span class="pod-btns">${['farewell', 'lastrun'].map(k => `<button class="btn tiny off" data-act="comebackPitch" data-id="${r.p.id}" data-k="${k}">${RETURN[k].icon} ${RETURN[k].label}</button>`).join('')}</span>` : '';
+    const note = tried ? ` · <span class="down">said no to ${RETURN[tried].say}</span>` : mine && open ? ` · <span class="up">farewell ${Math.round(comebackOdds(L, r, 'farewell') * 100)}% · last run ${Math.round(comebackOdds(L, r, 'lastrun') * 100)}%</span>` : '';
+    return `<div class="pod-row"><span class="pod-who tap" data-act="openPlayer" data-id="${r.p.id}"><b>${esc(playerName(r.p))}</b> ${lvTag(r.p)}<br><span class="small muted">${r.p.age} · ${r.team ? `${esc(r.team.shortName)}${r.run >= 2 ? ` (${r.run} yrs)` : ''}` : 'free agent'}${note}</span></span>${btns}</div>`;
+  };
+  return `${back.length ? `<fieldset class="frame"><legend>One More Season</legend><div class="stack">${back.map(({ b, f }) => `<p class="note small">${RETURN[b.kind].icon} <b>${esc(playerName(f.p))}</b> is back with ${esc(f.team?.shortName || '')} for ${RETURN[b.kind].say}. This season is his last.</p>`).join('')}</div></fieldset>` : ''}
+    <fieldset class="frame"><legend>Retired This Offseason</legend>
+      <p class="note small muted">Your former players can be talked into one more season: a farewell tour (loyalty, years with you) or one last run (a competitor on a team that can win). One call each.</p>
+      <div class="pod-list">${list.filter(notableRetiree).map(row).join('') || '<p class="note small muted">Nobody notable retired this year.</p>'}</div>
+      ${list.filter(r => !notableRetiree(r)).length ? `<p class="note small muted" style="margin-top:6px">Also retired: ${esc(list.filter(r => !notableRetiree(r)).slice(0, 12).map(r => playerName(r.p)).join(', '))}${list.filter(r => !notableRetiree(r)).length > 12 ? ' and more' : ''}.</p>` : ''}
+    </fieldset>
+    ${finals.length ? `<fieldset class="frame"><legend>Final Seasons</legend><p class="note small muted">Announced this season is their last.</p><p class="note small">${finals.slice(0, 12).map(x => `<b>${esc(playerName(x.p))}</b> <span class="muted">(${x.t ? esc(x.t.shortName) : 'FA'})</span>`).join(' · ')}</p></fieldset>` : ''}`;
+}
+// Season in Review: a nudge when one of yours just retired.
+function retireNote() {
+  if (isCollege()) return '';
+  const mine = retirementsThisYear().filter(r => notableRetiree(r) && isUserTeam(r.team) && !comebackStore().tried[r.p.id]);
+  return mine.length ? `<p class="note small gold">📰 ${esc(andList(mine.map(r => playerName(r.p))))} retired. League News → Retirements to pitch ${mine.length > 1 ? 'them' : 'him'} on one more season.</p>` : '';
+}
+// Hoop Gram: the league talking about this offseason's trait moments, one post a team, the biggest first.
+function traitPosts() {
+  const L = league(), out = [];
+  for (const t of L.teams) {
+    let best = null;
+    for (const p of t.roster) for (const x of driftsOf(p)) {
+      const n = playerName(p), place = t.city || t.name;
+      const c = x.src === 'season:room' && x.d > 0 ? [7, '🏛️ Franchise', `${n}: ${x.why.replace('the face of the team', `the face of ${place}`)}. Some guys just get it.`]
+        : x.src === 'season:ego+' ? [6, '😤 Swagger', `${n} ${x.why} and you can tell. The swagger is different this year.`]
+        : x.src === 'season:dur' && x.d <= -2 ? [6, '🩹 Comeback Watch', `${n} is coming off a major injury. Is he the same player?`]
+        : x.src === 'deal' && x.d > 0 ? [5, '💰 Paid', `${n} just got paid. Will the new money change him?`]
+        : x.src === 'draft' && x.d > 0 ? [5, '🎓 Rookie', `${n} ${x.why}, and he already carries himself like a vet.`]
+        : x.src === 'draft' && x.d < 0 ? [4, '🎓 Slide', `${n} slid on draft night. He says he remembers every team that passed.`]
+        : x.src === 'summer' ? [5, '🔥 Vegas', `Summer League MVP ${n} is all anyone in Vegas is talking about.`]
+        : x.src === 'season:room' && x.d < 0 ? [4, '😒 Role', `${n} isn't thrilled about his shrinking role in ${place}.`]
+        : x.src === 'mentor' && x.d > 0 ? [3, '🤝 Mentor', `${n} ${x.why}. Ask around ${place}, it shows.`] : null;
+      if (c && (!best || c[0] > best.score)) best = { team: t, score: c[0], tag: c[1], text: c[2], pid: p.id };
+    }
+    if (best) out.push({ ...best, handle: ['@HoopGramNBA', '@LockerRoomLeaks', '@BeatWriterBev', '@HoopsTwitterHL'][(best.pid * 7) % 4], likes: 1500 + (best.pid * 131) % 6000 + best.score * 400 });
+  }
+  // One of each kind first, so the feed isn't four of the same story.
+  const seen = new Set(), sorted = out.sort((a, b) => b.score - a.score);
+  return [...sorted.filter(x => !seen.has(x.tag) && seen.add(x.tag)), ...sorted].filter((x, i, a) => a.indexOf(x) === i).slice(0, 4);
+}
+// Hoop Gram: the comebacks, ahead of everything else.
+function comebackPosts() {
+  return comebackStore().back.map(b => { const f = findPlayer(b.pid); if (!f?.team) return null; const n = playerName(f.p);
+    return { team: f.team, score: 99, tag: '📣 Comeback', pid: f.p.id, handle: '@HoopGramNBA', likes: 9000 + (f.p.id * 37) % 4000,
+      text: b.kind === 'farewell' ? `${n} announced he's playing one more season in ${f.team.city || f.team.name}, but it's his last. The farewell tour starts opening night.` : `${n} is unretiring for one last run at a ring with ${f.team.city || f.team.name}. He says this season is his last.` }; }).filter(Boolean);
+}
+
 // ---- Mentorship
 
 const mentorState = () => (state.mentor[state.leagueIdx] ||= { seed: null, list: [] });
@@ -3425,6 +3582,22 @@ function reapplyMentorship() {
   }
 }
 
+// Mentors rub off: once a summer a mentee picks up one thing from his mentor, a work ethic, a willingness to learn,
+// how to carry himself in a locker room, a bit of swagger, or bad habits from a cancer.
+function mentorRubOff() {
+  if (!isComplete() || isCollege()) return;
+  for (const m of state.mentor[state.leagueIdx]?.list || []) {
+    const a = byId(m.mentorId)?.p, b = byId(m.menteeId)?.p;
+    if (!a || !b || !traitsSet(a) || !traitsSet(b)) continue;
+    const t = (k, d, why) => drift(b, 'mentor', k, d, why, false);
+    if (tr(a, 'lockerRoom') <= 4) t('lockerRoom', -1, `picked up bad habits from ${a.ln}`);
+    else if (tr(a, 'motor') >= 16 && tr(b, 'motor') <= tr(a, 'motor') - 3) t('motor', 1, `learned ${a.ln}'s work ethic`);
+    else if (tr(a, 'roadWarrior') >= 16 && tr(b, 'roadWarrior') <= tr(a, 'roadWarrior') - 3) t('roadWarrior', 1, `learned to learn from ${a.ln}`);
+    else if (tr(a, 'lockerRoom') >= 16 && tr(b, 'lockerRoom') <= 12) t('lockerRoom', 1, `learned to lead from ${a.ln}`);
+    else if (egoVal(a) >= 16 && egoVal(b) <= 12) t(EGO_KEY, 1, `picked up ${a.ln}'s swagger`);
+  }
+  saveDrift(); saveTraitStore();
+}
 function applyCpuMentorship(seed) {
   const ms = mentorState();
   for (const m of ms.list.filter(x => x.cpu)) unteach(m);
@@ -3872,13 +4045,14 @@ function coachMarketCard() {
 }
 
 // ---- League News: rumors, transactions, coaching moves, CPU trades and (at Opening Night) the report card, as tabs.
-const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
+const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['retire', 'Retirements'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
 const newsTabs = cur => `<div class="tabs fa-tabs news-tabs">${NEWS_TABS.filter(([k]) => k !== 'report' || league().season.phase === 6).map(([k, l]) => `<button class="btn small ${k === cur ? 'on focus' : 'off'}" data-act="newsTab" data-t="${k}">${l}</button>`).join('')}</div>`;
 actions.newsTab = d => (d.t === 'rumors' || d.t === 'transactions' ? replace(d.t, {}) : replace('news', { tab: d.t }));
 screens.news = (args = {}) => {
   const tab = args.tab || 'coachnews';
   let body = '';
-  if (tab === 'coachnews') body = (hotSeatBox(league()) + coachChangesBox()) || '<p class="note small muted">No coaching news yet. CPU teams make their moves once free agency opens.</p>';
+  if (tab === 'retire') body = retirementsBox();
+  else if (tab === 'coachnews') body = (hotSeatBox(league()) + coachChangesBox()) || '<p class="note small muted">No coaching news yet. CPU teams make their moves once free agency opens.</p>';
   else if (tab === 'cputrades') { const log = offGet('cpuTrades'); const list = Array.isArray(log) ? log : []; body = list.length ? `<div class="stack">${list.map(x => `<p class="note small" style="margin:0">🔁 ${esc(x)}</p>`).join('')}${(calFlags().dumpLog || []).map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : (calFlags().dumpLog || []).length ? `<div class="stack">${calFlags().dumpLog.map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : '<p class="note small muted">No CPU trades yet.</p>'; }
   else body = reportCard() || '<p class="note small muted">The report card comes out at Opening Night.</p>';
   layout({ title: 'League News', body: newsTabs(tab) + body });
@@ -4342,6 +4516,8 @@ function playerTags(p) {
   const c = p.contract || {}, t = [];
   const add = (label, cls = '') => t.push(`<span class="badge ${cls}">${label}</span>`);
   if (c.sal && c.yrs) { add(esc(contractText(p, true))); const v = contractBadge(p).trim(); if (v) t.push(v); }
+  // His agent, when it's one that changes the talks.
+  if (isComplete() && !isCollege() && p.status !== 1) { const ag = FA.agentOf(p); if (ag !== 'fair') add(`${FA.AGENTS[ag].icon} ${FA.AGENTS[ag].label}`, ag === 'shark' ? 'down-b' : 'lvl'); }
   if (p.yrs === 0) add('Rookie', 'new');
   if (declining(p)) add('Declining', 'down-b');
   const inj = p.season?.injury?.gamesOut > 0 ? p.season.injury.gamesOut : 0;
@@ -8062,7 +8238,7 @@ screens.fa = (args = {}) => {
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
       <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
-      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}</span>
+      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
       : list.length ? `<span class="chg">${list.length} team${list.length > 1 ? 's' : ''} interested · best ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
     </button>`;
@@ -9654,6 +9830,14 @@ function seasonDrift() {
   for (const t of L.teams) {
     const roster = t.roster.filter(p => p.status === 3 || p.status === 4);
     const best = [...roster].sort((a, b) => shownLevel(b) - shownLevel(a))[0];
+    // Chemistry: the room's leader (his Locker Room 16+) lifts everyone around him a little (more at 18+); a cancer
+    // (4 or less) drags them down more, up to two of them.
+    const ldr = roster.filter(x => tr(x, 'lockerRoom') >= 16).sort((a, b) => tr(b, 'lockerRoom') - tr(a, 'lockerRoom')).slice(0, 1);
+    const cnc = roster.filter(x => tr(x, 'lockerRoom') <= 4).sort((a, b) => tr(a, 'lockerRoom') - tr(b, 'lockerRoom')).slice(0, 2);
+    for (const p of roster) {
+      const l = ldr.filter(x => x !== p), c = cnc.filter(x => x !== p), n = l.reduce((a, x) => a + (tr(x, 'lockerRoom') >= 18 ? 3 : 2), 0) - 3 * c.length;
+      if (n) moraleEvent(p, 'chem', n, n > 0 ? `${andList(l.map(x => x.ln))} ${l.length > 1 ? 'set' : 'sets'} the tone` : `${andList(c.map(x => x.ln))} ${c.length > 1 ? 'are' : 'is'} dragging the room down`);
+    }
     const leaders = roster.filter(x => tr(x, 'lockerRoom') >= 16);
     const coach = headCoachOf(t), steady = (coach?.attributes?.leadership?.[0] || 0) >= 16;
     for (const p of roster) {
@@ -9811,10 +9995,27 @@ function presserEffects(L, t, ans) {
     if (P) out.push({ ...mood(P, 5), text: `Promise kept: ${P.fn} morale +5` });
     else out.push({ good: false, text: 'Promise broken: everyone\'s morale −3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 3); }) });
   }
-  for (const q of presserQs(L, t)) {
+  // Promises from last summer's press conference beyond contracts: the centerpiece, whose team it is, who starts.
+  const startsLast = p => ((p.stats || []).find(x => x.league === 0 && x.yr === lastSeasonYear())?.season || []).reduce((a, r) => a + (r.GS || 0), 0);
+  for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.tid === t.id && x.src === 'presser')) {
+    const P = find(pr.pid), what = { centerpiece: 'the centerpiece', team: 'it was his team', start: 'he\'d start' }[pr.v] || 'a promise';
+    if (!P) { out.push({ good: false, text: `Promise broken (${what}, then he was moved): everyone's morale −3`, apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.max(0, (p.season.morale ?? 60) - 3); }) }); continue; }
+    if (pr.v === 'start') { const gs = startsLast(P); if (gs >= 41) out.push({ ...mood(P, 4), text: `Promise kept: ${P.fn} started ${gs} games (morale +4)` }); else if (gs < 20) out.push({ ...mood(P, -8), good: false, text: `Promise broken: ${P.fn} started ${gs} games (morale −8)` }); continue; }
+    out.push(roleRank(t, P) <= 2 ? { ...mood(P, 5), text: `Promise kept: still ${what} (${P.fn} morale +5)` } : { ...mood(P, -5), good: false, text: `Promise faded: ${P.fn} isn't ${what} anymore (morale −5)` });
+  }
+  for (const q of fullQs(L, t, ans)) {
     const a = ans?.[q.key];
     if (!a) continue;
     key = q.key;
+    if (q.key === 'followup') {
+      const P = find(q.pid), B = find(q.pid2), ref = q.ctx.ref, c = a === 'clarify';
+      if (ref === 'contract' && P) out.push(c ? mood(P, 4) : mood(P, -3));
+      if (ref === 'lockerroom') { const co = headCoachOf(t); for (const p of co ? t.roster.filter(x => isStarPlayer(x) && playerCoachFit(x, t, co).clash) : []) out.push(mood(p, c ? 2 : -3)); }
+      if (ref === 'alphas' && P && B) out.push(...(c ? [mood(P, 3), mood(B, -4)] : [mood(P, -1), mood(B, -1)]));
+      if (ref === 'battle' && P && B) out.push(...(c ? [mood(P, 2), mood(B, -3)] : [mood(P, -1), mood(B, -1)]));
+      if (ref === 'moves' && P) out.push(c ? mood(P, 3) : mood(P, -4));
+      continue;
+    }
     const P = find(q.pid);
     if (q.key === 'contract' && P) {
       // A mercenary hears words, a money chaser wants the number; an alpha takes a cold answer personally.
@@ -9848,6 +10049,12 @@ function presserEffects(L, t, ans) {
         if (ew && el) { ew.pid = l.id; el.pid = w.id; }
         [w.linePos, l.linePos] = [l.linePos, w.linePos];
       } });
+    }
+    if (q.key === 'holdout' && P) {
+      const shark = FA.agentOf(P) === 'shark';
+      if (a === 'pay') out.push(mood(P, 6));
+      if (a === 'stand') out.push(shark ? mood(P, -12, 'his agent won\'t let it go') : mood(P, -8));
+      if (a === 'shop') out.push(tr(P, 'loyalty') >= 14 ? mood(P, -6, 'stung after years here') : mood(P, 3, 'wants out anyway'), { text: `${P.fn} goes on the trade block`, apply: () => { if (P.season) P.season.onTradeBlock = 1; } });
     }
     if (q.key === 'alphas' && P) {
       const B = find(q.pid2); if (!B) continue;
@@ -9893,13 +10100,35 @@ function presserEffects(L, t, ans) {
   }
   return out;
 }
+// One follow-up a press conference: dodge a question and a reporter presses you on the first one you dodged.
+const EVASIVE = { contract: 'focus', lockerroom: 'fine', alphas: 'winning', battle: 'open', moves: 'believe' };
+function presserFollowup(L, t, qs, ans) {
+  const q = qs.find(x => ans[x.key] && EVASIVE[x.key] === ans[x.key] && (x.key !== 'moves' || ['unsupported', 'passive'].includes(x.ctx?.mood)));
+  if (!q || qs.some(x => !ans[x.key])) return null;
+  const P = t.roster.find(p => p.id === q.pid), nm = p => (p ? playerName(p) : 'him');
+  const d = {
+    contract: [`So is an extension off the table for ${nm(P)}?`, 'We\'d love to keep him', 'I said what I said'],
+    lockerroom: ['Players are telling a different story. Want to address it?', 'We\'ll talk it through', 'I said what I said'],
+    alphas: ['That\'s not an answer. Whose team is it?', `It's ${P?.fn || 'his'}'s team`, 'It\'s both of theirs'],
+    battle: ['Who\'s the favorite, then?', `${P?.fn || 'The starter'}, for now`, 'Camp decides'],
+    moves: [`So no help is coming for ${nm(P)}?`, 'Help is coming', 'We like this group'],
+  }[q.key];
+  return { key: 'followup', pid: q.pid, pid2: q.pid2, who: q.who, q: `Follow-up: ${d[0]}`, options: [{ v: 'clarify', label: d[1] }, { v: 'hold', label: d[2] }], ctx: { ref: q.key, mood: q.ctx?.mood } };
+}
+// The questions as they'll be (or were) asked: the base set plus the follow-up once it's earned.
+function fullQs(L, t, ans) {
+  const fz = presserStore().frozen?.[t.id];
+  if (fz) return fz;
+  const qs = presserQuestions(L, t, state.leagueIdx), fu = presserFollowup(L, t, qs, ans || {});
+  return fu ? [...qs, fu] : qs;
+}
 const presserStar = (L, t) => { const q = presserQs(L, t).find(x => x.key === 'moves'); return q?.pid ? t.roster.find(p => p.id === q.pid) : null; };
 function applyPresser() {
   const L = league(), pr = presserStore();
   if (pr.applied) return;
   pr.frozen = {}; pr.fx = {};
   for (const t of L.teams.filter(isUserTeam)) {
-    pr.frozen[t.id] = presserQuestions(L, t, state.leagueIdx);
+    pr.frozen[t.id] = fullQs(L, t, pr[t.id]);
     const fx = presserEffects(L, t, pr[t.id]);
     pr.fx[t.id] = fx.map(({ key, good, text }) => ({ key, good, text }));
     for (const e of fx) e.apply();
@@ -9919,8 +10148,8 @@ function presserCard() {
   if (!mine.length) return '';
   const pr = presserStore();
   return mine.map(t => {
-    const qs = presserQs(L, t);
     const ans = pr[t.id] || {};
+    const qs = fullQs(L, t, ans);
     const tint = teamTint(t);
     const fx = pr.applied ? (pr.fx?.[t.id] || []) : presserEffects(L, t, ans);
     const done = qs.every(q => ans[q.key]);
@@ -9929,10 +10158,11 @@ function presserCard() {
       ? qs.filter(q => ans[q.key]).map(q => `<div class="pq">
           <p class="note small muted">${q.who ? `${esc(q.who)}: ` : ''}${esc(q.q)}</p>
           <p class="note pq-quote">"${esc(q.options.find(o => o.v === ans[q.key])?.label || '')}"</p>
+          ${playerReplies(L, t, q, ans[q.key]).map(r => `<p class="note small pq-reply">💬 <b>${esc(r.name)}</b>: "${esc(r.text)}"</p>`).join('')}
           ${fxLine(fx.filter(e => e.key === q.key))}</div>`).join('')
       : qs.map(q => `<div class="pq">
           <p class="note small">${q.who ? `<span class="muted">${esc(q.who)}:</span> ` : ''}<b>${esc(q.q)}</b></p>
-          <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}">${esc(o.label)}</button>`).join('')}</div>
+          <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}" data-pid2="${q.pid2 ?? ''}">${esc(o.label)}</button>`).join('')}</div>
           ${fxLine(fx.filter(e => e.key === q.key))}</div>`).join('');
     return `<fieldset class="frame presser"><legend>🎙️ Press Conference</legend>
       <div class="outlook" ${tint ? `style="${tint}"` : ''}><div class="outlook-top ${tint ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b></div>
@@ -9948,17 +10178,21 @@ actions.presserAnswer = d => {
   if (pr.applied) return;
   (pr[d.tid] ||= {})[d.k] = d.v;
   savePresser(pr);
-  if (d.k === 'contract' && d.pid) {
-    const yr = league().season.currentYear;
-    const list = loadPromises().filter(x => !(x.yr === yr && x.tid === +d.tid));
-    list.push({ yr, tid: +d.tid, pid: +d.pid, v: d.v });
-    savePromises(list);
-  }
+  // What you said on the record that can be held against you next summer. Each question keeps one; other promises
+  // (option pitches, trade requests) are left alone.
+  const yr = league().season.currentYear, tid = +d.tid;
+  const list = loadPromises().filter(x => !(x.yr === yr && x.tid === tid && ((!x.src && (x.key || 'contract') === d.k) || (x.src === 'presser' && x.key === d.k))));
+  if (d.k === 'contract' && d.pid) list.push({ yr, tid, pid: +d.pid, v: d.v, key: 'contract' });
+  if (d.k === 'holdout' && d.pid && d.v === 'pay') list.push({ yr, tid, pid: +d.pid, v: 'commit', key: 'holdout' });
+  if (d.k === 'followup' && d.pid && d.v === 'clarify' && fullQs(league(), league().teams.find(x => x.id === tid), pr[tid]).find(q => q.key === 'followup')?.ctx.ref === 'contract') list.push({ yr, tid, pid: +d.pid, v: 'commit', key: 'followup' });
+  const pv = { expect: d.v === 'star' && 'centerpiece', alphas: d.v === 'pecking' && 'team', rookie: d.v === 'start' && 'start', battle: (d.v === 'a' || d.v === 'b') && 'start' }[d.k];
+  if (pv) list.push({ yr, tid, pid: d.k === 'battle' && d.v === 'b' ? +d.pid2 : +d.pid, v: pv, key: d.k, src: 'presser' });
+  savePromises(list);
   render();
 };
 
 function leagueGramCard() {
-  const posts = leagueGram(league(), isUserTeam, state.leagueIdx);
+  const posts = [...(isCollege() ? [] : [...comebackPosts(), ...traitPosts()]), ...leagueGram(league(), isUserTeam, state.leagueIdx)].slice(0, 10);
   if (!posts.length) return '';
   return `<h2 class="team-title">Trending on Hoop Gram</h2>
     <div class="stack">${posts.map(x => `<${x.pid ? `button data-act="openPlayer" data-id="${x.pid}"` : 'div'} class="hg-post ${x.pid ? 'tap' : ''}">
@@ -10499,14 +10733,16 @@ function extAsk(p, team) {
   const base = fairSalary(proj);
   const morale = p.season?.morale ?? 70;
   const rookie = FA.isRookieScale(p);
-  const greed = 1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015;
+  const ag = isComplete() ? FA.agentOf(p) : 'fair';
+  const greed = (1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015) * FA.AGENTS[ag].ask;
   // He opens high (and always above the minimum) and can be talked down.
   let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
   if (isUserTeam(team)) sal = Math.round(sal * fxNow().askMult * FX.facilityFx(team).askMult);
   // Holding out: an unhappy player whose traits say money or no loyalty asks
   // for a market-resetting deal: above the best-paid peers of his own level at
   // his position, but never more than 1.75 times what he's worth.
-  const holdout = isComplete() && morale < 35 && tr(p, 'loyalty') < 16 && (tr(p, 'money') >= 13 || tr(p, 'loyalty') <= 6);
+  // His agent sets the line: a shark will hold out over a smaller grievance, a team-friendly one almost never.
+  const holdout = isComplete() && morale < (ag === 'shark' ? 45 : ag === 'friendly' ? 20 : 35) && tr(p, 'loyalty') < 16 && (tr(p, 'money') >= 13 || tr(p, 'loyalty') <= 6 || ag === 'shark');
   if (holdout) {
     const lv = shownLevel(p);
     const peers = league().teams.flatMap(x => x.roster).filter(x => x !== p && Math.abs(x.pos - p.pos) <= 1 && Math.abs(shownLevel(x) - lv) <= 2 && x.contract?.sal);
@@ -10519,7 +10755,7 @@ function extAsk(p, team) {
   const mood = (morale < 40 && !loyal) || (mercenary && tr(p, 'money') >= 15) ? 'market' : morale >= 75 || loyal || teamRecord(team).pct >= 0.55 ? 'eager' : 'open';
   // The one length he asks for (the range is how far he'll bend).
   const pref = Math.round((yrs[0] + yrs[1]) / 2 + 0.01);
-  return { sal, yrs, pref, mood, holdout, proj, ntc: FA.wantsNtc(league(), p, team), ntcOk: FA.ntcEligible(league(), p, team) };
+  return { sal, yrs, pref, mood, holdout, proj, agent: ag, ntc: FA.wantsNtc(league(), p, team), ntcOk: FA.ntcEligible(league(), p, team) };
 }
 // His answer to an offer: { ok, counter, text }.
 function extAnswer(p, team, offer) {
@@ -10596,7 +10832,7 @@ screens.extensions = () => {
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
       <span class="right small">$${p.contract.sal}M<br><span class="muted">${(optStore().log && (optStore().team || {})[p.id] === 'ex') ? 'option year' : 'final year'}</span></span>
-      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref}${a.holdout ? ' · <span class="down">🚫 holding out</span>' : a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
+      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref} · ${FA.AGENTS[a.agent].icon}${a.holdout ? ' · <span class="down">🚫 holding out</span>' : a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
       ${grudge ? '<span class="chg"><span class="down">🚫 Refuses to meet with you: you broke your promise</span></span>' : status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
@@ -10833,7 +11069,7 @@ screens.review = () => {
         <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
-      ${r.pro ? traitChangesCard(x => x.src.startsWith('season:'), 'What Last Season Changed') : ''}${r.pro && alphaClash(t) ? `<p class="note small gold">${esc(alphaClash(t))}</p>` : ''}
+      ${r.pro ? traitChangesCard(x => x.src.startsWith('season:'), 'What Last Season Changed') : ''}${r.pro ? retireNote() : ''}${r.pro && alphaClash(t) ? `<p class="note small gold">${esc(alphaClash(t))}</p>` : ''}
       ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}`],
         ['league', r.pro ? 'League' : 'National', `      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
         ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}

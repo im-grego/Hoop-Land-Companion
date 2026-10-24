@@ -248,7 +248,7 @@ export function baseAsk(league, p, o = FA_DEFAULTS) {
   let ask = 2 * (gs - 8);
   if (p.age <= 25) ask += Math.max(0, p.pot - 6) * 2;
   if (p.age > p.regressionAge) ask *= Math.max(0.5, 1 - 0.1 * (p.age - p.regressionAge));
-  if (COMPLETE) ask *= egoAsk(p);   // an Alpha thinks he's worth more, a Humble player asks for less
+  if (COMPLETE) ask *= egoAsk(p) * AGENTS[agentOf(p)].ask;   // an Alpha thinks he's worth more, a Humble player asks less; his agent leans it
   return Math.max(o.minSalary, Math.min(maxSalary(league, p), Math.round(ask)));
 }
 
@@ -257,6 +257,19 @@ export function askFor(league, p, day, o = FA_DEFAULTS) {
   if (day >= 3 && isVet(p, o)) a *= o.vetAskDrop;
   // Veterans still open above the veterans' minimum; they can be talked down.
   return Math.max(isVet(p, o) ? minFor(p, o) + 1 : minFor(p, o), Math.round(a));
+}
+
+// Every player has an agent, and agents have a style: a shark squeezes every dollar and isn't afraid of a holdout, a
+// team-friendly one helps a deal get done; most are straight shooters. Stable per player, leaned by his traits.
+export const AGENTS = {
+  shark: { icon: '🦈', label: 'Hardball agent', ask: 1.07, says: 'squeezes every dollar and isn\'t afraid of a holdout' },
+  fair: { icon: '💼', label: 'Straight-shooter agent', ask: 1, says: 'asks for what his client is worth' },
+  friendly: { icon: '🏠', label: 'Team-friendly agent', ask: 0.95, says: 'wants a deal done more than the last dollar' },
+};
+export function agentOf(p) {
+  const r = hash(p.id, 7707), m = traitsSet(p) ? tr(p, 'money') : 10, l = traitsSet(p) ? tr(p, 'loyalty') : 10;
+  const shark = 0.14 + Math.max(0, m - 12) * 0.06, friendly = 0.14 + Math.max(0, l - 13) * 0.05 + Math.max(0, 8 - m) * 0.05;
+  return r < shark ? 'shark' : r > 1 - friendly ? 'friendly' : 'fair';
 }
 
 // What a player wants most (stable per player and season).
@@ -311,6 +324,12 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   const team = league.teams.find(t => t.id === offer.tid);
   const w = { greed: 1, security: 0.15, control: 0.12, contender: 0.25, role: 0.25 };
   w[motive] = motive === 'greed' ? 2 : w[motive] * 3;
+  // Late in a career the traits take over: a competitor chases a ring and takes less to do it; a mercenary plays for
+  // whoever pays.
+  if (traitsSet(p) && p.age >= 33) {
+    if (tr(p, 'winning') >= 15) { w.contender *= 1.7; w.greed = Math.min(w.greed, 0.6); }
+    else if (tr(p, 'loyalty') <= 5) w.greed *= 1.3;
+  }
   // A veteran taking a discount cares about what they're chasing, not a
   // couple of million more.
   if (discounted) w.greed = 0.3;
