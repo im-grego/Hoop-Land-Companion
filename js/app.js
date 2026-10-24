@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.190.0';
+const APP_VERSION = '0.190.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3371,12 +3371,12 @@ function mediaMindCard() {
   const back = calFlags().mediaBack;
   const list = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 8);
   return `<fieldset class="frame"><legend>At the Podium</legend>
-    <p class="note small">Back one player publicly, or challenge one. Backing lifts his morale. A challenge humbles a proud player (ego 13+) and lights a fire under anyone else.</p>
-    <div class="stack">${list.map(p => {
+    <p class="note small muted">Back one (morale +6) or challenge one: it humbles a proud player (ego 13+), fires up anyone else (motor +1).</p>
+    <div class="pod-list">${list.map(p => {
       const ch = driftsOf(p).find(x => x.src === 'media'), on = back === p.id ? 'back' : ch ? 'challenge' : '';
-      const fx = on === 'back' ? `👍 Backed: morale +6 at wrap-up${isAlpha(p) ? ', and any other Alpha on the team −3' : ''}` : ch ? `🔥 Challenged: ${driftText(ch)}${ch.k === EGO_KEY ? ', morale −4 at wrap-up' : ''}` : '';
-      return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">🎭 Ego ${tr(p, EGO_KEY)} · ⚙️ Motor ${tr(p, 'motor')}</span>${fx ? `<br><span class="small up">${esc(fx)}</span>` : ''}</span>
-        <span class="opt-btns"><button class="btn small ${on === 'back' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="back">👍 Back</button><button class="btn small ${on === 'challenge' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="challenge">🔥 Challenge</button></span></div>`;
+      const fx = on === 'back' ? `Backed: morale +6${isAlpha(p) ? ', other Alphas −3' : ''}` : ch ? `Challenged: ${traitLbl(ch.k)} ${ch.d > 0 ? '+' : '−'}${Math.abs(ch.d)}${ch.k === EGO_KEY ? ', morale −4' : ''}` : '';
+      return `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small ${fx ? 'up' : 'muted'}">${fx ? esc(fx) : `🎭 ${tr(p, EGO_KEY)} · ⚙️ ${tr(p, 'motor')}`}</span></span>
+        <span class="pod-btns"><button class="btn tiny ${on === 'back' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="back">👍 Back</button><button class="btn tiny ${on === 'challenge' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="challenge">🔥 Challenge</button></span></div>`;
     }).join('')}</div></fieldset>`;
 }
 actions.mediaMind = d => {
@@ -4461,11 +4461,11 @@ screens.player = (args) => {
   const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}`
     : tab === 'traits' ? (personality + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
     : tab === 'stats' ? statsTab(p, args)
-    : `${newsBox(p)}${rankBox(p, mpg)}${moraleBox(p)}
-      <fieldset class="frame"><legend>Scouting Report</legend>
+    : `<fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
       </fieldset>
+      ${newsBox(p)}${rankBox(p, mpg)}
       ${awardsBox(p)}`;
   layout({
     title: 'Player Profile',
@@ -9530,14 +9530,6 @@ const moraleFace = m => MORALE_FACES[Math.max(0, Math.min(4, Math.floor((m ?? 60
 const MORALE_WORDS = ['Furious', 'Upset', 'Indifferent', 'Content', 'Happy'];
 const moraleWord = m => MORALE_WORDS[Math.max(0, Math.min(4, Math.floor((m ?? 60) / 20)))];
 const moraleTag = p => `<span title="${moraleWord(p.season?.morale)}">${moraleFace(p.season?.morale)}</span> ${p.season?.morale ?? '?'}`;
-// Morale on the profile: where it stands and what moved it this offseason.
-function moraleBox(p) {
-  if (!isComplete() || isCollege() || !p.season || p.season.morale === undefined) return '';
-  const mo = p.season.morale ?? 60;
-  const moves = (calFlags().moraleLog || []).filter(x => x.pid === p.id && x.to !== x.from).slice(-4).reverse();
-  return `<fieldset class="frame"><legend>Morale</legend><p class="note">${moraleFace(mo)} <b>${moraleWord(mo)}</b> <span class="muted">${mo}</span></p>
-    <p class="note small muted">${moves.length ? moves.map(x => `${esc(x.why)} <span class="${x.to > x.from ? 'up' : 'down'}">${x.to > x.from ? '+' : ''}${x.to - x.from}</span>`).join(' · ') : 'Moves with his situation: team, role, deal, coach.'}</p></fieldset>`;
-}
 
 // ---- Traits that last
 // The game drops traits from its saves, so the app keeps each save's current traits on this device (the pro league:

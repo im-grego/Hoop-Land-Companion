@@ -1466,3 +1466,10 @@ main.panel.bare { margin-top: 10px; }
 .wk-dots i { width: 9px; height: 9px; border: 2px solid var(--gold); display: inline-block; }
 .wk-dots i.used { background: var(--gold); }
 .wk-row .linkish { font-size: 15px; }
+/* Media Day podium: one compact row per player, the two buttons stacked on the right. */
+.pod-list { display: flex; flex-direction: column; }
+.pod-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.pod-row:first-child { border-top: 0; }
+.pod-who { flex: 1; min-width: 0; line-height: 1.25; }
+.pod-btns { display: flex; flex-direction: column; gap: 3px; flex: none; }
+.pod-btns .btn.tiny { min-height: 20px; height: 20px; padding: 0 6px; font-size: 11px; width: 96px; white-space: nowrap; display: inline-flex; flex-direction: row; align-items: center; justify-content: center; gap: 4px; line-height: 1; }
