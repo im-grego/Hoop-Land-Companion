@@ -49,7 +49,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.186.0';
+const APP_VERSION = '0.186.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9358,7 +9358,10 @@ screens.options = () => {
   const myQO = qoList.filter(mine);
   const btn = (act, pid, v, on, label) => `<button class="btn small ${on ? 'on focus' : 'off'}" data-act="${act}" data-id="${pid}" data-v="${v}" ${done ? 'disabled' : ''}>${label}</button>`;
   const around = list.filter(x => !mine(x) && x.c.choice !== 'ex' && x.c.choice !== 'in').sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
-  const pending = myTeamOpts.some(x => !x.c.choice) || myQO.some(x => st.qo[x.p.id] == null);
+  // What's still undecided, and on which tab (the tab has a dot): the button says where to look.
+  const pendTeam = myTeamOpts.filter(x => !x.c.choice), pendQO = myQO.filter(x => st.qo[x.p.id] == null);
+  const pending = pendTeam.length || pendQO.length;
+  const pendLabel = [pendTeam.length ? `${pendTeam.length} team option${pendTeam.length > 1 ? 's' : ''}` : '', pendQO.length ? `${pendQO.length} qualifying offer${pendQO.length > 1 ? 's' : ''} (QOs tab)` : ''].filter(Boolean).join(' and ');
   layout({
     title: 'Options Deadline',
     body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, or decline it to let him go. Picked-up options can be extended right after, in the extension window.</p>
@@ -9377,7 +9380,7 @@ screens.options = () => {
         ['league', 'League', `      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>`],
       ])}
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
-    action: done ? { act: 'nav', label: 'On to Extensions', to: 'extensions' } : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
+    action: done ? { act: 'nav', label: 'On to Extensions', to: 'extensions' } : { act: 'optFinish', label: pending ? `Decide ${pendLabel}` : 'Finalize Decisions' },
   });
 };
 // Sim the deadline: your open team options and qualifying offers get the same call a CPU team would make.
@@ -9464,8 +9467,13 @@ actions.optFinish = async (d = {}) => {
   const st = optStore();
   const list = optionPlayers(L).map(x => ({ ...x, c: optionCall(L, x.p, x.team) }));
   const qoList = L.teams.flatMap(t => t.roster.filter(p => FA.qoEligible(L, p)).map(p => ({ p, team: t })));
-  if (list.some(x => isUserTeam(x.team) && x.c.kind === 'team' && !x.c.choice) || qoList.some(x => isUserTeam(x.team) && st.qo[x.p.id] == null)) {
-    toast('Decide every team option and qualifying offer first'); return;
+  const openTeam = list.filter(x => isUserTeam(x.team) && x.c.kind === 'team' && !x.c.choice), openQO = qoList.filter(x => isUserTeam(x.team) && st.qo[x.p.id] == null);
+  if (openTeam.length || openQO.length) {
+    // Take you to what's left.
+    (state.uiTab ||= {}).options = openTeam.length ? 'team' : 'qo';
+    if (!d.auto) render();
+    toast(openTeam.length ? 'Team options still open' : 'Qualifying offers still open', `${(openTeam.length ? openTeam : openQO).map(x => playerName(x.p)).join(', ')}: ${openTeam.length ? 'Accept or Decline' : 'Make Offer or Let Walk'}.`);
+    return;
   }
   if (!d.auto && !(await confirmBox('Finalize every option and qualifying offer? Picked-up options are written to the save.', 'Finalize'))) return;
   checkpoint('Options deadline');
