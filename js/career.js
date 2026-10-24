@@ -121,7 +121,7 @@ export const AGENT_KEYS = Object.keys(CAREER_AGENTS);
 // The market he'd see: every team that can and wants to pay him, as offers { tid, sal, yrs, opt, interest, own }.
 // Interest: how much he'd help them (where he'd rank on their roster), his upside, and whether they're built to spend.
 // day: the free agency day (1 before it opens). rnd(team id) → 0..1, stable for the offseason.
-export function careerOffers(L, p, agentKey, day, rnd) {
+export function careerOffers(L, p, agentKey, day, rnd, { ringChase = false } = {}) {
   const ag = CAREER_AGENTS[agentKey] || CAREER_AGENTS.brand;
   const ask = FA.baseAsk(L, p), from = L.teams.find(t => t.roster.includes(p)) || null;
   const out = [];
@@ -133,10 +133,12 @@ export function careerOffers(L, p, agentKey, day, rnd) {
     let interest = 0.35 * role + 0.15 * Math.min(1, Math.max(0, (p.pot - 6) / 4)) * (p.age <= 25 ? 1 : 0.4) + 0.38 * rnd(t.id) + (st === 'rebuilding' && p.age <= 24 ? 0.08 : 0) + (own ? 0.15 : 0);
     if (ag.wants === 'market') interest += ((cityOf(t)?.[2] ?? 0.5) - 0.5) * 0.15;   // she gets the big markets on the phone
     if (ag.wants === 'fit') interest += Math.min(0.12, bondsOn(p, t).friends.length * 0.04);   // he knows the people there
+    if (ringChase && FA.teamStrength(L, t) < 0.55) continue;   // ring or bust: contenders only
+    if (ringChase) interest += 0.2;
     if (interest < 0.42 && !own) continue;
     // The keenest teams pay his number; the rest come in under it.
     const want = ask * Math.min(1.05, 0.55 + 0.55 * Math.min(1, interest));
-    let sal = Math.max(FA.minFor(p), Math.min(room.max, Math.round(want)));
+    let sal = Math.max(FA.minFor(p), Math.min(room.max, Math.round(want * (ringChase ? 0.7 : 1))));   // he takes less to chase it
     if (interest < 0.85 && !own) sal = Math.min(sal, Math.round(FA.maxSalary(L, p) * 0.88));   // only the teams that really want him go to the max
     if (sal < ask * 0.6 && !own) continue;
     const yrs = p.age <= 25 ? (interest >= 0.7 ? 4 : 3) : p.age <= 29 ? 3 : p.age <= 32 ? 2 : 1;

@@ -42,6 +42,7 @@ import * as CG from './classgen.js';
 import { egoRead, egoVal, isAlpha, isHumble, EGO_KEY } from './ego.js';
 import * as GEAR from './gear.js';
 import * as CAR from './career.js';
+import * as CL from './careerlife.js';
 import { setGameClock, secsOf } from './gameclock.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -50,7 +51,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.199.0';
+const APP_VERSION = '0.200.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1775,9 +1776,12 @@ function careerCard() {
   return `<button class="btn big left focus" data-act="nav" data-to="career"><span class="ico">${CAR.RANK_ICONS[r]}</span> My Career <span class="note small">${esc(playerName(p))} · ${esc(CAR.RANKS[r])} · ${esc(team ? team.shortName : 'FA')}</span></button>`;
 }
 
-screens.career = () => {
+screens.career = (args = {}) => {
   const L = league(), me = CAR.careerPlayer(L);
   if (!me) { layout({ title: 'My Career', body: '<p class="note">This save has no career player.</p>' }); return; }
+  const tab = args.tab || 'hub';
+  const tabs = `<div class="tabs fa-tabs">${[['hub', 'Me'], ['moves', 'Moves'], ['story', 'Story'], ['legacy', 'Legacy']].map(([k, l]) => `<button class="btn small ${k === tab ? 'on focus' : 'off'}" data-act="careerTab" data-t="${k}">${l}</button>`).join('')}</div>`;
+  if (tab !== 'hub') { layout({ title: 'My Career', body: tabs + ({ moves: careerMovesTab, story: careerStoryTab, legacy: careerLegacyTab }[tab])(L, me.p, me.team) }); return; }
   const { p, team } = me, cr = L.career || {}, r = CAR.rankIdx(p), tro = CAR.trophies(p);
   const st = CAR.standing(L, p, team, valueOf), fo = CAR.frontOffice(L, p, team), room = CAR.lockerRoom(L, p, team);
   const c = p.contract || {};
@@ -1787,7 +1791,7 @@ screens.career = () => {
   const coach = st?.coach ? `${st.coach.fn || ''} ${st.coach.ln || ''}`.trim() : '';
   layout({
     title: 'My Career',
-    body: `<fieldset class="frame"><legend>${esc(playerName(p))}</legend>
+    body: `${tabs}${careerAlerts(L, p, team)}<fieldset class="frame"><legend>${esc(playerName(p))}</legend>
         <p><b>${esc(CAR.roleOf(p, team))}</b>${team ? ` · ${esc(teamFull(team))}` : ''} ${lvTag(p)}</p>
         <p class="note small">Age ${p.age} · ${heightStr(p.ht)} · ${c.sal ? `$${c.sal}M × ${c.yrs}y` : 'No contract'} · ${moraleTag(p)}</p>
         ${chips.length ? `<div class="style-chips">${chips.map(x => `<span class="style-chip">${x}</span>`).join('')}</div>` : ''}
@@ -1803,8 +1807,6 @@ screens.career = () => {
         </div></div>
       </fieldset>
       ${careerAgentBox(p)}
-      ${careerFABox(p, team)}
-      ${careerFightBox(p, team)}
       ${st ? `<fieldset class="frame"><legend>Standing</legend>
         <p class="small"><b>${esc(st.security)}</b> · #${st.rank} of ${st.of} on the roster${coach ? ` · Coach ${esc(coach)}` : ''}</p>
         ${st.coach ? `<p class="note small">Coach relationship <b>${CAR.coachBond(st.coach)}</b><span class="muted">/${CAR.BOND_CAP}</span>${CAR.coachBond(st.coach) < 10 ? ' <span class="muted">(10 unlocks Edit Playbook)</span>' : ''}</p>` : ''}
@@ -1844,6 +1846,7 @@ function careerSync() {
   FA.setHeld([L.season.playerId]);
   FA.setAgentFor(L.season.playerId, careerAgent()?.fa || null);
   if (me?.team && L.season.teamId !== me.team.id) { L.season.teamId = me.team.id; state.dirty = true; }
+  if (me) careerYearly();
 }
 
 function careerAgentBox(p) {
@@ -1864,7 +1867,7 @@ function careerOffersNow(p) {
   const L = league(), ag = careerStore().agent || 'brand', { st, cy } = careerYear();
   const day = L.season.phase === 6 ? L.season.currentDay || 1 : 1;
   if (!cy.seed) { cy.seed = Math.floor(Math.random() * 1e9); careerSave(st); }   // the same market all offseason
-  const offers = CAR.careerOffers(L, p, ag, day, tid => mulberry32((cy.seed ^ Math.imul(tid + 3, 2654435761)) >>> 0)());
+  const offers = CAR.careerOffers(L, p, ag, day, tid => mulberry32((cy.seed ^ Math.imul(tid + 3, 2654435761)) >>> 0)(), { ringChase: careerStore().ringChase === L.season.currentYear });
   return offers.map(o => ({ ...o, ...(cy.counter?.[o.tid] || {}) })).filter(o => !o.gone);
 }
 function careerFABox(p, team) {
@@ -2018,6 +2021,359 @@ async function careerAskOut(p, team) {
   if (ag.coach) careerCoach(o.team, ag.coach);
   careerMorale(p, 8);
   return `Traded to the ${teamFull(o.team)}. Fresh start.`;
+}
+
+// ---------------------------------------------------------------------------
+// Career life: the Moves, Story and Legacy tabs.
+actions.careerTab = d => replace('career', { tab: d.t });
+function careerFans(share) {
+  const cr = (league().career ||= {}), n = Math.round((cr.fans || 0) * share);
+  cr.fans = Math.max(0, (cr.fans || 0) + n);
+  state.dirty = true;
+  return n;
+}
+function careerLegacy(p, n) { if (p.season) p.season.legacyPoints = Math.max(0, (p.season.legacyPoints || 0) + n); state.dirty = true; }
+function careerFeed(cy, who, text) { (cy.feed ||= []).push({ who, text }); }
+// fx from Media Day answers and posts: fans (share of fans), ego, coach, morale, bond [pid, n], mates (every teammate).
+function careerFx(p, team, fx, why) {
+  const out = [];
+  if (fx.fans) { const n = careerFans(fx.fans); out.push(`${n >= 0 ? '+' : ''}${n.toLocaleString()} fans`); }
+  if (fx.ego) { drift(p, `career:${why}`, EGO_KEY, fx.ego, why); out.push(`ego ${fx.ego > 0 ? '+' : ''}${fx.ego}`); }
+  if (fx.coach) { careerCoach(team, fx.coach); out.push(`coach ${fx.coach > 0 ? '+' : ''}${fx.coach}`); }
+  if (fx.morale) { careerMorale(p, fx.morale); out.push(`morale ${fx.morale > 0 ? '+' : ''}${fx.morale}`); }
+  if (fx.bond) { const m = league().teams.flatMap(t => t.roster).find(x => x.id === fx.bond[0]); careerBond(m, fx.bond[1]); if (m) out.push(`${m.ln} ${fx.bond[1] > 0 ? '+' : ''}${fx.bond[1]}`); }
+  if (fx.mates && team) { for (const m of team.roster) if (m.id !== p.id) careerBond(m, fx.mates); out.push(`teammates ${fx.mates > 0 ? '+' : ''}${fx.mates}`); }
+  state.dirty = true;
+  return out.join(', ');
+}
+
+// Once a year: settle last season's goals, pay the endorsements, let rivalries grow, mark a new rank.
+function careerYearly() {
+  const L = league(), me = CAR.careerPlayer(L);
+  if (!me) return;
+  const { p, team } = me, y = L.season.currentYear, st = careerStore();
+  if (st.yearly === y) return;
+  st.yearly = y;
+  const cy = ((st.years ||= {})[y] ||= {});
+  // Goals set for an earlier season.
+  for (const [gy, g] of Object.entries(st.goals || {})) {
+    if (+gy >= y || g.settled) continue;
+    const line = seasonLine(p, state.leagueIdx, +gy), ctx = CL.goalContext(L, p, +gy);
+    g.res = (g.keys || []).map(k => ({ k, hit: !!CL.GOALS[k]?.check(line, ctx) }));
+    const pts = g.res.reduce((s, x) => s + (x.hit ? CL.GOALS[x.k].pts : 0), 0), miss = g.res.filter(x => !x.hit).length;
+    if (pts) careerLegacy(p, pts);
+    g.fans = careerFans(pts ? pts / 1000 : 0) + (miss ? careerFans(-0.015 * miss) : 0);
+    g.pts = pts; g.settled = true;
+  }
+  // Endorsements: a year's pay, and a brand can walk after a down year.
+  const log = CAR.careerLog(p), last = log[log.length - 1]?.l, prev = log[log.length - 2]?.l;
+  const slump = last && prev && last.ppg < prev.ppg - 5;
+  for (const d of st.deals || []) {
+    if (d.yrs <= 0 || d.paid >= y) continue;
+    if (slump && d.k !== 'shoe' && careerRoll(d.brand.length * 7) < 0.35) { d.yrs = 0; d.dropped = y; careerFeed(cy, d.brand, `${d.brand} and ${playerName(p)} have parted ways.`); continue; }
+    (L.career ||= {}).coins = (L.career.coins || 0) + d.coins; d.paid = y; d.yrs--;
+  }
+  // Rivalries from last season's playoffs.
+  for (const x of CL.rivalryDrift(L, p, team, y - 1)) { careerBond(x.m, x.d); (cy.rivalry ||= []).push({ pid: x.m.id, d: x.d, why: x.why }); }
+  // A new rank.
+  const r = CAR.rankIdx(p);
+  if (st.rank != null && r > st.rank) { (st.moments ||= []).push({ r, yr: y }); careerCoach(team, 3); if (team) for (const m of team.roster) if (m.id !== p.id) careerBond(m, 2); careerFeed(cy, 'Hoop Land', `${playerName(p)} is now ${CAR.RANKS[r].startsWith('A') ? 'an' : 'a'} ${CAR.RANKS[r]}. ${CL.RANK_MOMENTS[r] || ''}`); }
+  st.rank = r;
+  careerSave(st);
+  state.dirty = true;
+}
+
+// Things waiting on him, for the hub.
+function careerAlerts(L, p, team) {
+  if (!careerOffseason()) return '';
+  const { cy } = careerYear(), n = [];
+  if ((p.status === FA.STATUS_EXPIRING || p.status === FA.STATUS_FREE) && L.season.phase >= 5) n.push('free agency');
+  if (CL.extensionTalks(L, p, team) && !cy.ext) n.push('extension talks');
+  if (!cy.summer) n.push('summer program');
+  if (!cy.mediaDone) n.push('Media Day');
+  if (!(careerStore().goals || {})[L.season.currentYear]?.keys?.length) n.push('season goals');
+  if (!n.length) return '';
+  return `<fieldset class="frame"><legend>This Offseason</legend><p class="note small">Waiting on you: ${esc(n.join(', '))}.</p>
+    <div class="grid2"><button class="btn small focus" data-act="careerTab" data-t="moves">🧭 Moves</button><button class="btn small" data-act="careerTab" data-t="story">🎤 Story</button></div></fieldset>`;
+}
+
+// ---- Moves
+function careerMovesTab(L, p, team) {
+  const st = team ? CAR.standing(L, p, team, valueOf) : null;
+  return `${careerFABox(p, team)}${careerExtBox(L, p, team)}${careerFightBox(p, team)}${careerRecruitBox(L, p, team)}${careerCoachBox(L, p, team, st)}${careerSummerBox(L, p, team)}${careerMentorBox(L, p, team)}${careerChapterBox(L, p, team)}${careerAgentBox(p)}`
+    || '<p class="note">Nothing to decide right now.</p>';
+}
+function careerExtBox(L, p, team) {
+  const { cy } = careerYear(), x = CL.extensionTalks(L, p, team);
+  if (!x || !careerOffseason()) return cy.ext && cy.extText ? `<fieldset class="frame"><legend>Extension</legend><p class="note small">${esc(cy.extText)}</p></fieldset>` : '';
+  if (cy.ext) return `<fieldset class="frame"><legend>Extension</legend><p class="note small">${esc(cy.extText || '')}</p></fieldset>`;
+  const sal = cy.extSal || x.sal, ag = careerAgent();
+  return `<fieldset class="frame"><legend>Extension Talks</legend><p class="note small">${p.contract.yrs} year${p.contract.yrs > 1 ? 's' : ''} left. ${esc(team.shortName)} offer <b>$${sal}M × ${x.yrs}</b> on top of it. You'd get about $${x.ask}M a year on the market.${x.superOk ? ` <span class="gold">${esc(x.label)}: up to $${x.superMax}M.</span>` : ''}</p>
+    <div class="stack">
+      <button class="btn small focus" data-act="careerExt" data-v="take">✍️ Sign it</button>
+      ${ag && !cy.extCounter ? `<button class="btn small" data-act="careerExt" data-v="counter">💬 ${esc(ag.name)} pushes for more</button>` : ''}
+      ${x.superOk ? '<button class="btn small" data-act="careerExt" data-v="super">💰 Demand the supermax</button>' : ''}
+      <button class="btn small off" data-act="careerExt" data-v="wait">⏳ Bet on yourself: wait for free agency</button></div></fieldset>`;
+}
+actions.careerExt = async d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
+  const { p, team } = me, x = CL.extensionTalks(L, p, team); if (!x) return;
+  const { st, cy } = careerYear(), ag = careerAgent();
+  const sign = (sal, yrs, text) => { signExtension(L, team, p, { sal, yrs }); if (ag) L.career.coins = Math.max(0, (L.career.coins || 0) - ag.fee); cy.ext = 'signed'; cy.extText = text; careerFeed(cy, team.shortName, `${playerName(p)} has signed a ${yrs}-year, $${sal * yrs}M extension.`); };
+  if (d.v === 'take') { const sal = cy.extSal || x.sal; if (!(await confirmBox(`Extend for $${sal}M × ${x.yrs}?`, 'Sign'))) return; sign(sal, x.yrs, `You extended: $${sal}M × ${x.yrs}.`); }
+  else if (d.v === 'counter') { cy.extCounter = true; if (careerRoll(311) < (ag?.counter || 0.4)) { cy.extSal = Math.min(x.max, Math.round((cy.extSal || x.sal) * 1.1) + 1); toast(`${team.shortName} came up`, `$${cy.extSal}M a year.`); } else toast(`${team.shortName} held firm`); }
+  else if (d.v === 'super') {
+    const odds = Math.min(0.85, 0.35 + (CAR.rankIdx(p) - 3) * 0.12 + (CAR.coachBond((team.frontOffice?.staff || []).find(s => s.pos === 1)) / 150));
+    if (careerRoll(313) < odds) sign(x.superMax, 5, `They gave you the supermax: $${x.superMax}M × 5.`);
+    else { careerCoach(team, -3); careerMorale(p, -4); cy.ext = 'refused'; cy.extText = 'You asked for the supermax and they said no. It\'s a contract year now.'; }
+  } else { cy.ext = 'wait'; cy.extText = 'You turned it down to bet on yourself. Free agency it is.'; careerFans(0.01); }
+  careerSave(st); state.dirty = true; render();
+};
+
+function careerRecruitBox(L, p, team) {
+  if (!team || ![5, 6].includes(L.season.phase)) return '';
+  const { cy } = careerYear();
+  if (CAR.rankIdx(p) < CL.EMPOWER_RANK) return '';
+  if (cy.recruit) return `<fieldset class="frame"><legend>Recruit</legend><p class="note small">${esc(cy.recruit)}</p></fieldset>`;
+  const list = CL.recruitTargets(L, p, team);
+  if (!list.length) return '';
+  return `<fieldset class="frame"><legend>Recruit a Free Agent</legend><p class="note small">You're a ${esc(CAR.RANKS[CAR.rankIdx(p)])}: the front office listens. Push for one player (once a summer).</p>
+    <div class="stack">${list.map(e => `<button class="btn left small" data-act="careerRecruit" data-id="${e.x.id}"><span class="grow"><b>${esc(playerName(e.x))}</b> ${lvTag(e.x)} <span class="muted">${e.x.age}y</span>${e.bond >= 20 ? ` · 🤝 ${esc(CAR.bondWord(e.bond))}` : ''}<br><span class="note small">${Math.round(CL.recruitOdds(L, p, team, e.x) * 100)}% he comes</span></span></button>`).join('')}</div></fieldset>`;
+}
+actions.careerRecruit = async d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
+  const { p, team } = me, x = FA.marketPlayers(L).map(m => m.p).find(q => q.id === +d.id); if (!x) return;
+  if (!(await confirmBox(`Push the front office to sign ${esc(playerName(x))}?`, 'Push'))) return;
+  const { st, cy } = careerYear(), day = L.season.phase === 6 ? L.season.currentDay || 1 : 1;
+  const room = FA.offerRoom(L, team, x, day);
+  if (careerRoll(x.id) < CL.recruitOdds(L, p, team, x) && !room.full && room.max >= FA.minFor(x)) {
+    const sal = Math.max(FA.minFor(x), Math.min(room.max, FA.baseAsk(L, x)));
+    FA.signPlayer(L, x, team, { sal, yrs: 2 }, day);
+    careerBond(x, 5); careerFans(0.02);
+    cy.recruit = `${playerName(x)} signed: $${sal}M × 2. You made that happen.`;
+    careerFeed(cy, playerName(x), `Couldn't say no to ${p.ln}. Let's work. 🤝`);
+  } else {
+    careerBond(x, -2); careerCoach(team, -2);
+    cy.recruit = room.full || room.max < FA.minFor(x) ? `The front office had no room for ${playerName(x)}.` : `${playerName(x)} passed. The front office noticed you pushed (coach -2).`;
+  }
+  careerSave(st); state.dirty = true; render();
+};
+
+function careerCoachBox(L, p, team, st) {
+  if (!team || !careerOffseason()) return '';
+  const { cy } = careerYear();
+  if (cy.coach) return `<fieldset class="frame"><legend>The Coach</legend><p class="note small">${esc(cy.coach)}</p></fieldset>`;
+  const rift = CL.coachRift(L, p, team, st?.rank);
+  if (!rift) return '';
+  return `<fieldset class="frame"><legend>The Coach</legend><p class="note small">You and ${esc(rift.coach.fn)} ${esc(rift.coach.ln)} are at ${rift.coach.rp}/50. It can't go on like this.</p><div class="stack">
+    <button class="btn small" data-act="careerCoachMove" data-v="clear">🤝 Clear the air</button>
+    ${rift.power ? `<button class="btn small" data-act="careerCoachMove" data-v="fire">🗣️ Go over his head (${Math.round(rift.odds * 100)}%)</button>` : '<p class="note small muted">Only the franchise player can get a coach fired.</p>'}</div></fieldset>`;
+}
+actions.careerCoachMove = async d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
+  const { p, team } = me, { st, cy } = careerYear();
+  const rift = CL.coachRift(L, p, team, CAR.standing(L, p, team, valueOf)?.rank); if (!rift) return;
+  if (d.v === 'clear') { careerCoach(team, 8); drift(p, 'career:coach', EGO_KEY, -1, 'swallowed his pride with the coach'); cy.coach = 'You sat down and cleared the air (+8). It\'s a start.'; }
+  else {
+    if (!(await confirmBox(`Tell the front office it's ${esc(rift.coach.ln)} or you?`, 'Go'))) return;
+    const next = CL.bestPoolCoach(L);
+    if (next && careerRoll(509) < rift.odds) {
+      const old = rift.coach;
+      hireHeadCoach(L, team, next);
+      next.rp = 5;
+      for (const m of team.roster.filter(x => x.id !== p.id && tr(x, 'lockerRoom') >= 14)) careerBond(m, -3);
+      careerFans(-0.02);
+      cy.coach = `${old.fn} ${old.ln} is out. ${next.fn} ${next.ln} takes over, and everyone knows why. The vets aren't thrilled.`;
+      careerFeed(cy, 'Hoop Land', `BREAKING: ${team.shortName} part ways with ${old.ln}. Sources point to ${p.ln}.`);
+    } else { careerCoach(team, -10); careerMorale(p, -5); cy.coach = `The front office backed ${rift.coach.ln}. Now he knows you tried (-10).`; }
+  }
+  careerSave(st); state.dirty = true; render();
+};
+
+function careerSummerBox(L, p, team) {
+  if (!careerOffseason()) return '';
+  const { cy } = careerYear();
+  if (cy.summer) return `<fieldset class="frame"><legend>Summer</legend><p class="note small">${CL.SUMMERS[cy.summer].icon} ${esc(cy.summerText || CL.SUMMERS[cy.summer].label)}</p></fieldset>`;
+  const coins = L.career?.coins || 0;
+  return `<fieldset class="frame"><legend>Summer Program</legend><div class="stack">${Object.entries(CL.SUMMERS).map(([k, s]) => `<button class="btn left small" data-act="careerSummer" data-k="${k}" ${s.cost > coins ? 'disabled' : ''}><span class="ico">${s.icon}</span><span><b>${esc(s.label)}</b><br><span class="note small">${esc(s.says)}</span></span></button>`).join('')}</div></fieldset>`;
+}
+actions.careerSummer = d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me) return;
+  const { p, team } = me, { st, cy } = careerYear(), s = CL.SUMMERS[d.k];
+  if (cy.summer || !s) return;
+  let text = s.label;
+  if (d.k === 'legend') {
+    if ((L.career?.coins || 0) < s.cost) return;
+    L.career.coins -= s.cost;
+    const ks = CL.roomiest(p, 2); for (const k of ks) p.attributes[k][0]++;
+    text = `Worked out with a legend: ${ks.join(' and ')} +1.`;
+  } else if (d.k === 'strength') {
+    drift(p, 'career:summer', 'durability', 1, 'a summer in the weight room');
+    if (p.attributes.STR && p.attributes.STR[0] < Math.min(ATTR_MAX, p.attributes.STR[1])) p.attributes.STR[0]++;
+    text = 'A summer in the weight room: durability +1, strength +1.';
+  } else if (d.k === 'national') {
+    const n = careerFans(0.06), mates = CL.countrymen(L, p);
+    for (const m of mates) careerBond(m, 10);
+    const hurt = careerRoll(77) < 0.08;
+    if (hurt) drift(p, 'career:summer', 'durability', -1, 'tweaked something with the national team');
+    text = `Played for the national team: +${n.toLocaleString()} fans${mates.length ? `, bonded with ${mates.map(m => m.ln).join(', ')}` : ''}${hurt ? '. Came back with a tweak (durability -1).' : '.'}`;
+    careerFeed(cy, playerName(p), 'Representing my country. Nothing like it. 🌎');
+  } else { careerMorale(p, 10); if (p.season) p.season.condition = 100; text = 'Rested up: morale +10, fully fresh.'; }
+  cy.summer = d.k; cy.summerText = text;
+  careerSave(st); state.dirty = true; render();
+};
+
+function careerMentorBox(L, p, team) {
+  if (!careerOffseason() || !team) return '';
+  const { cy } = careerYear();
+  if (cy.mentor) return `<fieldset class="frame"><legend>Mentor</legend><p class="note small">${esc(cy.mentor)}</p></fieldset>`;
+  const o = CL.mentorOptions(L, p, team);
+  if (!o.list.length) return '';
+  return `<fieldset class="frame"><legend>${o.role === 'learn' ? 'Find a Mentor' : 'Mentor a Young Player'}</legend><div class="stack">${o.list.map(m => { const k = o.role === 'learn' ? CL.mentorLesson(m, p) : CL.mentorLesson(p, m), t = TRAITS.find(x => x.k === k); return `<button class="btn left small" data-act="careerMentor" data-id="${m.id}"><span class="grow"><b>${esc(playerName(m))}</b> ${lvTag(m)} <span class="muted">${m.age}y</span><br><span class="note small">${o.role === 'learn' ? 'Teaches you' : 'You teach him'}: ${t?.icon || ''} ${esc(t?.label || k)}</span></span></button>`; }).join('')}</div></fieldset>`;
+}
+actions.careerMentor = d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
+  const { p, team } = me, { st, cy } = careerYear(), o = CL.mentorOptions(L, p, team), m = o.list.find(x => x.id === +d.id);
+  if (!m || cy.mentor) return;
+  if (o.role === 'learn') { const k = CL.mentorLesson(m, p); drift(p, 'career:mentor', k, 1, `learned from ${m.ln}`); cy.mentor = `${playerName(m)} took you under his wing: ${TRAITS.find(x => x.k === k)?.label || k} +1.`; }
+  else { const k = CL.mentorLesson(p, m); drift(m, 'career:mentor', k, 1, `learned from ${p.ln}`); drift(p, 'career:mentor', 'lockerRoom', 1, `took ${m.ln} under his wing`); cy.mentor = `You took ${playerName(m)} under your wing: his ${TRAITS.find(x => x.k === k)?.label || k} +1, your Locker Room +1.`; }
+  careerBond(m, 8);
+  careerSave(st); state.dirty = true; render();
+};
+
+function careerChapterBox(L, p, team) {
+  if (!careerOffseason() || !CL.finalChapterOpen(p)) return '';
+  const { st, cy } = careerYear();
+  if (cy.chapter) return `<fieldset class="frame"><legend>The Final Chapter</legend><p class="note small">${CL.CHAPTERS[cy.chapter].icon} ${esc(cy.chapterText)}</p></fieldset>`;
+  return `<fieldset class="frame"><legend>The Final Chapter</legend><p class="note small">You're ${p.age}. How do you want this to go?</p><div class="stack">${Object.entries(CL.CHAPTERS).map(([k, c]) => `<button class="btn left small" data-act="careerChapter" data-k="${k}"><span class="ico">${c.icon}</span><span><b>${esc(c.label)}</b><br><span class="note small">${esc(c.says)}</span></span></button>`).join('')}</div></fieldset>`;
+}
+actions.careerChapter = async d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me) return;
+  const { p, team } = me, { st, cy } = careerYear();
+  if (cy.chapter) return;
+  if (d.k === 'farewell' && !(await confirmBox('Announce that this season is your last? The game will retire you after it.', 'Announce'))) return;
+  if (d.k === 'ring') { st.ringChase = L.season.currentYear; cy.chapterText = 'Ring or bust. Your agent only takes contenders\' calls now.'; }
+  else if (d.k === 'mentor') { drift(p, 'career:chapter', EGO_KEY, -2, 'embraced the veteran role'); drift(p, 'career:chapter2', 'lockerRoom', 2, 'embraced the veteran role'); careerMorale(p, 4); cy.chapterText = 'You embraced the vet role: ego -2, locker room +2.'; }
+  else { if (p.season) p.season.retiring = true; const n = careerFans(0.08); cy.chapterText = `Farewell tour announced. +${n.toLocaleString()} fans. Every arena will say goodbye.`; careerFeed(cy, playerName(p), 'One more ride. Thank you for everything. 🙏'); }
+  cy.chapter = d.k;
+  careerSave(st); state.dirty = true; render();
+};
+
+// ---- Story
+function careerStoryTab(L, p, team) {
+  return `${careerMediaBox(L, p, team)}${careerGramBox(L, p, team)}${careerRivalBox(L, p, team)}${careerClassBox(L, p)}`;
+}
+function careerMediaCtx(L, p, team) {
+  const log = CAR.careerLog(p), last = log[log.length - 1]?.l;
+  const rel = CAR.relationships(L, p), alpha = CAR.lockerRoom(L, p, team).find(x => x.kind === 'alpha')?.m || null;
+  return { newTeam: !!team && !!last && last.tid !== team.id, rival: rel.rivals[0]?.m || null, alpha, contractYear: p.contract?.yrs === 1, lastPpg: last?.ppg || 0 };
+}
+function careerMediaBox(L, p, team) {
+  if (!team || !careerOffseason()) return '';
+  const { cy } = careerYear(), qs = CL.mediaQuestions(L, p, team, careerMediaCtx(L, p, team)), ans = cy.media || {};
+  return `<fieldset class="frame"><legend>Media Day</legend>${qs.map((q, i) => {
+    const got = ans[q.k];
+    return `<p class="small" style="margin-top:6px"><b>🎤 ${esc(q.q)}</b></p>${got != null ? `<p class="note small">"${esc(q.a[got.i].t)}" <span class="muted">· ${esc(got.fx)}</span></p>` : `<div class="stack">${q.a.map((a, j) => `<button class="btn left small" data-act="careerMedia" data-q="${i}" data-a="${j}">"${esc(a.t)}"</button>`).join('')}</div>`}`;
+  }).join('')}</fieldset>`;
+}
+actions.careerMedia = d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
+  const { p, team } = me, { st, cy } = careerYear(), qs = CL.mediaQuestions(L, p, team, careerMediaCtx(L, p, team)), q = qs[+d.q];
+  if (!q || (cy.media ||= {})[q.k]) return;
+  const a = q.a[+d.a];
+  cy.media[q.k] = { i: +d.a, fx: careerFx(p, team, a.fx, `media:${q.k}`) || 'no reaction' };
+  if (qs.every(x => cy.media[x.k])) cy.mediaDone = true;
+  if (a.fx.fans >= 0.04) careerFeed(cy, 'Hoop Land', `${playerName(p)} at Media Day: "${a.t}"`);
+  careerSave(st); render();
+};
+function careerGramBox(L, p, team) {
+  const { cy } = careerYear(), rel = CAR.relationships(L, p);
+  const posts = [...(cy.feed || [])];
+  // Bad blood talks.
+  for (const x of rel.rivals.filter(r => r.r <= -15).slice(0, 2)) posts.push({ who: playerName(x.m), text: pickV(x.m.id + L.season.currentYear, ['Some people get a little hype and forget who they are. 🤫', 'Funny how quiet it gets in the playoffs. 🤐', 'Y\'all really think he\'s HIM? 😂']) });
+  // Friends check in.
+  for (const x of rel.friends.filter(f => f.r >= 40 && !f.mate).slice(0, 1)) posts.push({ who: playerName(x.m), text: `Proud of my bro ${p.ln}. Big year coming. 💯` });
+  const postBtns = !cy.post && careerOffseason() ? `<div class="stack" style="margin-top:6px"><p class="note small">Post something (once a summer):</p>${Object.entries(CL.POSTS).map(([k, x]) => `<button class="btn left small" data-act="careerPost" data-k="${k}" ${k === 'callout' && !rel.rivals.length ? 'disabled' : ''}>${x.icon} ${esc(x.label)}</button>`).join('')}</div>` : '';
+  return `<fieldset class="frame"><legend>Hoop Gram</legend><p class="note small muted">${(L.career?.fans || 0).toLocaleString()} fans</p>${posts.map(x => `<p class="note small"><b>${esc(x.who)}</b> ${esc(x.text)}</p>`).join('') || '<p class="note small muted">Quiet so far this summer.</p>'}${postBtns}</fieldset>`;
+}
+const pickV = (seed, list) => list[((Math.imul(seed, 2654435761) >>> 0) % list.length)];
+actions.careerPost = d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me) return;
+  const { p, team } = me, { st, cy } = careerYear(), x = CL.POSTS[d.k];
+  if (cy.post || !x) return;
+  const fx = { ...x.fx };
+  if (d.k === 'callout') { const r = CAR.relationships(L, p).rivals[0]; if (!r) return; fx.bond = [r.m.id, -8]; }
+  const res = careerFx(p, team, fx, `post:${d.k}`);
+  cy.post = d.k;
+  careerFeed(cy, playerName(p), x.text + (res ? ` (${res})` : ''));
+  careerSave(st); render();
+};
+function careerRivalBox(L, p, team) {
+  const { cy } = careerYear(), en = CL.enemies(L, p), moves = cy.rivalry || [];
+  if (!en.length && !moves.length) return '';
+  const nm = id => { const m = L.teams.flatMap(t => t.roster).find(x => x.id === id); return m ? playerName(m) : '?'; };
+  return `<fieldset class="frame"><legend>Rivalries</legend>${en.map(m => `<p class="note small">🔥 <b>${esc(playerName(m))}</b> is an enemy (${m.season.relationship}/−50). Your games against him are headline games.</p>`).join('')}
+    ${moves.map(x => `<p class="note small">⚔️ ${esc(nm(x.pid))} <span class="down">${x.d}</span> · ${esc(x.why)}</p>`).join('')}</fieldset>`;
+}
+function careerClassBox(L, p) {
+  const list = CL.draftClass(L, p, valueOf);
+  if (list.length < 3) return '';
+  const i = list.findIndex(x => x.m.id === p.id);
+  const show = list.slice(0, 5); if (i >= 5) show.push(list[i]);
+  return `<fieldset class="frame"><legend>${p.history.draft.yr} Draft Class</legend><p class="note small">You rank <b>${ordN(i + 1)}</b> of ${list.length} in your class${p.history.draft.pk ? ` (picked ${p.history.draft.rd === 1 ? '' : 'R2 '}#${p.history.draft.pk})` : ''}.</p>
+    ${show.map(x => `<p class="note small ${x.m.id === p.id ? 'gold' : ''}">${list.indexOf(x) + 1}. <b>${esc(playerName(x.m))}</b> ${lvTag(x.m)} <span class="muted">${esc(x.t.shortName)} · ${x.rd ? `#${x.pk}${x.rd === 2 ? ' R2' : ''}` : 'undrafted'}</span></p>`).join('')}</fieldset>`;
+}
+
+// ---- Legacy
+function careerLegacyTab(L, p, team) {
+  return `${careerGoalsBox(L, p)}${careerDealsBox(L, p, team)}${careerHofBox(L, p)}${careerMomentsBox(L, p)}`;
+}
+function careerGoalsBox(L, p) {
+  const st = careerStore(), y = L.season.currentYear, g = (st.goals || {})[y] || { keys: [] };
+  const past = Object.entries(st.goals || {}).filter(([gy, x]) => +gy < y && x.settled).sort((a, b) => b[0] - a[0]).slice(0, 3);
+  const open = careerOffseason();
+  return `<fieldset class="frame"><legend>Season Goals · ${y}</legend><p class="note small">${open ? 'Pick two. Hit them for legacy points and fans; miss them and the media notices.' : 'Set at Media Day.'}</p>
+    <div class="stack">${Object.entries(CL.GOALS).map(([k, x]) => { const on = g.keys.includes(k); return open || on ? `<button class="btn left small ${on ? 'on focus' : 'off'}" data-act="careerGoal" data-k="${k}" ${!open || (!on && g.keys.length >= 2) ? 'disabled' : ''}>${on ? '🎯' : '◻️'} ${esc(x.label)} <span class="muted">+${x.pts}</span></button>` : ''; }).join('')}</div>
+    ${past.map(([gy, x]) => `<p class="note small" style="margin-top:6px"><b>${gy}</b>: ${x.res.map(r => `${r.hit ? '✅' : '❌'} ${esc(CL.GOALS[r.k].label)}`).join(' · ')}${x.pts ? ` <span class="up">+${x.pts} legacy</span>` : ''}</p>`).join('')}</fieldset>`;
+}
+actions.careerGoal = d => {
+  const L = league(), st = careerStore(), y = L.season.currentYear, g = ((st.goals ||= {})[y] ||= { keys: [] });
+  g.keys = g.keys.includes(d.k) ? g.keys.filter(k => k !== d.k) : g.keys.length < 2 ? [...g.keys, d.k] : g.keys;
+  careerSave(st); render();
+};
+function careerDealsBox(L, p, team) {
+  const st = careerStore(), { cy } = careerYear(), deals = (st.deals || []).filter(d => d.yrs > 0);
+  if (!cy.dealSeed) { cy.dealSeed = Math.floor(Math.random() * 1e9); careerSave({ ...st, years: { ...st.years, [L.season.currentYear]: cy } }); }
+  const offers = careerOffseason() && !cy.dealsDone ? CL.endorsementOffers(L, p, team, i => mulberry32((cy.dealSeed ^ Math.imul(i + 1, 2654435761)) >>> 0)(), deals.map(x => x.k)) : [];
+  return `<fieldset class="frame"><legend>Endorsements</legend>${deals.map(x => `<p class="note small">${x.icon} <b>${esc(x.brand)}</b>${x.signature ? ' · signature shoe' : ''} · ${x.coins} coins a year, ${x.yrs} left</p>`).join('') || '<p class="note small muted">No deals yet.</p>'}
+    ${offers.length ? `<h4 class="ov-h">Offers</h4><div class="stack">${offers.map((o, i) => `<button class="btn left small" data-act="careerDeal" data-i="${i}">${o.icon} <b>${esc(o.brand)}</b>${o.signature ? ' · your own signature shoe' : ''} · ${o.coins} coins/yr × ${o.yrs}</button>`).join('')}<button class="btn small off" data-act="careerDeal" data-i="-1">Pass on the rest</button></div>` : ''}
+    ${(st.deals || []).filter(x => x.dropped).map(x => `<p class="note small down">${x.icon} ${esc(x.brand)} dropped you in ${x.dropped}.</p>`).join('')}</fieldset>`;
+}
+actions.careerDeal = d => {
+  const L = league(), me = CAR.careerPlayer(L); if (!me) return;
+  const { p, team } = me, { st, cy } = careerYear();
+  if (+d.i < 0) { cy.dealsDone = true; careerSave(st); render(); return; }
+  const held = (st.deals || []).filter(x => x.yrs > 0).map(x => x.k);
+  const o = CL.endorsementOffers(L, p, team, i => mulberry32((cy.dealSeed ^ Math.imul(i + 1, 2654435761)) >>> 0)(), held)[+d.i];
+  if (!o) return;
+  (st.deals ||= []).push({ k: o.k, icon: o.icon, brand: o.brand, coins: o.coins, yrs: o.yrs - 1, paid: L.season.currentYear, signature: o.signature });
+  (L.career ||= {}).coins = (L.career.coins || 0) + o.coins;
+  const n = careerFans(o.fans);
+  careerFeed(cy, o.brand, `Welcome to the family, ${playerName(p)}. ${o.signature ? 'The signature shoe is coming. 👟' : '🤝'}`);
+  toast(`${o.icon} Signed with ${o.brand}`, `+${o.coins} coins · +${n.toLocaleString()} fans`);
+  careerSave(st); state.dirty = true; render();
+};
+function careerHofBox(L, p) {
+  const h = CL.hofTrack(L, p);
+  if (!h.n) return '';
+  const row = (k, label) => h.bar[k] > 0 ? `<p class="note small">${label}: <b>${h.me[k]}</b> <span class="muted">· the average Hall of Famer has ${h.bar[k]}</span></p>` : '';
+  return `<fieldset class="frame"><legend>Hall of Fame Tracker</legend><p class="small"><b>${esc(h.word)}</b></p>${row('allStar', '🌟 All-Star')}${row('allNba', '📜 All-NBA')}${row('rings', '🏆 Rings')}${row('mvp', '🏅 MVP')}
+    <p class="note small muted">Against the ${h.n} Hall of Famers in this league, with about ${h.left} good seasons left.</p></fieldset>`;
+}
+function careerMomentsBox(L, p) {
+  const ms = careerStore().moments || [];
+  if (!ms.length) return '';
+  return `<fieldset class="frame"><legend>Milestones</legend>${ms.map(m => `<p class="note small">${CAR.RANK_ICONS[m.r]} <b>${m.yr}</b> · ${esc(CAR.RANKS[m.r])}. ${esc(CL.RANK_MOMENTS[m.r] || '')}</p>`).join('')}</fieldset>`;
 }
 
 function phaseWarning(s) {
