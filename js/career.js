@@ -21,7 +21,9 @@ export function careerPlayer(L) {
   const id = L.season.playerId;
   for (const t of L.teams) { const p = t.roster.find(x => x.id === id); if (p) return { p, team: t }; }
   const p = (L.freeAgents || []).find(x => x.id === id);
-  return p ? { p, team: null } : null;
+  if (p) return { p, team: null };
+  const r = (L.retirees || []).find(x => x.id === id);   // his career is over
+  return r ? { p: r, team: null, retired: true } : null;
 }
 export const rankIdx = p => Math.max(0, Math.min(RANKS.length - 1, (p.season?.legacy ?? 1) - 1));
 export const fameName = f => FAME[f] || `Fame ${f}`;
