@@ -18,6 +18,7 @@ import { playerValue, fairSalary } from './trades.js';
 import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
 import { destinationValue, taxKeep } from './destination.js';
+import { egoVal, roleWeight } from './ego.js';
 
 export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRAFTED = 2;
 export const OPT_NONE = 0, OPT_TEAM = 1, OPT_PLAYER = 2;
@@ -266,7 +267,7 @@ export function motiveOf(league, p) {
     const w = {
       greed: tr(p, 'money') * 1.1,
       contender: tr(p, 'winning') * (p.age >= 30 ? 1.2 : 0.9),
-      role: tr(p, 'motor') * 0.6 + (p.age <= 27 ? 4 : 0),
+      role: tr(p, 'motor') * 0.6 + (p.age <= 27 ? 4 : 0) + (egoVal(p) - 10) * 0.5,   // an Alpha wants the ball
       security: (21 - tr(p, 'durability')) * 0.5 + (p.age >= 31 ? 4 : 0) + 3,
       control: tr(p, 'money') * 0.5 + (p.age <= 29 ? 3 : 0),
     };
@@ -312,6 +313,7 @@ export function offerScore(league, p, offer, ask, motive, oldTid = null, discoun
   // A veteran taking a discount cares about what they're chasing, not a
   // couple of million more.
   if (discounted) w.greed = 0.3;
+  w.role *= roleWeight(p);   // ego: an Alpha needs to be the man, a Humble one takes the role
   // What he takes home after state tax, against a typical city.
   const money = ((offer.avg ?? offer.sal) + (offer.incEv || 0) + (offer.cutEv || 0)) * (COMPLETE ? taxKeep(team) : 1) / Math.max(1, ask);   // avg: the average year of a loaded deal   // incEv: what he thinks his incentives are worth ($M)
   const years = motive === 'control' ? (offer.yrs <= 3 ? 0.5 : 0) : (offer.yrs - 1) / 4;

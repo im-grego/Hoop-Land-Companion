@@ -1466,3 +1466,6 @@ main.panel.bare { margin-top: 10px; }
 .wk-dots i { width: 9px; height: 9px; border: 2px solid var(--gold); display: inline-block; }
 .wk-dots i.used { background: var(--gold); }
 .wk-row .linkish { font-size: 15px; }
+.ego-chip { cursor: pointer; white-space: nowrap; border-bottom: 1px dotted currentColor; }
+.ego-chip.alpha { color: var(--gold); }
+.ego-chip.humble { color: var(--up); }

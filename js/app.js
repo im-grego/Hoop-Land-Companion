@@ -39,6 +39,7 @@ import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
 import { isForeign, lookFor, groupFor, makeNamer } from './names.js';
 import * as CG from './classgen.js';
+import { egoRead, egoTag, isAlpha, isHumble, EGO } from './ego.js';
 import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -47,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.182.0';
+const APP_VERSION = '0.183.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4369,7 +4370,7 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
-        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
+        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}${egoChip(p) ? ` · ${egoChip(p)}` : ''}` : ''}</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
         ${quickActions(p, team)}
@@ -7938,7 +7939,7 @@ screens.fa = (args = {}) => {
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
       <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
-      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}</span>
+      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
       : list.length ? `<span class="chg">${list.length} team${list.length > 1 ? 's' : ''} interested · best ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
     </button>`;
@@ -8647,7 +8648,7 @@ function faPitchOdds(L, team, m, kind) {
   const p = m.p, t10 = k => (traitsSet(p) ? tr(p, k) - 10 : 0);
   const parts = destinationParts(L, team, p), part = k => parts.find(x => x.k === k)?.v || 0;
   let o;
-  if (kind === 'role') o = 0.15 + 0.6 * FA.roleFit(L, team, p) + (m.motive === 'role' ? 0.15 : 0);
+  if (kind === 'role') o = 0.15 + 0.6 * FA.roleFit(L, team, p) + (m.motive === 'role' ? 0.15 : 0) + (isAlpha(p) ? 0.1 : isHumble(p) ? -0.08 : 0);
   else if (kind === 'winning') o = 0.1 + 0.65 * FA.teamStrength(L, team) + (m.motive === 'contender' ? 0.15 : 0) + t10('winning') * 0.01;
   else if (kind === 'market') o = 0.35 + part('market') * 5 + t10('money') * 0.012;
   else if (kind === 'dev') o = p.age <= 25 ? 0.3 + part('upside') * 6 + (p.pot >= 8 ? 0.1 : 0) : 0.08;
@@ -9397,6 +9398,13 @@ const moraleFace = m => MORALE_FACES[Math.max(0, Math.min(4, Math.floor((m ?? 60
 const MORALE_WORDS = ['Furious', 'Upset', 'Indifferent', 'Content', 'Happy'];
 const moraleWord = m => MORALE_WORDS[Math.max(0, Math.min(4, Math.floor((m ?? 60) / 20)))];
 const moraleTag = p => `<span title="${moraleWord(p.season?.morale)}">${moraleFace(p.season?.morale)}</span> ${p.season?.morale ?? '?'}`;
+// Ego (🎭 Alpha ↔ 🙏 Humble), shown beside morale; tap for why. Most players are neither and show nothing.
+const egoChip = p => { const t = egoTag(p); return t ? `<span class="ego-chip ${isAlpha(p) ? 'alpha' : 'humble'}" data-act="egoWhy" data-id="${p.id}">${t}</span>` : ''; };
+actions.egoWhy = d => {
+  const e = findPlayer(+d.id); if (!e) return;
+  const r = egoRead(e.p), a = r.v >= 15;
+  toast(`${a ? EGO.hiIcon : EGO.loIcon} ${playerName(e.p)}: ${a ? EGO.hi : EGO.lo} (ego ${r.v})`, `${a ? 'Wants the ball and a featured role: unhappy as a sidekick, clashes with another Alpha.' : 'Takes whatever role helps: content off the bench, easy to fit next to stars.'} Why: ${r.why.join(', ')}.`, 5200);
+};
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
 // counts once per player a session. Everyone in the league, not just yours.
@@ -9445,7 +9453,17 @@ function roleMorale(L) {
   for (const t of L.teams) for (const p of FA.signedRoster(t)) {
     const l = seasonLine(p, state.leagueIdx, ly), rank = roleRank(t, p);
     if (rank <= 5 && l && l.gs < 20 && l.mpg < 24) moraleEvent(p, 'role', 6, 'projected starter');
-    else if (rank > 8 && l && l.gs >= 41) moraleEvent(p, 'role', -6, 'pushed out of the rotation');
+    else if (rank > 8 && l && l.gs >= 41) moraleEvent(p, 'role', isHumble(p) ? -2 : -6, 'pushed out of the rotation');
+    // Ego: an Alpha who isn't the first option wants more; one left out of the scoring options feels it.
+    if (isAlpha(p) && rank >= 2) moraleEvent(p, 'ego', rank >= 4 ? -7 : -4, rank >= 4 ? 'wants a featured role' : 'not the first option');
+    else if (isAlpha(p) && (t.scoringOptions || []).length && !(t.scoringOptions || []).some(o => o.pid === p.id)) moraleEvent(p, 'ego', -4, 'left out of the scoring options');
+    if (isHumble(p) && rank > 5) moraleEvent(p, 'humble', 2, 'happy to help however he can');
+  }
+  // Two Alphas on one team clash, unless both put winning first (15+); the lesser one feels it more.
+  for (const t of L.teams) {
+    const al = FA.signedRoster(t).filter(isAlpha).sort((a, b) => shownLevel(b) - shownLevel(a));
+    if (al.length < 2 || al.every(x => traitsSet(x) && tr(x, 'winning') >= 15)) continue;
+    al.forEach((p, i) => moraleEvent(p, 'alphas', i ? -6 : -3, `sharing the spotlight with ${i ? al[0].ln : al[1].ln}`));
   }
 }
 
@@ -11166,7 +11184,7 @@ function requestsState() {
       if (morale >= 70) continue;
       const moraleOdds = morale < 35 ? 0.35 : morale < 50 ? 0.2 : 0.08;
       const yrsLeft = p.contract?.yrs ?? 1;
-      let odds = (yrsLeft >= 2 ? 0.5 : 1) * (0.06 + moraleOdds + 0.04 * (strip - 2) + (win >= 15 ? 0.1 : win >= 12 ? 0.04 : 0) - (loy >= 14 ? 0.15 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.1 : 0));
+      let odds = (yrsLeft >= 2 ? 0.5 : 1) * (0.06 + moraleOdds + (isAlpha(p) ? 0.08 : isHumble(p) ? -0.06 : 0) + 0.04 * (strip - 2) + (win >= 15 ? 0.1 : win >= 12 ? 0.04 : 0) - (loy >= 14 ? 0.15 : 0) - (teamStatus(L, t) === 'rebuilding' && p.age <= 24 ? 0.1 : 0));
       if (isUserTeam(t)) odds *= fxNow().requestMult;
       odds *= 1 - FX.facilityFx(t).requestCut;
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 5, 2654435761) ^ 0x7e9) >>> 0)() >= Math.min(0.75, odds)) continue;
