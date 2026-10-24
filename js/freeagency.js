@@ -19,6 +19,7 @@ import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
 import { destinationValue, taxKeep } from './destination.js';
 import { egoVal, roleWeight } from './ego.js';
+import { confAsk } from './mindset.js';
 
 export const STATUS_SIGNED = 3, STATUS_EXPIRING = 4, STATUS_FREE = 5, STATUS_DRAFTED = 2;
 export const OPT_NONE = 0, OPT_TEAM = 1, OPT_PLAYER = 2;
@@ -248,6 +249,7 @@ export function baseAsk(league, p, o = FA_DEFAULTS) {
   let ask = 2 * (gs - 8);
   if (p.age <= 25) ask += Math.max(0, p.pot - 6) * 2;
   if (p.age > p.regressionAge) ask *= Math.max(0.5, 1 - 0.1 * (p.age - p.regressionAge));
+  if (COMPLETE) ask *= confAsk(p);   // confident ones ask for more, shaken ones take less to prove it
   return Math.max(o.minSalary, Math.min(maxSalary(league, p), Math.round(ask)));
 }
 

@@ -2,7 +2,7 @@ import {
   parseSave, serializeSave, injuryHistory, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies, draftYear,
   playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
 } from './savefile.js';
-import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
+import { setConfidence, DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
 import {
   SKILL_ATTRS, DRAFT_DROP, DRAFT_FLOOR, floorVector, rookieLine, ceilingVector, buildCompPool, prospectComps, prospectValue,
   lotterySetup, lotteryOdds, runLottery, drawLottery, draftOrder, teamRecord, cpuPick, tradePicks, pickValue, lotteryDone, actualDraftOrder, rookieComps,
@@ -39,7 +39,8 @@ import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
 import { isForeign, lookFor, groupFor, makeNamer } from './names.js';
 import * as CG from './classgen.js';
-import { egoRead, egoTag, isAlpha, isHumble, EGO } from './ego.js';
+import { egoRead, isAlpha, isHumble, EGO_LEVELS, egoLevel } from './ego.js';
+import { confRead, CONF_LEVELS, confMult } from './mindset.js';
 import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -48,7 +49,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.184.0';
+const APP_VERSION = '0.185.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4359,7 +4360,7 @@ screens.player = (args) => {
   const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}`
     : tab === 'traits' ? (personality + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
     : tab === 'stats' ? statsTab(p, args)
-    : `${newsBox(p)}${rankBox(p, mpg)}
+    : `${newsBox(p)}${rankBox(p, mpg)}${mindsetBox(p)}
       <fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
@@ -4370,7 +4371,7 @@ screens.player = (args) => {
     body: `
       <div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
-        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}${egoChip(p) ? ` · ${egoChip(p)}` : ''}` : ''}</p>
+        <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}${['ego', 'conf'].map(k => mindChip(p, k)).filter(Boolean).map(x => ` · ${x}`).join('')}` : ''}</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
         ${quickActions(p, team)}
@@ -7888,7 +7889,7 @@ const faBest = (s, m) => {
 };
 
 // Years a player is looking for (shown with the ask).
-const askYears = m => m.motive === 'security' ? 4 : m.p.age >= 33 ? 1 : m.p.age >= 30 ? 2 : m.motive === 'control' ? 2 : 3;
+const askYears = m => isComplete() && confRead(m.p).level === 0 ? (m.p.age >= 33 ? 1 : 2) : m.motive === 'security' ? 4 : m.p.age >= 33 ? 1 : m.p.age >= 30 ? 2 : m.motive === 'control' ? 2 : 3;
 // Past their regression age: ratings are already slipping.
 const declining = p => p.age > p.regressionAge;
 const posGroup = p => (p.pos <= 2 ? 'guards' : p.pos <= 5 ? 'wings' : 'bigs');
@@ -7939,7 +7940,7 @@ screens.fa = (args = {}) => {
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
       <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
-      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}</span>
+      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && confRead(m.p).level === 0 ? ' · 🥶 wants a prove-it deal' : ''}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
       : list.length ? `<span class="chg">${list.length} team${list.length > 1 ? 's' : ''} interested · best ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
     </button>`;
@@ -9398,28 +9399,35 @@ const moraleFace = m => MORALE_FACES[Math.max(0, Math.min(4, Math.floor((m ?? 60
 const MORALE_WORDS = ['Furious', 'Upset', 'Indifferent', 'Content', 'Happy'];
 const moraleWord = m => MORALE_WORDS[Math.max(0, Math.min(4, Math.floor((m ?? 60) / 20)))];
 const moraleTag = p => `<span title="${moraleWord(p.season?.morale)}">${moraleFace(p.season?.morale)}</span> ${p.season?.morale ?? '?'}`;
-// Ego (🎭 Alpha ↔ 🙏 Humble), shown beside morale; tap for why. Most players are neither and show nothing.
-const egoChip = p => { const t = egoTag(p); return t ? `<span class="ego-chip ${isAlpha(p) ? 'alpha' : 'humble'}" data-act="egoWhy" data-id="${p.id}">${t}</span>` : ''; };
-actions.egoWhy = d => {
+// Mindset: three values that move with his season. Morale (his situation, 0-100), ego (his status) and confidence
+// (his play), each on five levels. The header shows ego and confidence only away from the middle.
+const egoOf = p => { const r = egoRead(p), l = egoLevel(r.v); return { ...r, l, ...EGO_LEVELS[l] }; };
+const confOf = p => { const r = confRead(p); return { ...r, l: r.level, ...CONF_LEVELS[r.level] }; };
+const mindChip = (p, kind) => { const m = kind === 'ego' ? egoOf(p) : confOf(p); return m.l === 2 ? '' : `<span class="ego-chip mind-${m.l}" data-act="mindWhy" data-k="${kind}" data-id="${p.id}">${m.icon} ${m.label}</span>`; };
+const egoChip = p => mindChip(p, 'ego');
+actions.mindWhy = d => {
   const e = findPlayer(+d.id); if (!e) return;
-  const r = egoRead(e.p), a = r.v >= 15, h = r.v <= 6;
-  toast(`${a ? EGO.hiIcon : h ? EGO.loIcon : EGO.icon} ${playerName(e.p)}: ${a ? EGO.hi : h ? EGO.lo : 'Balanced'} (ego ${r.v})`, `${a ? 'Wants the ball and a featured role: unhappy as a sidekick, clashes with another Alpha.' : h ? 'Takes whatever role helps: content off the bench, easy to fit next to stars.' : 'Wants a fair role, no more: neither an Alpha nor Humble.'}${a || h ? ` Why: ${r.why.join(', ')}.` : ''}`, 5200);
+  const m = d.k === 'ego' ? egoOf(e.p) : confOf(e.p);
+  const what = d.k === 'ego' ? ['Takes whatever role helps: content off the bench, easy to fit next to stars.', 'Happy to fit in.', 'Wants a fair role, no more.', 'Wants his touches and his credit.', 'Needs to be the man: unhappy as a sidekick, clashes with another Alpha, may want his own team.'][m.l]
+    : ['Doubting his game: grows less this offseason and will take a short prove-it deal.', 'Not quite trusting his game: grows a little less.', 'Steady.', 'Confident in his game: grows a little more and asks a bit more.', 'Thinks he can\'t miss: grows more and asks for more.'][m.l];
+  toast(`${m.icon} ${playerName(e.p)}: ${m.label} (${d.k === 'ego' ? 'ego' : 'confidence'} ${m.v})`, `${what} Why: ${m.why.join(', ')}.`, 5200);
 };
-// A change of situation (a trade, a new deal, a bigger role) lifts a player's
-// mood, a lot more when he was unhappy; a smaller role costs some. Each kind
-// counts once per player a session. Everyone in the league, not just yours.
-function moraleEvent(p, kind, n, why) {
-  if (!isComplete() || isCollege() || !p.season) return 0;
-  const k = `${p.id}:${kind}`;
-  if ((state.moraleDone ||= new Set()).has(k)) return 0;
-  state.moraleDone.add(k);
-  const m = p.season.morale ?? 60;
-  const lift = n > 0 && m < 40 ? Math.round(n * 1.6) : n;
-  p.season.morale = Math.max(0, Math.min(100, m + lift));
-  (calFlags().moraleLog ||= []).push({ pid: p.id, tid: p.tid, from: m, to: p.season.morale, why });
-  state.dirty = true;
-  return lift;
+actions.egoWhy = d => actions.mindWhy({ ...d, k: 'ego' });
+const MIND_DOT = l => `<span class="mind-dots">${[0, 1, 2, 3, 4].map(i => `<span class="${i <= l ? `on mind-${l}` : ''}"></span>`).join('')}</span>`;
+function mindsetBox(p) {
+  if (!isComplete() || isCollege() || !p.season || p.season.morale === undefined) return '';
+  const mo = p.season.morale ?? 60, ml = Math.max(0, Math.min(4, Math.floor(mo / 20)));
+  const moves = (calFlags().moraleLog || []).filter(x => x.pid === p.id && x.to !== x.from).slice(-3).reverse();
+  const e = egoOf(p), c = confOf(p);
+  const row = (icon, name, val, l, label, why) => `<div class="mind-row"><span class="small mind-name">${icon} ${name}</span>${MIND_DOT(l)}<span class="small"><b>${label}</b> <span class="muted">${val}</span></span></div>${why ? `<p class="note small muted mind-why">${why}</p>` : ''}`;
+  return `<fieldset class="frame"><legend>Mindset</legend>
+    ${row(moraleFace(mo), 'Morale', mo, ml, moraleWord(mo), moves.length ? moves.map(x => `${esc(x.why)} <span class="${x.to > x.from ? 'up' : 'down'}">${x.to > x.from ? '+' : ''}${x.to - x.from}</span>`).join(' · ') : 'his situation: team, role, deal, coach')}
+    ${row(e.icon, 'Ego', e.v, e.l, e.label, esc(`${e.says} · ${e.why.join(', ')}`))}
+    ${row(c.icon, 'Confidence', c.v, c.l, c.label, esc(`${c.says} · ${c.why.join(', ')}`))}
+    <p class="note small muted" style="margin-top:6px">These move with his season: morale with his situation, ego with his status, confidence with how he played.</p>
+  </fieldset>`;
 }
+setConfidence(p => (isComplete() && !isCollege() ? confMult(p) : 1));
 const roleRank = (team, p) => 1 + FA.signedRoster(team).filter(x => x !== p && shownLevel(x) > shownLevel(p)).length;
 // Fans follow stars: a team that lands one gains, the team that lets one go
 // loses some. Crowds in the game track the fan number (0-100).
@@ -9858,27 +9866,18 @@ function rangeCard() {
 // Personality traits (1–20, kept in the save's unused trait fields).
 // Prospects show what scouts can see (durability, motor) until a private
 // workout; the rest read "?". Tap − / + to adjust.
-// The All traits list in two groups, like the tendencies. Ego is read from his career, so it has no − / +.
-const TRAIT_GROUPS = [['Personality', ['loyalty', 'money', 'winning', 'lockerRoom', 'ego']], ['On the Court', ['motor', 'roadWarrior', 'durability', 'playoffRiser']]];
-function egoRow(p, seen) {
-  if (!seen) return `<div class="trait-row"><span class="small">${EGO.icon} Ego</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
-  const v = egoRead(p).v;
-  return `<div class="trait-row"><span class="small">${EGO.icon} Ego</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 15 ? 'top' : v >= 10 ? 'hi' : v <= 6 ? 'lo' : ''}"></span></span>
-    <span class="small"><b>${v}</b> <span class="${v >= 15 ? 'gold' : 'muted'}">${v >= 15 ? EGO.hi : v <= 6 ? EGO.lo : 'Balanced'}</span></span>
-    <span class="trait-ctl"><button class="btn tiny" data-act="egoWhy" data-id="${p.id}" aria-label="Why">?</button></span></div>`;
-}
+// The All traits list in two groups, like the tendencies.
+const TRAIT_GROUPS = [['Personality', ['loyalty', 'money', 'winning', 'lockerRoom']], ['On the Court', ['motor', 'roadWarrior', 'durability', 'playoffRiser']]];
 function traitsBox(p, prospect = false) {
   if (!p.traits || !traitsSet(p)) return '';
   // Prospects: durability and motor show; coachability once a scout has seen him; the rest after a workout.
   const seen = k => !prospect || k === 'durability' || k === 'motor' || (k === 'roadWarrior' && scouted(p.id)) || workoutDone(p.id);
   const known = TRAITS.filter(t => seen(t.k));
   const tags = known.map(t => traitTag(t, p.traits[t.k] || 0)).filter(Boolean);
-  if (seen('ego') && egoTag(p)) tags.splice(4, 0, { icon: '', label: egoTag(p) });
   return `<fieldset class="frame"><legend>Traits</legend>
     ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
     <details class="tend-wrap" data-anchor="traits-all" data-keep="traits-all" ${state.keepOpen?.['traits-all'] ? 'open' : ''}><summary class="small">All traits</summary>${TRAIT_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4><div class="stack">${ks.map(k => {
-    if (k === 'ego') return egoRow(p, seen('ego'));
     const t = TRAITS.find(x => x.k === k), v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
     return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'top' : v >= 10 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
@@ -11226,8 +11225,9 @@ function requestsState() {
       const rival = roster.filter(x => x !== p && shownLevel(x) >= shownLevel(p)).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
       const morale = p.season?.morale ?? 60, e = egoRead(p), fresh = e.why.some(w => /fresh off|just got paid|worth more/.test(w));
       // A fresh swell (All-NBA, a new deal) is enough on its own, happy or not; otherwise only an unhappy one asks.
-      if (!rival || (morale >= 75 && !fresh) || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
-      const odds = (0.1 + (e.v - 15) * 0.04 + (fresh ? 0.1 : 0) + (morale < 50 ? 0.1 : morale >= 85 ? -0.08 : 0)) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
+      const cl = confRead(p).level;   // a shaken Alpha keeps quiet; a confident one is sure he's earned it
+      if (!rival || cl <= 1 || (morale >= 75 && !fresh) || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
+      const odds = (0.1 + (e.v - 15) * 0.04 + (fresh ? 0.1 : 0) + (cl >= 3 ? 0.05 : 0) + (morale < 50 ? 0.1 : morale >= 85 ? -0.08 : 0)) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 23, 2654435761) ^ 0x3e9) >>> 0)() >= odds) continue;
       if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
       list.push({ pid: p.id, tid: t.id, why: `🎭 wants his own team, tired of playing second to ${rival.ln || playerName(rival)}`, status: isUserTeam(t) ? 'open' : 'cpu' });

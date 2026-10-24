@@ -1467,5 +1467,13 @@ main.panel.bare { margin-top: 10px; }
 .wk-dots i.used { background: var(--gold); }
 .wk-row .linkish { font-size: 15px; }
 .ego-chip { cursor: pointer; white-space: nowrap; border-bottom: 1px dotted currentColor; }
-.ego-chip.alpha { color: var(--gold); }
-.ego-chip.humble { color: var(--up); }
+.mind-0, .mind-1 { color: var(--down); }
+.mind-3, .mind-4 { color: var(--gold); }
+.mind-row { display: grid; grid-template-columns: 7.5em auto 1fr; gap: 10px; align-items: center; margin-top: 6px; }
+.mind-name { white-space: nowrap; }
+.mind-why { margin: 2px 0 4px; }
+.mind-dots { display: inline-flex; gap: 3px; }
+.mind-dots span { width: 10px; height: 10px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); }
+.mind-dots span.on { background: var(--cyan); }
+.mind-dots span.on.mind-0, .mind-dots span.on.mind-1 { background: var(--down); }
+.mind-dots span.on.mind-3, .mind-dots span.on.mind-4 { background: var(--gold); }

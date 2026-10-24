@@ -50,8 +50,8 @@ export function egoRead(p) {
     else if (lean <= -1.2) why.push(tr(p, 'lockerRoom') >= 15 ? '-a great teammate' : '-puts winning first');
   }
   // Only the reasons that pushed him the way he landed ('-' marks one that pulls toward Humble).
-  const out = Math.max(1, Math.min(20, Math.round(v))), down = out < 10;
-  const keep = why.filter(w => w.startsWith('-') === down).map(w => w.replace(/^-/, ''));
+  const out = Math.max(1, Math.min(20, Math.round(v))), lvl = [6, 8, 11, 14, 20].findIndex(m => out <= m);
+  const keep = why.filter(w => (lvl < 2 ? w.startsWith('-') : lvl > 2 ? !w.startsWith('-') : true)).map(w => w.replace(/^-/, ''));
   return { v: out, why: keep.length ? keep : ['nothing stands out'] };
 }
 // What swells it for now: a fresh All-NBA (or All-Star) season and a big new deal, more so when he's paid past what
@@ -68,6 +68,15 @@ function boost(p) {
   if (sal && sal - worth(levelOf(p)) >= 12) { v += 1; why.push('thinks he is worth more than he is'); }
   return { v, why };
 }
+// Five levels, low to high (Alpha and Humble are the ends that change how he acts).
+export const EGO_LEVELS = [
+  { max: 6, icon: '🙏', label: 'Humble', says: 'takes whatever role helps' },
+  { max: 8, icon: '🌱', label: 'Modest', says: 'happy to fit in' },
+  { max: 11, icon: '⚖️', label: 'Balanced', says: 'wants a fair role' },
+  { max: 14, icon: '😎', label: 'Proud', says: 'wants his touches and his credit' },
+  { max: 20, icon: '🎭', label: 'Alpha', says: 'needs to be the man' },
+];
+export const egoLevel = v => EGO_LEVELS.findIndex(l => v <= l.max);   // 0..4
 export const egoVal = p => egoRead(p).v;
 export const isAlpha = p => egoVal(p) >= 15;
 export const isHumble = p => egoVal(p) <= 6;
