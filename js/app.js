@@ -1,6 +1,6 @@
 import {
   parseSave, serializeSave, injuryHistory, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies, draftYear,
-  playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
+  setBlessed, playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
 import {
@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.194.0';
+const APP_VERSION = '0.195.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -404,7 +404,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); }   // once an offseason each
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); }   // once an offseason each
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -985,7 +985,7 @@ actions.undoTo = async d => {
   await nextFrame();
   installData(parseSave(u.text), true);
   try { state.cal = JSON.parse(u.cal || '{}'); } catch { /* keep */ }
-  if (!isCollege()) { saveDrift(); saveTraitStore(); saveComeback(); }
+  if (!isCollege()) { saveDrift(); saveTraitStore(); saveComeback(); saveJersey(); }
   state.undoList = state.undoList.slice(+d.i + 1);
   state.undo = state.undoList[0] || null;
   state.dirty = u.dirty;
@@ -3516,6 +3516,7 @@ function retirementsBox() {
   };
   return `${back.length ? `<fieldset class="frame"><legend>One More Season</legend><div class="stack">${back.map(({ b, f }) => `<p class="note small">${RETURN[b.kind].icon} <b>${esc(playerName(f.p))}</b> is back with ${esc(f.team?.shortName || '')} for ${RETURN[b.kind].say}. This season is his last.</p>`).join('')}</div></fieldset>` : ''}
     ${numbersBox()}
+    ${jerseyBox()}
     <fieldset class="frame"><legend>Retired This Offseason</legend>
       <p class="note small muted">Your former players can be talked into one more season: a farewell tour (loyalty, years with you) or one last run (a competitor on a team that can win). One call each.</p>
       <div class="pod-list">${list.filter(notableRetiree).map(row).join('') || '<p class="note small muted">Nobody notable retired this year.</p>'}</div>
@@ -3629,6 +3630,123 @@ function numbersBox() {
 }
 const numberPosts = () => { const L = league(), yr = L.season.currentYear;
   return L.teams.flatMap(t => (t.retiredNumbers || []).filter(r => r.yr === yr).map(r => { const p = [...(L.retirees || []), ...(L.hallOfFame || [])].find(x => x.id === r.pid) || findPlayer(r.pid)?.p; return p ? { team: t, score: 20, tag: '🏟️ Rafters', pid: p.id, handle: '@HoopGramNBA', likes: 12000 + (p.id * 53) % 6000, text: `The ${t.name} will raise ${playerName(p)}'s #${numText(r.num)} to the rafters. Nobody wears it again.` } : null; })).filter(Boolean).slice(0, 3); };
+
+
+// ---- Wearing a legend's number
+// A newcomer with star potential (9 or 10, a rookie or an arrival) can ask to wear one of his new team's retired
+// numbers, a legend at his position first. The legend decides; if he has passed, his family does, and families
+// hold on tighter. A 10, good already, at the legend's position has the best shot. Either answer goes public. With a
+// yes he wears it and it stays retired for everyone else (the jersey rules know the exception). Your newcomers ask
+// you first: make the call, or steer him to another number. CPU teams settle theirs on their own.
+// Blessings last the save ({ tid, pid, num }); this summer's asks ride with undo: { asked: { pid: 'call'|'skip' }, log }.
+const blessKey = () => `hlc:bless:${saveId()}`;
+const loadBless = () => { try { return JSON.parse(localStorage.getItem(blessKey())) || []; } catch { return []; } };
+setBlessed((team, p, num) => !!state.data && !isCollege() && loadBless().some(b => b.tid === team.id && b.pid === p.id && b.num === num));
+const jerseyKey = () => `hlc:jersey:${saveId()}:${league().season.currentYear}`;
+function jerseyStore() {
+  const c = calFlags();
+  if (!c.jersey || c.jerseyKey !== jerseyKey()) { try { c.jersey = JSON.parse(localStorage.getItem(jerseyKey())) || {}; } catch { c.jersey = {}; } c.jerseyKey = jerseyKey(); }
+  c.jersey.asked ||= {}; c.jersey.log ||= [];
+  return c.jersey;
+}
+const saveJersey = () => { try { localStorage.setItem(jerseyKey(), JSON.stringify(jerseyStore())); } catch { /* ignore */ } };
+const legendPool = L => new Map([...(L.retirees || []), ...(L.hallOfFame || [])].map(p => [p.id, p]));
+const deceased = p => !!p?.history?.causeOfDeath;
+const posGroup3 = pos => (pos <= 2 ? 0 : pos <= 5 ? 1 : 2);
+// Who might ask, and for whose number.
+function jerseyAsks(L = league()) {
+  const yr = L.season.currentYear, legends = legendPool(L), out = [], bless = loadBless();
+  // A number retired across the league (Bill Russell's #6) is nobody's to give.
+  const leaguewide = new Map();
+  for (const t of L.teams) for (const r of t.retiredNumbers || []) leaguewide.set(`${r.pid}:${r.num}`, (leaguewide.get(`${r.pid}:${r.num}`) || 0) + 1);
+  for (const t of L.teams) {
+    const nums = (t.retiredNumbers || []).map(r => ({ r, lg: legends.get(r.pid) })).filter(x => x.lg && (leaguewide.get(`${x.r.pid}:${x.r.num}`) || 0) < 10 && !bless.some(b => b.tid === t.id && b.num === x.r.num));
+    if (!nums.length) continue;
+    for (const p of FA.signedRoster(t)) {
+      if ((p.pot || 0) < 9 || bless.some(b => b.pid === p.id)) continue;
+      const rookie = p.history?.draft?.yr === yr && p.history.draft.tid === t.id;
+      const lastTid = ((p.stats || []).filter(x => x.league === 0 && (x.season || []).some(r => r.GP > 0)).sort((a, b) => b.yr - a.yr)[0]?.season || []).filter(r => r.GP > 0).pop()?.tid;
+      if (!rookie && !(lastTid != null && lastTid !== t.id && p.age <= 25)) continue;
+      const roll = k => mulberry32((saveSalt() ^ Math.imul(p.id + k, 2654435761) ^ 0x23e5) >>> 0)();
+      // Not everyone asks: the bolder the ego, the likelier; a 10 a little more.
+      if (roll(1) >= 0.2 + Math.max(0, egoVal(p) - 9) * 0.06 + (p.pot >= 10 ? 0.15 : 0)) continue;
+      const pick = nums.map(x => ({ ...x, sc: (posGroup3(x.lg.pos) === posGroup3(p.pos) ? 3 : 0) + (x.lg.history?.yearInducted ? 2 : 0) + roll(x.r.num + 7) })).sort((a, b) => b.sc - a.sc)[0];
+      out.push({ p, team: t, num: pick.r.num, legend: pick.lg, family: deceased(pick.lg), samePos: posGroup3(pick.lg.pos) === posGroup3(p.pos) });
+    }
+  }
+  return out;
+}
+function jerseyOdds(a) {
+  let o = a.family ? 0.1 : 0.18;
+  o += a.p.pot >= 10 ? 0.3 : 0.1;
+  o += shownLevel(a.p) >= 72 ? 0.12 : shownLevel(a.p) >= 65 ? 0.05 : 0;
+  o += a.samePos ? 0.1 : -0.05;
+  if (!a.family && traitsSet(a.legend)) o += (tr(a.legend, 'lockerRoom') - 10) * 0.015 - Math.max(0, tr(a.legend, 'loyalty') - 14) * 0.03;
+  return Math.max(0.05, Math.min(0.8, o));
+}
+function settleJersey(a) {
+  const st = jerseyStore(), L = league();
+  const ok = mulberry32((saveSalt() ^ Math.imul(a.p.id + a.num, 2654435761) ^ 0x6e55) >>> 0)() < jerseyOdds(a);
+  st.asked[a.p.id] = 'call';
+  st.log.push({ pid: a.p.id, tid: a.team.id, num: a.num, lid: a.legend.id, ok, family: a.family });
+  if (ok) {
+    try { localStorage.setItem(blessKey(), JSON.stringify([...loadBless().filter(b => b.pid !== a.p.id), { tid: a.team.id, pid: a.p.id, num: a.num }])); } catch { /* ignore */ }
+    a.p.num = a.num;
+    const row = (a.p.stats || []).filter(x => x.yr === L.season.currentYear && x.league === 0).pop();
+    const stint = row?.season?.[row.season.length - 1];
+    if (stint && !stint.GP && stint.tid === a.team.id) stint.num = a.num;
+    moraleEvent(a.p, 'jersey', 6, `wearing ${a.legend.ln}'s #${numText(a.num)}`);
+    drift(a.p, 'jersey', EGO_KEY, 1, `wearing ${a.legend.ln}'s #${numText(a.num)}`);
+    fanEvent(a.team, 1);
+  } else moraleEvent(a.p, 'jersey', egoVal(a.p) >= 13 ? -5 : -3, `told no on #${numText(a.num)}`);
+  saveJersey();
+  state.dirty = true;
+  return ok;
+}
+// CPU teams' rookies and arrivals.
+function cpuJerseys() {
+  if (!state.data || !isComplete() || isCollege() || state.leagueIdx !== 0) return;
+  // Whenever a new newcomer shows up (the draft, then trades and signings all summer), once each.
+  const st = jerseyStore(), L = league();
+  for (const a of jerseyAsks(L)) if (!isUserTeam(a.team) && !st.asked[a.p.id]) settleJersey(a);
+}
+actions.jerseyCall = async d => {
+  const a = jerseyAsks().find(x => x.p.id === +d.id), st = jerseyStore();
+  if (!a || !isUserTeam(a.team) || st.asked[a.p.id]) return;
+  if (d.k === 'skip') {
+    st.asked[a.p.id] = 'skip';
+    if (egoVal(a.p) >= 13) moraleEvent(a.p, 'jersey', -2, `wanted #${numText(a.num)}`);
+    saveJersey(); render(); return;
+  }
+  if (!(await confirmBox(`Call ${a.family ? `the ${esc(a.legend.ln)} family` : `<b>${esc(playerName(a.legend))}</b>`} about <b>${esc(playerName(a.p))}</b> wearing <b>#${numText(a.num)}</b>? Whatever they say goes public.`, '📞 Make the Call'))) return;
+  checkpoint(`Jersey request: ${playerName(a.p)}`);
+  const ok = settleJersey(a);
+  toast(ok ? `🎽 ${playerName(a.p)} gets #${numText(a.num)}` : `#${numText(a.num)} stays retired`, ok ? `${a.family ? `The ${a.legend.ln} family` : a.legend.ln} gave his blessing.` : `${a.family ? `The ${a.legend.ln} family` : a.legend.ln} said no.`, 4200);
+  render();
+};
+function jerseyBox() {
+  if (isCollege()) return '';
+  cpuJerseys();
+  const st = jerseyStore(), mine = jerseyAsks().filter(a => isUserTeam(a.team) && !st.asked[a.p.id]);
+  const posts = jerseyPosts();
+  if (!mine.length && !posts.length) return '';
+  return `<fieldset class="frame"><legend>🎽 Number Requests</legend>
+    ${mine.length ? `<div class="pod-list">${mine.map(a => `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(a.p))}</b> ${lvTag(a.p)}<br><span class="small muted">wants ${esc(a.legend.ln)}'s #${numText(a.num)}${a.family ? ' (his family decides)' : ''} · ${Math.round(jerseyOdds(a) * 100)}% they say yes</span></span><span class="pod-btns"><button class="btn tiny focus" data-act="jerseyCall" data-id="${a.p.id}" data-k="call">📞 Make the Call</button><button class="btn tiny off" data-act="jerseyCall" data-id="${a.p.id}" data-k="skip">✋ Another Number</button></span></div>`).join('')}</div>` : ''}
+    ${posts.length ? `<div class="stack" style="margin-top:6px">${posts.map(x => `<p class="note small">${esc(x.text)}</p>`).join('')}</div>` : ''}
+  </fieldset>`;
+}
+function jerseyPosts() {
+  const L = league(), legends = legendPool(L);
+  return jerseyStore().log.map(x => {
+    const p = findPlayer(x.pid)?.p, t = L.teams.find(y => y.id === x.tid), lg = legends.get(x.lid);
+    if (!p || !t || !lg) return null;
+    const n = playerName(p), ln = playerName(lg), num = `#${numText(x.num)}`, place = t.city || t.name;
+    const text = x.ok
+      ? (x.family ? `The ${lg.ln} family has given ${n} their blessing to wear ${num} in ${place}. "${lg.fn} would have loved his game."` : `${ln} gave ${n} his blessing to wear ${num} in ${place}. "He's earned it. Make it mean something."`)
+      : (x.family ? `The ${lg.ln} family asked that ${num} stay retired in ${place}. ${n} will pick another number.` : `${ln} said no to ${n} wearing his ${num}. "Some numbers stay in the rafters."`);
+    return { team: t, score: x.ok ? 15 : 12, tag: x.ok ? '🎽 Blessing' : '🎽 Denied', pid: p.id, handle: '@HoopGramNBA', likes: 8000 + (p.id * 71) % 7000, text };
+  }).filter(Boolean);
+}
 
 // ---- Hoop Gram drama
 // Unhappy players let it show: they scrub the team from their account, post something cryptic on their story,
@@ -10294,7 +10412,7 @@ actions.presserAnswer = d => {
 };
 
 function leagueGramCard() {
-  const posts = [...(isCollege() ? [] : [...comebackPosts(), ...numberPosts(), ...dramaPosts(), ...traitPosts()]), ...leagueGram(league(), isUserTeam, state.leagueIdx)].slice(0, 12);
+  const posts = [...(isCollege() ? [] : [...comebackPosts(), ...numberPosts(), ...jerseyPosts(), ...dramaPosts(), ...traitPosts()]), ...leagueGram(league(), isUserTeam, state.leagueIdx)].slice(0, 12);
   if (!posts.length) return '';
   return `<h2 class="team-title">Trending on Hoop Gram</h2>
     <div class="stack">${posts.map(x => `<${x.pid ? `button data-act="openPlayer" data-id="${x.pid}"` : 'div'} class="hg-post ${x.pid ? 'tap' : ''}">

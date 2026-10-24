@@ -319,10 +319,13 @@ export function diffPlayer(p, snap) {
 // that's neither worn nor retired. `p` is excluded from the "worn" check.
 // Teammates under contract hold their numbers; one whose deal is up (status 4) doesn't block a newcomer. If he
 // re-signs, Media Day settles the clash by tenure like any other.
+// A retired number a legend (or his family) let one player wear: f(team, p, num) -> true. Set by the app.
+let BLESSED = () => false;
+export const setBlessed = f => { BLESSED = f; };
 export function jerseyNumber(team, p, want = p.num) {
   const taken = new Set([
     ...team.roster.filter(x => x !== p && x.status !== 4 && x.status !== 5).map(x => x.num),
-    ...(team.retiredNumbers || []).map(r => r.num),
+    ...(team.retiredNumbers || []).filter(r => !BLESSED(team, p, r.num)).map(r => r.num),
   ]);
   if (want >= 0 && !taken.has(want)) return want;
   // #00 (saved as 100) already counts as a low number: no single-digit step for it.
@@ -345,7 +348,7 @@ export function jerseyClashes(league) {
     const order = [...t.roster].sort((a, b) => tenure(b, t.id) - tenure(a, t.id) || (b.yrs || 0) - (a.yrs || 0));
     const kept = new Set();
     for (const p of order) {
-      if (!retired.has(p.num) && !kept.has(p.num)) { kept.add(p.num); continue; }
+      if ((!retired.has(p.num) || BLESSED(t, p, p.num)) && !kept.has(p.num)) { kept.add(p.num); continue; }
       out.push({ p, team: t });
     }
   }
