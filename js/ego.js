@@ -1,10 +1,10 @@
-// Ego: how much a player needs to be the man. Read from his career (not stored in the save): how good he is, what
-// he's won, how much of the offense he's carried, his age, and a lean from his traits. 1..20, 10 is ordinary.
-// 🎭 Alpha (15+) wants the ball, the spotlight and the money that says so; Humble (6 or less) takes whatever role helps.
+// Ego: how much a player needs to be the man. A trait (in the save's playoffRiser slot) seeded from his career: how
+// good he is, what he's won, how much of the offense he's carried, his deal, his age, and a lean from his traits.
+// Events move it from there. 1..20 like every trait: 🎭 Alpha (16+) wants the ball, the spotlight and the money that
+// says so; 🙏 Humble (4 or less) takes whatever role helps.
 import { tr, traitsSet } from './traits.js';
 import { seasonLine } from './storylines.js';
 import { shownLevel as levelOf } from './regression.js';
-import { mindExtra } from './mindset.js';
 
 export const EGO = { icon: '🎭', hi: 'Alpha', lo: 'Humble', hiIcon: '🎭', loIcon: '🙏' };
 const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13, ALL_STAR: 23 };
@@ -24,7 +24,7 @@ export function egoRead(p) {
   const name = `${p.fn || ''} ${p.ln || ''}`.trim();
   if (REAL_EGO[name] != null) { const b = boost(p); return finish(p, REAL_EGO[name] + b.v, [`${REAL_EGO[name] < 10 ? '-' : ''}his reputation around the league`, ...b.why]); }
   const why = [];
-  let v = 9.5 + salt(p.id) * 3;
+  let v = 10 + salt(p.id) * 3;
   const lv = levelOf(p);
   if (!(p.stats || []).some(s => s.league === 0 && (s.season || []).some(r => r.GP > 0))) return finish(p, v + prospectEgo(p, why), why);
   const star = lv >= 90 ? 4 : lv >= 85 ? 2.5 : lv >= 80 ? 1 : lv <= 68 ? -1 : lv <= 72 ? -0.5 : 0;
@@ -74,7 +74,6 @@ function prospectEgo(p, why) {
   return v;
 }
 function finish(p, v, why) {
-  for (const e of mindExtra(p, 'ego')) { v += e.v; if (e.why) why.push(e.v > 0 ? e.why : `-${e.why}`); }
   // Only the reasons that pushed him the way he landed ('-' marks one that pulls toward Humble).
   const out = Math.max(1, Math.min(20, Math.round(v))), lvl = [6, 8, 11, 14, 20].findIndex(m => out <= m);
   const keep = why.filter(w => (lvl < 2 ? w.startsWith('-') : lvl > 2 ? !w.startsWith('-') : true)).map(w => w.replace(/^-/, ''));
@@ -94,18 +93,13 @@ function boost(p) {
   if (sal && sal - worth(levelOf(p)) >= 12) { v += 1; why.push('thinks he is worth more than he is'); }
   return { v, why };
 }
-// Five levels, low to high (Alpha and Humble are the ends that change how he acts).
-export const EGO_LEVELS = [
-  { max: 6, icon: '🙏', label: 'Humble', says: 'takes whatever role helps' },
-  { max: 8, icon: '🌱', label: 'Modest', says: 'happy to fit in' },
-  { max: 11, icon: '⚖️', label: 'Balanced', says: 'wants a fair role' },
-  { max: 14, icon: '😎', label: 'Proud', says: 'wants his touches and his credit' },
-  { max: 20, icon: '🎭', label: 'Alpha', says: 'needs to be the man' },
-];
-export const egoLevel = v => EGO_LEVELS.findIndex(l => v <= l.max);   // 0..4
-export const egoVal = p => egoRead(p).v;
-export const isAlpha = p => egoVal(p) >= 15;
-export const isHumble = p => egoVal(p) <= 6;
-export const egoTag = p => { const v = egoVal(p); return v >= 15 ? `${EGO.hiIcon} ${EGO.hi}` : v <= 6 ? `${EGO.loIcon} ${EGO.lo}` : ''; };
+// Ego lives in the save's playoffRiser trait slot (1-20, like every trait): egoRead() seeds it from his career, and
+// events move it (a big deal, an All-Star season, getting humbled). Alpha is 16+, Humble 4 or less.
+export const EGO_KEY = 'playoffRiser';
+export const egoVal = p => (p?.traits?.[EGO_KEY] > 0 ? p.traits[EGO_KEY] : egoRead(p).v);
+export const isAlpha = p => egoVal(p) >= 16;
+export const isHumble = p => egoVal(p) <= 4;
 // How much he cares about his role in free agency: an Alpha about 1.6×, a Humble one about 0.6×.
-export const roleWeight = p => { const v = egoVal(p); return v >= 15 ? 1.6 : v <= 6 ? 0.6 : 1 + (v - 10) * 0.08; };
+export const roleWeight = p => { const v = egoVal(p); return v >= 16 ? 1.6 : v <= 4 ? 0.6 : 1 + (v - 10) * 0.08; };
+// What he thinks he's worth: an Alpha asks about 6% more, a Humble player about 6% less.
+export const egoAsk = p => { const v = egoVal(p); return v >= 16 ? 1.06 : v >= 13 ? 1.03 : v <= 4 ? 0.94 : v <= 7 ? 0.97 : 1; };

@@ -4,8 +4,6 @@
 // spent in-game, so user and CPU teams stay even.
 
 import { coachMult, durMult, durLongevity } from './traits.js';
-// Confidence (the app's read of how he played) scales offseason growth; set by the app so this file stays standalone.
-let CONF = null; export const setConfidence = f => { CONF = f; };
 import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, MINOR_INJURY, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
@@ -212,7 +210,7 @@ export function pointsFor(p, mpgInfo, params, rng) {
   const band = params.ageBands.find(b => p.age <= b[0]);
   if (!band) return 0;
   // Coachable players get more out of the offseason, stubborn ones less.
-  return Math.round(randInt(rng, band[1], band[2]) * minutesMult(mpgInfo, params) * coachMult(p) * (CONF ? CONF(p) : 1));
+  return Math.round(randInt(rng, band[1], band[2]) * minutesMult(mpgInfo, params) * coachMult(p));
 }
 
 // How much a player "wants" points in a rating: room under the ceiling,

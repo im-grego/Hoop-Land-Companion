@@ -14,7 +14,7 @@ import { TRAITS } from './traits.js';
 export const LEAD_TRAITS = ['winning', 'playoffRiser', 'lockerRoom', 'loyalty'];
 export const MOTIV_TRAITS = ['motor', 'durability', 'money'];
 export const traitSide = k => (LEAD_TRAITS.includes(k) ? 'leadership' : MOTIV_TRAITS.includes(k) ? 'motivation' : null);
-const GOAL = { money: -1 };
+const GOAL = { money: -1, playoffRiser: -1 };   // a coach pulls money and ego down
 export const traitName = k => TRAITS.find(t => t.k === k)?.label || k;
 
 const shown = (c, k) => (c?.attributes?.[k]?.[0] ?? 0) / 2;

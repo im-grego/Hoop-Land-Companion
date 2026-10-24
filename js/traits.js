@@ -2,7 +2,10 @@
 // (traits: durability, winning, money, loyalty, motor, lockerRoom,
 // playoffRiser, roadWarrior) but never uses them, so the app fills and uses
 // all eight on a 1–20 scale (0 = not set). The roadWarrior field holds
-// Coachability: how much coaching sticks, so how fast he develops.
+// Coachability: how much coaching sticks, so how fast he develops. The
+// playoffRiser field holds Ego: how much he needs to be the man (the app
+// seeds it from his career; see ego.js). Newer game builds drop traits from
+// their saves, so the app keeps each save's current values on the device.
 // Real players we know get judged values (REAL, by full name); everyone
 // else is generated from his own data plus a little stable noise.
 
@@ -14,7 +17,7 @@ export const TRAITS = [
   { k: 'loyalty', label: 'Loyalty', icon: '🤝', lo: 'Mercenary', hi: 'Committed', loIcon: '🗡️', hiIcon: '🤝', loSays: 'goes where the offer is best', hiSays: 'stays where he\'s wanted' },
   { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'Relentless', loIcon: '😴', hiIcon: '🔋', loSays: 'coasts when he can', hiSays: 'never stops working' },
   { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', loIcon: '☣️', hiIcon: '🗣️', loSays: 'is a problem in the locker room', hiSays: 'sets the tone in the locker room' },
-  { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Shines', hiTag: 'Playoff Riser', loTag: 'Playoff Fraud', loIcon: '🥶', hiIcon: '✨', loSays: 'shrinks in the big moments', hiSays: 'gets better when it matters' },
+  { k: 'playoffRiser', label: 'Ego', icon: '🎭', lo: 'Humble', hi: 'Alpha', loIcon: '🙏', hiIcon: '🎭', loSays: 'takes whatever role helps', hiSays: 'needs to be the man' },
   { k: 'roadWarrior', label: 'Coachability', icon: '🧱', lo: 'Stubborn', hi: 'Coachable', loIcon: '🪨', hiIcon: '🧠', loSays: 'does things his own way', hiSays: 'soaks up coaching' },
 ];
 // Coachability as a development multiplier: Coachable (16+) ×1.25, Stubborn (4 or less) ×0.8, in between a little

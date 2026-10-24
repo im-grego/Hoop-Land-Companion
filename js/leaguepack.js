@@ -10,7 +10,7 @@
 import { TRAIT_KEYS } from './traits.js';
 
 const KEYS = [...new Set([...TRAIT_KEYS, 'roadWarrior'])];
-export const PACK_VERSION = 1;
+export const PACK_VERSION = 2;   // 2: the playoffRiser slot holds Ego
 
 export const packKey = L => `${L.shortName || L.leagueName || 'league'}`;
 
@@ -47,7 +47,8 @@ export function applyPackTraits(pack, L) {
     const p = byId.get(id);
     if (!p) continue;
     p.traits ||= {};
-    pack.keys.forEach((k, i) => { if (vals[i] > 0) p.traits[k] = Math.max(1, Math.min(20, Math.round(vals[i] / 5))); });
+    // Packs from before Ego took the playoffRiser slot hold the old trait there: leave Ego to the app.
+    pack.keys.forEach((k, i) => { if (vals[i] > 0 && !(k === 'playoffRiser' && (pack.hlcPack || 1) < 2)) p.traits[k] = Math.max(1, Math.min(20, Math.round(vals[i] / 5))); });
     n++;
   }
   return n;
