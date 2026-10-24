@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.195.0';
+const APP_VERSION = '0.195.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -3633,15 +3633,18 @@ const numberPosts = () => { const L = league(), yr = L.season.currentYear;
 
 
 // ---- Wearing a legend's number
-// A newcomer with star potential (9 or 10, a rookie or an arrival) can ask to wear one of his new team's retired
-// numbers, a legend at his position first. The legend decides; if he has passed, his family does, and families
-// hold on tighter. A 10, good already, at the legend's position has the best shot. Either answer goes public. With a
-// yes he wears it and it stays retired for everyone else (the jersey rules know the exception). Your newcomers ask
-// you first: make the call, or steer him to another number. CPU teams settle theirs on their own.
+// Once in a while a top-five rookie with star potential asks to wear one of his team's retired numbers, a legend at
+// his position first. The legend decides; if he has passed, his family does. It's typically only granted to a 10
+// picked in the top three. Either answer goes public. With a yes he wears it and it stays retired for everyone else
+// (the jersey rules know the exception, and anyone already wearing a retired number from before keeps his). Your
+// rookie asks you first: make the call, or steer him to another number. A CPU team settles it on its own.
 // Blessings last the save ({ tid, pid, num }); this summer's asks ride with undo: { asked: { pid: 'call'|'skip' }, log }.
 const blessKey = () => `hlc:bless:${saveId()}`;
 const loadBless = () => { try { return JSON.parse(localStorage.getItem(blessKey())) || []; } catch { return []; } };
-setBlessed((team, p, num) => !!state.data && !isCollege() && loadBless().some(b => b.tid === team.id && b.pid === p.id && b.num === num));
+// A player already wearing a retired number from before (Cade's #2 in Detroit, a #6 worn before it went up league-wide)
+// keeps it: he wore it for this team in an earlier season.
+const grandfathered = (team, p, num) => (p.stats || []).some(s => s.league === 0 && s.yr < league().season.currentYear && (s.season || []).some(r => r.tid === team.id && r.num === num && r.GP > 0));
+setBlessed((team, p, num) => !!state.data && !isCollege() && (grandfathered(team, p, num) || loadBless().some(b => b.tid === team.id && b.pid === p.id && b.num === num)));
 const jerseyKey = () => `hlc:jersey:${saveId()}:${league().season.currentYear}`;
 function jerseyStore() {
   const c = calFlags();
@@ -3651,38 +3654,36 @@ function jerseyStore() {
 }
 const saveJersey = () => { try { localStorage.setItem(jerseyKey(), JSON.stringify(jerseyStore())); } catch { /* ignore */ } };
 const legendPool = L => new Map([...(L.retirees || []), ...(L.hallOfFame || [])].map(p => [p.id, p]));
-const deceased = p => !!p?.history?.causeOfDeath;
+const deceased = p => p?.history?.causeOfDeath === 1;   // the game marks a legend who has passed with 1
 const posGroup3 = pos => (pos <= 2 ? 0 : pos <= 5 ? 1 : 2);
-// Who might ask, and for whose number.
+// The offseason's ask, if there is one: a rookie taken in the top five with 9 or 10 potential, on a team with a
+// retired number to ask for (a legend at his position first). Most summers nobody asks; at most one does.
 function jerseyAsks(L = league()) {
-  const yr = L.season.currentYear, legends = legendPool(L), out = [], bless = loadBless();
+  const yr = L.season.currentYear, legends = legendPool(L), bless = loadBless();
+  if (mulberry32((saveSalt() ^ 0x1ee7 ^ yr) >>> 0)() >= 0.35) return [];   // maybe once every few years
   // A number retired across the league (Bill Russell's #6) is nobody's to give.
   const leaguewide = new Map();
   for (const t of L.teams) for (const r of t.retiredNumbers || []) leaguewide.set(`${r.pid}:${r.num}`, (leaguewide.get(`${r.pid}:${r.num}`) || 0) + 1);
+  const cands = [];
   for (const t of L.teams) {
     const nums = (t.retiredNumbers || []).map(r => ({ r, lg: legends.get(r.pid) })).filter(x => x.lg && (leaguewide.get(`${x.r.pid}:${x.r.num}`) || 0) < 10 && !bless.some(b => b.tid === t.id && b.num === x.r.num));
     if (!nums.length) continue;
-    for (const p of FA.signedRoster(t)) {
-      if ((p.pot || 0) < 9 || bless.some(b => b.pid === p.id)) continue;
-      const rookie = p.history?.draft?.yr === yr && p.history.draft.tid === t.id;
-      const lastTid = ((p.stats || []).filter(x => x.league === 0 && (x.season || []).some(r => r.GP > 0)).sort((a, b) => b.yr - a.yr)[0]?.season || []).filter(r => r.GP > 0).pop()?.tid;
-      if (!rookie && !(lastTid != null && lastTid !== t.id && p.age <= 25)) continue;
+    for (const p of t.roster) {
+      const d = p.history?.draft;
+      if (!(d?.yr === yr && d.rd === 1 && d.pk >= 1 && d.pk <= 5 && d.tid === t.id && (p.pot || 0) >= 9) || bless.some(b => b.pid === p.id)) continue;
       const roll = k => mulberry32((saveSalt() ^ Math.imul(p.id + k, 2654435761) ^ 0x23e5) >>> 0)();
-      // Not everyone asks: the bolder the ego, the likelier; a 10 a little more.
-      if (roll(1) >= 0.2 + Math.max(0, egoVal(p) - 9) * 0.06 + (p.pot >= 10 ? 0.15 : 0)) continue;
       const pick = nums.map(x => ({ ...x, sc: (posGroup3(x.lg.pos) === posGroup3(p.pos) ? 3 : 0) + (x.lg.history?.yearInducted ? 2 : 0) + roll(x.r.num + 7) })).sort((a, b) => b.sc - a.sc)[0];
-      out.push({ p, team: t, num: pick.r.num, legend: pick.lg, family: deceased(pick.lg), samePos: posGroup3(pick.lg.pos) === posGroup3(p.pos) });
+      cands.push({ p, team: t, pk: d.pk, num: pick.r.num, legend: pick.lg, family: deceased(pick.lg), samePos: posGroup3(pick.lg.pos) === posGroup3(p.pos) });
     }
   }
-  return out;
+  return cands.sort((a, b) => (b.p.pot - a.p.pot) || (a.pk - b.pk)).slice(0, 1);
 }
+// Typically only a 10 picked in the top three gets a yes; families are a little more protective.
 function jerseyOdds(a) {
-  let o = a.family ? 0.1 : 0.18;
-  o += a.p.pot >= 10 ? 0.3 : 0.1;
-  o += shownLevel(a.p) >= 72 ? 0.12 : shownLevel(a.p) >= 65 ? 0.05 : 0;
-  o += a.samePos ? 0.1 : -0.05;
-  if (!a.family && traitsSet(a.legend)) o += (tr(a.legend, 'lockerRoom') - 10) * 0.015 - Math.max(0, tr(a.legend, 'loyalty') - 14) * 0.03;
-  return Math.max(0.05, Math.min(0.8, o));
+  let o = a.p.pot >= 10 && a.pk <= 3 ? 0.55 + (a.samePos ? 0.1 : 0) : 0.08;
+  if (a.family) o *= 0.75;
+  if (!a.family && traitsSet(a.legend)) o += (tr(a.legend, 'lockerRoom') - 10) * 0.01;
+  return Math.max(0.03, Math.min(0.75, o));
 }
 function settleJersey(a) {
   const st = jerseyStore(), L = league();
@@ -3731,7 +3732,7 @@ function jerseyBox() {
   const posts = jerseyPosts();
   if (!mine.length && !posts.length) return '';
   return `<fieldset class="frame"><legend>🎽 Number Requests</legend>
-    ${mine.length ? `<div class="pod-list">${mine.map(a => `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(a.p))}</b> ${lvTag(a.p)}<br><span class="small muted">wants ${esc(a.legend.ln)}'s #${numText(a.num)}${a.family ? ' (his family decides)' : ''} · ${Math.round(jerseyOdds(a) * 100)}% they say yes</span></span><span class="pod-btns"><button class="btn tiny focus" data-act="jerseyCall" data-id="${a.p.id}" data-k="call">📞 Make the Call</button><button class="btn tiny off" data-act="jerseyCall" data-id="${a.p.id}" data-k="skip">✋ Another Number</button></span></div>`).join('')}</div>` : ''}
+    ${mine.length ? `<div class="pod-list">${mine.map(a => `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(a.p))}</b> ${lvTag(a.p)}<br><span class="small muted">#${a.pk} pick wants ${esc(a.legend.ln)}'s #${numText(a.num)}${a.family ? ' (his family decides)' : ''} · ${Math.round(jerseyOdds(a) * 100)}% they say yes</span></span><span class="pod-btns"><button class="btn tiny focus" data-act="jerseyCall" data-id="${a.p.id}" data-k="call">📞 Make the Call</button><button class="btn tiny off" data-act="jerseyCall" data-id="${a.p.id}" data-k="skip">✋ Another Number</button></span></div>`).join('')}</div>` : ''}
     ${posts.length ? `<div class="stack" style="margin-top:6px">${posts.map(x => `<p class="note small">${esc(x.text)}</p>`).join('')}</div>` : ''}
   </fieldset>`;
 }
@@ -3747,6 +3748,40 @@ function jerseyPosts() {
     return { team: t, score: x.ok ? 15 : 12, tag: x.ok ? '🎽 Blessing' : '🎽 Denied', pid: p.id, handle: '@HoopGramNBA', likes: 8000 + (p.id * 71) % 7000, text };
   }).filter(Boolean);
 }
+
+
+// League → Rafters: a team's banners and retired numbers. Titles come from the team's championships, Finals trips
+// (conference titles) and playoff runs from its season-by-season results, numbers from its retired list with who
+// wore them and who wears one today (blessed or from before it went up).
+function raftersScreen(args) {
+  const L = league(), legends = legendPool(L);
+  const t = L.teams.find(x => x.id === +args.tid) || myTeam() || L.teams[0];
+  const titles = [...(t.championships?.yearsWon || [])].sort((a, b) => a - b);
+  const finals = (t.season || []).filter(r => r.round === 4).map(r => r.yr).sort((a, b) => a - b);
+  const lostFinals = finals.filter(y => !titles.includes(y));
+  const playoffs = (t.season || []).filter(r => r.round >= 1).length;
+  const nums = [...(t.retiredNumbers || [])].sort((a, b) => (a.num % 100) - (b.num % 100));
+  const wearer = num => t.roster.find(p => p.num === num && (p.status === 3 || p.status === 2 || p.status === 4));
+  const yrs = list => list.map(y => `'${String(y).slice(-2)}`).join(' ');
+  layout({
+    title: 'League',
+    body: `<div class="tabs"><button class="btn off" data-act="openLeaders" data-m="stats" data-k="PTS" data-r="1">Stats</button><button class="btn off" data-act="openLeaders" data-m="ratings" data-k="LAY" data-r="1">Ratings</button><button class="btn on focus" data-act="openLeaders" data-m="rafters" data-r="1">🏟️ Rafters</button></div>
+      <select class="sel-team" data-change="raftersTeam" style="margin:8px 0">${[...L.teams].sort((a, b) => a.city.localeCompare(b.city)).map(x => `<option value="${x.id}" ${x === t ? 'selected' : ''}>${esc(x.city)} ${esc(x.name)}${isUserTeam(x) ? ' (You)' : ''}</option>`).join('')}</select>
+      <div class="outlook" ${teamTint(t) ? `style="${teamTint(t)}"` : ''}><div class="outlook-top ${teamTint(t) ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b></div>
+      <div class="rf-banners">
+        <div class="rf-banner gold"><b>🏆 ${titles.length}</b><span>Championship${titles.length === 1 ? '' : 's'}</span>${titles.length ? `<span class="small">${yrs(titles)}</span>` : ''}</div>
+        <div class="rf-banner"><b>🏳️ ${finals.length}</b><span>Conference title${finals.length === 1 ? '' : 's'}</span>${lostFinals.length ? `<span class="small muted">Finals lost ${yrs(lostFinals)}</span>` : ''}</div>
+        <div class="rf-banner"><b>📈 ${playoffs}</b><span>Playoff trip${playoffs === 1 ? '' : 's'}</span></div>
+      </div>
+      <fieldset class="frame"><legend>Retired Numbers</legend>
+        ${nums.length ? `<div class="rf-nums">${nums.map(r => { const lg = legends.get(r.pid), w = wearer(r.num), bl = w && loadBless().some(b => b.pid === w.id && b.num === r.num); return `<div class="rf-num ${lg ? 'tap' : ''}" ${lg ? `data-act="openPlayer" data-id="${lg.id}"` : ''}><b>${numText(r.num)}</b><span>${lg ? esc(`${lg.fn[0]}. ${lg.ln}`) : '—'}</span><span class="small muted">${r.yr || ''}</span>${w ? `<span class="small ${bl ? 'up' : 'gold'}">${bl ? '🎽 ' : ''}${esc(w.ln)} wears it</span>` : ''}</div>`; }).join('')}</div>` : '<p class="note small muted">No numbers in the rafters yet.</p>'}
+      </fieldset></div>`,
+  });
+}
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'raftersTeam') return;
+  replace('leaders', { m: 'rafters', tid: +e.target.value });
+});
 
 // ---- Hoop Gram drama
 // Unhappy players let it show: they scrub the team from their account, post something cryptic on their story,
@@ -4533,6 +4568,7 @@ function rankBox(p, mpg = null) {
 
 screens.leaders = (args) => {
   if (args.m === 'college') return collegeLeaders(args);
+  if (args.m === 'rafters') return raftersScreen(args);
   const L = league();
   const mode = args.m === 'stats' ? 'stats' : 'ratings';
   const all = leaguePlayers(L, true);
@@ -4557,7 +4593,7 @@ screens.leaders = (args) => {
   const fmt = v => (mode === 'stats' ? v.toFixed(1) : v);
   layout({
     title: 'League',
-    body: `<div class="tabs"><button class="btn ${mode === 'stats' ? 'on focus' : 'off'}" data-act="openLeaders" data-m="stats" data-k="${mode === 'stats' ? k : 'PTS'}" data-r="1">Stats</button><button class="btn ${mode === 'ratings' ? 'on focus' : 'off'}" data-act="openLeaders" data-m="ratings" data-k="${mode === 'ratings' ? k : 'LAY'}" data-r="1">Ratings</button></div>
+    body: `<div class="tabs"><button class="btn ${mode === 'stats' ? 'on focus' : 'off'}" data-act="openLeaders" data-m="stats" data-k="${mode === 'stats' ? k : 'PTS'}" data-r="1">Stats</button><button class="btn ${mode === 'ratings' ? 'on focus' : 'off'}" data-act="openLeaders" data-m="ratings" data-k="${mode === 'ratings' ? k : 'LAY'}" data-r="1">Ratings</button>${isCollege() ? '' : '<button class="btn off" data-act="openLeaders" data-m="rafters" data-r="1">🏟️ Rafters</button>'}</div>
       <div class="opts wrap ld-keys">${head}</div>
       <p class="note muted small" style="margin:6px 0">${esc(note)}</p>
       <div class="stack">${shown.map((x, i) => `<button class="ld-row ${x.e.team && isUserTeam(x.e.team) ? 'mine' : ''}" data-act="openPlayer" data-id="${x.e.p.id}">
