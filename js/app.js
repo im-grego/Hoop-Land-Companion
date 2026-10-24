@@ -47,7 +47,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.179.0';
+const APP_VERSION = '0.180.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2528,29 +2528,32 @@ screens.coach = args => {
   const lastRows = car.rows.slice(-6).reverse();
   layout({
     title: `${c.fn} ${c.ln}`,
-    body: `<fieldset class="frame"><legend>${t ? esc(`${t.city} ${t.name}`) : 'Available'}</legend><div class="stack">
+    body: `${uiTabs('coach', [
+        ['pro', 'Profile', `<fieldset class="frame"><legend>${t ? esc(`${t.city} ${t.name}`) : 'Available'}</legend><div class="stack">
         <p class="note"><b>${esc(coachArch(c))}</b> · <span class="gold">${star}</span> potential · ${c.age}y${c.yrs ? ` · ${c.yrs} yrs experience` : ''}</p>
         <p class="note small">${strengthName(c.pri) ? `<b>${esc(strengthName(c.pri))}</b> primary` : ''}${strengthName(c.sec) ? ` · <b>${esc(strengthName(c.sec))}</b> secondary` : ''}</p>
         <p class="note"><b>${esc(g.tier)}</b> · ${esc(g.growth)}</p>
         <p class="note small muted">${esc(g.line)}</p>
         <p class="note">${esc(philosophyOf(c))}</p>
 </div></fieldset>
-      ${(() => { const nm = signatureOf(c), pr = PRESETS.find(x => x.name === nm), cur = t ? styleOf(t) : null; return `<fieldset class="frame"><legend>Playbook</legend><div class="stack"><p class="note"><b>${esc(nm)}</b> <span class="muted small">his signature book, from his philosophy</span></p>${pr ? `<p class="note small muted">${esc(pr.blurb)}</p>` : ''}<p class="note small">${t ? (cur === nm ? `${esc(t.shortName)} run it now.` : `${esc(t.shortName)} run ${cur === 'Custom' ? 'a custom book' : cur === 'None' ? 'no set book' : `<b>${esc(cur)}</b>`} right now.`) : 'He installs it on arrival. Your players and the roster pull it from there, season by season.'}</p></div></fieldset>`; })()}
-      ${t && schemeLogBox(t.id) ? `<fieldset class="frame"><legend>System History</legend>${schemeLogBox(t.id)}</fieldset>` : ''}
-      <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
-      <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
-      ${fitBox(hit)}
-      ${starsBox(hit)}
-      ${hireBox(hit, staff)}
-      ${extBox(hit)}
-      <fieldset class="frame"><legend>Job Security</legend><div class="stack">
-        <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
-        <p class="note small muted">${sec.yrs ? `Contract: $${sec.sal}M for ${sec.yrs} more year${sec.yrs > 1 ? 's' : ''}.` : 'No contract on file.'}</p></div></fieldset>
       <fieldset class="frame"><legend>Career</legend><div class="stack">
         ${car.seasons ? `<p class="note">${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)}) career${car.poW + car.poL ? `, playoffs ${car.poW}-${car.poL}` : ''}</p>` : '<p class="note small muted">No games coached yet.</p>'}
         ${car.titles ? `<p class="note"><span class="gold">🏆 ${car.titles}× champion</span> <span class="muted small">${car.titleYears.join(', ')}</span></p>` : ''}
         ${lastRows.map(r => `<div class="small" style="display:flex;justify-content:space-between"><span>${r.yr}${r.tid != null ? ` · ${esc(league().teams.find(x => x.id === r.tid)?.shortName || '')}` : ''}</span><span>${r.W}-${r.L}${r.po ? ` · playoffs ${r.po.W}-${r.po.L}` : ''}</span></div>`).join('')}
-      </div></fieldset>`,
+      </div></fieldset>`],
+        ['sys', 'System', `      ${(() => { const nm = signatureOf(c), pr = PRESETS.find(x => x.name === nm), cur = t ? styleOf(t) : null; return `<fieldset class="frame"><legend>Playbook</legend><div class="stack"><p class="note"><b>${esc(nm)}</b> <span class="muted small">his signature book, from his philosophy</span></p>${pr ? `<p class="note small muted">${esc(pr.blurb)}</p>` : ''}<p class="note small">${t ? (cur === nm ? `${esc(t.shortName)} run it now.` : `${esc(t.shortName)} run ${cur === 'Custom' ? 'a custom book' : cur === 'None' ? 'no set book' : `<b>${esc(cur)}</b>`} right now.`) : 'He installs it on arrival. Your players and the roster pull it from there, season by season.'}</p></div></fieldset>`; })()}
+      ${t && schemeLogBox(t.id) ? `<fieldset class="frame"><legend>System History</legend>${schemeLogBox(t.id)}</fieldset>` : ''}
+      <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
+      <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
+`],
+        ['fit', 'Fit', `      ${fitBox(hit)}
+      ${starsBox(hit)}
+`],
+        ['job', 'Contract', `${hireBox(hit, staff)}${extBox(hit)}      <fieldset class="frame"><legend>Job Security</legend><div class="stack">
+        <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
+        <p class="note small muted">${sec.yrs ? `Contract: $${sec.sal}M for ${sec.yrs} more year${sec.yrs > 1 ? 's' : ''}.` : 'No contract on file.'}</p></div></fieldset>
+`],
+      ])}`,
   });
 };
 
@@ -2808,7 +2811,8 @@ screens.offseason = (args = {}) => {
     title: isCollege() ? 'Summer Development' : 'Training Camp',
     body: `
       ${isCollege() ? '' : ''}
-      <fieldset class="frame"><legend>Off-season Progression</legend>
+      ${uiTabs('camp', [
+        ['prog', 'Progression', `      <fieldset class="frame"><legend>Off-season Progression</legend>
         <div class="stack">
           ${auto ? `
             <dl class="info tight">
@@ -2828,13 +2832,14 @@ screens.offseason = (args = {}) => {
             <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
       </fieldset>
-      ${isCollege() ? '' : influenceBox(auto)}
-      ${isCollege() ? '' : mentorCard()}
+      ${isCollege() ? '' : influenceBox(auto)}`],
+        ['players', 'Players', `      ${isCollege() ? '' : mentorCard()}
       ${strengthCard()}
       ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
         <p class="note small">Health, potential and size changes for your players.</p>
-        <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}
-      ${coachCard()}
+        <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}`],
+        ['staff', 'Staff', `${coachCard()}`],
+      ])}
       <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
   });
 };
@@ -4682,6 +4687,15 @@ function options(label, key, opts, note = '') {
     ${opts.map(([val, text]) => `<button class="btn small ${v === val ? 'on focus' : 'off'}" data-act="setOpt" data-k="${key}" data-v='${JSON.stringify(val)}'>${esc(text)}</button>`).join('')}
   </div>${note ? `<span class="note muted small">${note}</span>` : ''}</div>`;
 }
+// Tabs inside a screen: [[key, label, html, dot?]]. The open tab is remembered per screen (`id`) for the session; a
+// tab whose html is empty is left out, and a dot marks one that needs something from you.
+function uiTabs(id, tabs, def) {
+  tabs = tabs.filter(t => t[2]);
+  if (!tabs.length) return '';
+  const cur = tabs.some(t => t[0] === (state.uiTab ||= {})[id]) ? state.uiTab[id] : (def && tabs.some(t => t[0] === def) ? def : tabs[0][0]);
+  return `<div class="tabs ui-tabs" style="--n:${Math.min(4, tabs.length)}">${tabs.map(([k, l, , dot]) => `<button class="btn small ${k === cur ? 'on focus' : 'off'}" data-act="uiTab" data-id="${id}" data-k="${k}">${l}${dot ? ' <span class="gold">•</span>' : ''}</button>`).join('')}</div>${tabs.find(t => t[0] === cur)[2]}`;
+}
+actions.uiTab = d => { (state.uiTab ||= {})[d.id] = d.k; render(); };
 const setGroup = (title, rows) => `<fieldset class="frame"><legend>${esc(title)}</legend><div class="set-list">${rows.join('')}</div></fieldset>`;
 // Tuning most people never touch: folded away, with its own reset.
 const advGroup = (title, keys, rows) => `<details class="cmb-fold adv-fold"><summary>⚙️ ${esc(title)}${keys.some(changed) ? ' <span class="gold">•</span>' : ''}</summary><div class="set-list">${rows.join('')}</div>
@@ -6139,28 +6153,57 @@ screens.workouts = (args) => {
       ${more > 0 && interviewPairs(p)[w.qs.length] ? `<p class="note muted small">Question ${w.qs.length + 1} of ${interviewQs()}: pick one.</p>${interviewPairs(p)[w.qs.length].map(x => `<button class="btn small off wk-q" data-act="askQ" data-id="${p.id}" data-k="${esc(x.k)}">💬 ${esc(x.q)}</button>`).join('')}` : ''}
     </div>`;
   }).join('');
-  const pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
-  const shown = args.all ? pool : pool.slice(0, 40);
+  // Who to bring in: filters for your board, your range, your needs and who you've scouted, by position, and on each
+  // row what a workout would tell you that you don't know yet.
+  const rank = new Map(boardOrder().map((p, i) => [p.id, i + 1]));
+  const me = myTeam();
+  const picks = liveOrder().filter(o => isUserTeam(o.owner)).map(o => o.overall);
+  const range = picks.length ? [Math.max(1, picks[0] - 5), picks[0] + 5] : null;
+  const hidden = p => [...SKILL_ATTRS, ...PHYSICAL].filter(k => !ceilKnown(p, k)).length;
+  const fview = args.f || 'board', fpos = args.pos || 'all';
+  const FILTERS = [['board', '★ Board'], ['range', range ? `🎯 #${range[0]}–${range[1]}` : '🎯 Range'], ['needs', '🧩 Needs'], ['scouted', '🔎 Scouted'], ['all', 'All']];
+  let pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
+  // Your board (or, with nothing on it yet, the consensus board).
+  if (fview === 'board' && pool.some(p => onBoard(p.id))) pool = pool.filter(p => onBoard(p.id));
+  if (fview === 'range' && range) pool = pool.filter(p => rank.get(p.id) >= range[0] && rank.get(p.id) <= range[1]);
+  if (fview === 'needs' && me) pool = pool.filter(p => fillsFor(me, p).length);
+  if (fview === 'scouted') pool = pool.filter(p => scouted(p.id));
+  if (fpos !== 'all') pool = pool.filter(p => posGroup(p) === fpos);
+  const shown = args.all ? pool : pool.slice(0, 30);
+  const dots = `<span class="wk-dots">${Array.from({ length: cap }, (_, i) => `<i class="${i < ids.length ? 'used' : ''}"></i>`).join('')}</span>`;
+  const inviteRow = p => {
+    const h = hidden(p), r = rank.get(p.id), inRange = range && r >= range[0] && r <= range[1], fit = me && fillsFor(me, p).length;
+    return `<div class="drill-row wk-row">
+      <span class="grow"><button class="linkish" data-act="openProspect" data-id="${p.id}"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b></button> ${valueChip(p)}${fit ? ' <span title="Fills a need">🧩</span>' : ''}${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}<br>
+        <span class="small muted">#${r} consensus${inRange ? ' · <span class="up">in your range</span>' : ''} · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span><br>
+        <span class="small ${h ? 'gold' : 'muted'}">${revealed(p.id) ? 'Potential known' : 'Reveals potential'}${h ? ` + ${h} hidden ceiling${h > 1 ? 's' : ''}` : ''}</span></span>
+      <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`;
+  };
+  const inviteHtml = `<p class="note small">${dots} <b>${left} of ${cap}</b> workouts left. A workout fully scouts him: his true potential and every rating's ceiling, once his interview is done.</p>
+    <div class="seg lab-seg">${FILTERS.map(([k, l]) => `<button class="btn small ${k === fview ? 'on focus' : 'off'}" data-act="wkFilter" data-f="${k}">${esc(l)}</button>`).join('')}</div>
+    <div class="seg lab-seg">${[['all', 'All'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']].map(([k, l]) => `<button class="btn small ${k === fpos ? 'on focus' : 'off'}" data-act="wkPos" data-p="${k}">${l}</button>`).join('')}</div>
+    <div class="stack">${shown.map(inviteRow).join('') || '<p class="note small muted">Nobody here. Try another filter.</p>'}</div>
+    ${!args.all && pool.length > 30 ? `<button class="btn small" data-act="workoutAll" style="margin-top:8px">Show all ${pool.length}</button>` : ''}`;
+  const live = order.filter(p => (pre.workouts[p.id].qs.length || 0) < interviewQs());
   layout({
     title: 'Private Workouts',
-    body: `<p class="note small">Bring prospects in to work out. Three rounds of questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''} <b>${left} of ${cap}</b> workouts left.</p>
-      ${inGym ? `<fieldset class="frame"><legend>In the Gym</legend><div class="stack">${inGym}</div></fieldset>` : ''}
-      <fieldset class="frame"><legend>Invite</legend>
-        <p class="note small" style="margin-bottom:6px"><b class="gold">Choosing a player fully scouts him</b>: his true potential and every rating's ceiling, once his interview is done. Your board first, then the rest of the class.</p>
-        <div class="stack">${shown.map(p => `<div class="drill-row">
-          <span class="grow"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b> ${valueChip(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · ${classYear(p)} · ${heightStr(p.ht)}</span></span>
-          <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`).join('')}</div>
-        ${!args.all && pool.length > 40 ? `<button class="btn small" data-act="workoutAll" style="margin-top:8px">Show all ${pool.length}</button>` : ''}
-      </fieldset>`,
+    body: `<p class="note small">Three rounds of questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''}</p>
+      ${uiTabs('workouts', [
+        ['invite', `Invite · ${left}`, inviteHtml],
+        ['gym', 'In the Gym', inGym ? `<div class="stack">${inGym}</div>` : '<p class="note small muted">Nobody yet. Bring someone in from Invite.</p>', live.length > 0],
+      ], live.length ? 'gym' : 'invite')}`,
     action: isStep('workouts') ? { act: 'preAdvance', label: 'Advance to the Draft', k: 'workouts' } : null,
   });
 };
+actions.wkFilter = d => replace('workouts', { ...(state.stack[state.stack.length - 1].args || {}), f: d.f, all: false });
+actions.wkPos = d => replace('workouts', { ...(state.stack[state.stack.length - 1].args || {}), pos: d.p, all: false });
 actions.invite = d => {
   const pre = preStore();
   if (Object.keys(pre.workouts).length >= workoutSlots()) return;
   pre.workouts[+d.id] = { qs: [], n: Date.now() };
   savePre();
   state.wkOpen = new Set();
+  (state.uiTab ||= {}).workouts = 'gym';   // straight to his interview
   state.anchor = { key: `wk-${+d.id}`, top: 90 };   // bring the new interview into view
   render();
 };
@@ -6188,7 +6231,7 @@ actions.wkFold = (d, el, e) => {
   if (open.has(id)) open.delete(id); else open.add(id);
   render();
 };
-actions.workoutAll = () => replace('workouts', { all: true });
+actions.workoutAll = () => replace('workouts', { ...(state.stack[state.stack.length - 1].args || {}), all: true });
 
 // College class from years already played (Hoop Land's `yrs`).
 const classYear = p => ['Fr', 'So', 'Jr', 'Sr'][Math.max(0, Math.min(3, p.yrs ?? (p.age - 18)))];
@@ -6399,13 +6442,13 @@ screens.prospect = (args) => {
         <p class="note">${esc(collegeLine(p, state.data.seasonLeagues)?.team || 'Prospect')} · ${esc(posName(p))} · ${heightStr(p.ht)} · ${p.wt} lb</p>
         <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span></p>
       </div>
-      ${collegeBox(p)}
+      ${uiTabs('prospect', [
+        ['over', 'Overview', `${collegeBox(p)}
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}${scoutBtn(p) ? `<div style="margin-top:8px">${scoutBtn(p)}</div>` : ''}</fieldset>
-      <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>
-      ${playStyleBox(p)}
-      ${traitsBox(p, true)}
-      ${workoutBox(p)}${revealBox(p)}${combineBox(p)}
-      <fieldset class="frame"><legend>Ratings</legend>
+      <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>`],
+        ['game', 'Game', `${playStyleBox(p)}${traitsBox(p, true)}`],
+        ['work', 'Workout', `${workoutBox(p)}${revealBox(p)}${combineBox(p)}`],
+        ['rate', 'Ratings', `<fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
         ${[...SKILL_ATTRS, ...PHYSICAL].map(k => {
           const now = p.attributes[k][0];
@@ -6419,7 +6462,7 @@ screens.prospect = (args) => {
         </div>`;
         }).join('')}
         <p class="note muted small" style="margin-top:8px">The filled bar is today's rating; the outlined part runs to the projected ceiling (the notch). <b>?</b> = not scouted yet: some ceilings come out during scouting and the combine, and a private workout shows them all.</p>
-      </fieldset>`,
+      </fieldset>`]])}`,
   });
 };
 
@@ -7894,7 +7937,14 @@ screens.fa = (args = {}) => {
     body: `
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${s.stage !== 'open' ? yourOffers(s) : ''}
-      ${expiringSection(s)}
+      <div class="stack">${stageBtn}${s.day >= 2 && isComplete() && s.stage !== 'done' ? '<button class="btn small" data-act="liveTrade">🔁 Trade</button>' : ''}</div>
+      ${uiTabs('fa', [
+        ['market', 'Market', `      ${s.stage === 'done' ? faResults(s) : ''}
+      ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
+      <div class="tabs fa-tabs fa-tabs6">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
+      <div class="list">${rows.map(row).join('')}</div>
+      ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`],
+        ['team', 'My Team', `      ${expiringSection(s)}
       ${FA.capSystemOn() ? capNote(L) : ''}
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const space = FA.capSpace(L, t);
@@ -7904,13 +7954,8 @@ screens.fa = (args = {}) => {
         return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBar(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
-      ${mine.length ? faRosterBox(s, mine) : ''}
-      ${s.stage === 'done' ? faResults(s) : ''}
-      <div class="stack">${stageBtn}${s.day >= 2 && isComplete() && s.stage !== 'done' ? '<button class="btn small" data-act="liveTrade">🔁 Trade</button>' : ''}</div>
-      ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
-      <div class="tabs fa-tabs fa-tabs6">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
-      <div class="list">${rows.map(row).join('')}</div>
-      ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`,
+      ${mine.length ? faRosterBox(s, mine) : ''}`, expiringSection(s) !== ''],
+      ])}`,
   });
 };
 
@@ -9173,18 +9218,20 @@ screens.options = () => {
   layout({
     title: 'Options Deadline',
     body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, or decline it to let him go. Picked-up options can be extended right after, in the extension window.</p>
-      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
+      ${uiTabs('options', [
+        ['team', 'Team', `      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
         <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span>
-        ${x.c.choice === 'ex' ? `<p class="note small up full">${done ? 'Picked up: he can be extended in the extension window.' : 'Picked up: once decisions are final you can talk extension.'}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>
-      <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row wrap">${head(x)}
+        ${x.c.choice === 'ex' ? `<p class="note small up full">${done ? 'Picked up: he can be extended in the extension window.' : 'Picked up: once decisions are final you can talk extension.'}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>`, !done && myTeamOpts.some(x => !x.c.choice)],
+        ['player', 'Player', `      <fieldset class="frame"><legend>Your Player Options</legend><div class="stack">${myPlayerOpts.map(x => `<div class="drill-row wrap">${head(x)}
         <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b>
         ${x.c.reason && !done ? (x.c.pitch ? (x.c.pitch.ok ? '' : `<p class="note small down full">He heard you out on ${esc(PITCHES[x.c.pitch.kind].promise)}. He's testing the market.</p>`)
           : `<div class="full"><p class="note small muted">Make him a promise to stay (one try):</p><span class="opt-btns">${Object.entries(PITCHES).map(([k, v]) => `<button class="btn small" data-act="optPitch" data-id="${x.p.id}" data-v="${k}">${esc(v.label)} · ${Math.round(pitchOdds(x.p, x.team, k, x.c.reason) * 100)}%</button>`).join('')}</span></div>`) : ''}</div>`).join('') || '<p class="note muted small">No player options this year.</p>'}</div>
-        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy. Promises are remembered next season.</p>' : ''}</fieldset>
-      <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
+        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy. Promises are remembered next season.</p>' : ''}</fieldset>`],
+        ['qo', 'QOs', `      <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
         <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Make Offer')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Let Walk')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
-        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Make Offer: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Let Walk: he\'s unrestricted.</p>' : ''}</fieldset>
-      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>
+        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Make Offer: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Let Walk: he\'s unrestricted.</p>' : ''}</fieldset>`, !done && myQO.some(x => st.qo[x.p.id] == null)],
+        ['league', 'League', `      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>`],
+      ])}
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
     action: done ? { act: 'nav', label: 'On to Extensions', to: 'extensions' } : { act: 'optFinish', label: pending ? 'Decide every option and QO first' : 'Finalize Decisions' },
   });
@@ -10383,7 +10430,8 @@ screens.review = () => {
         <p class="note" style="padding:8px 10px 0"><b>${st.W || 0}-${st.L || 0}</b> · ${esc(r.finish)}${r.seed && !r.pro ? ` · No. ${r.seed} overall seed` : ''}</p>
         <p class="note small" style="padding:4px 10px 10px">${esc(reviewHeadline(r, t))}</p>
       </div>
-      ${s ? `<fieldset class="frame"><legend>The Season</legend>
+      ${uiTabs('review', [
+        ['mine', 'Your Season', `      ${s ? `<fieldset class="frame"><legend>The Season</legend>
         <div class="stat-grid">
           <div><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
           <div><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
@@ -10391,17 +10439,18 @@ screens.review = () => {
         <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
-      ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}
-      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
+      ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}`],
+        ['league', r.pro ? 'League' : 'National', `      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
         ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}
         ${r.finalsMvp ? awRow(r.finalsMvp.name, r.finalsMvp.p) : ''}
         ${r.semis.length ? `<p class="note small" style="margin-top:6px">${r.pro ? 'Conference Finals' : 'Final Four'}: ${r.semis.map(([a, b]) => `<b class="${a === t ? 'gold' : ''}">${esc(a.shortName)}</b> v <b class="${b === t ? 'gold' : ''}">${esc(b.shortName)}</b>`).join(' · ')}</p>` : ''}
         <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => awRow(w.name, w.p)).join('') || '<p class="note small muted">None recorded.</p>'}</div>
         ${r.allTeams.length ? `<h4 class="ov-h">First Teams</h4><div class="stack">${[...new Set(r.allTeams.map(w => w.name))].map(n => `<p class="note small"><b>${esc(n)}:</b> ${r.allTeams.filter(w => w.name === n).map(w => esc(playerName(w.p))).join(', ')}</p>`).join('')}</div>` : ''}
-      </fieldset>
-      <fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
+      </fieldset>`],
+        ['stand', 'Standings', `      <fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
         <div class="stack">${r.standings.map((x, i) => `<div class="stand-row ${x.t === t ? 'mine' : ''}"><span class="small muted">${i + 1}</span>${logoImg(x.t)}<span class="grow small"><b>${esc(x.t.shortName)}</b></span><span class="small">${x.W}-${x.L}</span><span class="small muted">${x.cW}-${x.cL} conf</span></div>`).join('')}</div>
-      </fieldset>`,
+      </fieldset>`],
+      ])}`,
     action: isStep('review') ? { act: 'reviewDone', label: 'Wrap Up the Season' } : null,
   });
 };
@@ -11026,11 +11075,13 @@ screens.cuts = () => {
   layout({
     title: 'Final Cuts',
     body: `<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
-      ${requestCard()}
+      ${uiTabs('cuts', [
+        ['mine', 'Your Cuts', `      ${requestCard()}
       ${myCards}
-      ${done ? waiverBox() : ''}
-      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
-        : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`,
+      ${done ? waiverBox() : ''}`, mine.some(t => cutsShort(t, sel) > 0)],
+        ['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
+        : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`],
+      ])}`,
     action: done ? null : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
 };
@@ -11485,11 +11536,8 @@ screens.export = () => {
   layout({
     title: 'Opening Night',
     body: `
-      ${reportCard()}
-      ${jerseyCard()}
-      ${gearCard()}
-      ${capWarn()}
-      <fieldset class="frame"><legend>Season File</legend>
+      ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
+        ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
         <div class="stack">
           ${canShare ? '<button class="btn big focus" data-act="share">📤 Save to Files / Dropbox</button>' : ''}
@@ -11501,7 +11549,10 @@ screens.export = () => {
       ${isCollege() ? '' : `<fieldset class="frame"><legend>League File (experimental)</legend>
         <p class="note small">Turns this save into a league file: rosters, contracts, ratings, tendencies, coaches, picks and history as they stand, with the season reset so you can start a brand new franchise from it.</p>
         <button class="btn" data-act="downloadLeague">🌐 Download League File</button></fieldset>`}
-      ${inArtifact() ? '' : dropboxFrame()}`,
+      ${inArtifact() ? '' : dropboxFrame()}`],
+        ['prep', 'Prep', prep, !!warn],
+        ['report', 'Report Card', reportCard()],
+      ], warn ? 'prep' : 'file'); })()}`,
   });
 };
 
