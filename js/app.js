@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.190.2';
+const APP_VERSION = '0.191.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9799,7 +9799,11 @@ function presserEffects(L, t, ans) {
   const push = out.push.bind(out);
   out.push = (...xs) => push(...xs.map(x => ({ key, good: true, ...x })));
   const find = id => t.roster.find(p => p.id === +id);
-  const mood = (p, n) => ({ good: n > 0, text: `${p.fn} morale ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); } });
+  // why: the trait that shaped how he took it, shown with the number.
+  const mood = (p, n, why = '') => ({ good: n > 0, text: `${p.fn} morale ${n > 0 ? '+' : ''}${n}${why ? ` (${why})` : ''}`, apply: () => { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); } });
+  const trait = (p, k, n, why) => ({ good: k === EGO_KEY ? n < 0 : n > 0, text: `${p.fn} ${traitLbl(k)} ${n > 0 ? '+' : '−'}${Math.abs(n)}`, apply: () => drift(p, `presser:${k}`, k, n, why) });
+  const ego = p => egoVal(p), alpha = p => egoVal(p) >= 16, humble = p => egoVal(p) <= 4;
+  const everyone = (n, text, f = () => true) => ({ good: n > 0, text, apply: () => t.roster.filter(f).forEach(p => { if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); }) });
   const loyal = (p, n) => ({ good: n > 0, text: `${p.fn} loyalty ${n > 0 ? '+' : ''}${n}`, apply: () => { if (p.traits) p.traits.loyalty = Math.max(1, Math.min(20, (p.traits.loyalty || 10) + n)); } });
   // Last year's promises: kept, he's happier; broken, the room noticed.
   for (const pr of loadPromises().filter(x => x.yr === L.season.currentYear - 1 && x.tid === t.id && x.v === 'commit')) {
@@ -9813,9 +9817,10 @@ function presserEffects(L, t, ans) {
     key = q.key;
     const P = find(q.pid);
     if (q.key === 'contract' && P) {
-      if (a === 'commit') out.push(mood(P, 8), loyal(P, 1));
-      if (a === 'focus' && q.ctx.kind === 'final') out.push(mood(P, -2));
-      if (a === 'market') out.push(mood(P, -10), loyal(P, -2));
+      // A mercenary hears words, a money chaser wants the number; an alpha takes a cold answer personally.
+      if (a === 'commit') { if (tr(P, 'loyalty') <= 5) out.push(mood(P, 3, 'a mercenary hears words')); else if (tr(P, 'money') >= 16) out.push(mood(P, 4, 'he wants the number, not the words'), loyal(P, 1)); else out.push(mood(P, 8), loyal(P, 1)); }
+      if (a === 'focus' && q.ctx.kind === 'final') out.push(alpha(P) ? mood(P, -5, 'an alpha wants to be wanted') : mood(P, -2));
+      if (a === 'market') out.push(alpha(P) ? mood(P, -14, 'he takes it personally') : humble(P) ? mood(P, -5, 'humble about it') : mood(P, -10), loyal(P, -2));
     }
     if (q.key === 'lockerroom') {
       const c = headCoachOf(t), hot = c ? t.roster.filter(p => isStarPlayer(p) && playerCoachFit(p, t, c).clash) : [];
@@ -9827,7 +9832,7 @@ function presserEffects(L, t, ans) {
     }
     if (q.key === 'expect' && P) {
       const arr = q.ctx.kind === 'arrival';
-      if (a === 'star') { out.push(mood(P, 5)); const old = presserStar(L, t); if (arr && old && old !== P) out.push(mood(old, -2)); }
+      if (a === 'star') { out.push(alpha(P) ? mood(P, 7, 'loves the spotlight') : humble(P) ? mood(P, 2, 'would rather not be singled out') : mood(P, 5)); const old = presserStar(L, t); if (arr && old && old !== P) out.push(alpha(old) ? mood(old, -6, `an alpha watching ${P.fn} get the spotlight`) : mood(old, -2)); }
       if (a === 'fit') out.push(mood(P, 2));
       if (a === 'time') out.push(mood(P, arr ? -3 : 3));
     }
@@ -9836,7 +9841,7 @@ function presserEffects(L, t, ans) {
       if (!A || !B) continue;
       if (a === 'open') { out.push(mood(A, 2), mood(B, 2)); continue; }
       const [w, l] = a === 'b' ? [B, A] : [A, B];
-      out.push(mood(w, 6), mood(l, -6));
+      out.push(mood(w, 6), alpha(l) ? mood(l, -9, 'an alpha losing his job') : humble(l) ? mood(l, -2, 'takes it in stride') : mood(l, -6));
       if ((w.linePos ?? 99) >= 5 && (l.linePos ?? 99) < 5) out.push({ text: `${w.fn} moves into the starting five`, apply: () => {
         const sl = t.startingLineup || [];
         const ew = sl.find(x => x.pid === w.id), el = sl.find(x => x.pid === l.id);
@@ -9844,8 +9849,35 @@ function presserEffects(L, t, ans) {
         [w.linePos, l.linePos] = [l.linePos, w.linePos];
       } });
     }
+    if (q.key === 'alphas' && P) {
+      const B = find(q.pid2); if (!B) continue;
+      const both = tr(P, 'winning') >= 15 && tr(B, 'winning') >= 15;
+      if (a === 'share') out.push(both ? mood(P, 3, 'both want to win') : mood(P, -1), both ? mood(B, 3, 'both want to win') : mood(B, -1));
+      if (a === 'pecking') out.push(mood(P, 6), mood(B, ego(B) >= 17 ? -10 : -6, ego(B) >= 17 ? 'won\'t play second fiddle quietly' : ''), trait(B, EGO_KEY, -1, 'told it isn\'t his team'));
+      if (a === 'winning') for (const x of [P, B]) out.push(tr(x, 'winning') >= 15 ? mood(x, 3, 'a competitor') : mood(x, -2, 'wanted an answer'));
+    }
+    if (q.key === 'injury' && P) {
+      if (a === 'ready') out.push(mood(P, 4), ...(tr(P, 'durability') <= 8 ? [trait(P, 'durability', -1, 'rushed back from injury')] : []));
+      if (a === 'ease') out.push(mood(P, 1));
+      if (a === 'care') out.push(tr(P, 'motor') >= 15 ? mood(P, -3, 'he wants to play') : mood(P, 2), trait(P, 'durability', 1, 'brought back carefully'));
+    }
+    if (q.key === 'vet' && P) {
+      if (a === 'more') out.push(mood(P, 5));
+      if (a === 'year') out.push(mood(P, 1));
+      if (a === 'mentor') {
+        const fits = ego(P) <= 8 || tr(P, 'lockerRoom') >= 14;
+        out.push(fits ? mood(P, 3, 'embraces the role') : mood(P, -5, 'still sees himself as a starter'), everyone(2, 'Young players\' morale +2', p => p.age <= 24));
+        if (fits) out.push(trait(P, 'lockerRoom', 1, 'named a mentor'));
+      }
+    }
+    if (q.key === 'rookie' && P) {
+      if (a === 'start') out.push(mood(P, 5), trait(P, EGO_KEY, 1, 'handed the keys as a rookie'));
+      if (a === 'earn') out.push(mood(P, 1), ...(tr(P, 'motor') <= 10 ? [trait(P, 'motor', 1, 'told to earn it')] : []));
+      if (a === 'patience') out.push(ego(P) >= 13 ? mood(P, -4, 'expected more') : mood(P, 2));
+    }
     if (q.key === 'moves') {
       const star = presserStar(L, t);
+      if (a === 'better') { out.push(everyone(3, 'Competitors\' morale +3', p => tr(p, 'winning') >= 15), everyone(-1, 'Everyone else −1', p => tr(p, 'winning') < 15)); continue; }
       if (a === 'believe') out.push({ text: 'Everyone\'s morale +3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 3); }) });
       if (a === 'notdone' && star) out.push(mood(star, 4));
       if (a === 'longterm') {
@@ -9895,11 +9927,11 @@ function presserCard() {
     const body = pr.applied
       // On the record: your answers as quotes, with what they did.
       ? qs.filter(q => ans[q.key]).map(q => `<div class="pq">
-          <p class="note small muted">${esc(q.q)}</p>
+          <p class="note small muted">${q.who ? `${esc(q.who)}: ` : ''}${esc(q.q)}</p>
           <p class="note pq-quote">"${esc(q.options.find(o => o.v === ans[q.key])?.label || '')}"</p>
           ${fxLine(fx.filter(e => e.key === q.key))}</div>`).join('')
       : qs.map(q => `<div class="pq">
-          <p class="note small"><b>${esc(q.q)}</b></p>
+          <p class="note small">${q.who ? `<span class="muted">${esc(q.who)}:</span> ` : ''}<b>${esc(q.q)}</b></p>
           <div class="pq-opts">${q.options.map(o => `<button class="btn small ${ans[q.key] === o.v ? 'on focus' : 'off'}" data-act="presserAnswer" data-tid="${t.id}" data-k="${q.key}" data-v="${o.v}" data-pid="${q.pid ?? ''}">${esc(o.label)}</button>`).join('')}</div>
           ${fxLine(fx.filter(e => e.key === q.key))}</div>`).join('');
     return `<fieldset class="frame presser"><legend>🎙️ Press Conference</legend>

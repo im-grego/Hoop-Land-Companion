@@ -9,6 +9,15 @@ import { shownLevel as levelOf } from './regression.js';
 import { tierFor } from './draft.js';
 import { teamRecord, teamStatus } from './draft.js';
 import { seasonLine } from './storylines.js';
+import { tr } from './traits.js';
+import { egoVal } from './ego.js';
+
+// A stable pick per team, summer and question: the same summer always asks (and reports) the same way; the next one
+// asks differently.
+const hashN = (...xs) => { let h = 2166136261; for (const x of xs) for (const c of String(x)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); h ^= h >>> 13; return ((Math.imul(h, 1274126177) >>> 0) % 100000) / 100000; };
+const pickV = (arr, ...seed) => arr[Math.floor(hashN(...seed) * arr.length)];
+const WHO = ['Beat writer', 'Local TV', 'National insider', 'Team radio', 'Podcast host', 'Columnist', 'Sports talk radio', 'Team website'];
+const lastInj = (p, yr) => ((p.stats || []).find(s => s.league === 0 && s.yr === yr)?.season || []).reduce((a, r) => a + (r.INJ || 0), 0);
 
 const place = t => t.city || `the ${t.name}`;
 const Place = t => { const x = place(t); return x[0].toUpperCase() + x.slice(1); };
@@ -111,7 +120,14 @@ export function presserQuestions(league, team, li = 0) {
   const c = contractTarget(team, sit);
   if (c) out.push({
     key: 'contract', pid: c.p.id,
-    q: c.kind === 'final' ? `${playerName(c.p)} is heading into a contract year with no extension. Is he part of the long-term plan?` : `${playerName(c.p)} is eligible for an extension. Is that on the table?`,
+    q: c.kind === 'final'
+      ? pickV([`${playerName(c.p)} is heading into a contract year with no extension. Is he part of the long-term plan?`,
+        `${playerName(c.p)} can walk next summer. Have you started talks?`,
+        `There's a lot of noise about ${playerName(c.p)}'s contract year. Where do things stand?`,
+        `Is ${playerName(c.p)} a ${team.name} player beyond this season?`], team.id, league.season.currentYear, 'contract')
+      : pickV([`${playerName(c.p)} is eligible for an extension. Is that on the table?`,
+        `Any update on an extension for ${playerName(c.p)}?`,
+        `${playerName(c.p)} has outplayed his deal. Are you ready to pay him?`], team.id, league.season.currentYear, 'contract'),
     options: [{ v: 'commit', label: 'We want him here long-term' }, { v: 'focus', label: 'Our focus is on the season' }, { v: 'market', label: 'We\'ll see where things land' }],
     ctx: { kind: c.kind },
   });
@@ -124,7 +140,12 @@ export function presserQuestions(league, team, li = 0) {
     const x = big || kid || ((!c && !bt) ? any : null);
     if (x) out.push({
       key: 'expect', pid: x.id,
-      q: big ? `You brought in ${playerName(x)} this summer. What do you expect from him?` : `Scouts see ${playerName(x)} as ${/^[AEIOU]/.test(tierFor(x.pot || 0)) ? 'an' : 'a'} ${tierFor(x.pot || 0).replace('Hall of Fame', 'Hall of Famer').replace('G-League', 'G-League player')} down the road. What are the expectations?`,
+      q: big ? pickV([`You brought in ${playerName(x)} this summer. What do you expect from him?`,
+          `What does ${playerName(x)} change for this team?`,
+          `Fans are excited about ${playerName(x)}. How big is his role going to be?`], team.id, league.season.currentYear, 'expect')
+        : pickV([`Scouts see ${playerName(x)} as ${/^[AEIOU]/.test(tierFor(x.pot || 0)) ? 'an' : 'a'} ${tierFor(x.pot || 0).replace('Hall of Fame', 'Hall of Famer').replace('G-League', 'G-League player')} down the road. What are the expectations?`,
+          `How big a jump are you expecting from ${playerName(x)} this year?`,
+          `Is this the year ${playerName(x)} breaks out?`], team.id, league.season.currentYear, 'expect'),
       options: big
         ? [{ v: 'star', label: 'He\'s the centerpiece' }, { v: 'fit', label: 'He fits in with the group' }, { v: 'time', label: 'He needs time to settle in' }]
         : [{ v: 'star', label: 'He\'s the future of this team' }, { v: 'fit', label: 'He\'ll earn his minutes' }, { v: 'time', label: 'No rush with him' }],
@@ -133,7 +154,9 @@ export function presserQuestions(league, team, li = 0) {
   }
   if (bt) out.push({
     key: 'battle', pid: bt.a.id, pid2: bt.b.id,
-    q: `${playerName(bt.a)} and ${playerName(bt.b)} can both play ${bt.slot}. Who starts?`,
+    q: pickV([`${playerName(bt.a)} and ${playerName(bt.b)} can both play ${bt.slot}. Who starts?`,
+      `Who's your starting ${bt.slot}: ${playerName(bt.a)} or ${playerName(bt.b)}?`,
+      `${playerName(bt.b)} is pushing ${playerName(bt.a)} for the starting job at ${bt.slot}. Is it his to lose?`], team.id, league.season.currentYear, 'battle'),
     ctx: { slot: bt.slot },
     options: [{ v: 'a', label: playerName(bt.a) }, { v: 'b', label: playerName(bt.b) }, { v: 'open', label: 'It\'s an open competition' }],
   });
@@ -149,27 +172,54 @@ export function presserQuestions(league, team, li = 0) {
       ctx: { n: hot.length },
     });
   }
+  // Situational questions: whatever this summer gives the room to ask about. Up to two make it in (more when the
+  // roster gave little else), in a different order each summer.
+  const yr0 = league.season.currentYear, lyr = yr0 - 1;
+  const signed = team.roster.filter(p => p.status === 3 || p.status === 2);
+  const extra = [];
+  const al = signed.filter(p => egoVal(p) >= 16).sort((a, b) => levelOf(b) - levelOf(a));
+  if (al.length >= 2) extra.push({ key: 'alphas', pid: al[0].id, pid2: al[1].id,
+    q: pickV([`Can ${playerName(al[0])} and ${playerName(al[1])} share the ball?`, `Two alphas in one locker room: ${playerName(al[0])} and ${playerName(al[1])}. Whose team is it?`, `There's talk ${al[1].fn} wants a bigger role next to ${al[0].fn}. How do you balance them?`], team.id, yr0, 'alphas'),
+    options: [{ v: 'share', label: 'They\'ll figure it out together' }, { v: 'pecking', label: `It's ${al[0].fn}'s team` }, { v: 'winning', label: 'Winning fixes everything' }], ctx: {} });
+  const hurt = signed.filter(p => lastInj(p, lyr) >= 35 && levelOf(p) >= 72).sort((a, b) => levelOf(b) - levelOf(a))[0];
+  if (hurt) extra.push({ key: 'injury', pid: hurt.id,
+    q: pickV([`${playerName(hurt)} missed ${lastInj(hurt, lyr)} games last year. How is he doing?`, `Is ${playerName(hurt)} ready for opening night?`, `What's the plan with ${playerName(hurt)} coming off the injury?`], team.id, yr0, 'injury'),
+    options: [{ v: 'ready', label: 'He\'s ready to go' }, { v: 'ease', label: 'We\'ll ease him back in' }, { v: 'care', label: 'His long-term health comes first' }], ctx: {} });
+  const vet = signed.filter(p => p.age >= 33 && levelOf(p) >= 72).sort((a, b) => b.age - a.age || levelOf(b) - levelOf(a))[0];
+  if (vet) extra.push({ key: 'vet', pid: vet.id,
+    q: pickV([`Is this ${playerName(vet)}'s last season?`, `${playerName(vet)} is ${vet.age}. How much does he have left?`, `What does ${playerName(vet)} still give this team at ${vet.age}?`], team.id, yr0, 'vet'),
+    options: [{ v: 'more', label: 'He has plenty left' }, { v: 'year', label: 'One year at a time' }, { v: 'mentor', label: 'He\'s here to teach the young guys' }], ctx: {} });
+  const rk = signed.filter(p => p.history?.draft?.yr === yr0 && p.history.draft.rd === 1 && p.history.draft.pk <= 10).sort((a, b) => a.history.draft.pk - b.history.draft.pk)[0];
+  if (rk) extra.push({ key: 'rookie', pid: rk.id,
+    q: pickV([`What's the plan for ${playerName(rk)} as a rookie?`, `Does ${playerName(rk)} start on opening night?`, `How much will you lean on ${playerName(rk)} this year?`], team.id, yr0, 'rookie'),
+    options: [{ v: 'start', label: 'He\'ll start from day one' }, { v: 'earn', label: 'He\'ll have to earn it' }, { v: 'patience', label: 'We\'ll bring him along slowly' }], ctx: { pk: rk.history.draft.pk } });
+  extra.sort((a, b) => hashN(team.id, yr0, a.key) - hashN(team.id, yr0, b.key));
+  for (const x of extra.slice(0, out.length >= 3 ? 1 : 2)) out.push(x);
   // Three questions every time: if the roster gave too little to ask about,
   // ask what the season's goal is.
   if (out.length < 2) out.push({
     key: 'goal', pid: sit.star?.id,
-    q: sit.status === 'rebuilding' ? 'What does a successful season look like for this team?' : 'What\'s the goal for this team this season?',
+    q: sit.status === 'rebuilding' ? pickV(['What does a successful season look like for this team?', 'How will you judge this season?', 'Fans are asking for patience. How much?'], team.id, league.season.currentYear, 'goal')
+      : pickV(['What\'s the goal for this team this season?', 'Where does this team finish?', 'What would make this season a success?'], team.id, league.season.currentYear, 'goal'),
     options: [{ v: 'title', label: 'A championship' }, { v: 'playoffs', label: 'Make the playoffs and see' }, { v: 'develop', label: 'Develop the young guys' }],
     ctx: {},
   });
   const s = sit.star ? playerName(sit.star) : null;
-  const q = {
-    unsupported: `${s} carried this team last year, and you didn't add anyone. Is the front office doing enough for him?`,
-    passive: `After ${sit.seriesWins === 0 ? 'getting swept' : 'that playoff exit'}, you stood pat this summer. Is internal development enough, or is the front office being passive?`,
-    allin: sit.tradedFirsts >= 2 ? 'You traded away a lot of the future this summer. Is it title or bust?' : 'Big summer: a lot of new faces. Is it title or bust this year?',
-    quiet: 'A quiet summer for a rebuilding team. Fans want to know: what\'s the plan?',
-    normal: 'How do you grade your offseason?',
-  }[sit.mood];
+  const yr = league.season.currentYear;
+  const q = pickV({
+    unsupported: [`${s} carried this team last year, and you didn't add anyone. Is the front office doing enough for him?`, `How long can you ask ${s} to do it alone?`, `${s} needed help and didn't get any. What's the message to him?`],
+    passive: [`After ${sit.seriesWins === 0 ? 'getting swept' : 'that playoff exit'}, you stood pat this summer. Is internal development enough, or is the front office being passive?`, `Same roster that ${sit.seriesWins === 0 ? 'got swept' : 'went out early'}. Why should fans expect anything different?`],
+    allin: sit.tradedFirsts >= 2 ? ['You traded away a lot of the future this summer. Is it title or bust?', 'You mortgaged the future for this roster. Can you live with it if it doesn\'t work?'] : ['Big summer: a lot of new faces. Is it title or bust this year?', 'A lot of new faces. How long before this group clicks?'],
+    quiet: ['A quiet summer for a rebuilding team. Fans want to know: what\'s the plan?', 'Nothing much happened this summer. Is that by design?', 'Where are you in the rebuild: year one, or year three?'],
+    normal: ['How do you grade your offseason?', 'Better or worse than last year?', 'Was this summer a success?'],
+  }[sit.mood], team.id, yr, 'moves');
   out.push({
     key: 'moves', pid: sit.star?.id, q,
-    options: [{ v: 'believe', label: 'We believe in this group' }, { v: 'notdone', label: 'We\'re not done' }, { v: 'longterm', label: 'It\'s about the long term' }],
+    options: [{ v: 'believe', label: 'We believe in this group' }, { v: 'notdone', label: 'We\'re not done' }, { v: 'longterm', label: 'It\'s about the long term' }, { v: 'better', label: 'We have to be better' }],
     ctx: { mood: sit.mood },
   });
+  // Who's asking: a different voice for each question, different every summer.
+  for (const x of out) x.who = pickV(WHO, team.id, yr, x.key, 'who');
   return out;
 }
 
@@ -186,9 +236,11 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
       const n = playerName(P);
       const fin = q.ctx.kind === 'final';
       const t = {
-        commit: [`${Place(team)} wants ${n} long-term`, `"We want him here long-term," the front office said of ${P.fn}.${fin ? ' Now they have to get it done before he hits free agency.' : ' An extension looks like a matter of when.'}`],
+        commit: pickV([[`${Place(team)} wants ${n} long-term`, `"We want him here long-term," the front office said of ${P.fn}.${fin ? ' Now they have to get it done before he hits free agency.' : ' An extension looks like a matter of when.'}`],
+          [`${P.fn} is part of the plan in ${place(team)}`, `The front office didn't hedge on ${n}: they want him around.${tr(P, 'loyalty') <= 5 ? ` Whether ${P.fn} wants the same is another question.` : ''}`]], team.id, 'c', a),
         focus: [`No extension talk for ${n}`, `The front office kept it to "our focus is on the season."${fin ? ` A contract year gives ${P.fn} plenty to play for.` : ''}`],
-        market: [`${n}'s future in ${place(team)} is up in the air`, `"We'll see where things land." Not exactly a vote of confidence${fin ? `, with ${P.fn} a year from free agency` : ''}.`],
+        market: pickV([[`${n}'s future in ${place(team)} is up in the air`, `"We'll see where things land." Not exactly a vote of confidence${fin ? `, with ${P.fn} a year from free agency` : ''}.`],
+          [`Mixed signals on ${n}`, `The front office wouldn't commit to ${P.fn}. ${egoVal(P) >= 16 ? 'Someone with his ego will remember that.' : 'Expect his name in trade talks.'}`]], team.id, 'c', a),
       }[a];
       out.push({ kind: 'presser-contract', score: 58, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
     }
@@ -196,7 +248,8 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
       const n = playerName(P);
       const arr = q.ctx.kind === 'arrival';
       const t = {
-        star: [`${Place(team)} puts it on ${n}`, arr ? `"He's the centerpiece," the front office said of ${P.fn}. The expectations are sky high.` : `"He's the future of this team." ${P.fn} carries the hopes of ${place(team)}.`],
+        star: pickV([[`${Place(team)} puts it on ${n}`, arr ? `"He's the centerpiece," the front office said of ${P.fn}. The expectations are sky high.` : `"He's the future of this team." ${P.fn} carries the hopes of ${place(team)}.`],
+          [`It's ${P.fn}'s show now`, `${n} heard it straight from the front office: ${arr ? 'he\'s the centerpiece' : 'he\'s the future'}. ${egoVal(P) >= 16 ? 'He won\'t shy away from it.' : egoVal(P) <= 4 ? 'He\'d rather let his game do the talking.' : 'Now he has to live up to it.'}`]], team.id, 'e', a),
         fit: [`${n} is one of the group`, `The front office kept the pressure off ${P.fn}: ${arr ? 'a piece, not the whole puzzle' : 'minutes have to be earned'}.`],
         time: [`${Place(team)} will give ${n} time`, arr ? `"He needs time to settle in." Fans wanted a bigger statement on ${P.fn}.` : `No rush with ${P.fn}. Patience is the plan in ${place(team)}.`],
       }[a];
@@ -210,6 +263,40 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
         role: [`${Place(team)} promises ${P.fn} a bigger role`, `"Roles will be sorted out." ${n} wants to see it in the game plan, not hear it in the press room.`],
       }[a];
       out.push({ kind: 'presser-lockerroom', score: 62, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'alphas' && P) {
+      const B = league.teams.flatMap(t => t.roster).find(x => x.id === q.pid2);
+      if (!B) continue;
+      const t = {
+        share: pickV([[`${Place(team)} bets on ${P.fn} and ${B.fn} sharing it`, `"They'll figure it out together." Two players who want the ball, one ball.`], [`One ball, two alphas in ${place(team)}`, `The front office says ${P.fn} and ${B.fn} will make it work. The first close loss will test that.`]], team.id, 'a', a),
+        pecking: [`It's ${P.fn}'s team in ${place(team)}`, `The front office settled it: ${playerName(P)} is the man. ${B.fn} heard it too, and ${egoVal(B) >= 17 ? 'he didn\'t look happy about it' : 'he\'ll have to accept it'}.`],
+        winning: [`"Winning fixes everything" in ${place(team)}`, `The front office punted on whose team it is. ${tr(P, 'winning') >= 15 && tr(B, 'winning') >= 15 ? `${P.fn} and ${B.fn} both want rings, so it might even be true.` : 'Until they lose a few.'}`],
+      }[a];
+      out.push({ kind: 'presser-lockerroom', score: 60, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'injury' && P) {
+      const t = {
+        ready: [`${playerName(P)} is good to go`, `The front office says ${P.fn} is ready for opening night. ${tr(P, 'durability') <= 6 ? 'His history says to hold your breath.' : 'Fans will take it.'}`],
+        ease: [`${Place(team)} will ease ${P.fn} back in`, `A minutes limit to start for ${playerName(P)}. The front office isn't rushing it.`],
+        care: [`${Place(team)} plays it safe with ${P.fn}`, `"His long-term health comes first." Don't be surprised to see ${playerName(P)} sit the second night of back-to-backs.`],
+      }[a];
+      out.push({ kind: 'presser-contract', score: 55, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'vet' && P) {
+      const t = {
+        more: [`${playerName(P)} has plenty left, says ${place(team)}`, `At ${P.age}, ${P.fn} isn't being eased out. The front office still sees a key piece.`],
+        year: [`One year at a time for ${P.fn}`, `The front office won't put a timeline on ${playerName(P)}. ${P.age >= 36 ? 'The farewell tour talk can wait.' : 'He\'ll decide when he decides.'}`],
+        mentor: [`${P.fn} the mentor`, `The front office sees ${playerName(P)} as a teacher now. ${egoVal(P) <= 8 || tr(P, 'lockerRoom') >= 14 ? 'He seems to like the sound of that.' : 'He might still think he\'s a starter.'}`],
+      }[a];
+      out.push({ kind: 'presser-contract', score: 54, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
+    }
+    if (q.key === 'rookie' && P) {
+      const t = {
+        start: [`${playerName(P)} starts from day one`, `No easing in for the #${q.ctx.pk} pick. ${place(team)} hands ${P.fn} the keys right away.`],
+        earn: [`${P.fn} will have to earn it`, `The #${q.ctx.pk} pick gets no promises from the front office. Camp decides.`],
+        patience: [`${Place(team)} takes it slow with ${P.fn}`, `The #${q.ctx.pk} pick will be brought along slowly. ${egoVal(P) >= 13 ? `${P.fn} expected more.` : 'He seems fine with it.'}`],
+      }[a];
+      out.push({ kind: 'presser-contract', score: 56, icon: '🎙️', title: t[0], text: t[1], pid: P.id });
     }
     if (q.key === 'goal') {
       const t = {
@@ -256,7 +343,7 @@ export function presserStories(league, team, answers, li = 0, frozen = null) {
           notdone: [`${Place(team)} keeps the phone lines open`, `"We're not done." Expect ${place(team)} to be in the trade rumors.`],
           longterm: [`${Place(team)} is playing the long game`, `"It's about the long term." No shortcuts this year.`],
         },
-      }[q.ctx.mood][a];
+      }[q.ctx.mood][a] || [`"We have to be better" in ${place(team)}`, pickV([`No spin from the front office: last season wasn't good enough. The competitors in the room will like hearing it.`, `A blunt answer. ${sn === 'the stars' ? 'The locker room' : sn} heard the message.`], team.id, 'm', a)];
       out.push({ kind: 'presser-moves', score: sit.mood === 'normal' ? 46 : 60, icon: '🎙️', title: T[0], text: T[1], pid: s?.id ?? null });
     }
   }
