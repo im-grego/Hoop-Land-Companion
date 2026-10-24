@@ -63,13 +63,22 @@ export const isCornerstone = p => {
 // Rough value of a player: level and last season's production, youth and
 // upside, age decline, the contract, and how scarce stars are (value climbs
 // faster than level above 88; a cornerstone costs a premium on top).
+// Position scarcity, set by the app from the league's supply of quality players in each group (guards, wings, bigs):
+// a thin group is worth up to 10% more, a deep one up to 10% less.
+let SCARCE = new Map(), GROUP = () => null;
+export function setScarcity(map, groupFn) { SCARCE = map || new Map(); GROUP = groupFn || (() => null); }
+export const scarcityOf = p => SCARCE.get(GROUP(p)) ?? 1;
 export function playerValue(p, leagueIdx, year) {
   const l = seasonLine(p, leagueIdx, year);
   const gs = l ? Math.max(0, l.gs) * Math.min(1, l.gp / 40) : 0;
   const lv = levelOf(p);
   let v = gs * 2.1 + Math.max(0, lv - 60) * 1.25;     // a ~20 GS, level-100 star ≈ 92
   if (p.age <= 27) v += Math.max(0, p.pot - 5) * Math.max(0, 28 - p.age) * 1.4;
-  if (p.age > p.regressionAge) v *= Math.max(0.4, 1 - 0.12 * (p.age - p.regressionAge));
+  // Prime left: full value with four or more seasons before his regression age, tapering 4% a season into it (16% off
+  // the year it arrives), then 12% a season past it.
+  const left = (p.regressionAge ?? 33) - p.age;
+  if (left < 4) v *= left >= 0 ? 1 - (4 - left) * 0.04 : Math.max(0.4, 0.84 * (1 - 0.12 * -left));
+  if (lv >= 75) v *= scarcityOf(p);
   v += contractValue(p).adj;
   if (lv >= 88) v *= 1 + 0.06 * (lv - 88);
   if (isCornerstone(p)) v *= 1.4;

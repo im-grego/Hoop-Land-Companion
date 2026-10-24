@@ -13,7 +13,7 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
-import { setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
+import { setScarcity, setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
 import { destinationParts, destinationGrade } from './destination.js';
 import * as TR from './traderules.js';
@@ -50,7 +50,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.198.1';
+const APP_VERSION = '0.199.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -409,7 +409,7 @@ function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); }   // once an offseason each
-  if (state.data && !isCollege()) careerSync();
+  if (state.data && !isCollege()) { careerSync(); syncScarcity(); }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
@@ -7675,6 +7675,32 @@ function tradeAdjust(A, B, itemsA, itemsB) {
   m.set(B.id, { remove: pl(itemsB), add: pl(itemsA) });
   return m;
 }
+// Position scarcity: quality players (Lv 85+) in each group against what the league's teams need there (two guards,
+// three wings, two bigs). Up to ±10% on trade value. Recomputed when the league changes.
+let scarcityKey = '';
+function syncScarcity() {
+  const L = league(), have = { guards: 0, wings: 0, bigs: 0 }, want = { guards: 2, wings: 3, bigs: 2 };
+  for (const t of L.teams) for (const p of t.roster) if ((p.status === 2 || p.status === 3) && shownLevel(p) >= 85) have[groupOf(p)]++;
+  const key = `${state.leagueIdx}:${have.guards}:${have.wings}:${have.bigs}`;
+  if (key === scarcityKey) return;
+  scarcityKey = key;
+  const total = have.guards + have.wings + have.bigs;
+  setScarcity(new Map(Object.keys(have).map(g => { const exp = total * want[g] / 7; return [g, exp ? Math.max(0.9, Math.min(1.1, 1 + (exp - have[g]) / exp * 0.2)) : 1]; })), groupOf);
+  if (state.compCache?.[state.leagueIdx]) state.compCache[state.leagueIdx].delete('lvranks');
+}
+// What a player is worth to the CPU team getting him: 15% more when he fills a starter or depth need at his spot,
+// 8% less when they already have two better at it. User teams judge for themselves.
+const fitCache = new Map();
+function tradeFit(team, p) {
+  if (!team || !p || isUserTeam(team) || isCollege()) return 1;
+  const L = league();
+  let needs = fitCache.get(team.id);
+  if (!needs || needs.at !== team.roster.length) { needs = { at: team.roster.length, set: new Set(rosterNeeds(L, team, { level: shownLevel }).filter(n => (n.kind === 'Starter' || n.kind === 'Depth') && n.sev >= 2).map(n => n.group)) }; fitCache.set(team.id, needs); }
+  const g = groupOf(p), lv = shownLevel(p);
+  if (needs.set.has(g) && lv >= 75) return 1.15;
+  return team.roster.filter(x => x !== p && (x.status === 3 || x.status === 2) && groupOf(x) === g && shownLevel(x) > lv).length >= 2 ? 0.92 : 1;
+}
+const fitItem = (x, team) => (x.player ? tradeFit(team, x.player) : 1);
 // A trade-list item's value: future firsts re-priced with the deal's roster
 // changes and any protection being added.
 function pickItemValue(x, prot, adjust) {
@@ -8282,8 +8308,8 @@ screens.liveTrade = (args) => {
   if (!sw) args.swap = null;
   const mode = sw && args.swap;
   const inSw = x => !!mode && (x === sw.xa || x === sw.xb);
-  const sum = (list, sel) => list.filter(x => sel.has(x.key) && !inSw(x)).reduce((s, x) => s + pv(x), 0);
-  let vA = sum(aa, selA), vB = sum(bb, selB);
+  const sum = (list, sel, to) => list.filter(x => sel.has(x.key) && !inSw(x)).reduce((s, x) => s + pv(x) * fitItem(x, to), 0);   // valued by the team getting it
+  let vA = sum(aa, selA, B), vB = sum(bb, selB, A);
   if (mode) { const [ca, cb] = swapValues(sw, mode, pv); vA += ca; vB += cb; }
   // Future firsts being sent can carry a protection.
   const firsts = [...aa.filter(x => selA.has(x.key)), ...bb.filter(x => selB.has(x.key))].filter(x => !inSw(x)).filter(x => x.pick && x.pick.rd === 1 && x.pick.yr > draftYear(L));
@@ -8405,7 +8431,7 @@ function liveTrade3(args, A, B, C, left) {
   const adjust = tradeAdjustN(teams, items);
   const val = i => pickItemValue(i.x, prot, adjust);
   const give = t => items.filter(i => i.from === t).reduce((s, i) => s + val(i), 0);
-  const get = t => items.filter(i => i.to === t).reduce((s, i) => s + val(i), 0);
+  const get = t => items.filter(i => i.to === t).reduce((s, i) => s + val(i) * fitItem(i.x, t), 0);
   const others = teams.filter(t => t !== tab);
   const many = t => (t === A ? left.length > 1 : true);
   const arrow = (dir, ch, side) => `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>`;
@@ -8478,7 +8504,7 @@ actions.liveTradeGo3 = async d => {
   const prot = a.prot || {};
   const adjust = tradeAdjustN(teams, items);
   if (!force) {
-    const no = teams.find(t => !isUserTeam(t) && !cpuAccepts(items.filter(i => i.from === t).reduce((s, i) => s + pickItemValue(i.x, prot, adjust), 0), items.filter(i => i.to === t).reduce((s, i) => s + pickItemValue(i.x, prot, adjust), 0)));
+    const no = teams.find(t => !isUserTeam(t) && !cpuAccepts(items.filter(i => i.from === t).reduce((s, i) => s + pickItemValue(i.x, prot, adjust), 0), items.filter(i => i.to === t).reduce((s, i) => s + pickItemValue(i.x, prot, adjust) * fitItem(i.x, t), 0)));
     if (no) { toast(`${no.shortName} decline: they want more back`); return; }
     if (!(await physicals3(L, items))) return;
   }
@@ -8574,7 +8600,7 @@ actions.liveTradeGo = async d => {
   // A swap keeps both picks where they are and settles on lottery night.
   const sw = a.swap ? swapPair(sa.items, sb.items) : null;
   const swapMode = sw ? a.swap : null;
-  let vA = sa.items.filter(x => x !== sw?.xa).reduce((s, x) => s + pv(x), 0), vB = sb.items.filter(x => x !== sw?.xb).reduce((s, x) => s + pv(x), 0);
+  let vA = sa.items.filter(x => x !== sw?.xa).reduce((s, x) => s + pv(x) * fitItem(x, B), 0), vB = sb.items.filter(x => x !== sw?.xb).reduce((s, x) => s + pv(x) * fitItem(x, A), 0);
   if (sw) { const [ca, cb] = swapValues(sw, swapMode, pv); vA += ca; vB += cb; }
   const swapOut = sw ? { ...sw } : null;
   if (sw) for (const [sd, x] of [[sa, sw.xa], [sb, sw.xb]]) { sd.items = sd.items.filter(i => i !== x); sd.picks = sd.picks.filter(pk => pk !== x.pick); }
