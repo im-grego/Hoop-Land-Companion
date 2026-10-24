@@ -23,11 +23,44 @@ const ts = rows => { const fga = sum(rows, 'FGA'), fta = sum(rows, 'FTA'); retur
 const expected36 = lv => 22.5 + 0.435 * (lv - 76.5);
 const salt = id => { let h = Math.imul(id + 131, 2246822519) >>> 0; h ^= h >>> 13; return (h % 1000) / 1000; };
 
-// { v, why[] }. `extra` = [{ v, why }] the app adds (Summer League, Media Day) on top.
-export function confRead(p, extra = []) {
+// What the app adds on top this offseason (the draft, Summer League, Media Day): f(p, 'conf' | 'ego') -> [{ v, why }].
+let EXTRA = null;
+export const setMindExtra = f => { EXTRA = f; };
+export const mindExtra = (p, k) => (EXTRA ? EXTRA(p, k) || [] : []);
+
+// Prospects and rookies with no NBA games: read from his last college season instead.
+const AWC = { CHAMP: 0, MOP: 1, POY: 2, FOY: 4, ALL_AM: 16 };
+const expectedCollege36 = lv => 13 + 0.39 * (lv - 61.3);   // fit on a draft class's last college season
+const collegeYrs = p => [...new Set((p.stats || []).filter(s => s.league > 0 && (s.season || []).some(r => r.GP > 0)).map(s => s.yr))].sort((a, b) => b - a);
+const wonCollege = (p, id, yr) => (p.awards || []).some(a => a.id === id && a.league > 0 && (a.yearsWon || []).includes(yr));
+function collegeConf(p, add) {
+  const cy = collegeYrs(p)[0];
+  if (!cy) return false;
+  const li = (p.stats || []).find(s => s.league > 0 && s.yr === cy).league;
+  const l = seasonLine(p, li, cy);
+  if (l && l.gp >= 10 && l.mpg >= 10) {
+    const r = (l.gs * 36 / l.mpg - expectedCollege36(levelOf(p))) / 1.1;
+    add(Math.max(-4, Math.min(4, r)), r > 0 ? 'dominated in college' : 'played below his talent in college');
+    const st = (p.stats || []).find(s => s.league === li && s.yr === cy), po = st?.playoffs || [];
+    if (sum(po, 'GP') >= 2) {
+      const ratio = (sum(po, 'PTS') / sum(po, 'GP')) / Math.max(1, l.ppg);
+      if (ratio >= 1.15) add(1.5, 'came up big in the tournament'); else if (ratio <= 0.75) add(-1.5, 'faded in the tournament');
+    }
+  }
+  if (wonCollege(p, AWC.POY, cy)) add(3, 'the national Player of the Year');
+  else if (wonCollege(p, AWC.ALL_AM, cy)) add(1.5, 'an All-American');
+  if (wonCollege(p, AWC.MOP, cy)) add(2, 'the Final Four Most Outstanding Player');
+  else if (wonCollege(p, AWC.CHAMP, cy)) add(1, 'a national champion');
+  if (wonCollege(p, AWC.FOY, cy)) add(1.5, 'Freshman of the Year');
+  return true;
+}
+
+// { v, level, why[] }. `extra` = [{ v, why }] on top of what the app has recorded (mindExtra).
+export function confRead(p, extra = null) {
   const yrs = played(p), ly = yrs[0], why = [];
   let v = 9.5 + salt(p.id);
   const add = (n, text) => { v += n; if (text && Math.abs(n) >= 0.9) why.push(n > 0 ? text : `-${text}`); };
+  if (!ly) collegeConf(p, add);
   const l = ly ? seasonLine(p, 0, ly) : null;
   if (l && l.gp >= 15 && l.mpg >= 12) {
     const r = (l.gs * 36 / l.mpg - expected36(levelOf(p)) + 0.8) / 1.6;   // centred: the median player reads steady
@@ -61,10 +94,10 @@ export function confRead(p, extra = []) {
     if (wonIn(p, AW.MIP, ly)) add(2, 'Most Improved');
     if (wonIn(p, AW.ROTY, ly)) add(2, 'Rookie of the Year');
   }
-  for (const e of extra) add(e.v, e.why);
+  for (const e of extra || mindExtra(p, 'conf')) add(e.v, e.why);
   const out = Math.max(1, Math.min(20, Math.round(v))), lvl = confLevel(out);
   const keep = why.filter(w => (lvl < 2 ? w.startsWith('-') : lvl > 2 ? !w.startsWith('-') : true)).map(w => w.replace(/^-/, ''));
-  return { v: out, level: lvl, why: keep.length ? keep : [ly ? 'a normal season for him' : 'no NBA games yet'] };
+  return { v: out, level: lvl, why: keep.length ? keep : [ly || collegeYrs(p).length ? 'a normal season for him' : 'little film to go on'] };
 }
 export const confVal = p => confRead(p).v;
 // Offseason growth: a confident player gets a little more out of his work, a shaken one a little less.

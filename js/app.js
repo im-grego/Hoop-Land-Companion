@@ -19,7 +19,7 @@ import { destinationParts, destinationGrade } from './destination.js';
 import * as TR from './traderules.js';
 import * as FX from './facilities.js';
 import { buildPack, savePack, readPack, isPack, packMatch, applyPackTraits, packPickDiffs, applyPackPicks, packTeamDiffs, applyPackTeams } from './leaguepack.js';
-import { runSummerLeague, summerReward, undoSummerReward, mvpName } from './summer.js';
+import { runSummerLeague, summerReward, undoSummerReward, mvpName, youngCore } from './summer.js';
 import { applyLottery, preLotteryOrder, startFreeAgency, nextFreeAgencyDay, rookieScale, signRookie } from './phases.js';
 import { runSurvey, consensus } from './survey.js';
 import { regressed } from './regression.js';
@@ -40,7 +40,7 @@ import { leagueLook } from './recruits.js';
 import { isForeign, lookFor, groupFor, makeNamer } from './names.js';
 import * as CG from './classgen.js';
 import { egoRead, isAlpha, isHumble, EGO_LEVELS, egoLevel } from './ego.js';
-import { confRead, CONF_LEVELS, confMult } from './mindset.js';
+import { confRead, CONF_LEVELS, confMult, setMindExtra, mindExtra } from './mindset.js';
 import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -49,7 +49,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.185.0';
+const APP_VERSION = '0.186.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -542,6 +542,7 @@ async function loadFile(file) {
     if (repairPickYears()) toast('Draft picks moved back a year', 'This save had its picks a year ahead; they now carry the real draft year.');
     recallSetup();
     unstampDraftYear();
+    if (!isCollege() && undoMindNudges()) state.dirty = true;
     const reopened = reopenOptions();
     const reext = reopenExtensions();
     settlePromises();
@@ -819,7 +820,10 @@ function buildExport() {
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
   if (!isCollege()) saveManifest(league());
+  const nudged = !isCollege() ? applyMindNudges(league()) : [];
   const text = serializeSave(state.data);
+  for (const [p, k, d] of nudged) p.tendencies[k] -= d;
+  state.lastNudge = nudged.length;
   if (startWas) state.data.seasonLeagues.forEach((x, i) => { x.season.startingYear = startWas[i]; });
   if (restoreCap) { [league().season.salaryCap, league().season.maxContract] = restoreCap; restoreCap = null; }
   for (const p of shut) p.contract.canExt = true;
@@ -2843,7 +2847,7 @@ screens.offseason = (args = {}) => {
             <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
       </fieldset>
-      ${isCollege() ? '' : influenceBox(auto)}`],
+      ${isCollege() ? '' : influenceBox(auto)}${auto && !isCollege() ? campMindNote() : ''}`],
         ['players', 'Players', `      ${isCollege() ? '' : mentorCard()}
       ${strengthCard()}
       ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
@@ -3279,6 +3283,7 @@ function simTour() {
   const mine = result.final.teams.map(id => L.teams.find(x => x.id === id)).find(isUserTeam);
   const reward = mine ? summerReward(L, mine, mine.id === result.final.winner, result.seed) : [];
   state.summerTour[li] = { result, stage: 'final', reward };
+  if (isComplete() && !isCollege()) summerMind(L, result);
   numsState().locked = true;
   state.compCache = {};
   state.dirty = true;
@@ -3300,6 +3305,100 @@ actions.homeSimCamp = () => {
   state.dirty = true;
   render();
 };
+
+// ---- Mindset through the offseason
+// Two Alphas who don't both put winning first: the warning before you build around them.
+function alphaClash(t) {
+  const al = FA.signedRoster(t).filter(isAlpha).sort((a, b) => shownLevel(b) - shownLevel(a));
+  if (al.length < 2 || al.every(x => traitsSet(x) && tr(x, 'winning') >= 15)) return '';
+  return `🎭 ${al.slice(0, 2).map(x => x.ln).join(' and ')}${al.length > 2 ? ` (and ${al.length - 2} more)` : ''} are both Alphas: expect friction (−3 to −6 morale each summer) unless one moves or both put winning first.`;
+}
+// Season in Review: who's riding high, who's rattled, and who needs to be the man.
+function mindMovers(t) {
+  if (!isComplete() || isCollege()) return '';
+  const rows = FA.signedRoster(t).map(p => ({ p, e: egoOf(p), c: confOf(p) }))
+    .filter(x => x.c.l !== 2 || x.e.l === 0 || x.e.l === 4)
+    .sort((a, b) => (Math.abs(b.c.l - 2) + (b.e.l % 4 === 0 ? 1 : 0)) - (Math.abs(a.c.l - 2) + (a.e.l % 4 === 0 ? 1 : 0)) || shownLevel(b.p) - shownLevel(a.p)).slice(0, 6);
+  const clash = alphaClash(t);
+  if (!rows.length && !clash) return '';
+  return `<fieldset class="frame"><legend>Mindset Movers</legend><div class="stack">${rows.map(({ p, e, c }) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc((c.l !== 2 ? c.why : e.why)[0] || '')}</span></span><span class="small" style="text-align:right">${c.l !== 2 ? `${c.icon} ${c.label}` : ''}${c.l !== 2 && e.l % 4 === 0 ? '<br>' : ''}${e.l % 4 === 0 ? `${e.icon} ${e.label}` : ''}</span></div>`).join('')}
+    ${clash ? `<p class="note small gold">${esc(clash)}</p>` : ''}</div>
+    <p class="note small muted" style="margin-top:6px">Confidence comes from how they played; it moves their growth in camp and what they ask for in free agency.</p></fieldset>`;
+}
+// Draft night: the top three feel it; a player who slid well past where he was ranked takes a hit, and carries a chip
+// on his shoulder into Summer League.
+function draftMind(L, picks, cons) {
+  for (const pk of picks) {
+    const e = findPlayer(pk.pid); if (!e) continue;
+    const p = e.p, rank = cons.get(pk.pid) || pk.overall;
+    if (pk.overall <= 3) mindAdd(p, 'draft-ego', 'ego', 1.5, `went #${pk.overall} overall`);
+    else if (pk.overall <= rank - 10) mindAdd(p, 'draft-ego', 'ego', 1, 'drafted higher than anyone expected');
+    if (rank <= 30 && pk.overall - rank >= 10) mindAdd(p, 'draft', 'conf', -1.5, `slid to #${pk.overall} on draft night`);
+  }
+}
+// Summer League: the MVP and the champions ride it; each young player has a good week, a bad one or a normal one.
+// A player who slid on draft night and plays well turns the slide into a chip on his shoulder.
+function summerMind(L, result) {
+  const champ = result.final.winner;
+  for (const t of L.teams) for (const p of youngCore(L, t)) {
+    const r = mulberry32((result.seed ^ Math.imul(p.id + 41, 2654435761)) >>> 0)();
+    let v = r >= 0.8 ? 1 : r < 0.15 ? -1 : 0, why = v > 0 ? 'strong Summer League' : 'rough Summer League';
+    if (result.mvp?.pid === p.id) { v = 2; why = 'Summer League MVP'; }
+    else if (t.id === champ && v >= 0) { v += 1; why = v > 1 ? 'starred for the Summer League champions' : 'won Summer League'; }
+    const slid = mindStore()[p.id]?.draft;
+    if (slid && v > 0) { mindAdd(p, 'draft', 'conf', 0, ''); v += 1; why = 'playing with a chip on his shoulder'; }
+    mindAdd(p, 'summer', 'conf', v, why);
+  }
+}
+// Media Day: back one of your players at the podium, or call one out. Backing steadies a player who doubts himself;
+// a challenge fires up a confident or proud one and rattles a shaken one. Praise for one Alpha stings the other.
+// One per Media Day; you can change your mind until you wrap up. Morale effects land at wrap-up.
+const MEDIA_FX = {
+  back: c => (c.l <= 1 ? [2, 'his GM backed him publicly'] : c.l === 2 ? [1, 'his GM backed him publicly'] : [0, '']),
+  challenge: (c, e) => (c.l <= 1 ? [-2, 'rattled by being called out'] : c.l >= 3 || e.l >= 3 ? [1.5, 'took the challenge personally'] : [0.5, 'took the challenge in stride']),
+};
+function mediaMindCard() {
+  if (!isStep('media') || !isComplete() || isCollege()) return '';
+  const t = myTeam(); if (!t) return '';
+  const pick = mindStore().media;
+  // In order of confidence before the podium, so a row doesn't jump when you tap it.
+  const pre = p => confRead(p, mindExtra(p, 'conf').filter(x => x !== mindStore()[p.id]?.media)).level;
+  const list = FA.signedRoster(t).map(p => ({ p, c: confOf(p), e: egoOf(p), o: pre(p) })).sort((a, b) => a.o - b.o || shownLevel(b.p) - shownLevel(a.p)).slice(0, 8);
+  return `<fieldset class="frame"><legend>At the Podium</legend>
+    <p class="note small">Back one player publicly, or challenge one. Backing steadies a player who doubts himself; a challenge fires up a confident or proud player but rattles a shaken one.</p>
+    <div class="stack">${list.map(({ p, c, e, o }) => {
+      const on = pick?.pid === p.id ? pick.act : '';
+      const fx = on ? MEDIA_FX[on]({ l: o }, e) : null;
+      return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${c.icon} ${c.label} · ${e.icon} ${e.label}</span>${fx ? `<br><span class="small ${fx[0] > 0 ? 'up' : fx[0] < 0 ? 'down' : 'muted'}">${on === 'back' ? '👍 Backed' : '🔥 Challenged'}: ${fx[0] ? `confidence ${fx[0] > 0 ? '+' : ''}${fx[0]}` : 'no change'}${fx[1] ? ` (${esc(fx[1])})` : ''}</span>` : ''}</span>
+        <span class="opt-btns"><button class="btn small ${on === 'back' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="back">👍 Back</button><button class="btn small ${on === 'challenge' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="challenge">🔥 Challenge</button></span></div>`;
+    }).join('')}</div></fieldset>`;
+}
+actions.mediaMind = d => {
+  const m = mindStore(), was = m.media;
+  if (was) { const w = findPlayer(was.pid); if (w) mindAdd(w.p, 'media', 'conf', 0, ''); }
+  if (was?.pid === +d.id && was.act === d.k) { delete m.media; mindAdd({ id: +d.id }, 'media', 'conf', 0, ''); render(); return; }   // tap again to take it back
+  const e = findPlayer(+d.id); if (!e) return;
+  const base = confRead(e.p, mindExtra(e.p, 'conf').filter(x => x !== mindStore()[e.p.id]?.media));
+  const [v, why] = MEDIA_FX[d.k]({ l: base.level }, egoOf(e.p));
+  m.media = { pid: e.p.id, act: d.k };
+  mindAdd(e.p, 'media', 'conf', v, why);
+  render();
+};
+// At wrap-up: a challenged Alpha bristles at being called out; backing one Alpha stings the other.
+function mediaMindMorale() {
+  const pick = mindStore().media; if (!pick) return;
+  const e = findPlayer(pick.pid); if (!e) return;
+  const t = league().teams.find(x => x.id === e.p.tid);
+  if (pick.act === 'challenge' && isAlpha(e.p)) moraleEvent(e.p, 'media', -4, 'called out in public');
+  if (pick.act === 'back' && isAlpha(e.p) && t) for (const o of FA.signedRoster(t).filter(x => x !== e.p && isAlpha(x))) moraleEvent(o, 'media', -3, `jealous of the praise for ${e.p.ln}`);
+}
+// Training camp: whose confidence moved his growth.
+function campMindNote() {
+  const mine = L => L.teams.filter(isUserTeam).flatMap(t => FA.signedRoster(t));
+  const list = mine(league()).map(p => ({ p, c: confOf(p) })).filter(x => x.c.l !== 2).sort((a, b) => b.c.l - a.c.l);
+  if (!list.length) return '';
+  return `<fieldset class="frame"><legend>Confidence in Camp</legend><div class="stack">${list.map(({ p, c }) => `<p class="note small">${c.icon} <b>${esc(playerName(p))}</b>: ${c.l >= 3 ? 'his swagger paid off' : 'his doubts held him back'} <span class="${c.l >= 3 ? 'up' : 'down'}">×${[0.9, 0.95, 1, 1.05, 1.1][c.l].toFixed(2)} growth</span> <span class="muted">· ${esc(c.why[0] || '')}</span></p>`).join('')}</div></fieldset>`;
+}
 
 // ---- Mentorship
 
@@ -5408,7 +5507,7 @@ const prospectRow = (p, extra = '', { mine = false } = {}) => {
   const fit = fills.length ? `<span class="fit-chip" title="Fills ${esc(fills.map(n => n.label).join(', '))}" aria-label="Fills ${esc(fills.map(n => n.label).join(', '))}">🧩</span>` : '';
   return `<button class="prow cprow ${star ? 'sel' : ''} ${gone ? 'gone' : ''}" data-act="openProspect" data-id="${p.id}">${fit}
   <span class="name">${star ? '<span class="gold">★</span> ' : ''}<span class="nm">${esc(playerName(p))}</span>${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}${gone ? ` <span class="small muted">#${gone.overall}${gone.team ? ` · ${esc(gone.team.shortName)}` : ''}</span>` : ''}</span>
-  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}${state.params.readiness !== 'age' && readinessOf(p) !== READINESS.base ? ` ${readyChip(p)}` : ''}</span>
+  <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}${archName(p) ? ` · ${esc(archName(p))}` : ''} ${valueChip(p)}${state.params.readiness !== 'age' && readinessOf(p) !== READINESS.base ? ` ${readyChip(p)}` : ''}${mindTag(p)}</span>
   <span class="chg">${comp('Ceiling', c.ceiling[0])}${comp('Floor', c.floor[0])}${extra}</span>
 </button>`;
 };
@@ -5730,10 +5829,18 @@ const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
 const myTeam = () => league().teams.find(isUserTeam);
 // Each prospect gets six questions in a random order (fixed per save), in
 // three pairs: each round you ask one of the two, and the other is gone.
+const MIND_QS = ['bench', 'worst'];
 function interviewPairs(p) {
   const rng = mulberry32((saveSalt() ^ Math.imul(p.id + 7, 2654435761)) >>> 0);
-  const qs = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 6).map(y => y.x);
-  return [qs.slice(0, 2), qs.slice(2, 4), qs.slice(4, 6)].filter(x => x.length);
+  const all = workoutQs(p).map(x => ({ x, r: rng() })).sort((a, b) => a.r - b.r).map(y => y.x);
+  // The two mindset questions (ego, confidence) always come up, in different rounds, each against another question:
+  // learning his mindset costs you something else.
+  const mind = all.filter(x => MIND_QS.includes(x.k)), rest = all.filter(x => !MIND_QS.includes(x.k)).slice(0, 6 - mind.length);
+  const pairs = [[], [], []], a = Math.floor(rng() * 3), b = (a + 1 + Math.floor(rng() * 2)) % 3;
+  if (mind[0]) pairs[a].push(mind[0]);
+  if (mind[1]) pairs[b].push(mind[1]);
+  for (const q of rest) pairs.find(x => x.length < 2)?.push(q);
+  return pairs.map(x => (rng() < 0.5 ? x.reverse() : x)).filter(x => x.length);
 }
 
 // How much a rating can still grow: its ceiling (true potential) minus today.
@@ -5908,6 +6015,8 @@ function workoutQs(p) {
     { k: 'body', q: 'How\'s the body holding up?' },
     { k: 'ready', q: 'Are you ready to play right away, or do you need time?' },
     { k: 'fit', q: 'How do you see yourself fitting with us?' },
+    { k: 'bench', q: 'How would you handle coming off the bench?' },
+    { k: 'worst', q: 'Walk us through your worst game.' },
     { k: 'future', q: 'Where do you see yourself in five years?' },
     { k: 'model', q: 'Who do you model your game after?' },
     { k: 'work', q: 'What do you need to work on?' },
@@ -6013,6 +6122,26 @@ function workoutAnswer(p, k) {
   if (k === 'combine') {
     return { quote: vary2(p, 5, ['Drills aren\'t basketball. Put on the tape.', 'I had a bad day. I\'m not a 40-yard-dash guy, I\'m a hooper.']),
       staff: frameNote(p, 'Trainers', 'test') };
+  }
+  if (k === 'bench') {
+    const e = egoOf(p);
+    return { quote: vary2(p, 8, [
+      ['Whatever helps us win. If it\'s ten minutes, I\'ll make them count.', 'I don\'t care who starts. I care who finishes.'],
+      ['I\'d earn my way up. Nobody owes me anything.', 'That\'s fine. I\'d learn from the guys ahead of me.'],
+      ['I\'d take it, and I\'d work to change it.', 'I want to start, sure. But I\'d do the job.'],
+      ['I\'d be fine for a while. Not forever.', 'I\'d do it, but I think I\'m better than that.'],
+      ['Respectfully? I\'m not a bench guy. Draft me to play.', 'I wouldn\'t. I\'m the best player in this class.']][e.l]),
+      staff: `Staff read on his ego: ${e.icon} ${e.label}, ${e.says}.` };
+  }
+  if (k === 'worst') {
+    const c = confOf(p);
+    return { quote: vary2(p, 9, [
+      ['Honestly, I still think about it. Nothing fell and it got in my head.', 'I don\'t like talking about it. I went quiet after that one.'],
+      ['I pressed. Missed a few early and stopped shooting.', 'I let one bad half turn into a bad week.'],
+      ['Shot 3 for 12, lost by ten. Watched the film, moved on.', 'Bad shooting night. It happens. Next game I was fine.'],
+      ['I went 2 for 11 and still took the last shot. I\'ll take it again.', 'Bad game, sure. I scored 30 the next night.'],
+      ['Worst game? I don\'t have one I think about.', 'I\'ll go 2 for 15 and still want the ball late. That\'s who I am.']][c.l]),
+      staff: `Staff read on his confidence: ${c.icon} ${c.label}, ${c.says}.` };
   }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
@@ -6188,7 +6317,7 @@ screens.workouts = (args) => {
     const h = hidden(p), r = rank.get(p.id), inRange = range && r >= range[0] && r <= range[1], fit = me && fillsFor(me, p).length;
     return `<div class="drill-row wk-row">
       <span class="grow"><button class="linkish" data-act="openProspect" data-id="${p.id}"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b></button> ${valueChip(p)}${fit ? ' <span title="Fills a need">🧩</span>' : ''}${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}<br>
-        <span class="small muted">#${r} consensus${inRange ? ' · <span class="up">in your range</span>' : ''} · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>${state.params.readiness !== 'age' ? ` ${readyChip(p)}` : ''}<br>
+        <span class="small muted">#${r} consensus${inRange ? ' · <span class="up">in your range</span>' : ''} · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>${state.params.readiness !== 'age' ? ` ${readyChip(p)}` : ''}${mindTag(p)}<br>
         <span class="small ${h ? 'gold' : 'muted'}">${revealed(p.id) ? 'Potential known' : 'Reveals potential'}${h ? ` + ${h} hidden ceiling${h > 1 ? 's' : ''}` : ''}</span></span>
       <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`;
   };
@@ -6459,7 +6588,7 @@ screens.prospect = (args) => {
         ['over', 'Overview', `${collegeBox(p)}
       <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}${scoutBtn(p) ? `<div style="margin-top:8px">${scoutBtn(p)}</div>` : ''}</fieldset>
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>`],
-        ['game', 'Game', `${playStyleBox(p)}${traitsBox(p, true)}`],
+        ['game', 'Game', `${playStyleBox(p)}${traitsBox(p, true)}${prospectMindBox(p)}`],
         ['work', 'Workout', `${workoutBox(p)}${revealBox(p)}${combineBox(p)}`],
         ['rate', 'Ratings', `<fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
@@ -7325,7 +7454,9 @@ actions.liveFinish = async () => {
   if (!(await confirmBox('Finish the draft and move on?', 'Finish'))) return;
   checkpoint('Draft');
   rememberGrades(L);
-  const res = applyDraft(L, livePicks(live, order), state.leagueIdx);
+  const cons = new Map(boardOrder().map((p, i) => [p.id, i + 1])), picks = livePicks(live, order);
+  const res = applyDraft(L, picks, state.leagueIdx);
+  if (isComplete() && !isCollege()) draftMind(L, picks, cons);
   for (const r of leagueRookies(L)) state.snaps.set(snapKey(r.p.id), snapshot(r.p));
   ageAdjust();
   state.compCache = {};
@@ -8652,7 +8783,7 @@ function faPitchOdds(L, team, m, kind) {
   if (kind === 'role') o = 0.15 + 0.6 * FA.roleFit(L, team, p) + (m.motive === 'role' ? 0.15 : 0) + (isAlpha(p) ? 0.1 : isHumble(p) ? -0.08 : 0);
   else if (kind === 'winning') o = 0.1 + 0.65 * FA.teamStrength(L, team) + (m.motive === 'contender' ? 0.15 : 0) + t10('winning') * 0.01;
   else if (kind === 'market') o = 0.35 + part('market') * 5 + t10('money') * 0.012;
-  else if (kind === 'dev') o = p.age <= 25 ? 0.3 + part('upside') * 6 + (p.pot >= 8 ? 0.1 : 0) : 0.08;
+  else if (kind === 'dev') o = p.age <= 25 ? 0.3 + part('upside') * 6 + (p.pot >= 8 ? 0.1 : 0) + (confOf(p).l <= 1 ? 0.12 : 0) : 0.08;   // an unsure young player wants someone to believe in him
   else { const mo = FA.signedRoster(team).reduce((a, x) => a + (x.season?.morale ?? 60), 0) / Math.max(1, FA.signedRoster(team).length); o = 0.1 + (mo - 40) / 80 + t10('loyalty') * 0.01 + FX.facilityFx(team).fa * 2; }
   return Math.max(0.05, Math.min(0.9, o));
 }
@@ -9427,7 +9558,53 @@ function mindsetBox(p) {
     <p class="note small muted" style="margin-top:6px">These move with his season: morale with his situation, ego with his status, confidence with how he played.</p>
   </fieldset>`;
 }
+// A prospect's mindset: '?' until you scout him, then a lean (a scouting trip or his workout), then the exact level
+// once he answers the question about it in his interview.
+const MIND_Q = { ego: 'bench', conf: 'worst' };
+const MIND_HINT = { ego: ['quiet, a team-first type', 'nothing jumps out', 'carries himself like a star'], conf: ['hard on himself after a miss', 'nothing jumps out', 'plays with swagger'] };
+function mindKnown(p, k) {
+  if (p.status !== 1) return 'exact';
+  if (preStore().workouts[p.id]?.qs.includes(MIND_Q[k])) return 'exact';
+  return scouted(p.id) || workoutDone(p.id) ? 'hint' : null;
+}
+function prospectMindBox(p) {
+  if (!isComplete()) return '';
+  const row = (k, icon, name) => {
+    const known = mindKnown(p, k), m = k === 'ego' ? egoOf(p) : confOf(p);
+    const ask = `ask "${k === 'ego' ? 'How would you handle coming off the bench?' : 'Walk us through your worst game.'}" in his interview`;
+    if (known === 'exact') return `<div class="mind-row"><span class="small mind-name">${m.icon} ${name}</span>${MIND_DOT(m.l)}<span class="small"><b>${m.label}</b></span></div><p class="note small muted mind-why">${esc(`${m.says} · ${m.why.join(', ')}`)}</p>`;
+    const lean = m.l <= 1 ? 0 : m.l >= 3 ? 2 : 1;
+    return `<div class="mind-row"><span class="small mind-name">${icon} ${name}</span><span class="mind-dots">${'<span></span>'.repeat(5)}</span><span class="small muted">?</span></div><p class="note small muted mind-why">${known === 'hint' ? `Scouts: ${MIND_HINT[k][lean]}. To know for sure, ${ask}.` : `Scout him or bring him in for a workout for a read; ${ask} to know for sure.`}</p>`;
+  };
+  return `<fieldset class="frame"><legend>Mindset</legend>${row('ego', '🎭', 'Ego')}${row('conf', '🔥', 'Confidence')}</fieldset>`;
+}
+// Board tag for a prospect at either end of ego or confidence, once you know it.
+const mindTag = p => !isComplete() ? '' : ['ego', 'conf'].map(k => { const m = k === 'ego' ? egoOf(p) : confOf(p); return mindKnown(p, k) === 'exact' && (m.l === 0 || m.l === 4) ? ` <span class="badge" title="${esc(`${k === 'ego' ? 'Ego' : 'Confidence'}: ${m.label}`)}">${m.icon} ${m.label}</span>` : ''; }).join('');
 setConfidence(p => (isComplete() && !isCollege() ? confMult(p) : 1));
+// What this offseason added to a player's ego or confidence (the draft, Summer League, Media Day), kept per league and
+// year: { pid: { src: { k: 'ego' | 'conf', v, why } } }. Next offseason starts clean, read fresh from the new season.
+const mindKey = () => `hlc:mind:${seasonKey()}`;
+function mindStore() {
+  const c = (state.mind ||= {}), k = seasonKey();
+  if (!c[k]) { try { c[k] = JSON.parse(localStorage.getItem(mindKey())) || {}; } catch { c[k] = {}; } }
+  return c[k];
+}
+function mindAdd(p, src, k, v, why) {
+  const m = mindStore();
+  if (v) (m[p.id] ||= {})[src] = { k, v, why }; else if (m[p.id]) delete m[p.id][src];
+  try { localStorage.setItem(mindKey(), JSON.stringify(m)); } catch { /* ignore */ }
+}
+setMindExtra((p, k) => {
+  if (!state.data || !isComplete() || isCollege()) return [];
+  const out = Object.values(mindStore()[p.id] || {}).filter(x => x.k === k);
+  // A prospect's combine counts toward his confidence once it's in.
+  if (k === 'conf' && p.status === 1 && combineOn()) {
+    const x = combineData().byId.get(p.id);
+    if (x && !x.skip && x.bonus >= 0.25) out.push({ v: 1, why: 'tested well at the combine' });
+    else if (x && !x.skip && x.bonus <= -0.25) out.push({ v: -1, why: 'had a rough combine' });
+  }
+  return out;
+});
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
 // counts once per player a session. Everyone in the league, not just yours.
@@ -9687,6 +9864,7 @@ screens.storylines = () => {
     body: `
       ${mediaTabs('storylines')}
       ${presserCard()}
+      ${mediaMindCard()}
       ${podium.length ? `<h2 class="team-title">From the Podium</h2><ol class="stories">${podium.map(s => `
         <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
           <span class="story-n">${s.icon}</span>
@@ -9710,7 +9888,7 @@ const mediaTabs = cur => isStep('media') ? `<div class="tabs">${[['storylines', 
 actions.mediaTab = d => replace(d.t === 'survey' ? 'survey' : 'storylines', {});
 actions.mediaDone = () => {
   if (!calFlags().survey) { saveSurveyHist(surveyNow()); calFlags().survey = true; }
-  applyPresser(); calFlags().media = true; goHome(); toast('Next up: Roster Finalization');
+  applyPresser(); mediaMindMorale(); calFlags().media = true; goHome(); toast('Next up: Roster Finalization');
 };
 
 actions.copyStories = async () => {
@@ -10069,6 +10247,52 @@ function stampDraftYear() {
   return rookies;
 }
 // On load: this year's class comes back to the save's year in memory.
+// Mindset in the game itself: the exported file nudges tendencies by a point for the season. A Fearless player takes
+// more shots, a Shaken one defers; an Alpha holds the ball, a Humble one moves it. Only the file is nudged (the app's
+// data stays as it was), and the nudges are recorded so the save that comes back is put back first: they never pile up.
+const MIND_NUDGE = {
+  conf: [{ threePoint: -1, twoPoint: -1, pass: 1 }, {}, {}, {}, { threePoint: 1, twoPoint: 1, step: 1 }],
+  ego: [{ pass: 1 }, {}, {}, {}, { cross: 1, step: 1 }],
+};
+const nudgeKey = (L = league()) => `hlc:nudge:${L.shortName}:${L.meta?.saveName || state.fileName || ''}`;
+function applyMindNudges(L) {
+  const applied = [], rec = {};
+  if (!isComplete() || isCollege()) return applied;
+  for (const t of L.teams) for (const p of t.roster.filter(x => x.status >= 2 && x.tendencies)) {
+    const d = {};
+    for (const [k, v] of Object.entries(MIND_NUDGE.conf[confOf(p).l])) d[k] = (d[k] || 0) + v;
+    for (const [k, v] of Object.entries(MIND_NUDGE.ego[egoOf(p).l])) d[k] = (d[k] || 0) + v;
+    for (const [k, v] of Object.entries(d)) {
+      if (!v || p.tendencies[k] == null) continue;
+      const was = p.tendencies[k], now = Math.max(-5, Math.min(5, was + v));
+      if (now === was) continue;
+      p.tendencies[k] = now;
+      applied.push([p, k, now - was]);
+      (rec[p.id] ||= {})[k] = [now - was, now];
+    }
+  }
+  try { localStorage.setItem(nudgeKey(L), JSON.stringify({ yr: L.season.currentYear, d: rec })); } catch { /* ignore */ }
+  return applied;
+}
+// On load: take last export's nudges back out, where the game left the value as we sent it.
+function undoMindNudges(L = league()) {
+  let rec; try { rec = JSON.parse(localStorage.getItem(nudgeKey(L))); } catch { rec = null; }
+  if (!rec?.d) return 0;
+  const byId = new Map([...L.teams.flatMap(t => t.roster), ...(L.freeAgents || [])].map(p => [p.id, p]));
+  let n = 0;
+  for (const [pid, ks] of Object.entries(rec.d)) {
+    const p = byId.get(+pid); if (!p?.tendencies) continue;
+    for (const [k, [delta, sent]] of Object.entries(ks)) if (p.tendencies[k] === sent) { p.tendencies[k] = sent - delta; n++; }
+  }
+  return n;
+}
+// The export screen's line on it: how many of your players go out nudged.
+function mindNudgeLine() {
+  if (!isComplete() || isCollege()) return '';
+  const mine = league().teams.filter(isUserTeam).flatMap(t => t.roster.filter(x => x.status >= 2 && x.tendencies));
+  const n = mine.filter(p => Object.keys(MIND_NUDGE.conf[confOf(p).l]).length || Object.keys(MIND_NUDGE.ego[egoOf(p).l]).length).length;
+  return n ? `<p class="note muted small">🎛️ Mindset: ${n} of your players carry a one-point tendency nudge into the season (Fearless players take more shots, Shaken ones defer; Alphas hold the ball, Humble players move it). It's taken back out when this save comes back.</p>` : '';
+}
 function unstampDraftYear() {
   const L = league();
   if (!L || isCollege()) return;
@@ -10494,6 +10718,7 @@ screens.review = () => {
         <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
+      ${r.pro ? mindMovers(t) : ''}
       ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}`],
         ['league', r.pro ? 'League' : 'National', `      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
         ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}
@@ -11129,7 +11354,7 @@ screens.cuts = () => {
   const log = calFlags().cutLog;
   layout({
     title: 'Final Cuts',
-    body: `<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
+    body: `${myTeam() && alphaClash(myTeam()) ? `<p class="note small gold">${esc(alphaClash(myTeam()))}</p>` : ''}<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${uiTabs('cuts', [
         ['mine', 'Your Cuts', `      ${requestCard()}
       ${myCards}
@@ -11617,6 +11842,7 @@ screens.export = () => {
         </div>
         ${inArtifact() ? `<p class="note gold small">Saves as <b>${esc(artifactName(state.fileName))}</b>: rename it to <b>${esc(state.fileName)}</b> (remove ".json") so Hoop Land can load it.</p>` : ''}
         <p class="note muted small">Load it in Hoop Land and start the season. Keep a backup of the original.</p>
+        ${mindNudgeLine()}
       </fieldset>
       ${isCollege() ? '' : `<fieldset class="frame"><legend>League File (experimental)</legend>
         <p class="note small">Turns this save into a league file: rosters, contracts, ratings, tendencies, coaches, picks and history as they stand, with the season reset so you can start a brand new franchise from it.</p>

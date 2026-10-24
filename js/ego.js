@@ -4,6 +4,7 @@
 import { tr, traitsSet } from './traits.js';
 import { seasonLine } from './storylines.js';
 import { shownLevel as levelOf } from './regression.js';
+import { mindExtra } from './mindset.js';
 
 export const EGO = { icon: '🎭', hi: 'Alpha', lo: 'Humble', hiIcon: '🎭', loIcon: '🙏' };
 const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13, ALL_STAR: 23 };
@@ -21,10 +22,11 @@ const salt = id => { let h = Math.imul(id + 97, 2654435761) >>> 0; h ^= h >>> 15
 // { v, why[] } — the score and the reasons that moved it most.
 export function egoRead(p) {
   const name = `${p.fn || ''} ${p.ln || ''}`.trim();
-  if (REAL_EGO[name] != null) { const b = boost(p); return { v: Math.min(20, Math.round(REAL_EGO[name] + b.v)), why: ['his reputation around the league', ...b.why] }; }
+  if (REAL_EGO[name] != null) { const b = boost(p); return finish(p, REAL_EGO[name] + b.v, [`${REAL_EGO[name] < 10 ? '-' : ''}his reputation around the league`, ...b.why]); }
   const why = [];
   let v = 9.5 + salt(p.id) * 3;
   const lv = levelOf(p);
+  if (!(p.stats || []).some(s => s.league === 0 && (s.season || []).some(r => r.GP > 0))) return finish(p, v + prospectEgo(p, why), why);
   const star = lv >= 90 ? 4 : lv >= 85 ? 2.5 : lv >= 80 ? 1 : lv <= 68 ? -1 : lv <= 72 ? -0.5 : 0;
   v += star; if (star >= 2.5) why.push('a star and he knows it'); else if (star < 0) why.push('-a role player');
   const mvp = won(p, AW.MVP), fmvp = won(p, AW.FMVP), allLg = won(p, AW.ALL_NBA);
@@ -49,6 +51,30 @@ export function egoRead(p) {
     if (lean >= 1.2) why.push(tr(p, 'money') >= 15 ? 'chases the money and the spotlight' : 'not a locker room guy');
     else if (lean <= -1.2) why.push(tr(p, 'lockerRoom') >= 15 ? '-a great teammate' : '-puts winning first');
   }
+  return finish(p, v, why);
+}
+// Before his first NBA game: the hype (where he's projected to go), his college role and his awards.
+function prospectEgo(p, why) {
+  let v = 0;
+  const add = (n, text) => { v += n; if (text) why.push(n > 0 ? text : `-${text}`); };
+  if (p.pot >= 9) add(2.5, 'projected to go early and he knows it'); else if (p.pot >= 8) add(1.2, 'hears his name in the lottery talk'); else if (p.pot <= 5) add(-1, 'not one of the names');
+  if (p.age <= 19 && p.pot >= 8) add(0.8, 'young and hyped');
+  const cs = (p.stats || []).filter(s => s.league > 0 && (s.season || []).some(r => r.GP > 0)).sort((a, b) => b.yr - a.yr)[0];
+  if (cs) {
+    const l = seasonLine(p, cs.league, cs.yr);
+    if (l && l.ppg >= 12) add(1.8, 'the go-to scorer in college'); else if (l && l.ppg >= 9) add(0.8, 'a featured scorer in college'); else if (l && l.gp >= 10 && l.ppg <= 4) add(-1, 'a role player in college');
+    const aw = id => (p.awards || []).some(a => a.id === id && a.league > 0);
+    if (aw(2)) add(2, 'a national Player of the Year'); else if (aw(16)) add(1, 'an All-American');
+  }
+  if (traitsSet(p)) {
+    const lean = (tr(p, 'money') - 10) * 0.15 - (tr(p, 'lockerRoom') - 10) * 0.18;
+    v += lean;
+    if (lean >= 1.2) why.push('not a locker room guy'); else if (lean <= -1.2) why.push('-a great teammate');
+  }
+  return v;
+}
+function finish(p, v, why) {
+  for (const e of mindExtra(p, 'ego')) { v += e.v; if (e.why) why.push(e.v > 0 ? e.why : `-${e.why}`); }
   // Only the reasons that pushed him the way he landed ('-' marks one that pulls toward Humble).
   const out = Math.max(1, Math.min(20, Math.round(v))), lvl = [6, 8, 11, 14, 20].findIndex(m => out <= m);
   const keep = why.filter(w => (lvl < 2 ? w.startsWith('-') : lvl > 2 ? !w.startsWith('-') : true)).map(w => w.replace(/^-/, ''));
