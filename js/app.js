@@ -42,6 +42,7 @@ import * as CG from './classgen.js';
 import { egoRead, egoVal, isAlpha, isHumble, EGO_KEY } from './ego.js';
 import * as GEAR from './gear.js';
 import * as CAR from './career.js';
+import { setGameClock, secsOf } from './gameclock.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
@@ -49,7 +50,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.197.0';
+const APP_VERSION = '0.198.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -608,6 +609,7 @@ function installData(data, keepSnaps = false) {
     state.params.lotteryFormat = 'auto';
     // College franchise saves open on the college league.
     state.mode = detectMode(data);
+    setGameClock(data.seasonLeagues);   // short games: minutes read on a 48-minute scale
     state.leagueIdx = state.mode.li;
     if (!keepSnaps) state.snaps.clear();
     state.profiles = [];
@@ -4927,6 +4929,20 @@ function levelRanks(p, team) {
   }
   return cache.get('lvranks').get(p.id) || null;
 }
+// How he was used last season, from his starts and minutes (on a 48-minute scale), and whether he led his current
+// team in scoring: { text: "a full-time starter (82 starts, 38 minutes a night) and their leading scorer", was: the team
+// he did it for when he has moved since }, or "" with no season.
+function usageRole(p, team) {
+  const yrs = [...new Set((p.stats || []).filter(s => s.league === state.leagueIdx).map(s => s.yr))].sort((a, b) => b - a);
+  const yr = yrs.find(y => (seasonLine(p, state.leagueIdx, y)?.gp || 0) >= 15);
+  if (yr == null) return '';
+  const l = seasonLine(p, state.leagueIdx, yr), share = l.starts / l.gp, m = Math.round(l.mpg);
+  const role = share >= 0.75 ? 'a full-time starter' : share >= 0.4 ? 'a part-time starter' : l.mpg >= 22 ? 'a rotation regular off the bench' : l.mpg >= 12 ? 'a bench piece' : 'on the fringe of the rotation';
+  const mates = team ? team.roster.filter(x => x.id !== p.id).map(x => seasonLine(x, state.leagueIdx, yr)).filter(x => x && x.gp >= 15) : [];
+  const leads = l.ppg >= 10 && mates.length && mates.every(x => x.ppg < l.ppg);
+  const was = l.tid !== team?.id ? league().teams.find(t => t.id === l.tid) : null;   // he's moved since
+  return { was, text: `${role} (${l.starts} start${l.starts === 1 ? '' : 's'}, ${m} minutes a night)${leads && !was ? ' and their leading scorer' : ''}` };
+}
 // A short scouting paragraph: where he stands, how he plays, what he's like, where he's headed, what he's paid.
 function profileReport(p, team) {
   const out = [];
@@ -4934,7 +4950,9 @@ function profileReport(p, team) {
   const rk = levelRanks(p, team);
   if (rk) {
     const nm = team ? teamFull(team) : '';
-    add('rank', `He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}` : ''}.`);
+    // His role is how he's used (starts and minutes last season), not where his level ranks on the roster.
+    const use = usageRole(p, team);
+    add('rank', `He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? (use ? (use.was ? `. Last season, with the ${esc(teamFull(use.was))}, he was ${use.text}` : `. For the ${esc(nm)} he is ${use.text}`) : ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}`) : ''}.`);
   }
   if (p.tendencies) {
     // His game, then a skill, then what he won't do; a skill joins the first sentence.
@@ -5186,7 +5204,7 @@ actions.plTab = d => replace('player', { ...state.stack[state.stack.length - 1].
 actions.plStats = d => replace('player', { ...state.stack[state.stack.length - 1].args, sv: d.v });
 
 // Stats tab: season by season, regular season and playoffs, with the highs.
-const STAT_COLS = [['GP', r => r.GP], ['MPG', r => r.MIN[0] / 60 / r.GP], ['PTS', r => r.PTS / r.GP], ['REB', r => r.REB / r.GP], ['AST', r => r.AST / r.GP], ['STL', r => r.STL / r.GP], ['BLK', r => r.BLK / r.GP], ['TO', r => r.TO / r.GP],
+const STAT_COLS = [['GP', r => r.GP], ['MPG', r => secsOf(r, state.leagueIdx) / 60 / r.GP], ['PTS', r => r.PTS / r.GP], ['REB', r => r.REB / r.GP], ['AST', r => r.AST / r.GP], ['STL', r => r.STL / r.GP], ['BLK', r => r.BLK / r.GP], ['TO', r => r.TO / r.GP],
   ['FG%', r => (r.FGA ? r.FGM / r.FGA * 100 : null)], ['3P%', r => (r.TPA ? r.TPM / r.TPA * 100 : null)], ['FT%', r => (r.FTA ? r.FTM / r.FTA * 100 : null)]];
 const sumRows = rows => rows.reduce((t, r) => { for (const k of ['GP', 'GS', 'PTS', 'FGM', 'FGA', 'TPM', 'TPA', 'FTM', 'FTA', 'REB', 'ORB', 'AST', 'STL', 'BLK', 'TO', 'PF', 'DD', 'TD', 'POTG']) t[k] = (t[k] || 0) + (r[k] || 0); t.MIN = [(t.MIN?.[0] || 0) + (r.MIN?.[0] || 0)]; return t; }, {});
 function statsTab(p, args) {

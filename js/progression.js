@@ -3,6 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
+import { secsOf } from './gameclock.js';
 import { coachMult, durMult, durLongevity } from './traits.js';
 import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, MINOR_INJURY, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
 
@@ -334,7 +335,7 @@ export function seasonGameScore(p, leagueIdx, year, params) {
   if (!s) return null;
   const t = (s.season || []).reduce((a, r) => {
     for (const k of ['GP', 'PTS', 'REB', 'AST', 'STL', 'BLK', 'TO', 'FGM', 'FGA', 'FTM', 'FTA']) a[k] = (a[k] || 0) + r[k];
-    a.MIN = (a.MIN || 0) + r.MIN[0] / 60;
+    a.MIN = (a.MIN || 0) + secsOf(r, leagueIdx) / 60;
     return a;
   }, {});
   if (!t.GP || t.GP < params.trainerMinGames || t.MIN / t.GP < params.trainerMinMpg) return null;

@@ -1,3 +1,4 @@
+import { secsOf } from './gameclock.js';
 // Lossless load/save for Hoop Land season files.
 //
 // Season files are compact JSON written by Unity. Re-serialising with plain
@@ -236,7 +237,7 @@ export function lastSeasonMpg(p, leagueIdx) {
   for (const s of p.stats || []) {
     if (s.league !== leagueIdx) continue;
     let gp = 0, sec = 0;
-    for (const row of s.season || []) { gp += row.GP; sec += row.MIN[0]; }
+    for (const row of s.season || []) { gp += row.GP; sec += secsOf(row, leagueIdx); }
     if (gp > 0 && (!best || s.yr > best.yr)) best = { yr: s.yr, gp, mpg: sec / 60 / gp };
   }
   return best;

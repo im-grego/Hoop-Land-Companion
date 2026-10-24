@@ -3,6 +3,7 @@
 // in the save, with their own lean, and can't vote for their own team or
 // players. Results are vote shares; last year's winner is kept per save.
 
+import { secsOf } from './gameclock.js';
 import { playerName, POSITIONS, levelOf as rawLevel, injuryHistory, leagueRookies } from './savefile.js';
 import { regressed, shownLevel } from './regression.js';
 import { teamRecord, teamStatus } from './draft.js';
@@ -20,7 +21,7 @@ function perGame(p, li, yr) {
   const s = (p.stats || []).find(x => x.league === li && x.yr === yr);
   const t = { GP: 0, MIN: 0, PTS: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TO: 0, FGM: 0, FGA: 0, TPM: 0, TPA: 0, FTM: 0, FTA: 0 };
   let tid = null;
-  for (const r of s?.season || []) { for (const k of Object.keys(t)) t[k] += k === 'MIN' ? (r.MIN?.[0] || 0) / 60 : (r[k] || 0); tid = r.tid; }
+  for (const r of s?.season || []) { for (const k of Object.keys(t)) t[k] += k === 'MIN' ? secsOf(r, li) / 60 : (r[k] || 0); tid = r.tid; }
   if (!t.GP) return null;
   const g = k => t[k] / t.GP;
   return {

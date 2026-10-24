@@ -8,6 +8,7 @@ import { playerName, injuryName, injuryHistory, skillName, leagueRookies } from 
 import { shownLevel as levelOf } from './regression.js';
 import { teamRecord, standings, collegeLine } from './draft.js';
 import { injuryClass, DEFAULT_PARAMS } from './progression.js';
+import { secsOf } from './gameclock.js';
 
 const AWARD = { CHAMP: 0, FMVP: 1, MVP: 2, DPOY: 3, ROTY: 4, SIXTH: 5, MIP: 6, ALL_NBA: 13 };
 const NEWS_SIGNING = { phase: 6, category: 2, type: 3 };
@@ -39,14 +40,14 @@ const SKILL_TALK = {
 export function seasonLine(p, leagueIdx, year) {
   const s = (p.stats || []).find(x => x.league === leagueIdx && x.yr === year);
   const rows = s?.season || [];
-  const t = { GP: 0, MIN: 0, PTS: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TO: 0, FGM: 0, FGA: 0, FTM: 0, FTA: 0 };
-  for (const r of rows) for (const k of Object.keys(t)) t[k] += k === 'MIN' ? r.MIN[0] / 60 : r[k];
+  const t = { GP: 0, GS: 0, MIN: 0, PTS: 0, REB: 0, AST: 0, STL: 0, BLK: 0, TO: 0, FGM: 0, FGA: 0, FTM: 0, FTA: 0 };
+  for (const r of rows) for (const k of Object.keys(t)) t[k] += k === 'MIN' ? secsOf(r, leagueIdx) / 60 : r[k] || 0;
   if (!t.GP) return null;
   const pg = k => t[k] / t.GP;
   const gs = t.PTS + 0.7 * t.REB + 0.7 * t.AST + t.STL + 0.7 * t.BLK - 0.7 * t.TO
     - 0.4 * (t.FGA - t.FGM) - 0.4 * (t.FTA - t.FTM);
   return {
-    gp: t.GP, mpg: pg('MIN'), ppg: pg('PTS'), rpg: pg('REB'), apg: pg('AST'), spg: pg('STL'), bpg: pg('BLK'),
+    gp: t.GP, starts: t.GS, mpg: pg('MIN'), ppg: pg('PTS'), rpg: pg('REB'), apg: pg('AST'), spg: pg('STL'), bpg: pg('BLK'),
     gs: gs / t.GP, tid: rows[rows.length - 1].tid,
   };
 }

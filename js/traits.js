@@ -10,6 +10,8 @@
 // else is generated from his own data plus a little stable noise.
 
 // Scale: 0-4 the low name, 5-9 Low, 10-15 Solid, 16-20 the high name.
+import { secsOf } from './gameclock.js';
+
 export const TRAITS = [
   { k: 'durability', label: 'Durability', icon: '🩹', lo: 'Injury-prone', hi: 'Ironman', loIcon: '🩹', hiIcon: '🦾', loSays: 'always seems to be hurting', hiSays: 'rarely misses time' },
   { k: 'winning', label: 'Winning', icon: '🏆', lo: 'Indifferent', hi: 'Competitor', loIcon: '😐', hiIcon: '🏆', loSays: 'doesn\'t much care about the standings', hiSays: 'lives to win' },
@@ -120,7 +122,7 @@ export function generateTraits(p, teamId = p.tid) {
   const contact = ((t.dunk || 0) + (t.post || 0) + (t.hook || 0) + (t.floater || 0) + (t.takeCharge || 0) + (t.offReb || 0) + (t.block || 0)) * 0.12;
   const body = (att(p, 'STR') - 10) * 0.15 + (att(p, 'STM') - 10) * 0.2 + (att(p, 'SPD') > 16 ? -0.5 : 0);
   const durability = 10 + body - strain - contact - Math.max(0, p.age - 29) * 0.45 + (p.age <= 24 ? 0.8 : 0) + n('durability', 2);
-  const min36 = (cs.MIN?.[0] || 0) / 60 / 36;
+  const min36 = secsOf(cs) / 60 / 36;
   const hustle = min36 > 5 ? ((cs.ORB || 0) + (cs.STL || 0) * 1.5) / min36 : 3;
   const motor = 3 + att(p, 'STM') * 0.45 + ((t.offReb || 0) + (t.takeCharge || 0) + (t.stealOffBall || 0)) * 0.25 + Math.min(4, hustle * 0.6) + n('motor', 2);
   const wins = (cs.W || 0) + (cs.L || 0) ? (cs.W || 0) / ((cs.W || 0) + (cs.L || 0)) : 0.5;
@@ -186,7 +188,7 @@ export function hofTraits(p) {
   g.money += draftYr < 1985 ? -2.5 : draftYr < 2000 ? -1 : 0.5;
   // Motor from the work he did: rebounding and steals per game, minutes carried, conditioning (older eras'
   // tendency sliders run low, so they only nudge it).
-  const gp = cs.GP || 0, mpg = gp ? (cs.MIN?.[0] || 0) / 60 / gp : 0;
+  const gp = cs.GP || 0, mpg = gp ? secsOf(cs) / 60 / gp : 0;
   g.motor = 6 + (att(p, 'STM') - 10) * 0.35 + (gp ? Math.min(3.5, ((cs.REB || 0) / gp) / 3.2 + ((cs.STL || 0) / gp) * 1.2) : 0) + (mpg >= 36 ? 2 : mpg >= 32 ? 1 : 0)
     + ((t.takeCharge || 0) + (t.defReb || 0) + (t.stealOnBall || 0)) * 0.1 + gauss(p.id, 55) * 1.3;
   g.lockerRoom += Math.min(3, champs * 0.5) + ((t.pass || 0) + (t.runPlay || 0)) * 0.12;
