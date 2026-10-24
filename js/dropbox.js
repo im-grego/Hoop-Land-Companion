@@ -9,6 +9,7 @@ export const BUILT_IN_APP_KEY = '';
 const AUTH_URL = 'https://www.dropbox.com/oauth2/authorize';
 const TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
 const UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
+const DOWNLOAD_URL = 'https://content.dropboxapi.com/2/files/download';
 
 export function dropboxConfig() {
   const base = { folder: '/Hoop Land', overwrite: false, appKey: BUILT_IN_APP_KEY || '' };
@@ -83,4 +84,29 @@ export async function dropboxUpload(blob, name) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error_summary || `Upload failed (${res.status})`);
   return json.path_display;
+}
+
+// A content call with one retry on an expired token.
+async function contentCall(url, arg, body = undefined) {
+  const send = async token => fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': headerJson(arg), ...(body !== undefined ? { 'Content-Type': 'application/octet-stream' } : {}) },
+    ...(body !== undefined ? { body } : {}),
+  });
+  let res = await send(await accessToken());
+  if (res.status === 401) { saveDropboxConfig({ accessToken: null, expires: 0 }); res = await send(await accessToken()); }
+  return res;
+}
+// Write text at an exact path, replacing what's there (small app files such as a save's traits).
+export async function dropboxPut(path, text) {
+  const res = await contentCall(UPLOAD_URL, { path, mode: 'overwrite', autorename: false, mute: true }, new Blob([text], { type: 'application/json' }));
+  if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error_summary || `Upload failed (${res.status})`); }
+  return true;
+}
+// Read a file's text; null when there's no file at that path.
+export async function dropboxGet(path) {
+  const res = await contentCall(DOWNLOAD_URL, { path });
+  if (res.status === 409) return null;
+  if (!res.ok) throw new Error(`Download failed (${res.status})`);
+  return res.text();
 }

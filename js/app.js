@@ -46,9 +46,9 @@ import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation } from './presser.js';
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
-import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
+import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.188.0';
+const APP_VERSION = '0.189.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -507,7 +507,23 @@ async function packPrompt(pack) {
   toast(`Applied ${n} changes`, 'Export the season file to keep them.');
 }
 
+// A traits file (the backup): into the open save if it's that league's, otherwise kept for that save's next load.
+async function loadTraitsFile(data) {
+  const L0 = state.data?.seasonLeagues[0];
+  if (L0 && !isCollege() && data.league === L0.shortName) {
+    if (!(await confirmBox(`Load the traits from <b>${esc(data.save || 'this file')}</b> (saved ${esc(new Date(data.at).toLocaleString())}) into this save? They replace the traits here.`, 'Load Traits'))) return;
+    applyTraitsBackup(data);
+    render();
+    toast('Traits loaded', `${Object.keys(data.traits).length} players.`);
+  } else {
+    // No matching save open: keep it for that save, used when it loads.
+    try { localStorage.setItem(`hlc:traits:${data.league}:${data.save}`, JSON.stringify({ v: 2, at: data.at, m: data.traits })); for (const [k, v] of Object.entries(data.drift || {})) localStorage.setItem(`hlc:drift:${k}`, JSON.stringify(v)); } catch { /* ignore */ }
+    toast('Traits file kept', `They load with ${data.save || 'that save'}.`);
+  }
+}
 async function loadFile(file) {
+  // A traits file doesn't replace the save: no unsaved-changes question for it.
+  if (file.size < 3e6) { try { const d = JSON.parse(await file.text()); if (isTraitsBackup(d)) return loadTraitsFile(d); } catch { /* not JSON: a save */ } }
   if (state.dirty && !(await confirmBox('You have unsaved changes. Load a different file anyway?', 'Load'))) return;
   const o = overlay('<div class="spinner"></div><p class="note">Reading season file…</p>');
   await nextFrame();
@@ -560,7 +576,7 @@ async function loadFile(file) {
     const pack = !isCollege() ? matchingPack(data.seasonLeagues[0]) : null;
     if (pack) { const n = applyPackTraits(pack, data.seasonLeagues[0]); if (n) toast(`Your traits restored for ${n} players`, pack.name); setTimeout(() => packPrompt(pack), 700); }
     // This save's own traits as you left them (edits, Ego, changes from events): the game doesn't keep them.
-    if (!isCollege()) loadTraitStore(data.seasonLeagues[0]);
+    if (!isCollege()) { loadTraitStore(data.seasonLeagues[0]); setTimeout(pullTraits, 0); }
     const signedIn = isCollege() ? applyRecruiting() : 0;
     o.remove();
     if (!ALWAYS_COMPLETE && !isCollege() && !state.depth) setTimeout(depthPrompt, 400);
@@ -822,7 +838,7 @@ function buildExport() {
   state.data.seasonLeagues.forEach(usePlaybooks);
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
-  if (!isCollege()) { saveManifest(league()); saveTraitStore(); }
+  if (!isCollege()) { saveManifest(league()); saveTraitStore(); pushTraits(); }
   const nudged = !isCollege() ? applyMindNudges(league()) : [];
   const text = serializeSave(state.data);
   for (const [p, k, d] of nudged) p.tendencies[k] -= d;
@@ -4882,6 +4898,7 @@ screens.settings = (args) => {
   } else {
     body = `${pro ? setGroup('This Offseason', ['<button class="btn small" data-act="resetProgress">↺ Start This Offseason Over</button>', '<span class="note muted small">Clears the steps marked done (mocks, scouting, options, extensions, ...) for this save.</span>']) : ''}
       ${state.data ? undoHistoryBox() : ''}
+      ${traitsBackupBox()}
       ${setGroup('Settings', ['<button class="btn small off" data-act="resetParams">↺ Reset Every Setting to Default</button>'])}`;
   }
   const count = k => (TAB_KEYS[k] || []).filter(changed).length;
@@ -9523,14 +9540,15 @@ function moraleBox(p) {
 // rosters, free agents, prospects). Edits, Ego and the changes events make all come back on the next load.
 const traitKey = (L = league()) => `hlc:traits:${L.shortName}:${L.meta?.saveName || state.fileName || ''}`;
 const traitPool = L => [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])];
-function saveTraitStore(L = state.data?.seasonLeagues[0]) {
+function saveTraitStore(L = state.data?.seasonLeagues[0], at = Date.now()) {
   if (!L || isCollege()) return;
   const m = {};
   for (const p of traitPool(L)) if (p.traits && traitsSet(p)) m[p.id] = TRAIT_KEYS.map(k => p.traits[k] || 0);
-  try { localStorage.setItem(traitKey(L), JSON.stringify({ v: 2, m })); } catch { /* full or blocked */ }
+  try { localStorage.setItem(traitKey(L), JSON.stringify({ v: 2, at, m })); } catch { /* full or blocked */ }
 }
 function loadTraitStore(L) {
   let st; try { st = JSON.parse(localStorage.getItem(traitKey(L))); } catch { st = null; }
+  state.traitsAt = st?.at || 0;   // when this device last saved them, before this load touches anything
   if (!st?.m) return 0;
   let n = 0;
   for (const p of traitPool(L)) { const a = st.m[p.id]; if (!a || !p.traits) continue; TRAIT_KEYS.forEach((k, i) => { if (a[i] > 0) p.traits[k] = a[i]; }); n++; }
@@ -9538,6 +9556,65 @@ function loadTraitStore(L) {
 }
 // Ego sits in the playoffRiser slot, seeded from each player's career (what the game left there is the old trait).
 function seedEgo(L) { for (const p of traitPool(L)) if (p.traits && traitsSet(p)) p.traits[EGO_KEY] = egoRead(p).v; }
+
+// ---- Traits backup: Dropbox and a file
+// A save's traits as one small file: every player's current values plus this offseason's changes. With Dropbox
+// connected it's written next to your saves on every export and read back when that save loads (the newer copy wins);
+// it can also be downloaded and loaded by hand like any file.
+const traitsFileName = (L = state.data.seasonLeagues[0]) => `${String(L.meta?.saveName || state.fileName || L.shortName).replace(/\.[a-z0-9]{2,4}$/i, '').replace(/[\\/:*?"<>|]/g, '_')} TRAITS.json`;
+const traitsDbxPath = () => dropboxPath(`Traits/${traitsFileName()}`);
+const isTraitsBackup = d => !!d && d.hlcTraits >= 1 && !!d.traits && !d.seasonLeagues;
+function traitsBackup(L = state.data.seasonLeagues[0]) {
+  const at = Date.now();
+  saveTraitStore(L, at);
+  let m = {}; try { m = JSON.parse(localStorage.getItem(traitKey(L)))?.m || {}; } catch { m = {}; }
+  return { hlcTraits: 1, league: L.shortName, save: L.meta?.saveName || state.fileName || '', year: L.season.currentYear, at, traits: m, drift: { [seasonKey(L)]: driftStore() } };
+}
+// Into the loaded save: the values, and this offseason's change log to match (or a clean one, if the backup is from
+// before this offseason, so last season's changes are worked out fresh).
+function applyTraitsBackup(b) {
+  const L = state.data.seasonLeagues[0];
+  for (const p of traitPool(L)) { const a = b.traits[p.id]; if (a && p.traits) TRAIT_KEYS.forEach((k, i) => { if (a[i] > 0) p.traits[k] = a[i]; }); }
+  const cur = b.drift?.[seasonKey(L)];
+  const c = calFlags();
+  c.drift = cur || {}; c.driftKey = seasonKey(L); c.driftSeason = cur ? seasonKey(L) : undefined;
+  saveDrift();
+  saveTraitStore(L, b.at);
+  state.traitsAt = b.at;
+  if (!cur) seasonDrift();
+  state.dirty = true;
+}
+function pushTraits() {
+  if (isCollege() || !dropboxConnected() || !state.data) return;
+  dropboxPut(traitsDbxPath(), JSON.stringify(traitsBackup())).then(() => { state.traitsSynced = Date.now(); }).catch(() => { state.traitsSynced = -1; });
+}
+async function pullTraits() {
+  if (isCollege() || !dropboxConnected() || !state.data) return;
+  try {
+    const text = await dropboxGet(traitsDbxPath());
+    if (!text) return;
+    const b = JSON.parse(text);
+    if (!isTraitsBackup(b) || b.league !== state.data.seasonLeagues[0].shortName || b.at <= (state.traitsAt || 0)) return;
+    applyTraitsBackup(b);
+    render();
+    toast('Traits synced from Dropbox', `${Object.keys(b.traits).length} players, saved ${new Date(b.at).toLocaleString()}.`);
+  } catch { /* offline: keep this device's */ }
+}
+actions.traitsDownload = async () => {
+  const f = new File([JSON.stringify(traitsBackup())], traitsFileName(), { type: 'application/json' });
+  if (inArtifact()) { if (await artifactSave(f.name, f)) toast('Traits file saved'); return; }
+  const url = URL.createObjectURL(f), a = document.createElement('a');
+  a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast('Traits file saved', 'Load it like a save file on any device to bring these traits back.');
+};
+function traitsBackupBox() {
+  if (!state.data || isCollege()) return '';
+  const sync = dropboxConnected() ? (state.traitsSynced > 0 ? `Synced to Dropbox ${new Date(state.traitsSynced).toLocaleTimeString()}.` : state.traitsSynced === -1 ? 'The last Dropbox sync failed; it tries again on your next export.' : 'Synced to Dropbox on every export, and read back when this save loads.') : 'Connect Dropbox (Export) to sync them automatically.';
+  return setGroup('Traits Backup', [`<span class="note small">The game doesn't keep traits in its saves, so the app keeps them on this device. ${sync}</span>`,
+    '<button class="btn small" data-act="traitsDownload">⬇ Download Traits File</button>',
+    '<span class="note muted small">To restore: load the traits file with the same button you load saves with, after loading the save (or before: it waits for that save).</span>']);
+}
 
 // ---- Trait changes
 // Events move a trait a point or two: a big injury costs durability, a big deal swells ego, years as the face of a
@@ -11847,6 +11924,7 @@ screens.export = () => {
         ${inArtifact() ? `<p class="note gold small">Saves as <b>${esc(artifactName(state.fileName))}</b>: rename it to <b>${esc(state.fileName)}</b> (remove ".json") so Hoop Land can load it.</p>` : ''}
         <p class="note muted small">Load it in Hoop Land and start the season. Keep a backup of the original.</p>
         ${mindNudgeLine()}
+        ${isCollege() ? '' : `<p class="note muted small">🧬 Traits stay on this device${dropboxConnected() ? ' and sync to Dropbox with this export' : ''}. <button class="btn tiny" data-act="traitsDownload">⬇ Traits File</button></p>`}
       </fieldset>
       ${isCollege() ? '' : `<fieldset class="frame"><legend>League File (experimental)</legend>
         <p class="note small">Turns this save into a league file: rosters, contracts, ratings, tendencies, coaches, picks and history as they stand, with the season reset so you can start a brand new franchise from it.</p>
