@@ -41,6 +41,7 @@ import { isForeign, lookFor, groupFor, makeNamer } from './names.js';
 import * as CG from './classgen.js';
 import { egoRead, egoVal, isAlpha, isHumble, EGO_KEY } from './ego.js';
 import * as GEAR from './gear.js';
+import * as CAR from './career.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
@@ -48,7 +49,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.195.2';
+const APP_VERSION = '0.196.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1738,6 +1739,7 @@ screens.main = () => {
           <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}</span></div>
       </div>
       ${fileCheckCard()}
+      ${careerCard()}
       ${calendarCard()}
       ${coachMarketCard()}
       <div class="grid2">
@@ -1755,6 +1757,55 @@ screens.main = () => {
         <button class="btn left" data-act="downloadLeague"><span class="ico">🌐</span> Export</button>
       </div>
       <p class="center muted small">Version ${APP_VERSION}</p>`,
+  });
+};
+
+// Career saves: a card on the home screen that opens the Career Hub.
+function careerCard() {
+  const L = league();
+  if (!CAR.isCareer(L)) return '';
+  const me = CAR.careerPlayer(L);
+  if (!me) return '';
+  const { p, team } = me, r = CAR.rankIdx(p);
+  return `<button class="btn big left focus" data-act="nav" data-to="career"><span class="ico">${CAR.RANK_ICONS[r]}</span> My Career <span class="note small">${esc(playerName(p))} · ${esc(CAR.RANKS[r])} · ${esc(team ? team.shortName : 'FA')}</span></button>`;
+}
+
+screens.career = () => {
+  const L = league(), me = CAR.careerPlayer(L);
+  if (!me) { layout({ title: 'My Career', body: '<p class="note">This save has no career player.</p>' }); return; }
+  const { p, team } = me, cr = L.career || {}, r = CAR.rankIdx(p), tro = CAR.trophies(p);
+  const st = CAR.standing(L, p, team), fo = CAR.frontOffice(L, p, team), room = CAR.lockerRoom(L, p, team);
+  const c = p.contract || {};
+  const ladder = CAR.RANKS.map((n, i) => ({ n, i })).reverse().map(({ n, i }) => `<div class="cr-rank ${i === r ? 'now' : i < r ? 'done' : ''}">${CAR.RANK_ICONS[i]} ${esc(n)}</div>`).join('');
+  const chips = [tro.rings && `🏆 ${tro.rings}× Champion`, tro.fmvp && `🥇 ${tro.fmvp}× Finals MVP`, tro.mvp && `🏅 ${tro.mvp}× MVP`, tro.allNba && `📜 ${tro.allNba}× All-NBA`, tro.allStar && `🌟 ${tro.allStar}× All-Star`, tro.dpoy && `🛡️ ${tro.dpoy}× DPOY`].filter(Boolean);
+  const log = CAR.careerLog(p);
+  const coach = st?.coach ? `${st.coach.fn || ''} ${st.coach.ln || ''}`.trim() : '';
+  layout({
+    title: 'My Career',
+    body: `<fieldset class="frame"><legend>${esc(playerName(p))}</legend>
+        <p><b>${esc(CAR.roleOf(p, team))}</b>${team ? ` · ${esc(teamFull(team))}` : ''} ${lvTag(p)}</p>
+        <p class="note small">Age ${p.age} · ${heightStr(p.ht)} · ${c.sal ? `$${c.sal}M × ${c.yrs}y` : 'No contract'} · ${moraleTag(p)}</p>
+        ${chips.length ? `<div class="style-chips">${chips.map(x => `<span class="style-chip">${x}</span>`).join('')}</div>` : ''}
+        <div class="grid2" style="margin-top:8px"><button class="btn" data-act="openPlayer" data-id="${p.id}">👤 Profile</button>${team ? `<button class="btn" data-act="nav" data-to="roster" data-arg="${team.id}">👥 ${esc(team.shortName)}</button>` : ''}</div>
+      </fieldset>
+      <fieldset class="frame"><legend>Legacy</legend>
+        <div class="cr-top"><div class="cr-ladder">${ladder}</div>
+        <div class="stack small">
+          <p><b>${p.season?.legacyPoints ?? 0}</b> legacy points</p>
+          <p><b>${(cr.fans ?? 0).toLocaleString()}</b> fans · ${esc(CAR.fameName(cr.fame ?? 0))}</p>
+          <p><b>${cr.coins ?? 0}</b> coins</p>
+          ${r < CAR.RANKS.length - 1 ? `<p class="muted">Next: ${CAR.RANK_ICONS[r + 1]} ${esc(CAR.RANKS[r + 1])}</p>` : ''}
+        </div></div>
+      </fieldset>
+      ${st ? `<fieldset class="frame"><legend>Standing</legend>
+        <p class="small"><b>${esc(st.security)}</b> · #${st.rank} of ${st.of} on the roster${coach ? ` · Coach ${esc(coach)}` : ''}</p>
+        ${st.top ? `<p class="note small">${esc(playerName(st.top))} ${lvTag(st.top)} is the top dog in ${esc(team.shortName)}.</p>` : `<p class="note small">It's his team now.</p>`}
+        ${st.push ? `<p class="note small">Pushing him: <b>${esc(playerName(st.push))}</b> ${lvTag(st.push)}, ${st.push.age}y</p>` : ''}
+        ${fo ? `<p class="note small">Front office: ${esc(fo.plan)}; ${esc(fo.word)}. Trade buzz ${Math.round(fo.buzz * 100)}%.</p>` : ''}
+      </fieldset>` : ''}
+      ${room.length ? `<fieldset class="frame"><legend>Locker Room</legend>${room.map(x => `<p class="note small">${{ alpha: '🎭', leader: '🫡', cancer: '☣️', mentor: '🎓' }[x.kind]} <b>${esc(playerName(x.m))}</b> ${lvTag(x.m)} · ${esc(x.text)}</p>`).join('')}</fieldset>` : ''}
+      ${traitsBox(p)}
+      ${log.length ? `<fieldset class="frame"><legend>Career</legend><div class="stack">${log.map(({ y, l }) => { const t = L.teams.find(x => x.id === l.tid); return `<p class="small"><b>${y}</b> ${esc(t?.shortName || '')} · ${l.gp} GP · ${l.ppg.toFixed(1)} / ${l.rpg.toFixed(1)} / ${l.apg.toFixed(1)} <span class="muted">${l.mpg.toFixed(0)} min</span></p>`; }).join('')}</div></fieldset>` : ''}`,
   });
 };
 
