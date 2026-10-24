@@ -49,7 +49,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.196.1';
+const APP_VERSION = '0.196.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1799,14 +1799,14 @@ screens.career = () => {
       </fieldset>
       ${st ? `<fieldset class="frame"><legend>Standing</legend>
         <p class="small"><b>${esc(st.security)}</b> · #${st.rank} of ${st.of} on the roster${coach ? ` · Coach ${esc(coach)}` : ''}</p>
-        ${st.coach ? `<p class="note small">Coach relationship <b>${CAR.coachBond(st.coach)}</b>${CAR.coachBond(st.coach) < 10 ? ' <span class="muted">(10 unlocks Edit Playbook)</span>' : ''}</p>` : ''}
+        ${st.coach ? `<p class="note small">Coach relationship <b>${CAR.coachBond(st.coach)}</b><span class="muted">/${CAR.BOND_CAP}</span>${CAR.coachBond(st.coach) < 10 ? ' <span class="muted">(10 unlocks Edit Playbook)</span>' : ''}</p>` : ''}
         ${st.top ? `<p class="note small">${esc(playerName(st.top))} ${lvTag(st.top)} is the top dog in ${esc(team.shortName)}.</p>` : `<p class="note small">It's his team now.</p>`}
         ${st.push ? `<p class="note small">Pushing him: <b>${esc(playerName(st.push))}</b> ${lvTag(st.push)}, ${st.push.age}y</p>` : ''}
         ${fo ? `<p class="note small">Front office: ${esc(fo.plan)}; ${esc(fo.word)}. Trade buzz ${Math.round(fo.buzz * 100)}%.</p>` : ''}
       </fieldset>` : ''}
       ${room.length ? `<fieldset class="frame"><legend>Locker Room</legend>${room.map(x => `<p class="note small">${{ alpha: '🎭', leader: '🫡', cancer: '☣️', mentor: '🎓' }[x.kind]} <b>${esc(playerName(x.m))}</b> ${lvTag(x.m)} · ${esc(x.text)}</p>`).join('')}</fieldset>` : ''}
-      ${(() => { const rel = CAR.relationships(L, p); if (!rel.friends.length && !rel.rivals.length) return ''; const row = x => `<p class="note small">${x.r > 0 ? '🤝' : '⚔️'} <b>${esc(playerName(x.m))}</b> <span class="muted">${esc(x.team.shortName)}</span> · ${esc(CAR.bondWord(x.r))} <span class="${x.r > 0 ? 'up' : 'down'}">${x.r > 0 ? '+' : ''}${x.r}</span>${x.mate && x.r < 0 ? ' · <span class="gold">now a teammate</span>' : ''}</p>`;
-        return `<fieldset class="frame"><legend>Relationships</legend>${rel.friends.slice(0, 6).map(row).join('')}${rel.rivals.length ? `<h4 class="ov-h">Rivals</h4>${rel.rivals.map(row).join('')}` : ''}</fieldset>`; })()}
+      ${(() => { const rel = CAR.relationships(L, p); if (!rel.friends.length && !rel.rivals.length) return ''; const row = x => `<p class="note small">${x.r > 0 ? '🤝' : '⚔️'} <b>${esc(playerName(x.m))}</b> <span class="muted">${esc(x.team.shortName)}</span> · ${esc(CAR.bondWord(x.r))} <span class="${x.r > 0 ? 'up' : 'down'}">${x.r > 0 ? '+' : ''}${x.r}</span><span class="muted">/${x.r > 0 ? '+' : '−'}${CAR.BOND_CAP}</span>${x.mate && x.r < 0 ? ' · <span class="gold">now a teammate</span>' : ''}</p>`;
+        return `<fieldset class="frame"><legend>Relationships</legend>${rel.friends.slice(0, 6).map(row).join('')}${rel.rivals.length ? `<h4 class="ov-h">Bad Blood</h4>${rel.rivals.map(row).join('')}` : ''}</fieldset>`; })()}
       ${traitsBox(p)}
       ${log.length ? `<fieldset class="frame"><legend>Career</legend><div class="stack">${log.map(({ y, l }) => { const t = L.teams.find(x => x.id === l.tid); return `<p class="small"><b>${y}</b> ${esc(t?.shortName || '')} · ${l.gp} GP · ${l.ppg.toFixed(1)} / ${l.rpg.toFixed(1)} / ${l.apg.toFixed(1)} <span class="muted">${l.mpg.toFixed(0)} min</span></p>`; }).join('')}</div></fieldset>` : ''}`,
   });

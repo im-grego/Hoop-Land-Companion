@@ -78,7 +78,10 @@ export function relationships(L, p) {
   return { friends: out.filter(x => x.r > 0).sort((a, b) => b.r - a.r), rivals: out.filter(x => x.r < 0).sort((a, b) => a.r - b.r) };
 }
 export const coachBond = c => c?.rp ?? 0;
-export const bondWord = r => (r >= 40 ? 'Brothers' : r >= 20 ? 'Close' : r >= 5 ? 'Friendly' : r > -5 ? 'Cold' : r > -15 ? 'Tension' : 'Rivals');
+// Bonds run −50 to +50 in the game.
+export const BOND_CAP = 50;
+export const clampBond = r => Math.max(-BOND_CAP, Math.min(BOND_CAP, Math.round(r)));
+export const bondWord = r => (r >= 40 ? 'Brothers' : r >= 20 ? 'Close' : r >= 5 ? 'Friendly' : r > -5 ? 'Neutral' : r > -20 ? 'Tension' : r > -40 ? 'Rivals' : 'Enemies');
 
 // How the front office sees him: worth his deal or not, part of the plan or a trade chip.
 export function frontOffice(L, p, team) {
