@@ -9428,6 +9428,21 @@ function mindsetBox(p) {
   </fieldset>`;
 }
 setConfidence(p => (isComplete() && !isCollege() ? confMult(p) : 1));
+// A change of situation (a trade, a new deal, a bigger role) lifts a player's
+// mood, a lot more when he was unhappy; a smaller role costs some. Each kind
+// counts once per player a session. Everyone in the league, not just yours.
+function moraleEvent(p, kind, n, why) {
+  if (!isComplete() || isCollege() || !p.season) return 0;
+  const k = `${p.id}:${kind}`;
+  if ((state.moraleDone ||= new Set()).has(k)) return 0;
+  state.moraleDone.add(k);
+  const m = p.season.morale ?? 60;
+  const lift = n > 0 && m < 40 ? Math.round(n * 1.6) : n;
+  p.season.morale = Math.max(0, Math.min(100, m + lift));
+  (calFlags().moraleLog ||= []).push({ pid: p.id, tid: p.tid, from: m, to: p.season.morale, why });
+  state.dirty = true;
+  return lift;
+}
 const roleRank = (team, p) => 1 + FA.signedRoster(team).filter(x => x !== p && shownLevel(x) > shownLevel(p)).length;
 // Fans follow stars: a team that lands one gains, the team that lets one go
 // loses some. Crowds in the game track the fan number (0-100).
