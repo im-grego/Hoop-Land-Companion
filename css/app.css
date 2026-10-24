@@ -1451,3 +1451,9 @@ main.panel.bare { margin-top: 10px; }
 .pc-dead { background: #b83232; color: #fff; }
 .pay-key { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 4px 0 8px; }
 .pay-key .pay-cell { min-width: 0; }
+/* Draft Class Lab */
+.lab-bars { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 8px; align-items: center; margin: 6px 0; }
+.lab-bar { height: 10px; background: var(--btn-shadow); border: 2px solid var(--btn-edge); }
+.lab-bar i { display: block; height: 100%; background: var(--gold); }
+.lab-seg { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.lab-seg .btn { flex: 1 1 auto; min-width: 0; }

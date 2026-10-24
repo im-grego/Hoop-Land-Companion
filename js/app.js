@@ -38,6 +38,7 @@ import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSend
 import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
 import { isForeign, lookFor, groupFor, makeNamer } from './names.js';
+import * as CG from './classgen.js';
 import * as GEAR from './gear.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -46,7 +47,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.177.1';
+const APP_VERSION = '0.178.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1527,7 +1528,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['main', 'editor', 'settings', 'roster', 'payroll', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -3617,6 +3618,77 @@ actions.retireNum = d => {
   toast(`🏟️ ${m.t.shortName} retire #${m.num === 100 ? '00' : m.num}`, `${playerName(p)}'s number goes to the rafters.`);
 };
 
+// Draft Class Lab: a scouting read of the class (tiers, levels, ages, positions, countries, the top of the board),
+// and a generator to build a new one from a few dials. Preview first; using it replaces the class (and resets the
+// mocks, your board and scouting, which were about the old one). The original can be put back.
+const labSettings = () => (state.lab ||= { ...CG.DEFAULTS, seed: Math.floor(Math.random() * 1e6) });
+const LAB_GRADE = g => g >= 83 ? ['Historic', 'up'] : g >= 78 ? ['Strong', 'up'] : g >= 72 ? ['Average', 'gold'] : g >= 67 ? ['Thin', 'muted'] : ['Weak', 'down'];
+function labReport(cls, title) {
+  const r = CG.classReport(cls, shownLevel), [gw, gc] = LAB_GRADE(r.grade);
+  const max = Math.max(1, ...Object.values(r.tiers));
+  const stars = p => '★'.repeat(Math.floor(p.pot / 2)) + (p.pot % 2 ? '½' : '');
+  return `<fieldset class="frame"><legend>${esc(title)}</legend>
+    <p class="note"><b class="${gc}">${gw} class</b> <span class="small muted">· ${Math.round(r.grade)} · ${r.n} prospects · avg level ${r.level.toFixed(1)} · avg potential ${(r.pot / 2).toFixed(1)}★</span></p>
+    <div class="lab-bars">${Object.entries(r.tiers).map(([k, v]) => `<span class="small">${k}</span><span class="lab-bar"><i style="width:${v / max * 100}%"></i></span><b class="small">${v}</b>`).join('')}</div>
+    <p class="note small">Guards ${r.pos[0]} · Wings ${r.pos[1]} · Bigs ${r.pos[2]} · Ages ${Object.entries(r.ages).sort((a, b) => a[0] - b[0]).map(([a, n]) => `${a}: ${n}`).join(', ')} · International ${r.intl}</p>
+    <details class="cmb-fold"><summary>Top of the class</summary><div class="stack">${r.top.map((p, i) => `<div class="drill-row ${league().draftClass?.includes(p) ? 'tap' : ''}" ${league().draftClass?.includes(p) ? `data-act="openProspect" data-id="${p.id}"` : ''}><span class="pk">${i + 1}</span><span class="grow"><b>${esc(playerName(p))}</b> <span class="gold small">${stars(p)}</span><br><span class="small muted">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · Lv ${shownLevel(p)} · ${esc(r.tier(p))}${p.ctry && p.ctry !== 'US' ? ` · ${esc(p.ctry)}` : ''}</span></span></div>`).join('')}</div></details>
+  </fieldset>`;
+}
+screens.classLab = () => {
+  const L = league(), o = labSettings();
+  if (isCollege() || !L.draftClass?.length || phaseRank(L.season) >= 3) { layout({ title: 'Draft Class Lab', body: '<p class="note">The lab works on a pro save before the draft, with a draft class in it.</p>' }); return; }
+  const seg = (label, k, opts) => `<div class="pts-row"><span class="grow small">${label}</span></div><div class="seg lab-seg">${opts.map(([v, l]) => `<button class="btn small ${o[k] === v ? 'on focus' : 'off'}" data-act="labSet" data-k="${k}" data-v="${v}">${esc(l)}</button>`).join('')}</div>`;
+  const prev = state.labPreview;
+  layout({
+    title: 'Draft Class Lab',
+    body: `${labReport(L.draftClass, state.classUndo ? 'Your Class (generated)' : 'This Class')}
+      <fieldset class="frame"><legend>Generate a Class</legend>
+        ${seg('Size', 'size', [[60, '60'], [75, '75'], [90, '90'], [100, '100']])}
+        ${seg('Strength', 'strength', Object.entries(CG.STRENGTH))}
+        ${seg('Franchise or star talents guaranteed', 'stars', [[0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4']])}
+        ${seg('Polish (how ready they are now)', 'polish', Object.entries(CG.POLISH))}
+        ${seg('Ages', 'ages', Object.entries(CG.AGES))}
+        ${seg('International players', 'intl', [[0, 'None'], [10, '10%'], [20, '20%'], [35, '35%']])}
+        ${seg('Position lean', 'lean', Object.entries(CG.LEAN))}
+        <div class="grid2" style="margin-top:8px"><button class="btn focus" data-act="labGen">🎲 Generate</button><button class="btn" data-act="labReseed">🔀 New Seed · ${o.seed}</button></div>
+      </fieldset>
+      ${prev ? labReport(prev, 'Preview') + `<button class="btn big focus" data-act="labApply">✅ Use This Class</button>` : ''}
+      ${state.classUndo ? '<button class="btn small off" data-act="labUndo" style="margin-top:8px">↺ Put the Original Class Back</button>' : ''}`,
+  });
+};
+actions.labSet = d => { const o = labSettings(); o[d.k] = /^\d+$/.test(d.v) ? +d.v : d.v; state.labPreview = null; render(); };
+actions.labReseed = () => { labSettings().seed = Math.floor(Math.random() * 1e6); state.labPreview = null; render(); };
+actions.labGen = () => { state.labPreview = CG.generateClass(state.data, labSettings()); render(); };
+function setDraftClass(cls) {
+  const L = league();
+  L.draftClass = cls;
+  // Everything read off the old class starts over: mocks, combine, scouting, workouts, your board.
+  const pre = preStore();
+  for (const k of ['mock1', 'mock2', 'scouted', 'reveals', 'workouts']) delete pre[k];
+  pre.workouts = {}; pre.reveals = {};
+  savePre();
+  saveBoardStore({ board: [], tiers: [] });
+  state.compCache = {};
+  fillTraits(L);
+  state.dirty = true;
+}
+actions.labApply = async () => {
+  if (!state.labPreview) return;
+  if (!(await confirmBox('Use this class? It replaces the draft class in the save. Mock drafts, your board and scouting start over.', 'Use It'))) return;
+  if (!state.classUndo) state.classUndo = league().draftClass;
+  setDraftClass(state.labPreview);
+  state.labPreview = null;
+  render();
+  toast('🧪 New draft class is in', `${league().draftClass.length} prospects`);
+};
+actions.labUndo = async () => {
+  if (!state.classUndo || !(await confirmBox('Put the original class back? Mocks, your board and scouting start over again.', 'Put It Back'))) return;
+  setDraftClass(state.classUndo);
+  state.classUndo = null;
+  render();
+  toast('Original class restored');
+};
+
 // Everyone who joined or left a team since last season, judged by the team on
 // each player's last stats line.
 function teamMoves(L, t) {
@@ -4936,8 +5008,9 @@ screens.draft = (args) => {
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   const preview = isStep('mock1');
+  const labBtn = !isCollege() && tab !== 'live' && phaseRank(L.season) < 3 && L.draftClass?.length ? '<button class="btn small" data-act="nav" data-to="classLab" style="margin-bottom:8px">🧪 Draft Class Lab</button>' : '';
   const tripsCard = isStep('scout') && tab !== 'live' ? `<fieldset class="frame"><legend>🔎 Scouting Trips</legend><p class="note small"><b>${tripsLeft()} of ${scoutTrips()}</b> left. Open a prospect and send a scout: his athletic ceilings come out early, his potential reads truer, and you get a preview of his combine (length, testing, shooting, medical).</p></fieldset>` : '';
-  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: (tab === 'live' || isStep('draft') ? '' : outlookCard()) + (preview && !isCollege() ? looksCard() : '') + tripsCard + tabs + body.html, action: preview ? { act: 'preFinish', label: 'Continue to Scouting', k: 'mock1' } : body.action });
+  layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: labBtn + (tab === 'live' || isStep('draft') ? '' : outlookCard()) + (preview && !isCollege() ? looksCard() : '') + tripsCard + tabs + body.html, action: preview ? { act: 'preFinish', label: 'Continue to Scouting', k: 'mock1' } : body.action });
   if (tab === 'live') centerBoard();
   if (tab === 'live' && state.pickReveal?.length) { const picks = state.pickReveal; state.pickReveal = null; revealPicks(picks); }
 };
@@ -11454,6 +11527,7 @@ screens.editor = (args = {}) => {
     const missing = edPlayers(L).filter(p => !p.traits || !Object.values(p.traits).some(v => v > 0)).length;
     body = `<fieldset class="frame"><legend>Traits</legend><p class="note small">${missing} players have no traits set. Open a player from a team's roster to edit his, or fill the empty ones with the app's judgments (real careers for known players, generated for the rest).</p>
       <button class="btn" data-act="edFillTraits">Fill empty traits</button></fieldset>
+      ${!isCollege() && league().draftClass?.length && phaseRank(league().season) < 3 ? '<fieldset class="frame"><legend>Draft Class</legend><p class="note small">Read the class the game made, or build your own: size, strength, stars, polish, ages, international players and positions.</p><button class="btn" data-act="nav" data-to="classLab">🧪 Draft Class Lab</button></fieldset>' : ''}
       <fieldset class="frame"><legend>Export</legend><p class="note small">Writes the league file with your edits. Start a new save from it in the game.</p><button class="btn focus" data-act="${state.leagueFile ? 'download' : 'downloadLeague'}">💾 Download League File</button></fieldset>
       ${state.leagueFile ? '' : '<fieldset class="frame"><legend>Stats</legend><button class="btn" data-act="openLeaders" data-m="ratings">🏀 League Leaders</button></fieldset>'}`;
   }
