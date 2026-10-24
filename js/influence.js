@@ -53,12 +53,13 @@ export function shiftBudget(p, coach, base) {
 }
 
 // One player's meeting. Returns { tend: [[key, change]], traits: [[key, change]], moves }.
-export function runMeeting(p, coach, { base = 2, lim = 3, rng = Math.random } = {}) {
+// tend: false leaves his play style alone (your players' styles move in one-on-one talks instead).
+export function runMeeting(p, coach, { base = 2, lim = 3, rng = Math.random, tend = true } = {}) {
   const out = { tend: [], traits: [], moves: 0 };
   const rec = receptivity(p, coach), lead = shown(coach, 'leadership'), motiv = shown(coach, 'motivation');
   // Play style: step toward what his ratings support, leaned toward the coach's scheme.
   const t = p.tendencies;
-  if (t && p.attributes) {
+  if (tend && t && p.attributes) {
     const bias = schemeBias(coach), pull = 0.3 + lead / 20, orig = { ...t };
     const target = k => clamp(Math.round((((p.attributes[TEND_ATTR[k]]?.[0] ?? 10) - 10) * 0.5) + (bias[k] || 0) * pull), -5, 5);
     const keys = Object.keys(TEND_ATTR).filter(k => t[k] !== undefined);

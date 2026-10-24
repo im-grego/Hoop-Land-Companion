@@ -33,7 +33,7 @@ import { runMeeting, traitName } from './influence.js';
 import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
 import { headCoachOf, schemeFit, coachWillingness, coachDecision, pressureOn, marketSalary, coachReaction, playerSwing, fanSwing, playerCoachFit, isStarPlayer } from './coachmarket.js';
 import { PLAYS, MAX_PLAY, playName, playType, playsFor, PRESETS, presetPlays } from './plays.js';
-import { TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillTraitsList, fillHallOfFame, isReal } from './traits.js';
+import { coachVal, TRAITS, TRAIT_KEYS, traitWord, traitLabel, traitTag, personality, traitsSet, tr, fillTraits, fillTraitsList, fillHallOfFame, isReal } from './traits.js';
 import { detectMode, seasonReview, collegePhaseName, draftDepartures, seniorSendoff, portalBoard, showcase, recruitBoard, signingClasses, rosterNeedsCollege, preseason, rosterLock, practicePlan, classOf } from './college.js';
 import * as RC from './recruiting.js';
 import { leagueLook } from './recruits.js';
@@ -43,6 +43,7 @@ import { egoRead, egoVal, isAlpha, isHumble, EGO_KEY } from './ego.js';
 import * as GEAR from './gear.js';
 import * as CAR from './career.js';
 import * as CL from './careerlife.js';
+import * as TK from './talks.js';
 import { setGameClock, secsOf } from './gameclock.js';
 import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
@@ -51,7 +52,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.200.0';
+const APP_VERSION = '0.201.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2490,8 +2491,9 @@ function applyBump(seed) {
   let tendMoved = 0;
   if (state.params.autoTendencies !== false) {
     const trng = mulberry32((seed ^ 0x7e4d) >>> 0);
-    for (const p of vetPlayers()) if (autoTendencies(p, trng)) tendMoved++;
+    for (const p of vetPlayers()) if (!state.userTeams.has(p.tid) && autoTendencies(p, trng)) tendMoved++;   // your players' styles move in talks
   }
+  reapplyTalks();
   state.tendMoved = tendMoved;
   let players = 0, points = 0, mine = 0;
   for (const [pid, n] of awards) {
@@ -3534,7 +3536,7 @@ function simMeetings() {
     for (const p of t.roster) {
       if (!p.tendencies && !p.traits) continue;
       if (user && p.tendencies && !ts.orig[p.id]) ts.orig[p.id] = { ...p.tendencies };
-      const r = runMeeting(p, c, { base: CO.nudgesFor(p, cs, f), lim: CO.maxShift(cs, f) + 1 + (dev >= 8 ? 1 : 0), rng });
+      const r = runMeeting(p, c, { base: CO.nudgesFor(p, cs, f), lim: CO.maxShift(cs, f) + 1 + (dev >= 8 ? 1 : 0), rng, tend: !user });
       if (!r.moves) continue;
       row.n++; row.moves += r.moves;
       for (const [, d] of r.tend) { if (d > 0) row.tUp++; else row.tDn++; }
@@ -9543,13 +9545,63 @@ function meetingResultsBox() {
         ...x.traits.map(([k, d]) => `<span class="${(GOOD_TRAIT_DOWN.has(k) ? -d : d) > 0 ? 'up' : 'down'}">${esc(traitName(k))} ${sgn(d)}</span>`)].join(' · ')}</p></div>`).join('')}
   </div></fieldset>`;
 }
+// One-on-one talks (talks.js): a budget per team, one talk a player, undo until the meeting ends.
+const talkStore = () => (calFlags().talks ||= {});
+function talkUsed(team) { const ts = talkStore(); return team.roster.filter(p => ts[p.id]).length; }
+function talksBox(done) {
+  const L = league(), ts = talkStore(), lim = CO.maxShift(tierNow('scheme'), fxNow()) + 1;
+  const teams = L.teams.filter(isUserTeam);
+  if (!teams.length) return '';
+  return teams.map(t => {
+    const budget = TK.talkBudget(headCoachOf(t), tierNow('scheme')), used = talkUsed(t), left = budget - used;
+    const rows = t.roster.filter(p => p.tendencies && p.status !== 7).map(p => ({ p, pts: TK.talkPoints(p) })).filter(x => x.pts.length || ts[x.p.id])
+      .sort((a, b) => !!ts[b.p.id] - !!ts[a.p.id] || (b.pts[0]?.score || 0) - (a.pts[0]?.score || 0)).slice(0, 12);
+    const c = headCoachOf(t), m = (c?.attributes?.motivation?.[0] ?? 0) / 2;
+    return `<fieldset class="frame"><legend>🗣️ Player Meetings${teams.length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>
+      <p class="note small"><b>${Math.max(0, left)}</b> of ${budget} talks left${m >= 6 ? ` · ${esc(c.ln)} is a motivator (+${m >= 8 ? 2 : 1})` : ''}${tierNow('scheme') ? ` · coaching tree +${tierNow('scheme')}` : ''}. Coachable players take more from a talk; a habit moves at most ${lim} from where the offseason started.</p>
+      <div class="stack">${rows.map(({ p, pts }) => {
+        const did = ts[p.id], coach = coachVal(p);
+        const head = `<p class="note small" style="margin:0"><b>${esc(playerName(p))}</b> ${lvTag(p)} <span class="muted">${p.age}y${coach >= 16 ? ' · 📚 Coachable' : coach <= 4 ? ' · 🙉 Uncoachable' : ''}</span></p>`;
+        if (did) { const T = TK.TOPICS[did.topic], msg = T[did.dir]; return `<div class="pq">${head}<p class="note small">${msg.icon} "${esc(msg.says)}" ${did.changes.length ? did.changes.map(([k, a, b]) => `<span class="${b > a ? 'up' : 'down'}">${esc(TEND_LABELS[k] || k)} ${a > 0 ? '+' : ''}${a}→${b > 0 ? '+' : ''}${b}</span>`).join(' · ') : '<span class="down">He tuned it out.</span>'}</p>${done ? '' : `<button class="btn tiny off" data-act="talkUndo" data-id="${p.id}">Take it back</button>`}</div>`; }
+        if (done) return '';
+        return `<div class="pq">${head}${pts.map(x => { const T = TK.TOPICS[x.topic], w = x.why; return `<p class="note small muted" style="margin:4px 0 2px">${esc(T.label)}: ${esc(ATTR_NAMES[w.a] || w.a)} ${w.r} with a habit of ${w.t > 0 ? '+' : ''}${w.t}</p>
+          <div class="grid2">${['up', 'down'].map(dir => `<button class="btn small ${dir === x.fit ? 'focus' : 'off'}" data-act="talkGive" data-id="${p.id}" data-t="${x.topic}" data-d="${dir}" ${left <= 0 ? 'disabled' : ''}>${T[dir].icon} ${esc(T[dir].label)}${dir === x.fit ? ' ✓' : ''}</button>`).join('')}</div>`; }).join('')}</div>`;
+      }).join('') || '<p class="note small muted">Everyone\'s habits fit their game. Nothing to fix.</p>'}</div></fieldset>`;
+  }).join('');
+}
+actions.talkGive = d => {
+  const L = league(), ts = talkStore();
+  const t = L.teams.find(x => isUserTeam(x) && x.roster.some(p => p.id === +d.id)), p = t?.roster.find(x => x.id === +d.id);
+  if (!p || ts[p.id] || calFlags().meeting || talkUsed(t) >= TK.talkBudget(headCoachOf(t), tierNow('scheme'))) return;
+  const st = tendStore();
+  if (!st.orig[p.id]) st.orig[p.id] = { ...p.tendencies };
+  const changes = TK.haveTalk(p, d.t, d.d, { orig: st.orig[p.id], lim: CO.maxShift(tierNow('scheme'), fxNow()) + 1, rng: mulberry32((saveSalt() ^ Math.imul(p.id + 41, 2654435761)) >>> 0) });
+  ts[p.id] = { topic: d.t, dir: d.d, changes };
+  saveTend(); state.dirty = true; render();
+};
+actions.talkUndo = d => {
+  const ts = talkStore(), x = ts[+d.id];
+  if (!x || calFlags().meeting) return;
+  const p = league().teams.flatMap(t => t.roster).find(q => q.id === +d.id);
+  if (p?.tendencies) for (const [k, a, b] of [...x.changes].reverse()) if (p.tendencies[k] === b) p.tendencies[k] = a;
+  delete ts[+d.id];
+  state.dirty = true; render();
+};
+// A bump re-run puts tendencies back where camp started; the talks you've had still stand.
+function reapplyTalks() {
+  const ts = calFlags().talks || {}, L = league();
+  for (const [pid, x] of Object.entries(ts)) {
+    const p = L.teams.flatMap(t => t.roster).find(q => q.id === +pid);
+    if (p?.tendencies) for (const [k, a, b] of x.changes) if (p.tendencies[k] === a) p.tendencies[k] = b;
+  }
+}
 screens.meeting = () => {
   const done = !!calFlags().meeting;
   const c = myCoach();
   layout({
     title: 'Team Meeting',
-    body: `${done ? meetingResultsBox() : `<p class="note small">${c ? `${esc(`${c.fn} ${c.ln}`)} gathers the group.` : 'Your coach gathers the group.'} Set the staff and the system first. When the meeting ends, every player shifts a little: how he plays follows his ratings and the coach's scheme, and his makeup follows the coach (leadership for winning, locker room, playoff and loyalty; motivation for motor, durability and money). A good development coach, a coachable player and young age all give more room to move.</p>`}
-      <p class="note small">Scheme tier ${tierNow('scheme')}: every player has ${1 + tierNow('scheme')} influence, one more if he's 23 or younger, one more with a high motor, one fewer at 31+. A tendency moves up to ${CO.maxShift(tierNow('scheme'), fxNow())} from where the offseason started.</p>
+    body: `${done ? meetingResultsBox() : `<p class="note small">Sit your players down one at a time: each talk is one message about his game, chosen from where his ratings and his habits disagree. When the meeting ends, the group's makeup shifts with the coach (leadership for winning, locker room, ego and loyalty; motivation for motor, durability and money).</p>`}
+      ${talksBox(done)}
       ${proposalBox()}
       ${coachCard()}`,
     action: done ? null : { act: 'meetingEnd', label: 'End the Meeting' },
@@ -9590,7 +9642,7 @@ actions.meetingEnd = () => {
     for (const p of t.roster) {
       if (!p.tendencies && !p.traits) continue;
       if (p.tendencies && !ts.orig[p.id]) ts.orig[p.id] = { ...p.tendencies };
-      const r = runMeeting(p, c, { base: CO.nudgesFor(p, sch, fx), lim: CO.maxShift(sch, fx) + 1 + (dev >= 8 ? 1 : 0), rng });
+      const r = runMeeting(p, c, { base: CO.nudgesFor(p, sch, fx), lim: CO.maxShift(sch, fx) + 1 + (dev >= 8 ? 1 : 0), rng, tend: false });   // play styles moved in the talks
       if (r.moves) list.push({ pid: p.id, tid: t.id, ...r });
     }
   }
