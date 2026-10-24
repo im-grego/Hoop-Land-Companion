@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.189.0';
+const APP_VERSION = '0.190.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ setReadiness(p => (state.params.readiness === 'age' ? null : readinessOf(p).back
 function saveParams() {
   try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 12 })); } catch { /* ignore */ }
 }
-function teamsKey() { return `hlc:teams:${league().meta?.saveName || state.fileName}:${state.leagueIdx}`; }
+function teamsKey() { return `hlc:teams:${saveTag()}:${state.leagueIdx}`; }
 function saveUserTeams() {
   try { localStorage.setItem(teamsKey(), JSON.stringify([...state.userTeams])); } catch { /* ignore */ }
 }
@@ -158,7 +158,10 @@ const league = () => state.data.seasonLeagues[state.leagueIdx];
 
 // Pre-draft ratings and the summer-league-done flag are remembered per
 // league + season so they survive switching save files.
-const seasonKey = (L = league()) => `${L.shortName}:${L.season.currentYear}`;
+// Which save a stored thing belongs to. Every save made from the same league carries the same save name (the league
+// template's), so your team is part of it: two franchises in one league never share offseason state.
+const saveTag = (L = league()) => `${L.meta?.saveName || ''}#${L.season.teamId ?? ''}`;
+const seasonKey = (L = league()) => `${L.shortName}:${saveTag(L)}:${L.season.currentYear}`;
 function loadOriginals(L = league()) {
   try { return JSON.parse(localStorage.getItem(`hlc:orig:${seasonKey(L)}`)) || {}; } catch { return {}; }
 }
@@ -494,7 +497,7 @@ function matchingPack(L) {
 async function packPrompt(pack) {
   for (let i = 0; i < 60 && document.querySelector('.overlay'); i++) await new Promise(r => setTimeout(r, 500));   // after the rules question
   const L = league();
-  const key = `hlc:packdone:${pack.league}:${L.meta?.saveName || ''}:${L.season.currentYear}`;
+  const key = `hlc:packdone:${pack.league}:${saveTag(L)}:${L.season.currentYear}`;
   try { if (localStorage.getItem(key)) return; } catch {}
   const picks = packPickDiffs(pack, L), teams = packTeamDiffs(pack, L);
   if (!picks.length && !teams.length) return;
@@ -510,15 +513,16 @@ async function packPrompt(pack) {
 // A traits file (the backup): into the open save if it's that league's, otherwise kept for that save's next load.
 async function loadTraitsFile(data) {
   const L0 = state.data?.seasonLeagues[0];
-  if (L0 && !isCollege() && data.league === L0.shortName) {
+  if (L0 && !isCollege() && sameSave(data)) {
     if (!(await confirmBox(`Load the traits from <b>${esc(data.save || 'this file')}</b> (saved ${esc(new Date(data.at).toLocaleString())}) into this save? They replace the traits here.`, 'Load Traits'))) return;
     applyTraitsBackup(data);
     render();
     toast('Traits loaded', `${Object.keys(data.traits).length} players.`);
   } else {
     // No matching save open: keep it for that save, used when it loads.
-    try { localStorage.setItem(`hlc:traits:${data.league}:${data.save}`, JSON.stringify({ v: 2, at: data.at, m: data.traits })); for (const [k, v] of Object.entries(data.drift || {})) localStorage.setItem(`hlc:drift:${k}`, JSON.stringify(v)); } catch { /* ignore */ }
-    toast('Traits file kept', `They load with ${data.save || 'that save'}.`);
+    const id = `${data.league}:${data.save}#${data.team}`;
+    try { localStorage.setItem(`hlc:traits:${id}`, JSON.stringify({ v: 2, at: data.at, m: data.traits })); for (const [yr, v] of Object.entries(data.drift || {})) localStorage.setItem(`hlc:drift:${id}:${yr}`, JSON.stringify(v)); } catch { /* ignore */ }
+    toast('Traits file kept', `They load with that save (${data.save}, team ${data.team}).`);
   }
 }
 async function loadFile(file) {
@@ -1083,7 +1087,7 @@ const COLLEGE_CAL = [
 const isCollege = () => state.mode?.kind === 'college';
 // College steps are remembered per save and season, since the offseason
 // spans several game phases (and reloads) for the showcase and recruiting.
-const collegeCalKey = () => `hlc:ccal:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+const collegeCalKey = () => `hlc:ccal:${league().shortName}:${saveTag()}:${league().season.currentYear}`;
 // Progress (college and pro) is remembered per save and year, but only for the file
 // it started from (reloaded) or a file the app exported from it. Any other
 // save of that year (say, the original simmed again to the same spot)
@@ -1132,7 +1136,7 @@ function depthPrompt() {
     render();
   });
 }
-const fpKey = () => `hlc:cfp:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+const fpKey = () => `hlc:cfp:${league().shortName}:${saveTag()}:${league().season.currentYear}`;
 // Forget this season's stored progress (mocks, scouting, options, extensions, ...).
 function forgetProgress() {
   const L = league();
@@ -1206,7 +1210,7 @@ function rememberExport() {
 }
 // Season file check: what went out on export is remembered (per league), and the next file loaded is compared with it,
 // so anything the game changed on its own (a release, a contract, a number, a pick that disappeared) gets flagged.
-const manifestKey = L => `hlc:manifest:${L.shortName}`;
+const manifestKey = L => `hlc:manifest:${L.shortName}:${saveTag(L)}`;
 function saveManifest(L) {
   const players = {};
   for (const t of L.teams) for (const p of t.roster) players[p.id] = [t.id, p.contract?.sal || 0, p.contract?.yrs || 0, p.contract?.ext?.yrs || 0, p.contract?.ext?.sal || 0, p.num, p.status];
@@ -1468,7 +1472,7 @@ actions.calPick = d => { const st = activeCal().find(x => x.key === d.k); if (st
 // A franchise save at the start of a season (no games played yet): set it up as the real NBA before the first
 // season. Pick moves and the forfeited firsts go into the file; protections, swaps and dead cap are kept on this
 // device under the save's name, so the offseason saves that come back from the game find them.
-const setupKey = (L = league()) => `hlc:setup:${L.shortName}:${L.meta?.saveName || ''}`;
+const setupKey = (L = league()) => `hlc:setup:${L.shortName}:${saveTag(L)}`;
 function setupFlags() { try { return JSON.parse(localStorage.getItem(setupKey())) || {}; } catch { return {}; } }
 // Who this save is, so it can be recognized later even under another name or slot: the user team plus the two best
 // players of every team (id and last name). Players retire over the years, so a match only needs most of them.
@@ -2055,7 +2059,7 @@ function runStrength() {
 // ---------------------------------------------------------------------------
 // Coaching tree and tendencies (Training Camp / Summer Development)
 
-const coachKey = () => `hlc:coach:${league().shortName}:${league().meta?.saveName || state.fileName}`;
+const coachKey = () => `hlc:coach:${league().shortName}:${saveTag()}`;
 function treeStore() {
   const c = (state.coachTree ||= {});
   const key = coachKey();
@@ -2208,7 +2212,7 @@ actions.buyNode = d => {
 // Tendencies: you have some influence over each of your players this offseason
 // (Scheme tier, youth, motor). Changes go straight into the save; the
 // offseason's starting values are kept to reset to.
-const tendKey = () => `hlc:tend:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
+const tendKey = () => `hlc:tend:${saveTag()}:${seasonKey()}`;
 function tendStore() {
   const c = (state.tendS ||= {});
   const key = tendKey();
@@ -7028,10 +7032,10 @@ const pickLabel = (pk, L = league()) => {
 
 // Pick protections, per save, until the pick's draft settles them:
 // [{ otid, yr, top, from }] (from = the team it goes back to).
-const protKey = () => `hlc:prot:${league().shortName}:${league().meta?.saveName || ''}`;
+const protKey = () => `hlc:prot:${league().shortName}:${saveTag()}`;
 function protLedger() { try { return JSON.parse(localStorage.getItem(protKey())) || []; } catch { return []; } }
 function saveProt(v) { try { localStorage.setItem(protKey(), JSON.stringify(v)); } catch { /* ignore */ } }
-const swapKey = () => `hlc:swap:${league().shortName}:${league().meta?.saveName || ''}`;
+const swapKey = () => `hlc:swap:${league().shortName}:${saveTag()}`;
 function swapLedger() { try { return JSON.parse(localStorage.getItem(swapKey())) || []; } catch { return []; } }
 function saveSwaps(v) { try { localStorage.setItem(swapKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 const swapOf = pk => swapLedger().find(e => !e.done && e.yr === pk.yr && e.rd === pk.rd && (e.x === pk.otid || e.y === pk.otid));
@@ -7043,7 +7047,7 @@ const protTop = t => (t >= TR.LOTTERY_PROT ? lotN() : t || 0);
 const protName = (t, button = false) => (t >= TR.LOTTERY_PROT ? (button ? 'Lottery' : 'lottery') : t ? (button ? `Top ${t}` : `top-${t}`) : 'None');
 // This offseason's ledgers: signings that can't be traded yet
 // ({ [pid]: { why, tid } }) and players each team traded away ({ [tid]: [pid] }).
-const offKey = name => `hlc:${name}:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
+const offKey = name => `hlc:${name}:${saveTag()}:${seasonKey()}`;
 function offGet(name) { try { return JSON.parse(localStorage.getItem(offKey(name))) || {}; } catch { return {}; } }
 function offSet(name, v) { try { localStorage.setItem(offKey(name), JSON.stringify(v)); } catch { /* ignore */ } }
 // Every player trade this offseason, in order: { pid, from, to } by team id.
@@ -7980,7 +7984,7 @@ const FA_DAY_RULES = {
   2: 'The mid-level exceptions open: the room MLE under the cap, the non-taxpayer MLE over it (it hard-caps you at the 1st apron), the taxpayer MLE between the aprons.',
   3: 'Players\' expectations have shifted: they\'ll take less now.',
 };
-const mleKey = () => `hlc:mle:${league().meta?.saveName || state.fileName}:${seasonKey()}`;
+const mleKey = () => `hlc:mle:${saveTag()}:${seasonKey()}`;
 function loadMle(k = '') { try { return new Set(JSON.parse(localStorage.getItem(mleKey() + k)) || []); } catch { return new Set(); } }
 function saveMle(set, k = '') { try { localStorage.setItem(mleKey() + k, JSON.stringify([...set])); } catch { /* ignore */ } }
 // Teams that used the non-taxpayer MLE are hard-capped at the 1st apron.
@@ -8660,7 +8664,7 @@ function maxAvgFor(L, p, own, yrs, load, ahead = 0) {
   const first = loadSchedule(1000, yrs, load)[0] / 1000;
   return Math.floor(FA.maxSalary(L, p, own, ahead) / first);
 }
-const loadKey = () => `hlc:load:${league().shortName}:${league().meta?.saveName || ''}`;
+const loadKey = () => `hlc:load:${league().shortName}:${saveTag()}`;
 const loadStore = () => { try { return JSON.parse(localStorage.getItem(loadKey())) || []; } catch { return []; } };
 const saveLoadStore = v => { try { localStorage.setItem(loadKey(), JSON.stringify(v)); } catch { /* ignore */ } };
 // After each season, a loaded deal's salary moves to the next year's number.
@@ -8698,8 +8702,8 @@ const INCENTIVES = {
   prod: { label: 'Scoring', text: null },
   games: { label: 'Durability', text: 'plays 65+ games' },
 };
-const incStore = () => { try { return JSON.parse(localStorage.getItem(`hlc:inc:${league().shortName}:${league().meta?.saveName || ''}`)) || []; } catch { return []; } };
-const saveIncStore = v => { try { localStorage.setItem(`hlc:inc:${league().shortName}:${league().meta?.saveName || ''}`, JSON.stringify(v)); } catch { /* ignore */ } };
+const incStore = () => { try { return JSON.parse(localStorage.getItem(`hlc:inc:${league().shortName}:${saveTag()}`)) || []; } catch { return []; } };
+const saveIncStore = v => { try { localStorage.setItem(`hlc:inc:${league().shortName}:${saveTag()}`, JSON.stringify(v)); } catch { /* ignore */ } };
 // Last year's scoring sets the bar for a points incentive.
 const incTarget = (p, kind) => {
   if (kind !== 'prod') return 0;
@@ -9075,7 +9079,7 @@ function surveyNow() {
   if (!c[key]) c[key] = runSurvey(league(), state.leagueIdx, saveSalt());
   return c[key];
 }
-const surveyHistKey = () => `hlc:survey:${league().shortName}:${league().meta?.saveName || ''}`;
+const surveyHistKey = () => `hlc:survey:${league().shortName}:${saveTag()}`;
 function surveyHist() { try { return JSON.parse(localStorage.getItem(surveyHistKey())) || {}; } catch { return {}; } }
 function saveSurveyHist(S) {
   const h = surveyHist();
@@ -9226,7 +9230,7 @@ function qoAmount(p) {
   return Math.max(FA.FA_DEFAULTS.minSalary, Math.round(last * 1.35));
 }
 // Every salary the app has seen, by player (kept across seasons).
-const salaryKey = () => `hlc:sal:${league().shortName}:${league().meta?.saveName || ''}`;
+const salaryKey = () => `hlc:sal:${league().shortName}:${saveTag()}`;
 function salaryBook() {
   const c = (state.salBook ||= {});
   const k = salaryKey();
@@ -9538,7 +9542,10 @@ function moraleBox(p) {
 // ---- Traits that last
 // The game drops traits from its saves, so the app keeps each save's current traits on this device (the pro league:
 // rosters, free agents, prospects). Edits, Ego and the changes events make all come back on the next load.
-const traitKey = (L = league()) => `hlc:traits:${L.shortName}:${L.meta?.saveName || state.fileName || ''}`;
+// Which save: every save from the same league carries the same save name (the league template's), so your team tells
+// two franchises apart.
+const saveId = (L = state.data.seasonLeagues[0]) => `${L.shortName}:${saveTag(L)}`;
+const traitKey = (L = state.data.seasonLeagues[0]) => `hlc:traits:${saveId(L)}`;
 const traitPool = L => [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || [])];
 function saveTraitStore(L = state.data?.seasonLeagues[0], at = Date.now()) {
   if (!L || isCollege()) return;
@@ -9561,23 +9568,24 @@ function seedEgo(L) { for (const p of traitPool(L)) if (p.traits && traitsSet(p)
 // A save's traits as one small file: every player's current values plus this offseason's changes. With Dropbox
 // connected it's written next to your saves on every export and read back when that save loads (the newer copy wins);
 // it can also be downloaded and loaded by hand like any file.
-const traitsFileName = (L = state.data.seasonLeagues[0]) => `${String(L.meta?.saveName || state.fileName || L.shortName).replace(/\.[a-z0-9]{2,4}$/i, '').replace(/[\\/:*?"<>|]/g, '_')} TRAITS.json`;
+const traitsFileName = (L = state.data.seasonLeagues[0]) => `${String(L.meta?.saveName || L.shortName).replace(/[\\/:*?"<>|]/g, '_')} ${L.teams.find(t => t.id === L.season.teamId)?.shortName || ''} TRAITS.json`.replace(/  +/g, ' ');
 const traitsDbxPath = () => dropboxPath(`Traits/${traitsFileName()}`);
-const isTraitsBackup = d => !!d && d.hlcTraits >= 1 && !!d.traits && !d.seasonLeagues;
+const isTraitsBackup = d => !!d && d.hlcTraits >= 2 && !!d.traits && !d.seasonLeagues;
+const sameSave = (b, L = state.data?.seasonLeagues[0]) => !!L && b.league === L.shortName && b.save === (L.meta?.saveName || '') && b.team === L.season.teamId;
 function traitsBackup(L = state.data.seasonLeagues[0]) {
   const at = Date.now();
   saveTraitStore(L, at);
   let m = {}; try { m = JSON.parse(localStorage.getItem(traitKey(L)))?.m || {}; } catch { m = {}; }
-  return { hlcTraits: 1, league: L.shortName, save: L.meta?.saveName || state.fileName || '', year: L.season.currentYear, at, traits: m, drift: { [seasonKey(L)]: driftStore() } };
+  return { hlcTraits: 2, league: L.shortName, save: L.meta?.saveName || '', team: L.season.teamId, year: L.season.currentYear, at, traits: m, drift: { [L.season.currentYear]: driftStore() } };
 }
 // Into the loaded save: the values, and this offseason's change log to match (or a clean one, if the backup is from
 // before this offseason, so last season's changes are worked out fresh).
 function applyTraitsBackup(b) {
   const L = state.data.seasonLeagues[0];
   for (const p of traitPool(L)) { const a = b.traits[p.id]; if (a && p.traits) TRAIT_KEYS.forEach((k, i) => { if (a[i] > 0) p.traits[k] = a[i]; }); }
-  const cur = b.drift?.[seasonKey(L)];
+  const cur = b.drift?.[L.season.currentYear];
   const c = calFlags();
-  c.drift = cur || {}; c.driftKey = seasonKey(L); c.driftSeason = cur ? seasonKey(L) : undefined;
+  c.drift = cur || {}; c.driftKey = driftKey(); c.driftSeason = cur ? seasonKey(L) : undefined;
   saveDrift();
   saveTraitStore(L, b.at);
   state.traitsAt = b.at;
@@ -9594,7 +9602,7 @@ async function pullTraits() {
     const text = await dropboxGet(traitsDbxPath());
     if (!text) return;
     const b = JSON.parse(text);
-    if (!isTraitsBackup(b) || b.league !== state.data.seasonLeagues[0].shortName || b.at <= (state.traitsAt || 0)) return;
+    if (!isTraitsBackup(b) || !sameSave(b) || b.at <= (state.traitsAt || 0)) return;
     applyTraitsBackup(b);
     render();
     toast('Traits synced from Dropbox', `${Object.keys(b.traits).length} players, saved ${new Date(b.at).toLocaleString()}.`);
@@ -9620,10 +9628,10 @@ function traitsBackupBox() {
 // Events move a trait a point or two: a big injury costs durability, a big deal swells ego, years as the face of a
 // team make a leader. Each change is kept by league, year and source, so redoing a step replaces its change instead
 // of stacking it; it rides along with undo checkpoints. { pid: { src: { k, d, why } } }
-const driftKey = () => `hlc:drift:${seasonKey()}`;
+const driftKey = () => `hlc:drift:${saveId()}:${league().season.currentYear}`;
 function driftStore() {
   const c = calFlags();
-  if (!c.drift || c.driftKey !== seasonKey()) { try { c.drift = JSON.parse(localStorage.getItem(driftKey())) || {}; } catch { c.drift = {}; } c.driftKey = seasonKey(); }
+  if (!c.drift || c.driftKey !== driftKey()) { try { c.drift = JSON.parse(localStorage.getItem(driftKey())) || {}; } catch { c.drift = {}; } c.driftKey = driftKey(); }
   return c.drift;
 }
 const saveDrift = () => { try { localStorage.setItem(driftKey(), JSON.stringify(driftStore())); } catch { /* ignore */ } };
@@ -9668,7 +9676,8 @@ function seasonDrift() {
       for (let y = ly; ; y--) { const r = (p.stats || []).find(x => x.league === 0 && x.yr === y)?.season; if (!r?.length || r[r.length - 1].tid !== t.id) break; run++; }
       const l = seasonLine(p, 0, ly), prev = seasonLine(p, 0, ly - 1);
       if (p === best && run >= 3) drift(p, 'season:room', 'lockerRoom', 1, `the face of the team for ${run} years`, false);
-      else if (l && prev && prev.gp >= 20 && prev.mpg >= 20 && prev.mpg - l.mpg >= 8) drift(p, 'season:room', 'lockerRoom', -1, 'losing his role', false);
+      // Losing a real role sours a player with some ego; a humble or modest one takes it in stride.
+      else if (l && prev && prev.gp >= 20 && prev.mpg >= 20 && prev.mpg - l.mpg >= 8 && egoVal(p) >= 10) drift(p, 'season:room', 'lockerRoom', -1, 'losing his role', false);
       const up = wonLast(p, 2, ly) ? [2, 'won MVP'] : wonLast(p, 13, ly) ? [1, 'made All-NBA'] : wonLast(p, 23, ly) ? [1, 'made the All-Star team'] : null;
       if (up) drift(p, 'season:ego+', EGO_KEY, up[0], up[1], false);
       // A big ego around leaders, or under a coach who commands the room, comes down a notch.
@@ -9749,7 +9758,7 @@ function roleMorale(L) {
 // Broken promises: a player you promised something and didn't deliver loses
 // a lot of morale and refuses to meet with your team (no extension, no
 // offers) through the next offseason. { pid, tid, until } per save.
-const grudgeKey = () => `hlc:grudge:${league().shortName}:${league().meta?.saveName || ''}`;
+const grudgeKey = () => `hlc:grudge:${league().shortName}:${saveTag()}`;
 function loadGrudges() { try { return JSON.parse(localStorage.getItem(grudgeKey())) || []; } catch { return []; } }
 function syncGrudges() {
   if (!state.data) return;
@@ -9784,7 +9793,7 @@ function settlePromises() {
     if (!kept) breakPromise(L, p, team, pr, `You promised ${PROMISE_TEXT[pr.kind]} and didn't deliver.`, true);
   }
 }
-const promisesKey = () => `hlc:promises:${league().shortName}:${league().meta?.saveName || ''}`;
+const promisesKey = () => `hlc:promises:${league().shortName}:${saveTag()}`;
 function loadPromises() { try { return JSON.parse(localStorage.getItem(promisesKey())) || []; } catch { return []; } }
 function savePromises(v) { try { localStorage.setItem(promisesKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 
@@ -10210,7 +10219,7 @@ function saveExtStore() { try { localStorage.setItem(`hlc:ext:${seasonKey()}`, J
 // Dead money: a cut player with years left is still paid, and it counts
 // against the cap for each of those seasons (in the app; the game itself
 // doesn't track it). [{ pid, name, tid, sal, yrs, yr }] per save.
-const deadKey = () => `hlc:dead:${league().shortName}:${league().meta?.saveName || ''}`;
+const deadKey = () => `hlc:dead:${league().shortName}:${saveTag()}`;
 function deadLedger() { try { return JSON.parse(localStorage.getItem(deadKey())) || []; } catch { return []; } }
 function saveDead(v) { try { localStorage.setItem(deadKey(), JSON.stringify(v)); } catch { /* ignore */ } syncDead(); }
 const deadFor = (tid, yr = league().season.currentYear) => deadLedger().filter(x => x.tid === tid && yr >= x.yr && yr < x.yr + x.yrs).reduce((a, x) => a + x.sal, 0);
@@ -10238,7 +10247,7 @@ function ownerLine(t) {
 // 2nd apron, 3 of 5 seasons: the team's furthest-out first moves to the
 // end of the 1st round when that draft comes. History is by season start,
 // recorded at final cuts: { hist: { [yr]: [tids] }, pen: [{ otid, yr }] }.
-const apronKey = () => `hlc:apron2:${league().shortName}:${league().meta?.saveName || ''}`;
+const apronKey = () => `hlc:apron2:${league().shortName}:${saveTag()}`;
 function apronStore() { try { return JSON.parse(localStorage.getItem(apronKey())) || { hist: {}, pen: [] }; } catch { return { hist: {}, pen: [] }; } }
 function saveApron(v) { try { localStorage.setItem(apronKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 function apronYears(tid) {
@@ -10311,7 +10320,7 @@ function capBarOf(pay, dead, compact = false) {
     <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
 }
 
-const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${league().meta?.saveName || ''}`;
+const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${saveTag()}`;
 function extLedger() { try { return JSON.parse(localStorage.getItem(extLedgerKey())) || []; } catch { return []; } }
 function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stringify(v)); } catch { /* ignore */ } }
 
@@ -10319,7 +10328,7 @@ function saveExtLedger(v) { try { localStorage.setItem(extLedgerKey(), JSON.stri
 // are the year the season ends, which is the year the draft happens, one
 // less. The file goes out with the draft year a year back (the app keeps the
 // save's year in memory so its own rookie logic still finds the class).
-const stampKey = () => `hlc:dstamp:${league().shortName}:${league().meta?.saveName || ''}`;
+const stampKey = () => `hlc:dstamp:${league().shortName}:${saveTag()}`;
 function stampDraftYear() {
   const L = league();
   if (!L || isCollege()) return [];
@@ -10336,7 +10345,7 @@ function stampDraftYear() {
 // data stays as it was), and the nudges are recorded so the save that comes back is put back first: they never pile up.
 const MIND_NUDGE = { alpha: { cross: 1, step: 1 }, humble: { pass: 1 } };
 const nudgeOf = p => (isAlpha(p) ? MIND_NUDGE.alpha : isHumble(p) ? MIND_NUDGE.humble : {});
-const nudgeKey = (L = league()) => `hlc:nudge:${L.shortName}:${L.meta?.saveName || state.fileName || ''}`;
+const nudgeKey = (L = league()) => `hlc:nudge:${L.shortName}:${saveTag(L)}`;
 function applyMindNudges(L) {
   const applied = [], rec = {};
   if (!isComplete() || isCollege()) return applied;
@@ -10402,7 +10411,7 @@ function clearSeasonPoints() {
   state.dirty = true;
 }
 // Extension eligibility switched off in the exported file, by save.
-const extOffKey = () => `hlc:extoff:${league().shortName}:${league().meta?.saveName || ''}`;
+const extOffKey = () => `hlc:extoff:${league().shortName}:${saveTag()}`;
 function shutExtensions() {
   const L = league();
   if (!L || isCollege() || L.season.phase !== BUMP_PHASES[0]) return [];
@@ -10876,7 +10885,7 @@ actions.seniorsDone = () => { calFlags().seniors = true; goHome(); nextUp(); };
 // ---- College recruiting, run by the app (recruiting.js) in place of the
 // game's. The market (offers, interest, commitments) is kept per save and
 // season; the class is rebuilt from its seed on every load.
-const rmKey = () => `hlc:rm:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+const rmKey = () => `hlc:rm:${league().shortName}:${saveTag()}:${league().season.currentYear}`;
 // The save the app recruits from: day 1 of the game's signing period
 // (phase 6), after the game has played its showcase and before anyone signs.
 const recruitableSave = () => { const s = league().season; return s.phase === 6 && (s.currentDay || 1) <= 1 && !(s.news || []).some(n => n.type === 14); };
@@ -10941,7 +10950,7 @@ function recruitStatus(x, c) {
 const noMarket = title => layout({ title, body: '<p class="note">The app runs recruiting from your save on Day 1 of the game\'s signing period (after the game plays its showcase, before anyone signs). Load that save to recruit.</p>' });
 
 // All-American Showcase: the top 20 of the class, East vs West.
-const aaKey = () => `hlc:aa:${league().shortName}:${league().meta?.saveName || ''}:${league().season.currentYear}`;
+const aaKey = () => `hlc:aa:${league().shortName}:${saveTag()}:${league().season.currentYear}`;
 function aaStore() { try { return JSON.parse(localStorage.getItem(aaKey())) || {}; } catch { return {}; } }
 const isAllAmerican = p => isCollege() && (aaStore().ids || []).includes(p.id);
 screens.showcase = () => {
@@ -11749,6 +11758,7 @@ function depthSwaps(L) {
 }
 actions.cutToggle = d => { if (calFlags().cuts) return; const sel = cutSel(); sel[+d.id] = !sel[+d.id]; render(); };
 actions.cutsFinish = async () => {
+  if (!isCollege()) requestsState();   // trade requests are decided here even when the step is simmed from home
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const mine = L.teams.filter(isUserTeam);
   const short = mine.find(t => cutsShort(t, sel) > 0);

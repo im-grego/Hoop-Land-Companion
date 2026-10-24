@@ -22,7 +22,7 @@ const salt = id => { let h = Math.imul(id + 97, 2654435761) >>> 0; h ^= h >>> 15
 // { v, why[] } — the score and the reasons that moved it most.
 export function egoRead(p) {
   const name = `${p.fn || ''} ${p.ln || ''}`.trim();
-  if (REAL_EGO[name] != null) { const b = boost(p); return finish(p, REAL_EGO[name] + b.v, [`${REAL_EGO[name] < 10 ? '-' : ''}his reputation around the league`, ...b.why]); }
+  if (REAL_EGO[name] != null) return finish(p, REAL_EGO[name], [`${REAL_EGO[name] < 10 ? '-' : ''}his reputation around the league`]);
   const why = [];
   let v = 10 + salt(p.id) * 3;
   const lv = levelOf(p);
@@ -43,8 +43,6 @@ export function egoRead(p) {
   // Young stars are at their loudest; long careers sand it down.
   if (p.age <= 25 && lv >= 80) { v += 1; why.push('a young star'); }
   if (p.age >= 34) { v -= 1.5; why.push('-a veteran who has seen it all'); }
-  const b = boost(p);
-  v += b.v; why.push(...b.why);
   if (traitsSet(p)) {
     const lean = (tr(p, 'money') - 10) * 0.15 - (tr(p, 'lockerRoom') - 10) * 0.18 - (tr(p, 'winning') - 10) * 0.08;
     v += lean;
@@ -74,24 +72,11 @@ function prospectEgo(p, why) {
   return v;
 }
 function finish(p, v, why) {
-  // Only the reasons that pushed him the way he landed ('-' marks one that pulls toward Humble).
-  const out = Math.max(1, Math.min(20, Math.round(v))), lvl = [6, 8, 11, 14, 20].findIndex(m => out <= m);
+  // Only the reasons that pushed him the way he landed ('-' marks one that pulls toward Humble). The start tops out at
+  // 18: a big year (an All-NBA season, a max deal) is what takes a player to 19 or 20.
+  const out = Math.max(1, Math.min(18, Math.round(v))), lvl = [6, 8, 11, 14, 20].findIndex(m => out <= m);
   const keep = why.filter(w => (lvl < 2 ? w.startsWith('-') : lvl > 2 ? !w.startsWith('-') : true)).map(w => w.replace(/^-/, ''));
   return { v: out, why: keep.length ? keep : ['nothing stands out'] };
-}
-// What swells it for now: a fresh All-NBA (or All-Star) season and a big new deal, more so when he's paid past what
-// his game is worth and starts to believe it. It fades as the season ages and the deal runs down.
-const lastYr = p => Math.max(0, ...(p.stats || []).filter(s => s.league === 0 && (s.season || []).some(r => r.GP > 0)).map(s => s.yr));   // last season he played (the new one's rows exist empty)
-const wonIn = (p, id, yr) => (p.awards || []).some(a => a.id === id && (a.league == null || a.league === 0) && (a.yearsWon || []).includes(yr));
-const worth = lv => Math.max(2, (lv - 70) * 2.6);   // about what a level is paid ($M): 80 ≈ 26, 85 ≈ 39, 90 ≈ 52
-function boost(p) {
-  let v = 0; const why = [], ly = lastYr(p), c = p.contract || {};
-  if (ly && wonIn(p, AW.ALL_NBA, ly)) { v += 2; why.push('fresh off an All-NBA season'); }
-  else if (ly && wonIn(p, AW.ALL_STAR, ly)) { v += 0.8; why.push('fresh off an All-Star season'); }
-  const sal = Math.max(c.ext?.yrs ? c.ext.sal : 0, (c.yrs ?? 0) >= 3 ? c.sal : 0);   // a new deal: an extension, or 3+ years left
-  if (sal >= 40) { v += 1.5; why.push('just got paid'); }
-  if (sal && sal - worth(levelOf(p)) >= 12) { v += 1; why.push('thinks he is worth more than he is'); }
-  return { v, why };
 }
 // Ego lives in the save's playoffRiser trait slot (1-20, like every trait): egoRead() seeds it from his career, and
 // events move it (a big deal, an All-Star season, getting humbled). Alpha is 16+, Humble 4 or less.
