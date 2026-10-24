@@ -48,7 +48,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.183.1';
+const APP_VERSION = '0.184.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -11216,6 +11216,22 @@ function requestsState() {
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 11, 2654435761) ^ 0x2b7) >>> 0)() >= odds) continue;
       if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
       list.push({ pid: p.id, tid: t.id, why: 'in the last year of his deal and wants a new opportunity', status: isUserTeam(t) ? 'open' : 'cpu' });
+    }
+  }
+  // An Alpha who isn't clearly the man (a teammate as good or better) wants his own team: Kyrie leaving LeBron.
+  // Unhappy ones, or any with a fresh boost (All-NBA, a new deal) who's started to believe it.
+  for (const t of L.teams) {
+    const roster = FA.signedRoster(t);
+    for (const p of roster.filter(x => isAlpha(x) && canAskOut(x) && !FA.isLifer(L, x, t) && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
+      const rival = roster.filter(x => x !== p && shownLevel(x) >= shownLevel(p)).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
+      const morale = p.season?.morale ?? 60, e = egoRead(p), fresh = e.why.some(w => /fresh off|just got paid|worth more/.test(w));
+      // A fresh swell (All-NBA, a new deal) is enough on its own, happy or not; otherwise only an unhappy one asks.
+      if (!rival || (morale >= 75 && !fresh) || tr(p, 'loyalty') >= 15 || (!isUserTeam(t) && cpuAsks >= 3)) continue;
+      const odds = (0.1 + (e.v - 15) * 0.04 + (fresh ? 0.1 : 0) + (morale < 50 ? 0.1 : morale >= 85 ? -0.08 : 0)) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
+      if (mulberry32((saveSalt() ^ Math.imul(p.id + 23, 2654435761) ^ 0x3e9) >>> 0)() >= odds) continue;
+      if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
+      list.push({ pid: p.id, tid: t.id, why: `🎭 wants his own team, tired of playing second to ${rival.ln || playerName(rival)}`, status: isUserTeam(t) ? 'open' : 'cpu' });
+      break;   // one a team a summer
     }
   }
   // A star whose game the coach's system doesn't feature can ask out too.

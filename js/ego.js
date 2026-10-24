@@ -6,7 +6,7 @@ import { seasonLine } from './storylines.js';
 import { shownLevel as levelOf } from './regression.js';
 
 export const EGO = { icon: '🎭', hi: 'Alpha', lo: 'Humble', hiIcon: '🎭', loIcon: '🙏' };
-const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13 };
+const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13, ALL_STAR: 23 };
 // Known reads for real players (ego only; everyone else is read from his career).
 const REAL_EGO = {
   'Kevin Durant': 15, 'James Harden': 17, 'Russell Westbrook': 18, 'Kyrie Irving': 16, 'Jimmy Butler': 17, 'Luka Doncic': 16,
@@ -21,7 +21,7 @@ const salt = id => { let h = Math.imul(id + 97, 2654435761) >>> 0; h ^= h >>> 15
 // { v, why[] } — the score and the reasons that moved it most.
 export function egoRead(p) {
   const name = `${p.fn || ''} ${p.ln || ''}`.trim();
-  if (REAL_EGO[name] != null) return { v: REAL_EGO[name], why: ['his reputation around the league'] };
+  if (REAL_EGO[name] != null) { const b = boost(p); return { v: Math.min(20, Math.round(REAL_EGO[name] + b.v)), why: ['his reputation around the league', ...b.why] }; }
   const why = [];
   let v = 9.5 + salt(p.id) * 3;
   const lv = levelOf(p);
@@ -41,6 +41,8 @@ export function egoRead(p) {
   // Young stars are at their loudest; long careers sand it down.
   if (p.age <= 25 && lv >= 80) { v += 1; why.push('a young star'); }
   if (p.age >= 34) { v -= 1.5; why.push('-a veteran who has seen it all'); }
+  const b = boost(p);
+  v += b.v; why.push(...b.why);
   if (traitsSet(p)) {
     const lean = (tr(p, 'money') - 10) * 0.15 - (tr(p, 'lockerRoom') - 10) * 0.18 - (tr(p, 'winning') - 10) * 0.08;
     v += lean;
@@ -51,6 +53,20 @@ export function egoRead(p) {
   const out = Math.max(1, Math.min(20, Math.round(v))), down = out < 10;
   const keep = why.filter(w => w.startsWith('-') === down).map(w => w.replace(/^-/, ''));
   return { v: out, why: keep.length ? keep : ['nothing stands out'] };
+}
+// What swells it for now: a fresh All-NBA (or All-Star) season and a big new deal, more so when he's paid past what
+// his game is worth and starts to believe it. It fades as the season ages and the deal runs down.
+const lastYr = p => Math.max(0, ...(p.stats || []).filter(s => s.league === 0 && (s.season || []).some(r => r.GP > 0)).map(s => s.yr));   // last season he played (the new one's rows exist empty)
+const wonIn = (p, id, yr) => (p.awards || []).some(a => a.id === id && (a.league == null || a.league === 0) && (a.yearsWon || []).includes(yr));
+const worth = lv => Math.max(2, (lv - 70) * 2.6);   // about what a level is paid ($M): 80 ≈ 26, 85 ≈ 39, 90 ≈ 52
+function boost(p) {
+  let v = 0; const why = [], ly = lastYr(p), c = p.contract || {};
+  if (ly && wonIn(p, AW.ALL_NBA, ly)) { v += 2; why.push('fresh off an All-NBA season'); }
+  else if (ly && wonIn(p, AW.ALL_STAR, ly)) { v += 0.8; why.push('fresh off an All-Star season'); }
+  const sal = Math.max(c.ext?.yrs ? c.ext.sal : 0, (c.yrs ?? 0) >= 3 ? c.sal : 0);   // a new deal: an extension, or 3+ years left
+  if (sal >= 40) { v += 1.5; why.push('just got paid'); }
+  if (sal && sal - worth(levelOf(p)) >= 12) { v += 1; why.push('thinks he is worth more than he is'); }
+  return { v, why };
 }
 export const egoVal = p => egoRead(p).v;
 export const isAlpha = p => egoVal(p) >= 15;
