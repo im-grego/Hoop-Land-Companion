@@ -1,5 +1,6 @@
 // Career mode (season.mode 2): the save follows one player (season.playerId). The game keeps his legacy rank
-// (p.season.legacy, 1 = Rookie … 9 = GOAT), legacy points, fans, fame and coins; the app reads them and writes
+// (p.season.legacy, 1 = Rookie … 9 = GOAT), legacy points, fans, fame, coins and his bonds with players and his
+// coach; the app reads them and writes
 // the story around him: his standing on the team, the locker room he walks into, and what the front office thinks.
 import { playerName, POSITIONS } from './savefile.js';
 import { shownLevel as levelOf } from './regression.js';
@@ -64,6 +65,20 @@ export function lockerRoom(L, p, team) {
   const lead = out.filter(x => x.kind === 'leader').sort((a, b) => levelOf(b.m) - levelOf(a.m)).slice(2).map(x => x.m.id);
   return out.filter(x => !(x.kind === 'leader' && lead.includes(x.m.id))).sort((a, b) => b.w - a.w).filter(x => (seen.has(x.m.id) ? false : seen.add(x.m.id))).slice(0, 5);
 }
+
+// Who he's close with and who he's beefing with: the game keeps his bond with every player on that player's
+// season.relationship (old teammates sit near 50, rivals below 0). The coach's bond is the coach's rp.
+export function relationships(L, p) {
+  const out = [];
+  for (const t of L.teams) for (const m of t.roster) {
+    const r = m.season?.relationship || 0;
+    if (m.id === p.id || !r) continue;
+    out.push({ m, team: t, r, mate: t.id === p.tid || t.roster.some(x => x.id === p.id) });
+  }
+  return { friends: out.filter(x => x.r > 0).sort((a, b) => b.r - a.r), rivals: out.filter(x => x.r < 0).sort((a, b) => a.r - b.r) };
+}
+export const coachBond = c => c?.rp ?? 0;
+export const bondWord = r => (r >= 40 ? 'Brothers' : r >= 20 ? 'Close' : r >= 5 ? 'Friendly' : r > -5 ? 'Cold' : r > -15 ? 'Tension' : 'Rivals');
 
 // How the front office sees him: worth his deal or not, part of the plan or a trade chip.
 export function frontOffice(L, p, team) {
