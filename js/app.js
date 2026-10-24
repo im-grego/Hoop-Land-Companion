@@ -50,7 +50,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.198.0';
+const APP_VERSION = '0.198.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1779,7 +1779,7 @@ screens.career = () => {
   const L = league(), me = CAR.careerPlayer(L);
   if (!me) { layout({ title: 'My Career', body: '<p class="note">This save has no career player.</p>' }); return; }
   const { p, team } = me, cr = L.career || {}, r = CAR.rankIdx(p), tro = CAR.trophies(p);
-  const st = CAR.standing(L, p, team), fo = CAR.frontOffice(L, p, team), room = CAR.lockerRoom(L, p, team);
+  const st = CAR.standing(L, p, team, valueOf), fo = CAR.frontOffice(L, p, team), room = CAR.lockerRoom(L, p, team);
   const c = p.contract || {};
   const ladder = CAR.RANKS.map((n, i) => ({ n, i })).reverse().map(({ n, i }) => `<div class="cr-rank ${i === r ? 'now' : i < r ? 'done' : ''}">${CAR.RANK_ICONS[i]} ${esc(n)}</div>`).join('');
   const chips = [tro.rings && `🏆 ${tro.rings}× Champion`, tro.fmvp && `🥇 ${tro.fmvp}× Finals MVP`, tro.mvp && `🏅 ${tro.mvp}× MVP`, tro.allNba && `📜 ${tro.allNba}× All-NBA`, tro.allStar && `🌟 ${tro.allStar}× All-Star`, tro.dpoy && `🛡️ ${tro.dpoy}× DPOY`].filter(Boolean);
@@ -4920,10 +4920,13 @@ function identityChips(p) {
   return chips.join('');
 }
 // His place in the league: level rank overall and on his team (cached per league).
+// Ranks by trade value (how untouchable he is: level, production, youth and potential, contract), the one measure
+// trades, the scouting report and the Career Hub all share.
+const valueOf = p => playerValue(p, state.leagueIdx, lastYear());
 function levelRanks(p, team) {
   const cache = (state.compCache[state.leagueIdx] ||= new Map());
   if (!cache.has('lvranks')) {
-    const all = leaguePlayers(league(), true).filter(e => e.team).map(e => ({ id: e.p.id, tid: e.team.id, lv: shownLevel(e.p) })).sort((a, b) => b.lv - a.lv);
+    const all = leaguePlayers(league(), true).filter(e => e.team).map(e => ({ id: e.p.id, tid: e.team.id, lv: valueOf(e.p) })).sort((a, b) => b.lv - a.lv);
     const byTeam = new Map();
     cache.set('lvranks', new Map(all.map((e, i) => { const n = (byTeam.get(e.tid) || 0) + 1; byTeam.set(e.tid, n); return [e.id, { league: i + 1, team: n, of: all.length }]; })));
   }
@@ -4952,7 +4955,8 @@ function profileReport(p, team) {
     const nm = team ? teamFull(team) : '';
     // His role is how he's used (starts and minutes last season), not where his level ranks on the roster.
     const use = usageRole(p, team);
-    add('rank', `He is the ${rk.league === 1 ? 'best' : `${ordN(rk.league)} best`} player in the league${nm ? (use ? (use.was ? `. Last season, with the ${esc(teamFull(use.was))}, he was ${use.text}` : `. For the ${esc(nm)} he is ${use.text}`) : ` and ${rk.team === 1 ? 'the best' : `the ${ordN(rk.team)} best`} on the ${esc(nm)}${rk.team <= 5 ? '' : rk.team <= 9 ? ', a rotation piece' : ', on the fringe of the rotation'}`) : ''}.`);
+    const most = n => (n === 1 ? 'most' : `${ordN(n)} most`);
+    add('rank', `He is the ${most(rk.league)} valuable asset in the league${nm ? ` and the ${most(rk.team)} valuable on the ${esc(nm)}` : ''}.${nm && use ? (use.was ? ` Last season, with the ${esc(teamFull(use.was))}, he was ${use.text}.` : ` He is ${use.text}.`) : ''}`);
   }
   if (p.tendencies) {
     // His game, then a skill, then what he won't do; a skill joins the first sentence.

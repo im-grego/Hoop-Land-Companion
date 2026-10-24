@@ -36,10 +36,11 @@ export function roleOf(p, team) {
 }
 
 // Where he stands on his team: his rank by level, who's pushing him at his spot, the coach.
-export function standing(L, p, team) {
+// val: how the roster is ranked (the app passes trade value; level by default).
+export function standing(L, p, team, val = levelOf) {
   if (!team) return null;
   const roster = team.roster.filter(x => x.status !== 7);
-  const byLv = [...roster].sort((a, b) => levelOf(b) - levelOf(a));
+  const byLv = [...roster].sort((a, b) => val(b) - val(a));
   const rank = byLv.findIndex(x => x.id === p.id) + 1;
   const mine = levelOf(p);
   const sameSpot = roster.filter(x => x.id !== p.id && Math.abs((x.teamPos ?? 0) - (p.teamPos ?? 0)) <= 1);
