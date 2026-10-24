@@ -9,6 +9,7 @@ import { planOption } from './coaching.js';
 import { playStyles } from './overview.js';
 import { POSITIONS } from './savefile.js';
 import { PLAYS } from './plays.js';
+import { coachVal } from './traits.js';
 
 export const headCoachOf = team => (team?.frontOffice?.staff || []).find(s => s.pos === 1) || null;
 
@@ -240,9 +241,11 @@ export function playerCoachFit(p, team, coach) {
   const focus = planOption('offFocus', coach.tendencies?.offFocus ?? 0), fav = FOCUS_STYLES[focus];
   const scheme = fav ? (fav.includes(styles[0].k) ? 0.9 : 0.35) : 0.6;
   const fit = book == null ? scheme : 0.65 * book + 0.35 * scheme;
-  const clash = star && fit < 0.35;
+  // Coachable stars live with a system that isn't built for them; stubborn ones push back sooner.
+  const line = 0.35 + (10 - coachVal(p)) * 0.012;
+  const clash = star && fit < line;
   const why = [];
   if (book != null && book < 0.4) why.push(`his quick plays have nothing for a ${styles[0].label.toLowerCase()}`);
   if (fav && !fav.includes(styles[0].k)) why.push(`${coach.ln}'s ${focus.toLowerCase()}-focused offense doesn't suit a ${styles[0].label.toLowerCase()}`);
-  return { star, fit, clash, severity: clash ? Math.min(1, (0.35 - fit) / 0.35) : 0, styles, why, fix: `Give him ${WANTS[styles[0].k]}.` };
+  return { star, fit, clash, severity: clash ? Math.min(1, (line - fit) / line) : 0, styles, why, fix: `Give him ${WANTS[styles[0].k]}.` };
 }

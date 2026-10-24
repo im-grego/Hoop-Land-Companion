@@ -9,7 +9,7 @@
 // fans and tag. Kept in this browser and downloadable as a file to load again.
 import { TRAIT_KEYS } from './traits.js';
 
-const KEYS = [...TRAIT_KEYS, 'roadWarrior'];
+const KEYS = [...new Set([...TRAIT_KEYS, 'roadWarrior'])];
 export const PACK_VERSION = 1;
 
 export const packKey = L => `${L.shortName || L.leagueName || 'league'}`;

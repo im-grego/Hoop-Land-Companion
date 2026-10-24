@@ -3,6 +3,7 @@
 
 import { isLeveled, isFreeSkill, isEliteSkill, meetsEliteRequirement, playerName, skillName } from './savefile.js';
 import { rankSkillsFor, unlockSkill, mulberry32 } from './progression.js';
+import { coachVal } from './traits.js';
 
 const owns = (p, id) => p.skills.some(s => s.id === id && s.level >= 1);
 
@@ -49,8 +50,9 @@ export function runMentorship(teams, params, profiles, seed) {
     const mentors = team.roster.filter(p => canMentor(p, params)).sort((a, b) => b.age - a.age || a.id - b.id);
     for (const mentor of mentors) {
       if (rng() * 100 >= params.mentorshipChance) continue;
+      // A stubborn mentee (coachability 4 or less) tunes him out half the time.
       const options = mentorPairs(team.roster, params, profiles)
-        .filter(x => x.mentor === mentor && !taught.has(x.mentee.id));
+        .filter(x => x.mentor === mentor && !taught.has(x.mentee.id) && !(coachVal(x.mentee) <= 4 && rng() < 0.5));
       if (!options.length) continue;
       // Youngest mentee at the closest position sets the skill; others who
       // can also learn that skill join, up to the limit.

@@ -1,7 +1,8 @@
 // Personality traits. Hoop Land keeps eight trait fields on every player
 // (traits: durability, winning, money, loyalty, motor, lockerRoom,
 // playoffRiser, roadWarrior) but never uses them, so the app fills and uses
-// seven of them on a 1–20 scale (0 = not set). roadWarrior is left alone.
+// all eight on a 1–20 scale (0 = not set). The roadWarrior field holds
+// Coachability: how much coaching sticks, so how fast he develops.
 // Real players we know get judged values (REAL, by full name); everyone
 // else is generated from his own data plus a little stable noise.
 
@@ -14,7 +15,12 @@ export const TRAITS = [
   { k: 'motor', label: 'Motor', icon: '⚙️', lo: 'Lazy', hi: 'Relentless', loIcon: '😴', hiIcon: '🔋', loSays: 'coasts when he can', hiSays: 'never stops working' },
   { k: 'lockerRoom', label: 'Locker Room', icon: '🗣️', lo: 'Cancer', hi: 'Leader', loIcon: '☣️', hiIcon: '🗣️', loSays: 'is a problem in the locker room', hiSays: 'sets the tone in the locker room' },
   { k: 'playoffRiser', label: 'Playoff Riser', icon: '🔥', lo: 'Shrinks', hi: 'Shines', hiTag: 'Playoff Riser', loTag: 'Playoff Fraud', loIcon: '🥶', hiIcon: '✨', loSays: 'shrinks in the big moments', hiSays: 'gets better when it matters' },
+  { k: 'roadWarrior', label: 'Coachability', icon: '🧱', lo: 'Stubborn', hi: 'Coachable', loIcon: '🪨', hiIcon: '🧠', loSays: 'does things his own way', hiSays: 'soaks up coaching' },
 ];
+// Coachability as a development multiplier: Coachable (16+) ×1.25, Stubborn (4 or less) ×0.8, in between a little
+// either side of ×1. Unset counts as average.
+export const coachVal = p => (p?.traits?.roadWarrior > 0 ? p.traits.roadWarrior : 10);
+export const coachMult = p => { const c = coachVal(p); return c >= 16 ? 1.25 : c <= 4 ? 0.8 : 1 + (c - 10) * 0.025; };
 export const traitLabel = (t, v) => (v >= 16 ? t.hi : v <= 4 ? t.lo : v <= 9 ? 'Low' : 'Solid');
 // The tag a trait earns at either end of the scale: { icon, label } or null.
 export const traitTag = (t, v) => (v >= 16 ? { icon: t.hiIcon, label: t.hiTag || t.hi } : v > 0 && v <= 4 ? { icon: t.loIcon, label: t.loTag || t.lo } : null);
@@ -122,9 +128,28 @@ export function generateTraits(p, teamId = p.tid) {
   const lockerRoom = 8 + Math.min(5, yrs * 0.5) + (morale - 60) / 15 + Math.min(2, (p.awards || []).length * 0.3) + n('lockerRoom', 2.4);
   const ppm = (st) => (st.MIN?.[0] ? (st.PTS + 0.7 * st.REB + 0.7 * st.AST) / (st.MIN[0] / 60) : 0);
   const playoffRiser = (po.GP || 0) >= 10 && ppm(cs) > 0 ? 10 + (ppm(po) / ppm(cs) - 1) * 25 + n('playoffRiser', 1.5) : 10 + n('playoffRiser', 2.5);
-  return { durability, winning, money, loyalty, motor, lockerRoom, playoffRiser };
+  return { durability, winning, money, loyalty, motor, lockerRoom, playoffRiser, roadWarrior: coachability(p, seasons, lockerRoom, motor, n) };
 }
 
+// Coachability, judged for well-known players (the REAL table predates it).
+const REAL_COACH = {
+  'LeBron James': 15, 'Stephen Curry': 17, 'Kevin Durant': 13, 'Giannis Antetokounmpo': 19, 'Nikola Jokić': 17, 'Joel Embiid': 12, 'Luka Dončić': 10,
+  'Jayson Tatum': 15, 'Kawhi Leonard': 16, 'James Harden': 6, 'Damian Lillard': 13, 'Anthony Davis': 13, 'Jimmy Butler': 14, 'Jimmy Butler III': 14,
+  'Kyrie Irving': 5, 'Russell Westbrook': 6, 'Chris Paul': 9, 'Ben Simmons': 3, 'Zion Williamson': 6, 'Ja Morant': 7, 'LaMelo Ball': 9,
+  'Jalen Green': 8, 'Julius Randle': 9, 'Draymond Green': 15, 'Shai Gilgeous-Alexander': 18, 'Anthony Edwards': 14, 'Tyrese Haliburton': 17,
+  'Jalen Brunson': 18, 'Jrue Holiday': 18, 'Bam Adebayo': 17, 'Pascal Siakam': 19, 'Fred VanVleet': 17, 'Victor Wembanyama': 18, 'Cade Cunningham': 16,
+  'Scottie Barnes': 16, 'Domantas Sabonis': 16, 'Rudy Gobert': 14, 'Karl-Anthony Towns': 11, 'Trae Young': 9, 'Dwight Howard': 4, 'DeMarcus Cousins': 4,
+};
+// Coachability from his career: how much his production grew from his first seasons to his last (players who kept
+// adding to their game took coaching), plus a lean from his locker room and motor, plus noise. Prospects and players
+// with little history lean on the noise.
+function coachability(p, seasons, lockerRoom = 10, motor = 10, n = (k, sd) => gauss(p.id, 977) * sd) {
+  const ppm = r => (r.MIN?.[0] ? (r.PTS + 0.7 * r.REB + 0.7 * r.AST) / (r.MIN[0] / 60) : 0);
+  const rows = seasons.map(s => s.rows.reduce((a, r) => ({ PTS: a.PTS + (r.PTS || 0), REB: a.REB + (r.REB || 0), AST: a.AST + (r.AST || 0), MIN: [a.MIN[0] + (r.MIN?.[0] || 0)] }), { PTS: 0, REB: 0, AST: 0, MIN: [0] })).filter(r => r.MIN[0] > 6000);
+  let growth = 0;
+  if (rows.length >= 3) { const a = ppm(rows[0]), b = Math.max(...rows.slice(-3).map(ppm)); growth = a > 0 ? Math.max(-3, Math.min(4, (b / a - 1) * 6)) : 0; }
+  return 9.5 + growth + (lockerRoom - 10) * 0.25 + (motor - 10) * 0.15 + n('roadWarrior', 2.6);
+}
 // Fill every unset player (pros, free agents, prospects) in a league.
 // Returns how many were filled. Real players get REAL values (by name).
 export function fillTraits(L) {
@@ -163,9 +188,10 @@ export function fillHallOfFame(L) {
   let n = 0;
   for (const p of L.hallOfFame || []) {
     if (!p.traits) p.traits = Object.fromEntries(TRAIT_KEYS.map(k => [k, 0]));
-    if (traitsSet(p)) continue;
+    if (traitsSet(p)) { if (!(p.traits.roadWarrior > 0)) p.traits.roadWarrior = clamp20(coachability(p, proSeasons(p), p.traits.lockerRoom || 10, p.traits.motor || 10)); continue; }
     const real = REAL[`${p.fn} ${p.ln}`.trim()];
-    const g = real ? Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, real[i]])) : hofTraits(p);
+    const h = hofTraits(p);
+    const g = real ? { ...h, ...Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, real[i]]).filter(([, v]) => v != null)) } : h;
     for (const k of TRAIT_KEYS) p.traits[k] = clamp20(g[k]);
     n++;
   }
@@ -184,9 +210,12 @@ function fillPairs(everyone) {
       n++;
       continue;
     }
-    if (traitsSet(p)) continue;
+    // Set before Coachability existed: give him that one, from his own career.
+    if (traitsSet(p)) { if (!(p.traits.roadWarrior > 0)) { p.traits.roadWarrior = clamp20(REAL_COACH[`${p.fn} ${p.ln}`.trim()] ?? generateTraits(p, tid).roadWarrior); n++; } continue; }
     const real = REAL[`${p.fn} ${p.ln}`.trim()];
-    const g = real ? Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, real[i]])) : generateTraits(p, tid);
+    const gen = generateTraits(p, tid);
+    const g = real ? { ...gen, ...Object.fromEntries(TRAIT_KEYS.map((k, i) => [k, real[i]]).filter(([, v]) => v != null)) } : gen;
+    g.roadWarrior = REAL_COACH[`${p.fn} ${p.ln}`.trim()] ?? g.roadWarrior;
     for (const k of TRAIT_KEYS) p.traits[k] = clamp20(g[k]);
     n++;
   }

@@ -3,6 +3,7 @@
 // Points go into season.ap (Finishing, Shooting, Creating, Defense) to be
 // spent in-game, so user and CPU teams stay even.
 
+import { coachMult } from './traits.js';
 import { ATTRS, ATTR_MAX, SKILL_MAX_LEVEL, CATEGORIES, POT_MIN, POT_MAX, MINOR_INJURY, lastSeasonMpg, activeSkills, isLeveled, injuryHistory, injuryPart } from './savefile.js';
 
 // Categories the bump awards points in (Physical is left alone).
@@ -208,7 +209,8 @@ export function minutesMult(mpgInfo, params) {
 export function pointsFor(p, mpgInfo, params, rng) {
   const band = params.ageBands.find(b => p.age <= b[0]);
   if (!band) return 0;
-  return Math.round(randInt(rng, band[1], band[2]) * minutesMult(mpgInfo, params));
+  // Coachable players get more out of the offseason, stubborn ones less.
+  return Math.round(randInt(rng, band[1], band[2]) * minutesMult(mpgInfo, params) * coachMult(p));
 }
 
 // How much a player "wants" points in a rating: room under the ceiling,
@@ -404,9 +406,12 @@ export function maybeLongevity(p, mult, params, rng, injury = null, z = null, cu
 // can lower it; plus a small random chance either way of a breakout.
 export function maybePotential(p, mult, params, rng, z = null) {
   if (p.age > params.potUpMaxAge) return false;
+  // Coachability: a coachable player's breakout is likelier and his slide less likely; stubborn the other way.
+  const cm = coachMult(p);
   let up = params.potUpChance * mult;
   if (z != null && z >= params.prodPotUpZ) up += (z - params.prodPotUpZ + 1) * params.prodPotUpPerZ;
-  const down = (params.potDownChance || 0) + (z != null && z <= params.prodPotDownZ ? params.prodPotDownChance : 0);
+  up *= cm;
+  const down = ((params.potDownChance || 0) + (z != null && z <= params.prodPotDownZ ? params.prodPotDownChance : 0)) * (2 - cm);
   const r = rng() * 100;
   if (p.pot < POT_MAX && r < up) { p.pot++; return true; }
   if (p.pot > POT_MIN && r >= 100 - down) { p.pot--; return true; }

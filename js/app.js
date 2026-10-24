@@ -47,7 +47,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath } from './dropbox.js';
 
-const APP_VERSION = '0.181.0';
+const APP_VERSION = '0.182.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9842,7 +9842,8 @@ function rangeCard() {
 // workout; the rest read "?". Tap − / + to adjust.
 function traitsBox(p, prospect = false) {
   if (!p.traits || !traitsSet(p)) return '';
-  const seen = k => !prospect || k === 'durability' || k === 'motor' || workoutDone(p.id);
+  // Prospects: durability and motor show; coachability once a scout has seen him; the rest after a workout.
+  const seen = k => !prospect || k === 'durability' || k === 'motor' || (k === 'roadWarrior' && scouted(p.id)) || workoutDone(p.id);
   const known = TRAITS.filter(t => seen(t.k));
   const tags = known.map(t => traitTag(t, p.traits[t.k] || 0)).filter(Boolean);
   return `<fieldset class="frame"><legend>Personality</legend>
@@ -11658,7 +11659,7 @@ actions.dbxUploadStories = async () => {
 // Traits sit on a 0-100 scale in the file and 0-20 here; 0 means unset.
 
 const ED_TAGS = ['Rebuilding', 'Developing', 'Competing', 'Contending'];
-const ED_TRAITS = [...TRAITS.map(t => ({ k: t.k, label: t.label, lo: t.lo, hi: t.hi })), { k: 'roadWarrior', label: 'Road Warrior', lo: 'Homebody', hi: 'Road Warrior' }];
+const ED_TRAITS = TRAITS.map(t => ({ k: t.k, label: t.label, lo: t.lo, hi: t.hi }));
 const edPlayers = L => L.teams.flatMap(t => t.roster).concat(L.freeAgents || []);
 // The file's own values, so traits nobody touched go back out exactly as they came in.
 const rawTraits = new WeakMap();
