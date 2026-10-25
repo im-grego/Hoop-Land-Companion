@@ -88,12 +88,21 @@ export function ownerTarget(L, tid) {
   if (!seed) return null;
   return { seed, rounds: seed <= 2 ? 2 : seed <= 4 ? 1 : 0, text: seed <= 2 ? 'reach the conference finals' : seed <= 4 ? 'win a round' : 'make it a series' };
 }
+// All-Defense and All-Rookie are two teams in real life; the game sometimes names a third, which doesn't count.
+// Only All-NBA has three. (award: the table entry; entry: the player's award, whose team is 0 1st, 1 2nd, 2 3rd.)
+export const realHonor = (award, entry) => !((entry?.team ?? 0) >= 2 && /all-?def|all-?rook/i.test(`${award?.name || ''} ${award?.shortName || ''}`));
+// The award table names team honors after the 1st team ("All-NBA Team 1st Team"); the entry says which he made.
+export const honorName = (award, entry) => {
+  const base = (award?.name || '').replace(/ Team 1st Team$/, '').replace(/ 1st Team$/, '');
+  return /^all-?(nba|league|def|rook)/i.test(award?.shortName || award?.name || '') ? `${base} ${['1st', '2nd', '3rd'][entry?.team ?? 0]} Team` : award?.name || '';
+};
 // The awards the game handed out this season, by its own award table.
 export function awardsThisYear(L) {
   const y = L.season.currentYear, names = new Map((L.awards || []).map(a => [a.id, a]));
   const out = new Map();
   for (const t of L.teams) for (const p of t.roster) for (const a of p.awards || []) {
     if ((a.league ?? 0) !== 0 || !(a.yearsWon || []).includes(y) || a.id === 0 || a.id === 1) continue;
+    if (!realHonor(names.get(a.id), a)) continue;
     if (!out.has(a.id)) out.set(a.id, { id: a.id, name: names.get(a.id)?.name || names.get(a.id)?.shortName || `Award ${a.id}`, list: [] });
     out.get(a.id).list.push({ p, t });
   }

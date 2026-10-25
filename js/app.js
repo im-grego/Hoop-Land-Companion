@@ -56,7 +56,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.207.1';
+const APP_VERSION = '0.207.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6429,8 +6429,9 @@ function yearRuns(yrs) {
 }
 function awardsBox(p) {
   const L = league(), table = L.awards || [];
-  const rows = (p.awards || []).filter(x => (x.league ?? state.leagueIdx) === state.leagueIdx && x.yearsWon?.length)
-    .map(x => ({ name: table.find(t => t.id === x.id)?.name, yrs: [...x.yearsWon].sort((m, n) => m - n) })).filter(x => x.name)
+  // Team honors by the team he made (All-NBA 1st/2nd/3rd; All-Defense and All-Rookie 1st and 2nd only).
+  const rows = (p.awards || []).filter(x => (x.league ?? state.leagueIdx) === state.leagueIdx && x.yearsWon?.length && PO.realHonor(table.find(t => t.id === x.id), x))
+    .map(x => ({ name: PO.honorName(table.find(t => t.id === x.id), x), yrs: [...x.yearsWon].sort((m, n) => m - n) })).filter(x => x.name)
     .sort((x, y) => y.yrs.length - x.yrs.length || y.yrs[y.yrs.length - 1] - x.yrs[x.yrs.length - 1]);
   if (!rows.length) return '';
   return `<fieldset class="frame"><legend>Awards</legend><div class="stack">${rows.map(r => `<div class="small mv-row aw-row"><span class="mv-l"><b>${esc(r.name)}</b>${r.yrs.length > 1 ? ` <span class="gold">×${r.yrs.length}</span>` : ''}</span><span class="muted mv-r">${yearRuns(r.yrs)}</span></div>`).join('')}</div></fieldset>`;
