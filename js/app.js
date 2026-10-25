@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.210.0';
+const APP_VERSION = '0.210.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2594,7 +2594,7 @@ function coinChip() {
   const L = league();
   if (!CAR.isCareer(L)) return '';
   const net = coinNet();
-  return `<button class="btn tiny coin-chip" data-act="nav" data-to="coinLog" aria-label="Coins">🪙 ${(L.career?.coins ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net}</span>` : ''}</button>`;
+  return `<button class="btn tiny coin-chip" data-act="nav" data-to="coinLog" aria-label="Coins">💵 ${(L.career?.coins ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net}</span>` : ''}</button>`;
 }
 screens.coinLog = () => {
   const L = league(), log = state.coinLog || [], net = coinNet();
@@ -14980,7 +14980,7 @@ screens.export = () => {
       ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
         ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
-        ${CAR.isCareer(league()) && state.coinsIn != null ? `<p class="note small">🪙 Coins: ${coinsIn().toLocaleString()} when loaded ${coinNet() >= 0 ? '+' : '−'} ${Math.abs(coinNet()).toLocaleString()} in the app = <b>${Math.max(0, coinsIn() + coinNet()).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="coinLog">Ledger</button></p>` : ''}
+        ${CAR.isCareer(league()) && state.coinsIn != null ? `<p class="note small">💵 Coins: ${coinsIn().toLocaleString()} when loaded ${coinNet() >= 0 ? '+' : '−'} ${Math.abs(coinNet()).toLocaleString()} in the app = <b>${Math.max(0, coinsIn() + coinNet()).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="coinLog">Ledger</button></p>` : ''}
         <div class="stack">
           ${canShare ? '<button class="btn big focus" data-act="share">📤 Save to Files / Dropbox</button>' : ''}
           <button class="btn ${canShare ? '' : 'big focus'}" data-act="download">💾 Download File</button>
