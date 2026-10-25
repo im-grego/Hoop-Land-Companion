@@ -1619,6 +1619,7 @@ function calendarCard() {
     if (seasonUnplayed()) return setupCard();
     if (CL3.atAllStarBreak(league())) return deadlineCard();
     if (PO.atPlayoffStart(league())) return playoffCard();
+    if (ciWindow()) return checkinCard();
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
@@ -1662,7 +1663,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['export', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['export', 'checkin', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -5895,6 +5896,131 @@ actions.midExt = d => {
 const poKey = (yr = league().season.currentYear) => `hlc:po:${saveTag()}:${yr}`;
 function poState(yr) { try { return JSON.parse(localStorage.getItem(poKey(yr))) || {}; } catch { return {}; } }
 function poSave(s, yr) { try { localStorage.setItem(poKey(yr), JSON.stringify(s)); } catch { /* ignore */ } }
+// ---------------------------------------------------------------------------
+// Season check-ins: the two long stretches between the big stops. Early season (two weeks in, up to the All-Star
+// break) and the stretch run (after the deadline, up to the playoffs): where each of your teams stands against what
+// its roster says it should be, who's hurt, who's hot and cold, and one call for the stretch ahead.
+const ciKey = () => `hlc:checkin:${saveTag()}:${league().season.currentYear}`;
+function ciState() { try { return JSON.parse(localStorage.getItem(ciKey())) || {}; } catch { return {}; } }
+function ciSave(v) { try { localStorage.setItem(ciKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+function ciWindow(L = league()) {
+  const s = L.season, asw = s.allStarWeekend || 0, dl = s.tradeDeadline || asw + 2;
+  if (s.phase !== 9 || isCollege() || seasonUnplayed()) return null;
+  if (s.currentDay >= 12 && (!asw || s.currentDay < asw - 4)) return 'early';
+  if (asw && s.currentDay > dl) return 'stretch';
+  return null;
+}
+const ciConf = t => (t.division < 3 ? 0 : 1);
+// Seed within the conference by record, and the seed the roster says it should have (its best eight by level).
+function ciStanding(L, t) {
+  const conf = L.teams.filter(x => ciConf(x) === ciConf(t) || L.conferences.length < 2);
+  const rec = dlPct(t), seed = [...conf].sort((a, b) => dlPct(b).pct - dlPct(a).pct).indexOf(t) + 1;
+  const power = x => { const top = x.roster.filter(p => p.status === 3 || p.status === 2).map(shownLevel).sort((a, b) => b - a).slice(0, 8); return top.reduce((a, v) => a + v, 0) / Math.max(1, top.length); };
+  const want = [...conf].sort((a, b) => power(b) - power(a)).indexOf(t) + 1;
+  // Season length: the most common game count (the schedule also holds the odd exhibition and All-Star game).
+  const cnt = new Map(); for (const d of L.season.schedule || []) for (const g of d.results || []) for (const id of [g.homeTeam, g.awayTeam]) cnt.set(id, (cnt.get(id) || 0) + 1);
+  const tally = new Map(); for (const n of cnt.values()) tally.set(n, (tally.get(n) || 0) + 1);
+  const games = [...tally].sort((a, b) => b[1] - a[1])[0]?.[0] || 82;
+  const row = t.season?.find(r => r.yr === L.season.currentYear)?.seasonStats || {};
+  return { ...rec, seed, want, of: conf.length, pace: rec.gp ? Math.round(rec.pct * games) : 0, games, diff: row.GP ? (row.PTS - row.OPP) / row.GP : 0 };
+}
+const ciVerdict = x => (x.seed <= x.want - 2 ? ['Ahead of the roster', 'up'] : x.seed >= x.want + 3 ? ['Under what the roster should do', 'down'] : ['About where the roster says', 'gold']);
+// Hot and cold: this season's game score against last season's (10+ games both years).
+function ciForm(L, t) {
+  const li = state.leagueIdx, y = L.season.currentYear;
+  return t.roster.filter(p => p.status === 3).map(p => { const a = seasonLine(p, li, y), b = seasonLine(p, li, y - 1); return a && b && a.gp >= 10 && b.gp >= 10 ? { p, d: a.gs - b.gs, a } : null; }).filter(Boolean).sort((a, b) => b.d - a.d);
+}
+const CI_CALLS = {
+  early: {
+    meeting: { icon: '🤝', label: 'Players-only meeting', says: 'Clear the air early: everyone\'s morale up.' },
+    shake: { icon: '🔀', label: 'Shake up the rotation', says: 'Reset the minutes for where the team is: compete if you\'re winning, develop if you\'re not.' },
+    course: { icon: '🧭', label: 'Stay the course', says: 'It\'s early. Change nothing.' },
+  },
+  stretch: {
+    push: { icon: '🔥', label: 'Full push', says: 'Tighten to eight, stars near 38 minutes, starters fired up.' },
+    rest: { icon: '🛌', label: 'Rest up for the playoffs', says: 'Your top three drop to about 30 minutes to be fresh in April.' },
+    kids: { icon: '🌱', label: 'Play the kids', says: 'The season\'s gone: young players get the minutes.' },
+  },
+};
+function ciApply(t, k) {
+  const game = gameMinutes(), morale = n => { for (const p of t.roster) if (p.season) p.season.morale = Math.max(0, Math.min(100, (p.season.morale ?? 60) + n)); };
+  if (k === 'meeting') morale(dlPct(t).pct < 0.5 ? 5 : 3);
+  if (k === 'shake') LU.applyLineup(t, LU.planLineup(t, { mode: dlPct(t).pct >= 0.5 ? 'compete' : 'develop', size: 9, game }));
+  if (k === 'push') { const plan = LU.planLineup(t, { mode: 'compete', size: 8, game }); LU.applyLineup(t, plan); for (const p of plan.starters) if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 3); }
+  if (k === 'rest') { const top = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3); LU.applyLineup(t, LU.planLineup(t, { mode: 'normal', size: 10, game, over: Object.fromEntries(top.map(p => [p.id, Math.round(game * 0.62)])) })); }
+  if (k === 'kids') LU.applyLineup(t, LU.planLineup(t, { mode: 'develop', size: 10, game }));
+  state.dirty = true;
+}
+// Career: one call of your own each stretch.
+const CI_CAREER = {
+  early: {
+    post: { icon: '📸', label: 'Post a highlight', says: 'Remind the fans who you are.', fx: { fans: 0.02 } },
+    dinner: { icon: '🍽️', label: 'Team dinner on you', says: '20 coins: the whole roster closer.', fx: { mates: 3 }, coins: -20 },
+    film: { icon: '🎞️', label: 'Extra film with the coach', says: 'Earn his trust early.', fx: { coach: 3 } },
+  },
+  stretch: {
+    rally: { icon: '🗣️', label: 'Rally the room', says: 'Take the locker room into the final weeks.', fx: { mates: 2, morale: 3, ego: 1 } },
+    case: { icon: '🏅', label: 'Make your award case', says: 'Talk yourself up with the media.', fx: { fans: 0.03, coach: -1, ego: 1 } },
+    quiet: { icon: '🧘', label: 'Keep your head down', says: 'Let the play talk.', fx: { morale: 3, coach: 1 } },
+  },
+};
+function checkinCard() {
+  const w = ciWindow();
+  if (!w) return '';
+  const st = ciState(), done = st[w];
+  return `<fieldset class="frame"><legend>${w === 'early' ? '📋 Early-Season Check-in' : '🏁 Stretch-Run Check-in'}</legend><p class="note small">Day ${league().season.currentDay}. ${done ? 'Done for this stretch.' : w === 'early' ? 'A few weeks in: where you stand, who\'s hurt, who\'s hot, and one call.' : 'The final weeks: the race, your health, and how to finish.'}</p>
+    <button class="btn big ${done ? '' : 'focus'}" data-act="nav" data-to="checkin">${w === 'early' ? '📋' : '🏁'} Season Check-in</button></fieldset>`;
+}
+screens.checkin = () => {
+  const L = league(), w = ciWindow(L), st = ciState();
+  if (!w) { layout({ title: 'Season Check-in', body: '<p class="note">Check-ins open two weeks into the season (until the All-Star break) and again after the trade deadline.</p>' }); return; }
+  const me = CAR.isCareer(L) ? CAR.careerPlayer(L) : null;
+  const teams = me ? (me.team ? [me.team] : []) : L.teams.filter(isUserTeam);
+  const box = t => {
+    const x = ciStanding(L, t), [v, vc] = ciVerdict(x), form = ciForm(L, t);
+    const hurt = t.roster.filter(p => (p.season?.injury?.gamesOut || 0) > 0).sort((a, b) => b.season.injury.gamesOut - a.season.injury.gamesOut);
+    const calls = CI_CALLS[w], pick = st[w]?.[t.id];
+    return `<fieldset class="frame"><legend>${esc(teamFull(t))}</legend>
+      <p class="note"><b>${x.w}-${x.l}</b> · ${ordinal(x.seed)} of ${x.of} in the conference · on pace for ${x.pace}-${x.games - x.pace} · ${x.diff >= 0 ? '+' : ''}${x.diff.toFixed(1)} a game</p>
+      <p class="note small"><span class="${vc}">${v}</span> <span class="muted">(the roster says ${ordinal(x.want)})</span>${w === 'stretch' ? ` · ${x.seed <= 6 ? 'in the playoffs' : x.seed <= 10 ? 'in the play-in' : `${x.seed - 10} spot${x.seed - 10 === 1 ? '' : 's'} out of the play-in`}` : ''}</p>
+      ${hurt.length ? `<p class="note small">🩹 ${hurt.slice(0, 4).map(p => `<b>${esc(p.ln)}</b> ${p.season.injury.gamesOut}g`).join(' · ')}</p>` : '<p class="note small up">🩹 Healthy.</p>'}
+      ${form.length ? `<p class="note small">🔥 ${form.slice(0, 2).filter(f => f.d > 1).map(f => `<b>${esc(f.p.ln)}</b> +${f.d.toFixed(1)}`).join(' · ') || '—'} &nbsp; 🧊 ${form.slice(-2).filter(f => f.d < -1).map(f => `<b>${esc(f.p.ln)}</b> ${f.d.toFixed(1)}`).join(' · ') || '—'} <span class="muted">(game score vs last season)</span></p>` : ''}
+      ${me ? '' : pick ? `<p class="note small up">✓ ${calls[pick].icon} ${esc(calls[pick].label)}</p>` : `<div class="stack">${Object.entries(calls).filter(([k]) => !(k === 'rest' && x.seed > 8) && !(k === 'kids' && x.seed <= 6)).map(([k, c]) => `<button class="btn left small" data-act="ciPick" data-t="${t.id}" data-k="${k}"><span class="grow"><b>${c.icon} ${esc(c.label)}</b><br><span class="note small">${esc(c.says)}</span></span></button>`).join('')}</div>`}
+      ${me ? '' : `<button class="btn small" data-act="nav" data-to="lineup" data-arg="${t.id}" style="margin-top:6px">⏱️ Lineup</button>`}</fieldset>`;
+  };
+  let career = '';
+  if (me) {
+    const p = me.p, y = L.season.currentYear, l = seasonLine(p, state.leagueIdx, y), prev = seasonLine(p, state.leagueIdx, y - 1), rank = myLadderRank(p);
+    const goals = (careerStore().goals?.[y]?.keys || []).map(k => CL.GOALS[k]?.label).filter(Boolean);
+    const pick = st[w]?.me, calls = CI_CAREER[w];
+    career = `<fieldset class="frame"><legend>Your Season</legend>
+      ${l ? `<p class="note"><b>${l.ppg.toFixed(1)} / ${l.rpg.toFixed(1)} / ${l.apg.toFixed(1)}</b> in ${l.gp} games${prev ? ` <span class="muted">(last year ${prev.ppg.toFixed(1)} / ${prev.rpg.toFixed(1)} / ${prev.apg.toFixed(1)})</span>` : ''}</p>
+      <p class="note small">${l.starts}/${l.gp} starts · ${l.mpg.toFixed(1)} minutes${rank ? ` · ${ordinal(rank)} on the MVP ladder` : ''}</p>` : '<p class="note small muted">No games yet.</p>'}
+      ${goals.length ? `<p class="note small">🎯 ${goals.map(esc).join(' · ')}</p>` : ''}
+      ${pick ? `<p class="note small up">✓ ${calls[pick].icon} ${esc(calls[pick].label)}${st[w].meText ? ` · ${esc(st[w].meText)}` : ''}</p>` : `<div class="stack">${Object.entries(calls).map(([k, c]) => `<button class="btn left small" data-act="ciMe" data-k="${k}"><span class="grow"><b>${c.icon} ${esc(c.label)}</b><br><span class="note small">${esc(c.says)}</span></span></button>`).join('')}</div>`}
+    </fieldset>`;
+  }
+  layout({ title: w === 'early' ? 'Early-Season Check-in' : 'Stretch-Run Check-in', body: career + teams.map(box).join('') + (teams.length ? '' : '<p class="note">No team to check in on.</p>') });
+};
+actions.ciPick = d => {
+  const L = league(), w = ciWindow(L), t = L.teams.find(x => x.id === +d.t);
+  if (!w || !t || !isUserTeam(t)) return;
+  const st = ciState(); if (st[w]?.[t.id]) return;
+  ciApply(t, d.k);
+  (st[w] ||= {})[t.id] = d.k; ciSave(st);
+  render();
+  toast(`${CI_CALLS[w][d.k].icon} ${CI_CALLS[w][d.k].label}`, t.shortName);
+};
+actions.ciMe = d => {
+  const L = league(), w = ciWindow(L), me = CAR.careerPlayer(L), c = CI_CAREER[w]?.[d.k];
+  if (!w || !me || !c) return;
+  const st = ciState(); if (st[w]?.me) return;
+  if (c.coins) { if ((L.career?.coins || 0) < -c.coins) { toast('Not enough coins'); return; } careerCoins(c.coins); }
+  const text = careerFx(me.p, me.team, c.fx, `checkin-${w}`);
+  st[w] = { ...(st[w] || {}), me: d.k, meText: text }; ciSave(st);
+  render();
+  toast(`${c.icon} ${c.label}`, text);
+};
 function playoffCard() {
   const L = league(), po = PO.thisPlayoffs(L), s = poState(), b = PO.bracketOdds(L);
   const fav = b ? [...b.teams].sort((x, y) => y.odds[3] - x.odds[3])[0] : null;
