@@ -135,6 +135,8 @@ export function careerOffers(L, p, agentKey, day, rnd, { ringChase = false } = {
     let interest = 0.35 * role + 0.15 * Math.min(1, Math.max(0, (p.pot - 6) / 4)) * (p.age <= 25 ? 1 : 0.4) + 0.38 * rnd(t.id) + (st === 'rebuilding' && p.age <= 24 ? 0.08 : 0) + (own ? 0.15 : 0);
     if (ag.wants === 'market') interest += ((cityOf(t)?.[2] ?? 0.5) - 0.5) * 0.15;   // she gets the big markets on the phone
     if (ag.wants === 'fit') interest += Math.min(0.12, bondsOn(p, t).friends.length * 0.04);   // he knows the people there
+    // A brother on the roster (40+) has been in his ear: those teams call.
+    interest += Math.min(0.2, t.roster.filter(m => m.id !== p.id && (m.season?.relationship || 0) >= 40).length * 0.1);
     if (ringChase && FA.teamStrength(L, t) < 0.55) continue;   // ring or bust: contenders only
     if (ringChase) interest += 0.2;
     if (interest < 0.42 && !own) continue;
