@@ -22,7 +22,7 @@ export function halfway(L, p, team) {
   const prev = careerLog(p).filter(x => x.y < y).slice(-1)[0]?.l || null;
   const row = team?.season?.find(r => r.yr === y)?.seasonStats || team?.season?.slice(-1)[0]?.seasonStats || {};
   // Picked: the game's All-Star rosters (starTeams) at the break, the award once it's handed out.
-  const allStar = (L.starTeams || []).some(t => (t.roster || []).some(x => x.id === p.id)) || (p.awards || []).some(a => a.id === 23 && (a.league ?? 0) === 0 && (a.yearsWon || []).includes(y));
+  const allStar = (L.starTeams || []).some(t => (t.roster || []).some(x => x.id === p.id)) || (p.awards || []).some(a => a.id === 101 && (a.league ?? 0) === 0 && (a.yearsWon || []).includes(y));
   const pct = row.GP ? row.W / row.GP : 0.5;
   return { now, prev, w: row.W || 0, l: row.L || 0, pct, allStar, minutesDown: !!(now && prev && now.mpg < prev.mpg - 3), losing: pct < 0.42 && (row.GP || 0) >= 20 };
 }

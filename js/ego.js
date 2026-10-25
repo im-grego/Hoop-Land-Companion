@@ -7,7 +7,7 @@ import { seasonLine } from './storylines.js';
 import { shownLevel as levelOf } from './regression.js';
 
 export const EGO = { icon: '🎭', hi: 'Alpha', lo: 'Humble', hiIcon: '🎭', loIcon: '🙏' };
-const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13, ALL_STAR: 23 };
+const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13, ALL_STAR: 101 };
 // Known reads for real players (ego only; everyone else is read from his career).
 const REAL_EGO = {
   'Kevin Durant': 15, 'James Harden': 17, 'Russell Westbrook': 18, 'Kyrie Irving': 16, 'Jimmy Butler': 17, 'Luka Doncic': 16,

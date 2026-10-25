@@ -28,7 +28,7 @@ export function careerPlayer(L) {
 export const rankIdx = p => Math.max(0, Math.min(RANKS.length - 1, (p.season?.legacy ?? 1) - 1));
 export const fameName = f => FAME[f] || `Fame ${f}`;
 const won = (p, id) => (p.awards || []).filter(a => a.id === id && (a.league ?? 0) === 0).reduce((n, a) => n + (a.yearsWon || []).length, 0);
-export const trophies = p => ({ rings: won(p, 0), fmvp: won(p, 1), mvp: won(p, 2), allNba: won(p, 13), allStar: won(p, 23), dpoy: won(p, 4) });
+export const trophies = p => ({ rings: won(p, 0), fmvp: won(p, 1), mvp: won(p, 2), allNba: won(p, 13), allStar: won(p, 101), dpoy: won(p, 3) });   // the game's award ids: 101 All-Star, 3 DPOY
 
 // His role as the game shows it: "Starting SG", "6th Man", "Bench".
 export function roleOf(p, team) {

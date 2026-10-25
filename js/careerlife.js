@@ -185,7 +185,7 @@ export function goalContext(L, p, yr) {
   const tid = seasonLine(p, 0, yr)?.tid;
   const po = (L.season.playoffs || []).find(x => x.yr === yr);
   const playoffs = !!po && (po.rounds?.[0]?.series || []).some(s => s.topSeed === tid || s.lowerSeed === tid);
-  return { allStar: has(23), allNba: has(13), ring: has(0), playoffs };
+  return { allStar: has(101), allNba: has(13), ring: has(0), playoffs };
 }
 
 // ---------------------------------------------------------------------------

@@ -55,7 +55,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.206.0';
+const APP_VERSION = '0.206.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -4625,7 +4625,7 @@ function retirementsThisYear(L = league()) {
   }).sort((a, b) => b.lv - a.lv);
 }
 // Worth a call: a real name (rated 80+ as he left, an All-Star once) or a long run with one team.
-const notableRetiree = r => r.team && (r.lv >= 80 || r.run >= 6 || (r.p.awards || []).some(a => a.id === 23 && (a.league == null || a.league === 0)));
+const notableRetiree = r => r.team && (r.lv >= 80 || r.run >= 6 || (r.p.awards || []).some(a => a.id === 101 && (a.league == null || a.league === 0)));
 function comebackOdds(L, r, kind) {
   const p = r.p, st = teamStatus(L, r.team);
   let o = kind === 'farewell'
@@ -4752,7 +4752,7 @@ function iconCase(p, team) {
   for (const st of p.stats || []) if (st.league === 0) for (const r of st.season || []) if (r.GP > 0) { tidByYr.set(st.yr, r.tid); if (r.tid === team.id) { yrs.add(st.yr); gp += r.GP; pts += r.PTS || 0; if (r.num >= 0) nums.set(r.num, (nums.get(r.num) || 0) + r.GP); } }
   if (yrs.size < 6) return null;
   const here = id => AWARD_YEARS(p, id).filter(y => tidByYr.get(y) === team.id).length;
-  const mvp = here(2), fmvp = here(1), titles = here(0), allNba = here(13), allStar = here(23);
+  const mvp = here(2), fmvp = here(1), titles = here(0), allNba = here(13), allStar = here(101);
   const score = yrs.size + mvp * 6 + fmvp * 5 + titles * 3 + allNba * 1.5 + allStar;
   const num = [...nums].sort((a, b) => b[1] - a[1])[0]?.[0];
   // A real case (accolades with them), a title-winning Finals MVP, or a long run as a real contributor (11+ seasons
@@ -11691,7 +11691,7 @@ function seasonDrift() {
       if (p === best && run >= 3) drift(p, 'season:room', 'lockerRoom', 1, `the face of the team for ${run} years`, false);
       // Losing a real role sours a player with some ego; a humble or modest one takes it in stride.
       else if (l && prev && prev.gp >= 20 && prev.mpg >= 20 && prev.mpg - l.mpg >= 8 && egoVal(p) >= 10) drift(p, 'season:room', 'lockerRoom', -1, 'losing his role', false);
-      const up = wonLast(p, 2, ly) ? [2, 'won MVP'] : wonLast(p, 13, ly) ? [1, 'made All-NBA'] : wonLast(p, 23, ly) ? [1, 'made the All-Star team'] : null;
+      const up = wonLast(p, 2, ly) ? [2, 'won MVP'] : wonLast(p, 13, ly) ? [1, 'made All-NBA'] : wonLast(p, 101, ly) ? [1, 'made the All-Star team'] : null;
       if (up) drift(p, 'season:ego+', EGO_KEY, up[0], up[1], false);
       // A big ego around leaders, or under a coach who commands the room, comes down a notch.
       if (egoVal(p) >= 13 && (leaders.filter(x => x !== p).length >= 2 || steady)) drift(p, 'season:ego-', EGO_KEY, -1, leaders.filter(x => x !== p).length >= 2 ? 'the leaders around him keep him grounded' : `${coach.ln} keeps him grounded`, false);
