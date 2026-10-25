@@ -124,35 +124,30 @@ export { playerName, trophies };
 
 // ---------------------------------------------------------------------------
 // The GOAT race: every player the league knows (active, free agents, retirees, Hall of Famers), scored by what he
-// won, each award worth its weight. All-NBA counts all three teams; All-Defense and All-Rookie only two, as real life
-// does. Career points break ties.
-export const AWARD_VALUE = {
-  0: 6, 1: 8, 2: 12, 3: 5, 4: 2, 5: 1.5, 6: 1, 7: 3, 8: 1.5, 9: 1.5, 10: 1, 11: 1, 12: 1,
-  13: [5, 3.5, 2], 14: [2, 1, 0], 15: [0.5, 0.25, 0], 96: 0.5, 100: 1, 101: 2,
-};
+// won, each award worth the Hall of Fame value the save's own award table gives it (HOFValue). The third All-Defense
+// and All-Rookie teams the game sometimes names don't count (only All-NBA has three). Career points break ties.
+export const awardValues = L => new Map((L.awards || []).map(a => [a.id, { v: +(a.HOFValue ?? 0) || 0, name: a.name || a.shortName || '' }]));
+const thirdTeamOnly2 = new Set([14, 15]);
 export const GOAT_CHIPS = [[0, '🏆'], [2, '🏅'], [1, '🥇'], [3, '🛡️'], [13, '📜'], [101, '🌟']];
-export function goatScore(p) {
+export function goatScore(p, vals) {
   let score = 0;
   const n = {};
   for (const a of p.awards || []) {
     if ((a.league ?? 0) !== 0) continue;
-    const v = AWARD_VALUE[a.id], times = (a.yearsWon || []).length;
-    if (v == null || !times) continue;
-    const w = Array.isArray(v) ? v[Math.min(2, a.team ?? 0)] : v;
-    if (!w) continue;
-    score += w * times;
+    const v = vals.get(a.id)?.v || 0, times = (a.yearsWon || []).length;
+    if (!v || !times || (thirdTeamOnly2.has(a.id) && (a.team ?? 0) >= 2)) continue;
+    score += v * times;
     n[a.id] = (n[a.id] || 0) + times;
   }
-  const pts = p.careerStats?.season?.PTS || 0;
-  return { score: Math.round(score * 10) / 10, pts, n };
+  return { score: Math.round(score * 100) / 100, pts: p.careerStats?.season?.PTS || 0, n };
 }
 // Everyone with an award (and the career player), best first.
 export function goatBoard(L, meId) {
-  const seen = new Set(), rows = [];
+  const vals = awardValues(L), seen = new Set(), rows = [];
   const add = (p, where) => {
     if (!p || seen.has(p.id)) return;
     seen.add(p.id);
-    const g = goatScore(p);
+    const g = goatScore(p, vals);
     if (g.score > 0 || p.id === meId) rows.push({ p, where, ...g });
   };
   for (const p of L.hallOfFame || []) add(p, 'Hall of Fame');

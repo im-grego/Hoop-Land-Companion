@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.213.0';
+const APP_VERSION = '0.213.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2523,7 +2523,7 @@ function careerClassBox(L, p) {
 function careerLegacyTab(L, p, team) {
   return `${careerGoatBox(L, p)}${careerRaceBox(L, p)}${careerGoalsBox(L, p)}${careerDealsBox(L, p, team)}${careerShoeBox(L, p)}${careerInvestBox(L, p)}${careerFoundationBox(L, p)}${careerResumeBox(L, p)}${careerDebateBox(L, p)}${careerHofBox(L, p)}${careerJerseyBox(L, p)}${careerMomentsBox(L, p)}`;
 }
-// The GOAT tracker: the race by total award value (careerlife4 AWARD_VALUE). Where you stand (the three just ahead,
+// The GOAT tracker: the race by Hall of Fame value, each award weighted as the save's award table says (careerlife4). Where you stand (the three just ahead,
 // you, and the last man you passed), or the whole all-time list in a scroll box. Who you pass is remembered: the
 // players ahead of you last time who are behind you now.
 function goatTrack(L, p) {
@@ -2550,13 +2550,13 @@ function careerGoatBox(L, p) {
   const seg = `<div class="seg" style="margin-bottom:8px">${[['me', 'Where I Stand'], ['all', 'All-Time']].map(([k, l]) => `<button class="btn small ${view === k ? 'on focus' : 'off'}" data-act="goatView" data-v="${k}">${l}</button>`).join('')}</div>`;
   const body = view === 'all'
     ? `<div class="goat-list">${board.map(r => goatRow(r, me)).join('')}</div>`
-    : `<div class="stack">${board.slice(Math.max(0, me.rank - 4), me.rank - 1).map(r => goatRow(r, me, r.score > me.score ? `+${(r.score - me.score).toFixed(1)} ahead` : 'tied · more points')).join('')}
+    : `<div class="stack">${board.slice(Math.max(0, me.rank - 4), me.rank - 1).map(r => goatRow(r, me, r.score > me.score ? `+${+(r.score - me.score).toFixed(2)} ahead` : 'tied · more points')).join('')}
         ${goatRow(me, me)}
-        ${g.passed ? `<p class="note small up" style="margin:6px 0 0">Last passed${g.passedYr ? ` (${g.passedYr})` : ''}:</p>${goatRow(g.passed, me, me.score > g.passed.score ? `${(me.score - g.passed.score).toFixed(1)} behind` : 'tied · fewer points')}` : g.behind ? `<p class="note small muted" style="margin:6px 0 0">Right behind you:</p>${goatRow(g.behind, me, me.score > g.behind.score ? `${(me.score - g.behind.score).toFixed(1)} behind` : 'tied · fewer points')}` : ''}</div>`;
+        ${g.passed ? `<p class="note small up" style="margin:6px 0 0">Last passed${g.passedYr ? ` (${g.passedYr})` : ''}:</p>${goatRow(g.passed, me, me.score > g.passed.score ? `${+(me.score - g.passed.score).toFixed(2)} behind` : 'tied · fewer points')}` : g.behind ? `<p class="note small muted" style="margin:6px 0 0">Right behind you:</p>${goatRow(g.behind, me, me.score > g.behind.score ? `${+(me.score - g.behind.score).toFixed(2)} behind` : 'tied · fewer points')}` : ''}</div>`;
   return `<fieldset class="frame"><legend>🐐 GOAT Tracker</legend>${seg}
-    <p class="note small">#${me.rank} of ${board.length} all time · <b>${me.score}</b> award points${me.rank > 1 ? (board[me.rank - 2].score > me.score ? ` · ${(board[me.rank - 2].score - me.score).toFixed(1)} to pass ${esc(board[me.rank - 2].p.ln)}` : ` · tied with ${esc(board[me.rank - 2].p.ln)}, who has more career points`) : ' · the GOAT'}</p>
+    <p class="note small">#${me.rank} of ${board.length} all time · <b>${me.score}</b> Hall of Fame points${me.rank > 1 ? (board[me.rank - 2].score > me.score ? ` · ${+(board[me.rank - 2].score - me.score).toFixed(2)} to pass ${esc(board[me.rank - 2].p.ln)}` : ` · tied with ${esc(board[me.rank - 2].p.ln)}, who has more career points`) : ' · the GOAT'}</p>
     ${body}
-    <details class="cmb-fold"><summary>How it's scored</summary><p class="note small muted">MVP 12 · Finals MVP 8 · Title 6 · DPOY 5 · All-NBA 5 / 3.5 / 2 · Scoring title 3 · All-Star 2 · ROTY 2 · All-Defense 2 / 1 · Sixth Man, rebounding and assist titles 1.5 · MIP, steals, blocks, clutch, All-Star MVP 1 · All-Rookie 0.5 / 0.25 · 3-point contest 0.5. Career points break ties.</p></details></fieldset>`;
+    <details class="cmb-fold"><summary>How it's scored</summary><p class="note small muted">Each award's Hall of Fame value from this save's award table: ${[...CL4.awardValues(L)].filter(([, x]) => x.v > 0 && x.name).sort((a, b) => b[1].v - a[1].v).map(([, x]) => `${esc(x.name.replace(/ Team 1st Team$| 1st Team$/, ''))} ${+x.v.toFixed(2)}`).join(' · ')}. All-NBA counts all three teams; All-Defense and All-Rookie only two. Career points break ties.</p></details></fieldset>`;
 }
 actions.goatView = d => {
   state.goatView = d.v; render();
