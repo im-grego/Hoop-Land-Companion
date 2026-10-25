@@ -52,12 +52,21 @@ function protectFloats(text) {
   return out.join('');
 }
 
+// Parse, then turn the tagged floats back into numbers with one walk over the tree (a JSON.parse reviver does the
+// same but calls back for every value in the file, about eight times slower on a 24 MB save).
 export function parseSave(text) {
-  return JSON.parse(protectFloats(text), (key, value) =>
-    typeof value === 'string' && value.startsWith(FLOAT_TAG)
-      ? new RawNumber(value.slice(FLOAT_TAG.length))
-      : value
-  );
+  const root = JSON.parse(protectFloats(text));
+  const stack = [root];
+  const fix = v => (typeof v === 'string' && v.charCodeAt(0) === 1 && v.startsWith(FLOAT_TAG) ? new RawNumber(v.slice(FLOAT_TAG.length)) : v);
+  while (stack.length) {
+    const o = stack.pop();
+    if (Array.isArray(o)) {
+      for (let i = 0; i < o.length; i++) { const v = o[i]; if (v && typeof v === 'object') stack.push(v); else if (typeof v === 'string') o[i] = fix(v); }
+    } else {
+      for (const k in o) { const v = o[k]; if (v && typeof v === 'object') stack.push(v); else if (typeof v === 'string') o[k] = fix(v); }
+    }
+  }
+  return fix(root);
 }
 
 const TAG_RE = new RegExp('"\\\\u0001f:([^"]*)"', 'g');

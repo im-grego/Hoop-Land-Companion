@@ -1,0 +1,4 @@
+// Appended to js/app.js by tests/smoke.test.mjs (never shipped): reaches into the app for the browser tests.
+window.__cur = () => currentStep()?.key; window.__a = actions; window.__rep = (n,a) => replace(n,a||{}); window.__go = (n,a) => go(n,a||{}); window.__scr = (n,a) => { state.stack.push({ name: n, args: a||{} }); screens[n](a||{}); }; window.__st = () => state; window.__L = () => league(); window.__home = () => goHome(); window.__be = () => buildExport(); window.__FA = FA; window.__flags = () => calFlags(); window.__ext = () => extLedger(); window.__fs = () => faState(); window.__ut = isUserTeam;
+
+window.__tabs = () => { const L = league(), me = CAR.careerPlayer(L); return { moves: careerMovesTab(L, me.p, me.team), story: careerStoryTab(L, me.p, me.team), legacy: careerLegacyTab(L, me.p, me.team) }; };
