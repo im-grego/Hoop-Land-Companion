@@ -55,7 +55,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.204.1';
+const APP_VERSION = '0.205.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1560,6 +1560,7 @@ function calendarCard() {
   const s = league().season;
   if (phaseRank(s) === 0 && !isCollege()) {
     if (seasonUnplayed()) return setupCard();
+    if (CL3.atAllStarBreak(league())) return deadlineCard();
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
@@ -1603,7 +1604,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['career', 'careerFA', 'lineup', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['career', 'careerFA', 'lineup', 'deadline', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1614,6 +1615,7 @@ function screenAllowed(name) {
     return !cur || (STEP_SCREENS[cur.key] || []).includes(name) || name === 'review';
   }
   if (phaseRank(league().season) === 0) return true;
+  if (!isCollege() && CL3.atAllStarBreak(league()) && ['deadline', 'liveTrade'].includes(name)) return true;   // deadline day
   const cur = currentStep();
   return !!cur && (STEP_SCREENS[cur.key] || []).includes(name);
 }
@@ -2760,7 +2762,9 @@ function careerAllStarBox(L, p, team) {
     : part('😤 All-Star snub', a.event, btn('careerAsw', 'event:fuel', '🔥 Use it as fuel', 'Motor +1, morale +3.') + btn('careerAsw', 'event:vent', '📢 Say it publicly', 'Fans love it; the coach doesn\'t.'));
   const mins = h.minutesDown || p.linePos > 4 ? part('⏱️ Your minutes', a.mins, btn('careerAsw', 'mins:ask', '🗣️ Ask the coach for more', `About ${Math.round(careerAswOdds(p, team) * 100)}%.`) + btn('careerAsw', 'mins:work', '🤐 Keep working', 'Coach +3.')) : '';
   const dl = h.losing ? part('📞 The deadline', a.deadline, (ag ? btn('careerAsw', 'deadline:out', `🚪 Have ${esc(ag.name)} get you out`, 'Before the deadline. It burns bridges.') : '') + btn('careerAsw', 'deadline:stay', '🧱 Commit to the team', 'Fans and coach +, loyalty +1.')) : '';
-  return `<fieldset class="frame"><legend>⭐ All-Star Weekend</legend><p class="note small">First half: <b>${line}</b>${prev}. ${esc(team.shortName)} are ${h.w}-${h.l}.</p>${star}${mins}${dl}</fieldset>`;
+  const dd = dlState();
+  return `<fieldset class="frame"><legend>⭐ All-Star Weekend</legend><p class="note small">First half: <b>${line}</b>${prev}. ${esc(team.shortName)} are ${h.w}-${h.l}.</p>${star}${mins}${dl}
+    <button class="btn small" data-act="nav" data-to="deadline" style="margin-top:8px">🔔 ${dd.done ? `Deadline recap: ${dd.deals.length} deals` : 'Trade deadline: who\'s buying, who\'s selling'}</button></fieldset>`;
 }
 const careerAswOdds = (p, team) => Math.max(0.15, Math.min(0.8, 0.35 + CAR.coachBond(CO.headCoach(team)) / 100 + (CAR.standing(league(), p, team, valueOf)?.rank <= 3 ? 0.15 : 0)));
 // More minutes: a few taken from the players behind him at his main position.
@@ -5289,6 +5293,110 @@ actions.luApply = async () => {
   LU.applyLineup(t, plan);
   state.dirty = true;
   toast('🔁 Lineup set', `${t.shortName}: ${plan.rot.length}-man rotation, ${LU.MODES[a.mode || lineupMode(t)].label.toLowerCase()}.`);
+  render();
+};
+
+// ---------------------------------------------------------------------------
+// Trade deadline (the All-Star break): sellers move their veterans to the contenders for young players and picks.
+// Your teams take calls; deadline day runs the rest of the league's deals once.
+const dlKey = () => `hlc:deadline:${saveTag()}:${league().season.currentYear}`;
+function dlState() { try { return JSON.parse(localStorage.getItem(dlKey())) || {}; } catch { return {}; } }
+function dlSave(s) { try { localStorage.setItem(dlKey(), JSON.stringify(s)); } catch { /* ignore */ } }
+// A rotation that fits after players come and go mid-season.
+function resetRotation(t) { LU.applyLineup(t, LU.planLineup(t, { mode: lineupMode(t), size: 9, game: gameMinutes() })); state.dirty = true; }
+const dlPct = t => { const r = t.season?.find(x => x.yr === league().season.currentYear)?.seasonStats || {}; return { w: r.W || 0, l: r.L || 0, pct: r.GP ? r.W / r.GP : 0.5, gp: r.GP || 0 }; };
+const dlRole = t => { const { pct, gp } = dlPct(t); return gp < 15 ? 'bubble' : pct >= 0.56 ? 'buyer' : pct <= 0.44 ? 'seller' : 'bubble'; };
+// Just traded (a fresh stint with no games yet): not flipped again the same deadline.
+const justMoved = p => { const r = (p.stats || []).find(s => s.league === 0 && s.yr === league().season.currentYear); return !!r && r.season.length > 1 && !r.season[r.season.length - 1].GP; };
+const dlValueYear = () => { const L = league(), y = L.season.currentYear; return L.teams.some(t => (dlPct(t).gp || 0) >= 20) ? y : lastYear(); };
+function deadlineCard() {
+  const d = dlState(), L = league(), s = L.season;
+  return `<fieldset class="frame"><legend>🔔 Trade Deadline</legend><p class="note small">All-Star weekend: the deadline is day ${s.tradeDeadline}. ${d.done ? `${d.deals.length} deals went down around the league.` : 'Contenders are buying, the rebuilding teams are selling.'}</p>
+    <button class="btn big focus" data-act="nav" data-to="deadline">📞 ${d.done ? 'Deadline Recap' : 'Deadline Day'}</button></fieldset>`;
+}
+// The league's deadline deals: each seller shops its best veterans (27+, Lv 76+, two years or less left), each
+// buyer makes one deal at most, about eight in all. Returns the log lines.
+function runDeadline() {
+  const L = league(), yr = L.season.currentYear, vy = dlValueYear(), li = state.leagueIdx;
+  const rng = mulberry32((saveSalt() ^ Math.imul(yr + 17, 0x9e3779b1)) >>> 0);
+  const cpu = L.teams.filter(t => !isUserTeam(t));
+  const sellers = cpu.filter(t => dlRole(t) === 'seller').sort(() => rng() - 0.5), buyers = cpu.filter(t => dlRole(t) === 'buyer');
+  const used = new Set(), out = [];
+  const val = p => playerValue(p, li, vy);
+  for (const t of sellers) {
+    if (out.length >= 8) break;
+    const vets = FA.signedRoster(t).filter(p => p.age >= 27 && shownLevel(p) >= 76 && (p.contract?.yrs || 0) <= 2 && !tradeLock(p) && !justMoved(p) && !FA.isLifer(L, p, t)).sort((a, b) => val(b) - val(a)).slice(0, 2);
+    for (const p of vets) {
+      if (out.length >= 8 || rng() > 0.65) continue;
+      const want = val(p);
+      let best = null;
+      for (const u of buyers.filter(x => !used.has(x.id)).sort(() => rng() - 0.5).slice(0, 8)) {
+        const core = new Set([...u.roster].sort((a, b) => val(b) - val(a)).slice(0, 3));
+        // Contenders pay in youth and picks, with a salary to make it work.
+        const assets = [
+          ...FA.signedRoster(u).filter(x => !core.has(x) && !tradeLock(x) && !justMoved(x) && (x.age <= 25 || x.contract?.yrs <= 1)).map(x => ({ player: x, value: val(x), young: x.age <= 25 })),
+          ...u.draftPicks.filter(pk => pk.yr > draftYear(L) && !FA.pickFrozen(L, u, pk)).map(pk => ({ pick: pk, value: futureValue(pk), young: true })),
+        ];
+        for (let i = 0; i < assets.length; i++) for (let j = i; j < assets.length; j++) {
+          const pack = i === j ? [assets[i]] : [assets[i], assets[j]];
+          const v = pack.reduce((a, x) => a + x.value, 0);
+          if (v < want * 0.75 || v > want * 1.15) continue;
+          const A = { team: t, players: [p], picks: [] }, B = { team: u, players: pack.filter(x => x.player).map(x => x.player), picks: pack.filter(x => x.pick).map(x => x.pick) };
+          if (tradeRulesErr(L, A, B) || ntcRefusal(L, A, B)) continue;
+          const score = Math.abs(v - want) - pack.filter(x => x.young).length * want * 0.05;   // sellers want the future
+          if (!best || score < best.score) best = { A, B, score };
+        }
+      }
+      if (!best) continue;
+      if (cpuPhysical(p, best.B.team) === 'fail') { out.push(`🩺 ${best.B.team.shortName} backed out of a deal for ${playerName(p)} after his physical`); continue; }
+      const rec = executeTrade(best.A, best.B, yr);
+      for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
+      markAway(rec.moved);
+      resetRotation(t); resetRotation(best.B.team);
+      used.add(best.B.team.id);
+      const back = [...best.B.players.map(x => `${playerName(x)} (${x.age})`), ...best.B.picks.map(pk => pickLabel(pk))].join(' + ');
+      out.push(`🔁 ${best.B.team.shortName} land ${playerName(p)} (Lv ${shownLevel(p)}, ${p.age}) from ${t.shortName} for ${back}`);
+    }
+  }
+  return out;
+}
+screens.deadline = () => {
+  const L = league(), d = dlState(), mine = L.teams.filter(isUserTeam);
+  const group = r => L.teams.filter(t => dlRole(t) === r).sort((a, b) => dlPct(b).pct - dlPct(a).pct);
+  const chip = t => `<span class="style-chip">${esc(t.shortName)} ${dlPct(t).w}-${dlPct(t).l}</span>`;
+  // Calls for your players: what the buyers would give for each of your veterans.
+  const calls = mine.flatMap(t => FA.signedRoster(t).filter(p => p.age >= 26 && shownLevel(p) >= 74 && !tradeLock(p)).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 4).map(p => ({ t, p })));
+  const me = CAR.isCareer(L) ? CAR.careerPlayer(L) : null;
+  layout({
+    title: 'Trade Deadline',
+    body: `<p class="note small">Day ${L.season.currentDay} · the deadline is day ${L.season.tradeDeadline}. Mid-season deals start a new stat line with the new team, and both rotations are reset so the new players get minutes.</p>
+      <fieldset class="frame"><legend>The Market</legend><p class="note small"><b>Buying</b></p><div class="style-chips">${group('buyer').map(chip).join('') || '<span class="muted small">nobody yet</span>'}</div>
+        <p class="note small" style="margin-top:6px"><b>Selling</b></p><div class="style-chips">${group('seller').map(chip).join('') || '<span class="muted small">nobody yet</span>'}</div></fieldset>
+      ${mine.length ? `<fieldset class="frame"><legend>Your Phone</legend>${calls.length ? `<div class="stack">${calls.map(({ t, p }) => `<button class="btn left small" data-act="dlCalls" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)} <span class="muted">${p.age}y · ${esc(t.shortName)}</span><br><span class="note small">See who's calling</span></span></button>`).join('')}</div>` : '<p class="note small muted">No calls about your players.</p>'}
+        <button class="btn" data-act="nav" data-to="liveTrade" style="margin-top:8px">🔁 Make your own trade</button></fieldset>` : ''}
+      ${me?.team ? `<fieldset class="frame"><legend>Your Team</legend><p class="note small">${esc(me.team.shortName)} are ${dlRole(me.team) === 'buyer' ? 'buyers' : dlRole(me.team) === 'seller' ? 'sellers' : 'on the bubble'} at ${dlPct(me.team).w}-${dlPct(me.team).l}.${d.done ? (d.deals.some(x => x.includes(me.team.shortName)) ? ' They made a move.' : ' They stood pat.') : ''}</p></fieldset>` : ''}
+      <fieldset class="frame"><legend>Deadline Day</legend>${d.done ? `<div class="stack">${d.deals.map(x => `<p class="note small">${esc(x)}</p>`).join('') || '<p class="note small muted">A quiet deadline: nobody pulled the trigger.</p>'}</div>`
+        : `<p class="note small">Make your moves first. When you're done, the rest of the league makes theirs.</p><button class="btn big focus" data-act="dlRun">⏰ Run deadline day</button>`}</fieldset>`,
+  });
+};
+actions.dlCalls = d => {
+  const L = league(), t = L.teams.find(x => isUserTeam(x) && x.roster.some(p => p.id === +d.id));
+  if (!t) return;
+  draftState().offerSeed = Math.floor(Math.random() * 1e9);
+  reqOffers({ pid: +d.id, tid: t.id });
+};
+actions.dlRun = async () => {
+  const d = dlState(); if (d.done) return;
+  if (!(await confirmBox('Run deadline day? The CPU teams make their deals; you can still trade after.', 'Run it'))) return;
+  const o = overlay('<div class="spinner"></div><p class="note">Phones ringing around the league…</p>');
+  await nextFrame();
+  const deals = runDeadline();
+  o.remove();
+  dlSave({ done: true, deals });
+  // Career: a move by his team is news in his feed.
+  const L = league(), me = CAR.isCareer(L) ? CAR.careerPlayer(L) : null;
+  if (me?.team) { const mine = deals.filter(x => x.includes(me.team.shortName)); if (mine.length) { const { st, cy } = careerYear(); for (const x of mine) careerFeed(cy, 'Hoop Land', x.replace(/^🔁 /, '')); careerSave(st); } }
+  toast('⏰ The deadline has passed', `${deals.filter(x => x.startsWith('🔁')).length} trades around the league.`);
   render();
 };
 
@@ -9037,6 +9145,7 @@ function liveExecute(A, B, cpu = false) {
   const L = league();
   const rec = executeTrade(A, B, L.season.currentYear);
   for (const m of rec.moved) tradeMorale(L, m.p, m.to, m.from);
+  if (L.season.phase === 9) for (const t of [A.team, B.team]) resetRotation(t);   // mid-season: the new players need minutes
   const awayAdded = markAway(rec.moved);
   const moves = [];
   for (const [from, to] of [[A, B], [B, A]]) {

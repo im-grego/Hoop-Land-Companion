@@ -101,9 +101,12 @@ export function cpuAccepts(give, get, margin = 1.08) {
 }
 
 // Move a player between rosters, keeping the new season's stats row in step
-// (the game rewrites that row's team and number on a move).
+// (the game rewrites that row's team and number on a move). Mid-season, once he has played games for his old team,
+// the game starts a new stint (a fresh line with the new team and number), and so does this. Returns true when it
+// added one (an undo takes it back off).
 // The whole contract goes with him, as in the NBA and in the game: the team trading him away keeps no dead money.
-export function movePlayer(p, from, to, year) {
+const freshStint = s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, typeof v === 'number' ? 0 : Array.isArray(v) ? v.map(x => (typeof x === 'number' ? 0 : x)).filter(x => typeof x === 'number' || k !== 'L10') : v]));
+export function movePlayer(p, from, to, year, { newStint = true } = {}) {
   const i = from.roster.indexOf(p);
   if (i < 0) throw new Error('Player not on that roster');
   from.roster.splice(i, 1);
@@ -113,7 +116,9 @@ export function movePlayer(p, from, to, year) {
   to.roster.push(p);
   const row = (p.stats || []).filter(s => s.yr === year).pop();
   const stint = row?.season?.[row.season.length - 1];
-  if (stint && !stint.GP) { stint.tid = to.id; stint.num = p.num; }
+  if (stint && !stint.GP) { stint.tid = to.id; stint.num = p.num; return false; }
+  if (stint && newStint) { row.season.push({ ...freshStint(stint), tid: to.id, num: p.num }); return true; }
+  return false;
 }
 
 // Execute a two-team trade. side = { team, picks, players }.
@@ -125,8 +130,8 @@ export const setTradeHook = f => { tradeHook = f; };
 export function executeTrade(A, B, year) {
   tradePicks(A.team, B.team, A.picks || [], B.picks || []);
   const moved = [];
-  for (const p of A.players || []) { moved.push({ p, from: A.team, to: B.team, num: p.num, linePos: p.linePos, idx: A.team.roster.indexOf(p) }); movePlayer(p, A.team, B.team, year); }
-  for (const p of B.players || []) { moved.push({ p, from: B.team, to: A.team, num: p.num, linePos: p.linePos, idx: B.team.roster.indexOf(p) }); movePlayer(p, B.team, A.team, year); }
+  for (const p of A.players || []) { const m = { p, from: A.team, to: B.team, num: p.num, linePos: p.linePos, idx: A.team.roster.indexOf(p) }; moved.push(m); m.stint = movePlayer(p, A.team, B.team, year); }
+  for (const p of B.players || []) { const m = { p, from: B.team, to: A.team, num: p.num, linePos: p.linePos, idx: B.team.roster.indexOf(p) }; moved.push(m); m.stint = movePlayer(p, B.team, A.team, year); }
   const rec = { A: A.team, B: B.team, picksA: A.picks || [], picksB: B.picks || [], moved, year };
   tradeHook?.('do', rec);
   return rec;
@@ -136,7 +141,8 @@ export function undoTrade(rec) {
   tradeHook?.('undo', rec);
   tradePicks(rec.A, rec.B, rec.picksB, rec.picksA);
   for (const m of [...rec.moved].reverse()) {
-    movePlayer(m.p, m.to, m.from, rec.year);
+    if (m.stint) (m.p.stats || []).filter(s => s.yr === rec.year).pop()?.season?.pop();   // the mid-season stint the trade started
+    movePlayer(m.p, m.to, m.from, rec.year, { newStint: false });
     m.from.roster.splice(m.from.roster.indexOf(m.p), 1);
     m.from.roster.splice(m.idx, 0, m.p);
     m.p.num = m.num;
