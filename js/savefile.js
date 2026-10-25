@@ -388,5 +388,5 @@ const SKILL_KEYS = ['LAY', 'DNK', 'INS', 'MID', 'TPT', 'FTS', 'DRB', 'PAS', 'ORE
 export function levelOf(p) {
   const total = SKILL_KEYS.reduce((a, k) => a + (p.attributes?.[k]?.[0] ?? 0), 0);
   const cap = p.pot >= 11 ? 107 : 100;
-  return Math.max(1, Math.min(cap, Math.round(100 - (168 - total) / 2)));
+  return Math.max(1, Math.min(cap, Math.floor(100 - (168 - total) / 2)));   // the game drops the half (113 → 72)
 }
