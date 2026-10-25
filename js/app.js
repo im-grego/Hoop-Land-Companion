@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.210.1';
+const APP_VERSION = '0.211.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ function layout({ title, left = '', right = '', body, action = null, actionLeft 
       <div class="marquee" role="heading" aria-level="1" aria-label="${t}">
         <div class="marquee-track" aria-hidden="true"><span>${t}</span><span>${t}</span></div>
       </div>
-      ${right || coinChip()}
+      ${right || careerChips()}
     </div>`}
     <main class="panel ${bare ? 'bare' : ''}">${body}</main>
     ${action ? `<div class="bottom ${actionLeft ? 'two' : ''}">${actionLeft ? `<button class="btn action alt" data-act="${actionLeft.act}" data-id="${actionLeft.id}">${esc(actionLeft.label)}</button>` : ''}<button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}${action.n != null ? ` data-n="${action.n}"` : ''}${action.to ? ` data-to="${esc(action.to)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
@@ -463,6 +463,7 @@ function runAct(el, e) {
   const act = el.dataset.act;
   if (act === 'back') return back();
   const fn = actions[act];
+  state.curAct = act; state.curWhy = null;
   // Keep the card you tapped where it is on screen through the redraw.
   const box = el.closest('[data-anchor]');
   state.anchor = box ? { key: box.dataset.anchor, top: box.getBoundingClientRect().top } : null;
@@ -577,7 +578,7 @@ async function loadFile(file) {
     }
     if (!isCollege()) state.fileCheck = fileCheck(league());   // before the app touches anything
     if (!isCollege()) { state.probeCheck = probeCheck(league()); state.probeIn = { [state.leagueIdx]: probe(league()) }; }
-    state.coinsIn = CAR.isCareer(league()) ? (league().career?.coins ?? 0) : null; state.coinLog = [];
+    ledgerStart();
     freshSaveCheck();
     if (repairPickYears()) toast('Draft picks moved back a year', 'This save had its picks a year ahead; they now carry the real draft year.');
     recallSetup();
@@ -867,7 +868,7 @@ function buildExport() {
   state.data.seasonLeagues.forEach(usePlaybooks);
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
-  if (!isCollege()) { state.coinWrite = writeCareerCoins(); saveManifest(league()); saveProbe(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
+  if (!isCollege()) { writeLedger(); saveManifest(league()); saveProbe(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
   const nudged = !isCollege() ? applyMindNudges(league()) : [];
   const text = serializeSave(state.data);
   for (const [p, k, d] of nudged) p.tendencies[k] -= d;
@@ -995,7 +996,7 @@ actions.share = async () => {
 // Checkpoints before big moves: the last three are kept (each is a full copy of the save, so no more than that on a
 // phone), and Settings → Data can go back to any of them.
 function checkpoint(label) {
-  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty, at: Date.now(), cal: JSON.stringify(state.cal || {}), coinN: (state.coinLog || []).length };
+  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty, at: Date.now(), cal: JSON.stringify(state.cal || {}), ledgerN: ledgerLen() };
   state.undoList = [state.undo, ...(state.undoList || [])].slice(0, 3);
 }
 function undoHistoryBox() {
@@ -1010,7 +1011,7 @@ actions.undoTo = async d => {
   const o = overlay('<div class="spinner"></div><p class="note">Restoring…</p>');
   await nextFrame();
   installData(parseSave(u.text), true);
-  if (state.coinLog) state.coinLog = state.coinLog.slice(0, u.coinN ?? state.coinLog.length);   // the coins go back with the save
+  ledgerRewind(u.ledgerN);   // coins and fans go back with the save
   try { state.cal = JSON.parse(u.cal || '{}'); } catch { /* keep */ }
   if (!isCollege()) { saveDrift(); saveTraitStore(); saveComeback(); saveJersey(); }
   state.undoList = state.undoList.slice(+d.i + 1);
@@ -1674,7 +1675,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['export', 'checkin', 'myteams', 'coinLog', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1779,7 +1780,7 @@ actions.undoAdvance = async () => {
   const o = overlay('<div class="spinner"></div><p class="note">Restoring…</p>');
   await nextFrame();
   installData(parseSave(u.text), true);
-  if (state.coinLog) state.coinLog = state.coinLog.slice(0, u.coinN ?? state.coinLog.length);
+  ledgerRewind(u.ledgerN);
   state.undo = null;
   state.dirty = u.dirty;
   o.remove();
@@ -1950,7 +1951,7 @@ function careerSync() {
   FA.setHeld([L.season.playerId]);
   FA.setAgentFor(L.season.playerId, careerAgent()?.fa || null);
   if (me?.team && L.season.teamId !== me.team.id) { L.season.teamId = me.team.id; state.dirty = true; }
-  if (me) { careerYearly(); careerCoachMake(); careerFriendTrack(L, me.p, me.team); }
+  if (me) { const why = state.curWhy; state.curWhy = 'Last season settled'; careerYearly(); state.curWhy = why; careerCoachMake(); careerFriendTrack(L, me.p, me.team); }
 }
 
 function careerAgentBox(p) {
@@ -2060,7 +2061,7 @@ actions.careerSign = async d => {
   const cr = (L.career ||= {});
   if (ag) careerCoins(-ag.fee, `${ag.name || 'Agent'} fee`);
   const fans = Math.round((cr.fans || 0) * Math.max(0, pitch.fans));
-  if (fans) cr.fans = (cr.fans || 0) + fans;
+  if (fans) careerBump('fans', fans, `Signed with ${team.shortName}`);
   if (ag?.coach) careerCoach(team, ag.coach);
   if (ag?.bond) for (const m of team.roster) if (m.id !== p.id) careerBond(m, ag.bond);
   if (o.own) careerMorale(p, 4); else careerMorale(p, pitch.rank <= 2 ? 6 : 2);
@@ -2158,12 +2159,6 @@ async function careerAskOut(p, team) {
 // ---------------------------------------------------------------------------
 // Career life: the Moves, Story and Legacy tabs.
 actions.careerTab = d => replace('career', { tab: d.t });
-function careerFans(share) {
-  const cr = (league().career ||= {}), n = Math.round((cr.fans || 0) * share);
-  cr.fans = Math.max(0, (cr.fans || 0) + n);
-  state.dirty = true;
-  return n;
-}
 function careerLegacy(p, n) { if (p.season) p.season.legacyPoints = Math.max(0, (p.season.legacyPoints || 0) + n); state.dirty = true; }
 function careerFeed(cy, who, text) { (cy.feed ||= []).push({ who, text }); }
 // fx from Media Day answers and posts: fans (share of fans), ego, coach, morale, bond [pid, n], mates (every teammate).
@@ -2571,45 +2566,67 @@ function careerMomentsBox(L, p) {
 // ---------------------------------------------------------------------------
 // Career round two (careerlife2.js).
 const careerSeed = (n = 0) => (saveSalt() ^ Math.imul(league().season.playerId + n, 2654435761) ^ league().season.currentYear) >>> 0;
-// Every coin the app spends or earns goes through here and into the session's ledger (what it was for); export
-// writes the coins the file came in with plus the ledger, so the number in the file is exactly what the app did.
-function careerCoins(n, why = 'Career') {
-  const cr = (league().career ||= {}), was = cr.coins || 0;
-  cr.coins = Math.max(0, was + n);
-  if (cr.coins !== was) (state.coinLog ||= []).push({ n: cr.coins - was, why, at: Date.now() });
+// Career coins and fans: every change the app makes goes through careerBump and into the session's ledger (what it
+// was for), shown in the header and on its own screen. Export writes what the file came in with plus the ledger over
+// the file's number, so the save holds exactly what the app did.
+const LEDGER = { coins: { icon: '💵', label: 'Coins', unit: 'coins' }, fans: { icon: '🙌', label: 'Fans', unit: 'fans' } };
+// Why, when a caller doesn't say: the button that was tapped.
+const ACT_WHY = { careerMedia: 'Media Day', careerPost: 'Hoop Gram', careerPost2: 'After the playoffs', careerAsw: 'All-Star weekend', careerShoe: 'Sneaker launch',
+  careerTrash: 'Nemesis', careerNemesis: 'Nemesis', careerFriendGone: 'A friend traded', careerTakeLess: 'Took less to keep a teammate', careerLife: 'Life event',
+  careerGive: 'Donation', careerDeal: 'Endorsement', careerRuns: 'Summer runs', careerSummer: 'Summer program', careerChapter: 'The final chapter', careerAfter: 'After basketball',
+  careerSign: 'Free agency', careerExt: 'Extension', careerPo: 'Playoff check-in', careerRound: 'Playoff round', careerRing: 'Ring night', ciMe: 'Season check-in',
+  careerFaction: 'The locker room', careerRumor: 'Trade rumor', careerCall: 'A star\'s call', careerRecruit: 'Recruiting', careerMentor: 'Mentor', careerCamp: 'Training camp',
+  careerAsk: 'A teammate asks', careerExit: 'Exit interview', careerDuty: 'Team duty', careerEntourage: 'The entourage', careerInvest: 'Investment', poPick: 'Picked the champion' };
+const actWhy = () => state.curWhy || ACT_WHY[state.curAct] || (state.curAct ? state.curAct.replace(/^career/, '').replace(/([a-z])([A-Z])/g, '$1 $2') : 'Career');
+function careerBump(kind, n, why) {
+  const cr = (league().career ||= {}), was = cr[kind] || 0;
+  cr[kind] = Math.max(0, Math.round(was + n));
+  const d = cr[kind] - was;
+  if (d) ((state.ledger ||= {})[kind] ||= []).push({ n: d, why: why || actWhy(), at: Date.now() });
   state.dirty = true;
+  return d;
 }
-const coinsIn = () => state.coinsIn ?? league().career?.coins ?? 0;
-const coinNet = () => (state.coinLog || []).reduce((a, x) => a + x.n, 0);
-// At export: overwrite the file's coins with what came in plus what the app did.
-function writeCareerCoins() {
+function careerCoins(n, why) { careerBump('coins', n, why); }
+function careerFans(share, why) { return careerBump('fans', (league().career?.fans || 0) * share, why); }
+const ledgerIn = k => state.ledgerIn?.[k] ?? league().career?.[k] ?? 0;
+const ledgerNet = k => (state.ledger?.[k] || []).reduce((a, x) => a + x.n, 0);
+// On load: what the file holds, and a fresh ledger.
+function ledgerStart() {
   const L = league();
-  if (!CAR.isCareer(L) || state.coinsIn == null) return null;
-  const want = Math.max(0, state.coinsIn + coinNet()), had = L.career?.coins ?? 0;
-  (L.career ||= {}).coins = want;
-  return { from: state.coinsIn, net: coinNet(), to: want, fixed: had !== want };
+  state.ledgerIn = CAR.isCareer(L) ? { coins: L.career?.coins ?? 0, fans: L.career?.fans ?? 0 } : null;
+  state.ledger = { coins: [], fans: [] };
 }
-function coinChip() {
+// At export: the file gets what came in plus what the app did, over whatever it holds.
+function writeLedger() {
+  const L = league();
+  if (!CAR.isCareer(L) || !state.ledgerIn) return;
+  for (const k of Object.keys(LEDGER)) (L.career ||= {})[k] = Math.max(0, state.ledgerIn[k] + ledgerNet(k));
+}
+const ledgerLen = () => Object.fromEntries(Object.keys(LEDGER).map(k => [k, (state.ledger?.[k] || []).length]));
+function ledgerRewind(lens) { if (state.ledger && lens) for (const k of Object.keys(LEDGER)) state.ledger[k] = (state.ledger[k] || []).slice(0, lens[k] ?? state.ledger[k]?.length); }
+function careerChips() {
   if (!state.data) return '';
   const L = league();
   if (!CAR.isCareer(L)) return '';
-  const net = coinNet();
-  return `<button class="btn tiny coin-chip" data-act="nav" data-to="coinLog" aria-label="Coins">💵 ${(L.career?.coins ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net}</span>` : ''}</button>`;
+  const chip = k => { const net = ledgerNet(k); return `<button class="btn tiny coin-chip" data-act="nav" data-to="ledger" data-arg="${k}" aria-label="${LEDGER[k].label}">${LEDGER[k].icon} ${(L.career?.[k] ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net.toLocaleString()}</span>` : ''}</button>`; };
+  return `<div class="career-chips">${chip('coins')}${chip('fans')}</div>`;
 }
-screens.coinLog = () => {
-  const L = league(), log = state.coinLog || [], net = coinNet();
+screens.ledger = (args = {}) => {
+  const L = league(), k = LEDGER[args.arg] ? args.arg : 'coins', D = LEDGER[k], log = state.ledger?.[k] || [], net = ledgerNet(k), from = ledgerIn(k);
+  const verb = k === 'coins' ? (net >= 0 ? 'earned' : 'spent') : (net >= 0 ? 'gained' : 'lost');
   layout({
-    title: 'Coins',
-    body: `<fieldset class="frame"><legend>This Session</legend>
-      <p class="note">Came in with <b>${coinsIn().toLocaleString()}</b> · ${net >= 0 ? 'earned' : 'spent'} <b class="${net >= 0 ? 'up' : 'down'}">${Math.abs(net).toLocaleString()}</b> · now <b>${(L.career?.coins ?? 0).toLocaleString()}</b></p>
-      <p class="note small muted">On export the file gets ${coinsIn().toLocaleString()} ${net >= 0 ? '+' : '−'} ${Math.abs(net).toLocaleString()} = <b>${Math.max(0, coinsIn() + net).toLocaleString()}</b> coins, written over whatever it holds.</p>
-      ${log.length ? `<div class="stack">${[...log].reverse().map(x => `<p class="note small" style="margin:0"><span class="${x.n > 0 ? 'up' : 'down'}">${x.n > 0 ? '+' : ''}${x.n}</span> · ${esc(x.why)}</p>`).join('')}</div>` : '<p class="note small muted">Nothing spent or earned yet.</p>'}
+    title: D.label,
+    body: `<div class="tabs">${Object.entries(LEDGER).map(([x, d]) => `<button class="btn ${x === k ? 'on focus' : 'off'}" data-act="nav" data-replace="1" data-to="ledger" data-arg="${x}">${d.icon} ${d.label}</button>`).join('')}</div>
+      <fieldset class="frame"><legend>This Session</legend>
+      <p class="note">Came in with <b>${from.toLocaleString()}</b> · ${verb} <b class="${net >= 0 ? 'up' : 'down'}">${Math.abs(net).toLocaleString()}</b> · now <b>${(L.career?.[k] ?? 0).toLocaleString()}</b></p>
+      <p class="note small muted">On export the file gets ${from.toLocaleString()} ${net >= 0 ? '+' : '−'} ${Math.abs(net).toLocaleString()} = <b>${Math.max(0, from + net).toLocaleString()}</b> ${D.unit}, written over whatever it holds.</p>
+      ${log.length ? `<div class="stack">${[...log].reverse().map(x => `<p class="note small" style="margin:0"><span class="${x.n > 0 ? 'up' : 'down'}">${x.n > 0 ? '+' : ''}${x.n.toLocaleString()}</span> · ${esc(x.why)}</p>`).join('')}</div>` : `<p class="note small muted">No change yet this session.</p>`}
     </fieldset>`,
   });
 };
 function careerFx2(p, team, fx, why) {
   const parts = [];
-  if (fx.coins) { careerCoins(fx.coins, why || 'Career'); parts.push(`${fx.coins > 0 ? '+' : ''}${fx.coins} coins`); }
+  if (fx.coins) { careerCoins(fx.coins, why); parts.push(`${fx.coins > 0 ? '+' : ''}${fx.coins} coins`); }
   if (fx.attr) { const ks = CL.roomiest(p, fx.attr); for (const k of ks) p.attributes[k][0]++; if (ks.length) parts.push(`${ks.join(', ')} +1`); }
   const rest = careerFx(p, team, fx, why);
   return [rest, ...parts].filter(Boolean).join(', ');
@@ -14980,7 +14997,7 @@ screens.export = () => {
       ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
         ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
-        ${CAR.isCareer(league()) && state.coinsIn != null ? `<p class="note small">💵 Coins: ${coinsIn().toLocaleString()} when loaded ${coinNet() >= 0 ? '+' : '−'} ${Math.abs(coinNet()).toLocaleString()} in the app = <b>${Math.max(0, coinsIn() + coinNet()).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="coinLog">Ledger</button></p>` : ''}
+        ${CAR.isCareer(league()) && state.ledgerIn ? Object.entries(LEDGER).map(([k, d]) => `<p class="note small">${d.icon} ${d.label}: ${ledgerIn(k).toLocaleString()} when loaded ${ledgerNet(k) >= 0 ? '+' : '−'} ${Math.abs(ledgerNet(k)).toLocaleString()} in the app = <b>${Math.max(0, ledgerIn(k) + ledgerNet(k)).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="ledger" data-arg="${k}">Ledger</button></p>`).join('') : ''}
         <div class="stack">
           ${canShare ? '<button class="btn big focus" data-act="share">📤 Save to Files / Dropbox</button>' : ''}
           <button class="btn ${canShare ? '' : 'big focus'}" data-act="download">💾 Download File</button>
