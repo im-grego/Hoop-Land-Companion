@@ -378,11 +378,22 @@ export function seasonsWith(league, p, team) {
 // A franchise lifer: 8+ straight seasons with the team, 35 and over, and into his 2nd year of regression or later.
 // He finishes his career there: never shopped, dumped or cut, his team brings him back when his deal is up, and it
 // takes an outlandish offer from anyone else to get him to leave.
+// Real players who have only ever played for one team (for leagues whose history starts after their careers did).
+const ONE_TEAM = { 'Stephen Curry': 'GSW', 'Draymond Green': 'GSW', 'Nikola Jokic': 'DEN', 'Joel Embiid': 'PHI', 'Giannis Antetokounmpo': 'MIL',
+  'Devin Booker': 'PHX', 'Jayson Tatum': 'BOS', 'Jaylen Brown': 'BOS', 'Bam Adebayo': 'MIA', 'Ja Morant': 'MEM', 'Zion Williamson': 'NOP',
+  'Shai Gilgeous-Alexander': 'OKC', 'Anthony Edwards': 'MIN', 'Trae Young': 'ATL', 'Domantas Sabonis': 'SAC', 'Jaren Jackson Jr.': 'MEM',
+  'Tyler Herro': 'MIA', 'De\'Aaron Fox': 'SAC', 'Donovan Mitchell': 'UTA', 'Luka Doncic': 'DAL', 'LaMelo Ball': 'CHA', 'Darius Garland': 'CLE' };
 export function isLifer(league, p, team) {
   if (!team || p.age <= 35 || p.age < (p.regressionAge || 32) + 1) return false;
   const rows = (p.stats || []).filter(s => s.league === 0 && s.yr <= league.season.currentYear).sort((a, b) => b.yr - a.yr);
   let n = 0;
   for (const r of rows) { if ((r.season || []).some(x => x.tid === team.id)) n++; else if ((r.season || []).length) break; }
+  // Imported leagues only carry a few seasons of history for real veterans (Curry: four lines, 18 years in the
+  // league). When every season on record is with this team and he started his career there (drafted by them, or a
+  // known one-team career), his years in the league count as years with it.
+  const all = rows.filter(r => (r.season || []).some(x => x.GP > 0));
+  const home = (p.history?.draft?.tid && p.history.draft.tid === team.id) || ONE_TEAM[`${p.fn} ${p.ln}`] === team.shortName;
+  if (n && home && all.length && all.every(r => (r.season || []).every(x => x.tid === team.id || !x.GP))) n = Math.max(n, p.yrs || 0);
   return n >= 8;
 }
 export const ntcEligible = (league, p, team) => COMPLETE && !!team && (p.yrs || 0) >= 8 && seasonsWith(league, p, team) >= 4;
