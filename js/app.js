@@ -570,6 +570,7 @@ async function loadFile(file) {
       return;
     }
     if (!isCollege()) state.fileCheck = fileCheck(league());   // before the app touches anything
+    if (!isCollege()) { state.probeCheck = probeCheck(league()); state.probeIn = { [state.leagueIdx]: probe(league()) }; }
     freshSaveCheck();
     if (repairPickYears()) toast('Draft picks moved back a year', 'This save had its picks a year ahead; they now carry the real draft year.');
     recallSetup();
@@ -856,7 +857,7 @@ function buildExport() {
   state.data.seasonLeagues.forEach(usePlaybooks);
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
-  if (!isCollege()) { saveManifest(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
+  if (!isCollege()) { saveManifest(league()); saveProbe(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
   const nudged = !isCollege() ? applyMindNudges(league()) : [];
   const text = serializeSave(state.data);
   for (const [p, k, d] of nudged) p.tendencies[k] -= d;
@@ -1254,17 +1255,71 @@ function fileCheck(L) {
   for (const k of m.picks) { const [otid, yr, rd] = k.split(':').map(Number); if (yr > dy - (next ? 0 : 1) && !have.has(k)) items.push({ kind: 'pick', text: `${nm(otid)}'s ${yr} ${rd === 1 ? '1st' : '2nd'} is missing` }); }
   return { next, items, from: m.yr };
 }
+// Round-trip probe: did the game keep what the app wrote? Every field the app edits that the game might not keep
+// (coins, fans, legacy, bonds, coach relationships, no-trade clauses, the farewell tour, lineups, trade stat lines) is
+// read when a file loads and again at export; the next file says, field by field, whether the game kept the app's
+// value, put the old one back, or moved on from it in play.
+const probeKey = L => `hlc:probe:${L.shortName}:${saveTag(L)}`;
+const PROBE_NAMES = { car: 'Career coins, fans and fame', me: 'Career legacy and farewell tour', bond: 'Bonds with teammates', rp: 'Coach relationships', coins: 'Team coins', fans: 'Team fans', ntc: 'No-trade clauses', preset: 'Lineup preset', min: 'Lineup minutes', stint: 'Trade stat lines' };
+function probe(L) {
+  const o = {}, yr = L.season.currentYear;
+  if (CAR.isCareer(L)) {
+    for (const k of ['coins', 'fans', 'fame']) o[`car:${k}`] = L.career?.[k] ?? null;
+    const me = CAR.careerPlayer(L)?.p;
+    if (me) { o['me:legacy'] = me.season?.legacy ?? null; o['me:lp'] = me.season?.legacyPoints ?? null; o['me:retiring'] = !!me.season?.retiring; }
+  }
+  for (const t of L.teams) {
+    const fo = t.frontOffice || {}, coach = (fo.staff || []).find(c => c.pos === 1);
+    o[`coins:${t.id}`] = fo.coins ?? null; o[`fans:${t.id}`] = fo.fans ?? null;
+    if (coach) o[`rp:${t.id}`] = coach.rp ?? null;
+    o[`preset:${t.id}`] = t.lineupPreset ?? null;
+    for (const p of t.roster) {
+      o[`bond:${p.id}`] = p.season?.relationship ?? 0;
+      o[`ntc:${p.id}`] = p.contract?.noTrd ?? 0;
+      o[`min:${p.id}`] = p.minutes?.[0] ?? 0;
+      o[`stint:${p.id}`] = (p.stats || []).find(x => x.league === 0 && x.yr === yr)?.season?.length ?? 0;
+    }
+  }
+  return o;
+}
+// At export: what the app changed since the file came in.
+function saveProbe(L) {
+  const before = state.probeIn?.[state.leagueIdx];
+  if (!before) return;
+  const after = probe(L), diff = {};
+  for (const [k, v] of Object.entries(after)) if (k in before && JSON.stringify(before[k]) !== JSON.stringify(v)) diff[k] = [before[k], v];
+  try { localStorage.setItem(probeKey(L), JSON.stringify({ yr: L.season.currentYear, diff: Object.fromEntries(Object.entries(diff).slice(0, 3000)) })); } catch { /* ignore */ }
+}
+// On load: the app's changes from the last export, against this file.
+function probeCheck(L) {
+  let m; try { m = JSON.parse(localStorage.getItem(probeKey(L))); } catch { m = null; }
+  if (!m?.diff || (m.yr !== L.season.currentYear && m.yr !== L.season.currentYear - 1)) return null;
+  const now = probe(L), out = {};
+  for (const [k, [was, set]] of Object.entries(m.diff)) {
+    if (!(k in now)) continue;   // traded away, retired: nothing to read
+    const g = k.split(':')[0], r = (out[g] ||= { kept: 0, reset: 0, moved: 0 }), v = JSON.stringify(now[k]);
+    if (v === JSON.stringify(set)) r.kept++; else if (v === JSON.stringify(was)) r.reset++; else r.moved++;
+  }
+  return Object.keys(out).length ? out : null;
+}
+function probeLines(c) {
+  if (!c) return '';
+  const rows = Object.entries(c).map(([g, r]) => `<p class="note small" style="margin:0">${r.reset && !r.kept ? '✗' : r.reset ? '⚠️' : '✓'} <b>${esc(PROBE_NAMES[g] || g)}</b> <span class="muted">· kept ${r.kept}${r.reset ? ` · <span class="down">put back by the game ${r.reset}</span>` : ''}${r.moved ? ` · moved in play ${r.moved}` : ''}</span></p>`);
+  return `<p class="note small" style="margin-top:6px"><b>What the game kept from the app</b></p><div class="stack">${rows.join('')}</div>
+    <p class="note muted small">"Put back" means the game restored the value from before the app changed it. "Moved in play" means it changed again in games since, so the app's value was there to change.</p>`;
+}
 function fileCheckCard() {
   const c = state.fileCheck;
-  if (!c) return '';
+  if (!c) return state.probeCheck ? `<fieldset class="frame"><legend>🔎 Season File Check</legend>${probeLines(state.probeCheck)}<button class="btn small off" data-act="fileCheckOk" style="margin-top:6px">Got it</button></fieldset>` : '';
   const ico = { release: '✂️', contract: '📃', number: '👕', pick: '🎟️' };
   return `<fieldset class="frame"><legend>🔎 Season File Check</legend>
     ${c.items.length ? `<p class="note small">${c.items.length} thing${c.items.length === 1 ? '' : 's'} changed ${c.next ? 'over the season' : 'since your export'} that the app didn't do:</p>
       <details class="cmb-fold"><summary>Show them</summary><div class="stack">${c.items.slice(0, 60).map(x => `<p class="note small" style="margin:0">${ico[x.kind]} ${esc(x.text)}</p>`).join('')}</div></details>`
     : `<p class="note small up">✓ Everything matches what you exported${c.next ? ' (trades and retirements during the season aside)' : ''}.</p>`}
+    ${probeLines(state.probeCheck)}
     <button class="btn small off" data-act="fileCheckOk" style="margin-top:6px">Got it</button></fieldset>`;
 }
-actions.fileCheckOk = () => { state.fileCheck = null; render(); };
+actions.fileCheckOk = () => { state.fileCheck = null; state.probeCheck = null; render(); };
 const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.title}`); };
 // Franchise saves (one team, the game's own mode 0) skip Front Office: the
 // team is the one the save is built around, like college.
