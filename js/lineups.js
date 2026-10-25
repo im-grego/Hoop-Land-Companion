@@ -9,6 +9,7 @@ const SLOT_POS = [0, 2, 4, 6, 8];          // player.pos on the game's 0-8 scale
 export const MODES = {
   compete: { label: 'Competing', says: 'The best players play. Stars near 36-38 minutes, a tight bench.', w: [1, 1, 1, 1, 1, 0.62, 0.52, 0.42, 0.32, 0.24, 0.2, 0.18] },
   normal: { label: 'Normal', says: 'A standard rotation: starters around 32, the bench gets real run.', w: [0.9, 0.9, 0.9, 0.9, 0.9, 0.62, 0.56, 0.48, 0.4, 0.32, 0.26, 0.22] },
+  playoffs: { label: 'Playoffs', says: 'Shorten it: eight men, the stars near 40 minutes. Only for the playoffs.', w: [1, 1, 1, 1, 1, 0.5, 0.38, 0.26, 0.15, 0.12, 0.1, 0.1], hi: 0.85, size: 8 },
   develop: { label: 'Developing', says: 'Young players with upside start and play through mistakes; vets take a back seat.', w: [0.85, 0.85, 0.85, 0.85, 0.85, 0.66, 0.6, 0.54, 0.46, 0.38, 0.3, 0.26] },
 };
 const healthy = p => !(p.season?.injury?.gamesOut > 0);
@@ -56,7 +57,7 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
   picks.sort((a, b) => score(b) - score(a));
   const rot = [...starters, ...picks];
   // Minutes each: by the mode's weights, scaled to 5 games' worth of slots, kept between 12% and 80% of a game.
-  const W = MODES[mode].w, total = 5 * game, lo = Math.round(game * 0.12), hi = Math.round(game * 0.8);
+  const W = MODES[mode].w, total = 5 * game, lo = Math.round(game * 0.12), hi = Math.round(game * (MODES[mode].hi || 0.8));
   const fixed = rot.filter(p => over[p.id] != null), free = rot.filter(p => over[p.id] == null);
   const want = new Map(fixed.map(p => [p, Math.max(0, Math.min(game, over[p.id]))]));
   const left = total - [...want.values()].reduce((s, v) => s + v, 0);
