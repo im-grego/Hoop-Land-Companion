@@ -56,7 +56,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.207.0';
+const APP_VERSION = '0.207.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5596,13 +5596,16 @@ function poAwardsBox() {
   if (!list.length) return '';
   const mineNotes = [];
   for (const a of list) for (const x of a.list) if (isUserTeam(x.t) || x.p.id === me) {
-    const sup = FA.maxLabel(L, x.p);
-    mineNotes.push(`${esc(playerName(x.p))}: ${esc(a.name.replace(/ Team 1st Team$/, '').replace(/ 1st Team$/, ''))}${sup ? ` · <span class="gold">${esc(sup)}</span>` : ''}`);
+    const sup = FA.maxLabel(L, x.p), tr0 = a.list.length > 5 ? (x.p.awards || []).filter(y => y.id === a.id && (y.yearsWon || []).includes(L.season.currentYear)).reduce((m, y) => Math.min(m, y.team ?? 0), 9) : 9;
+    mineNotes.push(`${esc(playerName(x.p))}: ${esc(a.name.replace(/ Team 1st Team$/, '').replace(/ 1st Team$/, ''))}${tr0 < 3 ? ` ${FA.ALL_LEAGUE_NAME[tr0]}` : ''}${sup ? ` · <span class="gold">${esc(sup)}</span>` : ''}`);
   }
   // Team honors (All-NBA, All-Defense, All-Rookie) list everyone: the save keeps each player's position, not which team he made.
   const nm = a => a.name.replace(/ Team 1st Team$/, '').replace(/ 1st Team$/, '');
   return `<fieldset class="frame"><legend>Season Awards</legend>${mineNotes.length ? `<p class="note small gold">Yours: ${mineNotes.join(' · ')}</p>` : ''}
-    ${list.map(a => `<p class="note small"><b>${esc(nm(a))}</b>: ${a.list.map(x => `<span class="${isUserTeam(x.t) || x.p.id === me ? 'gold' : ''}">${esc(playerName(x.p))}</span>${a.list.length <= 2 ? ` <span class="muted">${esc(x.t.shortName)}</span>` : ''}`).join(', ')}</p>`).join('')}</fieldset>`;
+    ${list.map(a => { const tierOf = x => (x.p.awards || []).filter(y => y.id === a.id && (y.yearsWon || []).includes(L.season.currentYear)).reduce((m, y) => Math.min(m, y.team ?? 0), 9);
+      const who = xs => xs.map(x => `<span class="${isUserTeam(x.t) || x.p.id === me ? 'gold' : ''}">${esc(playerName(x.p))}</span>${a.list.length <= 2 ? ` <span class="muted">${esc(x.t.shortName)}</span>` : ''}`).join(', ');
+      if (a.list.length <= 5) return `<p class="note small"><b>${esc(nm(a))}</b>: ${who(a.list)}</p>`;
+      return [0, 1, 2].map(k => { const xs = a.list.filter(x => tierOf(x) === k); return xs.length ? `<p class="note small"><b>${esc(nm(a))} ${FA.ALL_LEAGUE_NAME[k]}</b>: ${who(xs)}</p>` : ''; }).join(''); }).join('')}</fieldset>`;
 }
 // Your team's check-in: the owner's target, a scouting report on the opponent, the playoff rotation.
 const ADVICE = { shooter: 'Run him off the line and make him put it on the floor.', rim: 'Wall off the paint: make him a jump shooter.', mid: 'Crowd his pull-up and live with the drive.', post: 'Front the post and send the double early.', creator: 'Send help early: make someone else beat you.', playmaker: 'Stay home on the shooters: make him score.', lob: 'Tag the roller and take away the lob.', three: 'Load up on him and dare the others.', glass: 'Box out: he lives on second chances.' };
@@ -12757,7 +12760,8 @@ function extAsk(p, team) {
   const ag = isComplete() ? FA.agentOf(p) : 'fair';
   const greed = (1 + (tr(p, 'money') - 10) * 0.02 - Math.max(0, tr(p, 'loyalty') - 12) * 0.015) * FA.AGENTS[ag].ask;
   // He opens high (and always above the minimum) and can be talked down.
-  let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1));
+  const tier = FA.allLeagueTier(league(), p, lastYear());
+  let sal = Math.round(base * 1.1 * greed * (rookie ? 1.05 : 1) * (morale >= 80 ? 0.95 : morale < 50 ? 1.1 : 1) * (tier != null ? 1 + FA.ALL_LEAGUE_BUMP[tier] : 1));   // All-NBA by team
   if (isUserTeam(team)) sal = Math.round(sal * fxNow().askMult * FX.facilityFx(team).askMult);
   // Holding out: an unhappy player whose traits say money or no loyalty asks
   // for a market-resetting deal: above the best-paid peers of his own level at

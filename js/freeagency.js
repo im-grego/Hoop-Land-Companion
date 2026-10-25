@@ -219,6 +219,15 @@ function awardIds(league) {
   }
   return awardIdsCache.get(league);
 }
+// All-NBA by team: each award entry keeps which team he made (team 0 = 1st, 1 = 2nd, 2 = 3rd). His best that year,
+// or null. A 1st-team season is worth more at the table than a 3rd.
+export function allLeagueTier(league, p, yr) {
+  const ids = awardIds(league).allLeague;
+  const tiers = (p.awards || []).filter(a => ids.includes(a.id) && (a.league ?? 0) === 0 && (a.yearsWon || []).includes(yr)).map(a => a.team ?? 0);
+  return tiers.length ? Math.min(...tiers) : null;
+}
+export const ALL_LEAGUE_BUMP = [0.12, 0.07, 0.03];
+export const ALL_LEAGUE_NAME = ['1st Team', '2nd Team', '3rd Team'];
 const timesWon = (p, ids, years) => (p.awards || []).filter(a => ids.includes(a.id)).flatMap(a => a.yearsWon || []).filter(y => years.includes(y)).length;
 export function maxCriteria(league, p) {
   const ids = awardIds(league), ly = lastYear(league), last3 = [ly, ly - 1, ly - 2];
@@ -240,7 +249,7 @@ export function maxSalary(league, p, own = false, ahead = 0) {
   return Math.round(capLines(league, ahead).cap * maxPct(league, p, own) / 100);
 }
 // What earns the tier up, in words: "MVP", "All-NBA" or "DPOY" (or '').
-export const maxReason = (league, p) => ({ 'MVP': 'MVP', 'All-League': 'All-NBA', 'DPOY': 'DPOY' }[maxCriteria(league, p)] || '');
+export const maxReason = (league, p) => { const c = maxCriteria(league, p); if (c !== 'All-League') return { MVP: 'MVP', DPOY: 'DPOY' }[c] || ''; const t = allLeagueTier(league, p, lastYear(league)); return t != null ? `All-NBA ${ALL_LEAGUE_NAME[t]}` : 'All-NBA'; };
 // "Supermax" / "Rose rule" when his own team can pay him a tier up.
 export const maxLabel = (league, p) => (maxPct(league, p, true) > maxPct(league, p) ? ((p.yrs || 0) >= 7 ? 'Supermax eligible' : 'Rose rule eligible') : '');
 
@@ -251,6 +260,8 @@ export function baseAsk(league, p, o = FA_DEFAULTS) {
   let ask = 2 * (gs - 8);
   if (p.age <= 25) ask += Math.max(0, p.pot - 6) * 2;
   if (p.age > p.regressionAge) ask *= Math.max(0.5, 1 - 0.1 * (p.age - p.regressionAge));
+  const tier = allLeagueTier(league, p, lastYear(league));
+  if (tier != null) ask *= 1 + ALL_LEAGUE_BUMP[tier];   // All-NBA last season: 1st team +12%, 2nd +7%, 3rd +3%
   if (COMPLETE) ask *= egoAsk(p) * AGENTS[agentOf(p)].ask;   // an Alpha thinks he's worth more, a Humble player asks less; his agent leans it
   return Math.max(o.minSalary, Math.min(maxSalary(league, p), Math.round(ask)));
 }
