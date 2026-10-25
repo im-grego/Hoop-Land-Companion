@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.214.0';
+const APP_VERSION = '0.214.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -834,6 +834,27 @@ function gameCapCheck(L, cap) {
   if (log.length) { calFlags().capCheckLog = log; state.dirty = true; }
   return log;
 }
+// A summer file exported before Roster Finalization still carries summer rosters (up to 18). The game trims anyone
+// over 15 when the season starts by its own rule, which doesn't look at how good a player is (it let Lv 87 players go
+// and kept Lv 62 rookies). So the CPU teams make their cuts here first, the same way they do at Roster Finalization.
+const overFifteen = L => L.teams.filter(t => FA.signedRoster(t).length > FA.FA_DEFAULTS.seasonMax);
+function exportCuts(L) {
+  if (isCollege() || L.season.phase !== BUMP_PHASES[0] || calFlags().cuts) return [];
+  const log = [];
+  for (const t of overFifteen(L).filter(x => !isUserTeam(x))) {
+    const n = FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax;
+    for (const { p } of cutRank(t).filter(x => !FA.isLifer(L, x.p, t)).slice(0, n)) { FA.cutPlayer(L, t, p); log.push(`${t.shortName} cut ${playerName(p)}`); }
+    // Not enough expiring deals to cut: the lowest-value of the rest (never the eight best).
+    const left = FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax;
+    if (left > 0) {
+      const top = new Set([...FA.signedRoster(t)].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 8).map(p => p.id));
+      const rest = FA.signedRoster(t).filter(p => !top.has(p.id) && !FA.isLifer(L, p, t)).sort((a, b) => FA.cutScore(a, shownLevel(a), L.season.currentYear) - FA.cutScore(b, shownLevel(b), L.season.currentYear));
+      for (const p of rest.slice(0, left)) { FA.cutPlayer(L, t, p); log.push(`${t.shortName} cut ${playerName(p)}`); }
+    }
+  }
+  if (log.length) { calFlags().exportCuts = log; state.dirty = true; }
+  return log;
+}
 let restoreCap = null;
 function buildExport() {
   restoreCap = null;
@@ -858,7 +879,7 @@ function buildExport() {
     const s = league().season;
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
-  if (!isCollege() && league().season.phase === 6) { gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); }
+  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); }
   if (!isCollege()) pickWindow(league());
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
@@ -15074,6 +15095,7 @@ screens.export = () => {
       ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
         ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
+        ${(() => { const L = league(); if (isCollege() || L.season.phase !== BUMP_PHASES[0] || calFlags().cuts) return ''; const over = overFifteen(L), mineOver = over.filter(isUserTeam); return over.length ? `<p class="note small ${mineOver.length ? 'down' : 'gold'}">✂️ Roster Finalization isn't done: ${over.length} team${over.length === 1 ? ' is' : 's are'} over 15. ${mineOver.length ? `<b>${mineOver.map(t => esc(t.shortName)).join(', ')}</b> ${mineOver.length === 1 ? 'is yours' : 'are yours'}: make your cuts first, or the game cuts for you without looking at ratings. ` : ''}The CPU teams make their cuts when you export.</p>` : ''; })()}
         ${CAR.isCareer(league()) && state.ledgerIn ? Object.entries(LEDGER).map(([k, d]) => `<p class="note small">${d.icon} ${d.label}: ${ledgerIn(k).toLocaleString()} when loaded ${ledgerNet(k) >= 0 ? '+' : '−'} ${Math.abs(ledgerNet(k)).toLocaleString()} in the app = <b>${Math.max(0, ledgerIn(k) + ledgerNet(k)).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="ledger" data-arg="${k}">Ledger</button></p>`).join('') : ''}
         <div class="stack">
           ${canShare ? '<button class="btn big focus" data-act="share">📤 Save to Files / Dropbox</button>' : ''}
