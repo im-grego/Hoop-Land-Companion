@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.208.0';
+const APP_VERSION = '0.208.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1607,7 +1607,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['export', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1769,7 +1769,7 @@ screens.main = () => {
       <div class="grid3">
         <button class="btn left" data-act="nav" data-to="settings"><span class="ico">☰</span> Settings</button>
         <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
-        <button class="btn left" data-act="downloadLeague"><span class="ico">🌐</span> Export</button>
+        <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
       </div>
       <p class="center muted small">Version ${APP_VERSION}</p>`,
   });
@@ -14485,7 +14485,7 @@ screens.export = () => {
   const canShare = !inArtifact() && typeof navigator.canShare === 'function' &&
     navigator.canShare({ files: [new File(['x'], 'x', { type: 'application/octet-stream' })] });
   layout({
-    title: 'Opening Night',
+    title: isStep('export') ? 'Opening Night' : 'Export',
     body: `
       ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
         ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
@@ -14505,7 +14505,7 @@ screens.export = () => {
       ${inArtifact() ? '' : dropboxFrame()}`],
         ['prep', 'Prep', prep, !!warn],
         ['report', 'Report Card', reportCard()],
-      ], warn ? 'prep' : 'file'); })()}`,
+      ], warn && isStep('export') ? 'prep' : 'file'); })()}`,
   });
 };
 
