@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.214.1';
+const APP_VERSION = '0.214.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -199,6 +199,8 @@ const snapOf = p => {
 };
 // Commissioner autopilot: a team you run can be handed to the CPU (it stays on your My Teams list).
 const isUserTeam = t => t && state.userTeams.has(t.id) && !state.autoTeams?.has(t.id);
+// The teams you actually run right now (your picks minus the ones on autopilot): what the league logic goes by.
+const ctrlTeams = () => new Set([...state.userTeams].filter(id => !state.autoTeams?.has(id)));
 const autoKey = () => `hlc:autopilot:${saveTag()}`;
 // Career mode: the team the career player is on this season is "your team" on every screen, to look at only. Its
 // moves stay the CPU's, like any other team's (isUserTeam is false for it).
@@ -1231,9 +1233,18 @@ function pickWindow(L = league()) {
 function repairPickYears() {
   const L = league();
   if (!L || isCollege() || L.leagueType !== 0 || L.season.phase > PHASE_PRE_DRAFT) return 0;
-  const dy = draftYear(L), any = yr => L.teams.some(t => t.draftPicks.some(pk => pk.yr === yr));
+  const dy = draftYear(L), count = (yr, rd = 1) => L.teams.reduce((n, t) => n + t.draftPicks.filter(pk => pk.yr === yr && pk.rd === rd).length, 0);
   let moved = 0;
-  if (!any(dy) && any(dy + 1)) for (const t of L.teams) for (const pk of t.draftPicks) { pk.yr--; moved++; }
+  // The game's picks a year ahead: this draft has none (or only the few the app's real-picks setup filed under the
+  // right year) while next year's is complete. Everything from next year on moves back a year; where a pick is
+  // already filed for this draft (a real-world trade), that one stands and the game's copy goes.
+  if (count(dy) < L.teams.length / 2 && count(dy + 1) >= L.teams.length) {
+    const have = new Set(L.teams.flatMap(t => t.draftPicks.filter(pk => pk.yr === dy).map(pk => `${pk.otid}:${pk.rd}`)));
+    for (const t of L.teams) {
+      t.draftPicks = t.draftPicks.filter(pk => pk.yr <= dy || !(pk.yr === dy + 1 && have.has(`${pk.otid}:${pk.rd}`)));
+      for (const pk of t.draftPicks) if (pk.yr > dy) { pk.yr--; moved++; }
+    }
+  }
   const added = pickWindow(L);
   if (moved || added) state.dirty = true;
   return moved;
@@ -3597,7 +3608,7 @@ function applyBump(seed) {
   let tendMoved = 0;
   if (state.params.autoTendencies !== false) {
     const trng = mulberry32((seed ^ 0x7e4d) >>> 0);
-    for (const p of vetPlayers()) if (!state.userTeams.has(p.tid) && autoTendencies(p, trng)) tendMoved++;   // your players' styles move in talks
+    for (const p of vetPlayers()) if (!ctrlTeams().has(p.tid) && autoTendencies(p, trng)) tendMoved++;   // your players' styles move in talks
   }
   reapplyTalks();
   state.tendMoved = tendMoved;
@@ -7475,7 +7486,7 @@ screens.player = (args) => {
       ${tabsRow}
       ${content}`,
     action: { act: 'back', label: 'Done' },
-    actionLeft: team && !isUserTeam(team) && state.userTeams.size && isComplete() && !isCollege() ? { act: 'tradeFor', id: p.id, label: 'Trade For' } : null,
+    actionLeft: team && !isUserTeam(team) && ctrlTeams().size && isComplete() && !isCollege() ? { act: 'tradeFor', id: p.id, label: 'Trade For' } : null,
   });
 };
 actions.tradeFor = d => {
@@ -8732,7 +8743,7 @@ function posRank(p, d) {
 // During Scouting you send scouts to see prospects in person (a few trips per team you run). A scouted prospect's
 // athletic ceilings come out early, his potential reads truer, and the scouts tell you what to expect at the combine:
 // his length, how he'll test and how he'll shoot, and any medical worry. The combine then shows who they read right.
-const scoutTrips = () => ((state.params.workoutSlots ?? 4) + 2) * Math.max(1, state.userTeams.size) + FX.facilityFx(myTeam()).workouts;
+const scoutTrips = () => ((state.params.workoutSlots ?? 4) + 2) * Math.max(1, ctrlTeams().size) + FX.facilityFx(myTeam()).workouts;
 const scoutedMap = () => (preStore().scouted ||= {});
 function scouted(id) { return !!preStore().scouted?.[id]; }
 const tripsLeft = () => scoutTrips() - Object.keys(scoutedMap()).length;
@@ -8821,7 +8832,7 @@ function posRankN(p, d) {
 // every rating's ceiling) is revealed once the interview is done.
 
 const interviewQs = () => 3;
-const workoutSlots = () => (state.params.workoutSlots ?? 4) * Math.max(1, state.userTeams.size) + FX.facilityFx(myTeam()).workouts;
+const workoutSlots = () => (state.params.workoutSlots ?? 4) * Math.max(1, ctrlTeams().size) + FX.facilityFx(myTeam()).workouts;
 const workoutDone = id => (preStore().workouts[id]?.qs.length || 0) >= interviewQs();
 const vary2 = (p, n, arr) => arr[(p.id * 31 + n * 7) % arr.length];
 const myTeam = () => league().teams.find(isUserTeam);
@@ -10206,7 +10217,7 @@ function draftLive() {
   const done = idx < 0;
   return {
     html: `
-      ${state.userTeams.size ? '' : '<p class="note muted small">Select your teams to draft for them.</p>'}
+      ${ctrlTeams().size ? '' : '<p class="note muted small">Select your teams to draft for them.</p>'}
       ${done ? draftRecap(live, order) : `
       <h3 class="draft-head">${L.season.currentYear} ${esc(L.shortName || 'NBA')} Draft</h3>
       ${user ? '<div class="you-clock">🚨 You are on the clock</div>' : ''}
@@ -11220,7 +11231,7 @@ actions.faAll = () => replace('fa', { ...state.stack[state.stack.length - 1].arg
 actions.faOpen = () => {
   const s = faState();
   const L = league();
-  FA.cpuBids(L, s.market, s.bids, s.day, state.userTeams, s.rng, s.used);
+  FA.cpuBids(L, s.market, s.bids, s.day, ctrlTeams(), s.rng, s.used);
   FA.raiseRound(L, s.market, s.bids, s.day, s.rng, s.used);
   s.stage = 'bidding';
   state.toTop = true;   // your offers sit at the top of the page now
@@ -11233,14 +11244,14 @@ actions.faDecide = async () => {
   for (let i = 0; i < 2; i++) FA.raiseRound(L, s.market, s.bids, s.day, s.rng, s.used);
   // Offer sheets on your restricted free agents: match or let go.
   const matches = new Map();
-  for (const { m, best } of FA.pendingMatches(L, s.market, s.bids, s.day, state.userTeams, s.used)) {
+  for (const { m, best } of FA.pendingMatches(L, s.market, s.bids, s.day, ctrlTeams(), s.used)) {
     const by = L.teams.find(t => t.id === best.tid);
     const pick = await choiceBox(`<b>${esc(playerName(m.p))}</b> (RFA) signed an offer sheet with <b>${esc(by.shortName)}</b>: ${offerText(best)} ($${best.sal * best.yrs}M). Match it to keep him, or match and trade him?`,
       [['let', 'Let Go', 'off'], ['snt', '🔁 Sign-and-Trade', ''], ['match', 'Match', 'focus']]);
     if (pick === 'snt' && await sntBox(m, s)) continue;
     matches.set(m.p.id, pick === 'match');
   }
-  s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: state.userTeams })];
+  s.signings = [...s.signings.filter(x => x.kind === 'snt'), ...FA.decide(L, s.market, s.bids, s.day, s.used, FA.FA_DEFAULTS, { matches, userTeams: ctrlTeams() })];
   for (const x of s.signings) { if (x.kind !== 'snt') lockSigning(x.p, signingLock(x)); contractMorale(x.p, x.team, x.from); if (isComplete()) dealDrift(x.p, x.offer?.sal || x.p.contract?.sal || 0, s.market.find(m => m.p === x.p)?.ask || 0); }
   {
     const ld = s.signings.filter(x => x.offer?.load && x.offer.load !== 'flat' && x.offer.yrs >= 2 && isUserTeam(x.team));
@@ -11259,8 +11270,8 @@ actions.faDecide = async () => {
   saveUsed(s.used);
   const swaps = cpuBlockDeals(s.day);
   if (state.params.faClearCpuOffers) {
-    s.cleared = L.contractOffers.map((o, i) => [o, i]).filter(([o]) => !state.userTeams.has(o.tid));
-    L.contractOffers = L.contractOffers.filter(o => state.userTeams.has(o.tid));
+    s.cleared = L.contractOffers.map((o, i) => [o, i]).filter(([o]) => !ctrlTeams().has(o.tid));
+    L.contractOffers = L.contractOffers.filter(o => ctrlTeams().has(o.tid));
   }
   s.stage = 'done';
   state.dirty = true;
@@ -12248,13 +12259,13 @@ function holdCpuOffers() {
   const L = league();
   if (!L || phaseRank(L.season) === 0 || phaseRank(L.season) >= 4 || optStore().done) return 0;
   const offers = L.contractOffers || [];
-  const hold = offers.filter(o => !state.userTeams.has(o.tid));
+  const hold = offers.filter(o => !ctrlTeams().has(o.tid));
   if (!hold.length) return 0;
   const st = optStore();
   const key = o => `${o.pid}:${o.tid}`;
   st.held = [...new Map([...(st.held || []), ...hold].map(o => [key(o), o])).values()];
   saveOptStore();
-  L.contractOffers = offers.filter(o => state.userTeams.has(o.tid));
+  L.contractOffers = offers.filter(o => ctrlTeams().has(o.tid));
   state.dirty = true;
   return hold.length;
 }
