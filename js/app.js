@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.211.0';
+const APP_VERSION = '0.212.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -200,6 +200,11 @@ const snapOf = p => {
 // Commissioner autopilot: a team you run can be handed to the CPU (it stays on your My Teams list).
 const isUserTeam = t => t && state.userTeams.has(t.id) && !state.autoTeams?.has(t.id);
 const autoKey = () => `hlc:autopilot:${saveTag()}`;
+// Career mode: the team the career player is on this season is "your team" on every screen, to look at only. Its
+// moves stay the CPU's, like any other team's (isUserTeam is false for it).
+const careerTeamNow = () => { const L = league(); return CAR.isCareer(L) ? CAR.careerPlayer(L)?.team || null : null; };
+const viewTeams = () => { const t = careerTeamNow(); return t ? [t] : league().teams.filter(isUserTeam); };
+const viewOnlyNote = () => `<p class="note small muted">👀 Career mode: the ${esc(careerTeamNow()?.shortName || '')} front office makes these calls, like every other team's. You can look and simulate.</p>`;
 function loadAutoTeams() { try { state.autoTeams = new Set(JSON.parse(localStorage.getItem(autoKey())) || []); } catch { state.autoTeams = new Set(); } }
 function saveAutoTeams() { try { localStorage.setItem(autoKey(), JSON.stringify([...state.autoTeams])); } catch { /* ignore */ } }
 
@@ -1956,13 +1961,19 @@ function careerSync() {
 
 function careerAgentBox(p) {
   const ag = careerAgent(), { cy } = careerYear();
-  if (!ag) return `<fieldset class="frame"><legend>Hire an Agent</legend><p class="note small">An agent runs your free agency, pushes for more money, and can get you out of town. Pick the style you want on the phone. The fee comes out of your coins when a deal is signed.</p>
+  if (!ag) return `<fieldset class="frame"><legend>Hire an Agent</legend><p class="note small">An agent runs your free agency, pushes for more money, and can get you out of town. Pick the style you want on the phone. The fee comes out of your coins when you hire him.</p>
     <div class="stack">${CAR.AGENT_KEYS.map(k => { const a = CAR.CAREER_AGENTS[k]; return `<button class="btn left" data-act="careerHire" data-k="${k}"><span class="ico">${a.icon}</span><span><b>${esc(a.name)}</b> · ${esc(a.label)}<br><span class="note small">${esc(a.says)} Fee ${a.fee} coins.</span></span></button>`; }).join('')}</div></fieldset>`;
   const trust = careerStore().trust ?? CL2.TRUST_START;
-  return `<fieldset class="frame"><legend>Agent</legend><p class="small">${ag.icon} <b>${esc(ag.name)}</b> · ${esc(ag.label)} <span class="muted">· fee ${ag.fee} coins a deal · trust ${trust}/100${trust <= 35 ? ' <span class="down">(close to walking)</span>' : ''}</span></p><p class="note small">${esc(ag.says)}</p>
+  return `<fieldset class="frame"><legend>Agent</legend><p class="small">${ag.icon} <b>${esc(ag.name)}</b> · ${esc(ag.label)} <span class="muted">· paid ${ag.fee} coins to sign him · trust ${trust}/100${trust <= 35 ? ' <span class="down">(close to walking)</span>' : ''}</span></p><p class="note small">${esc(ag.says)}</p>
     ${careerOffseason() && !cy.fired ? '<button class="btn small off" data-act="careerFire">Fire him and hire someone else</button>' : ''}</fieldset>`;
 }
-actions.careerHire = d => { const st = careerStore(); st.agent = d.k; careerSave(st); toast(`${CAR.CAREER_AGENTS[d.k].icon} You signed with ${CAR.CAREER_AGENTS[d.k].name}`); render(); };
+actions.careerHire = d => {
+  const A = CAR.CAREER_AGENTS[d.k], st = careerStore();
+  if ((league().career?.coins || 0) < A.fee) { toast(`Not enough coins: ${A.name} charges ${A.fee}`); return; }
+  careerCoins(-A.fee, `${A.name} fee`);   // paid on hiring, not when a deal is signed
+  st.agent = d.k; careerSave(st); render();
+  toast(`${A.icon} You signed with ${A.name}`, `−${A.fee} coins`);
+};
 actions.careerFire = async () => {
   if (!(await confirmBox('Fire your agent? You can hire a new one right away, once an offseason.', 'Fire'))) return;
   const { st, cy } = careerYear(); cy.fired = true; delete st.agent; careerSave(st); render();
@@ -2047,7 +2058,7 @@ actions.careerSign = async d => {
   const { p } = me, o = careerOffersNow(p).find(x => x.tid === +d.tid);
   if (!o) return;
   const team = L.teams.find(t => t.id === o.tid), ag = careerAgent();
-  if (!(await confirmBox(`Sign with the ${esc(teamFull(team))} for $${o.sal}M × ${o.yrs}?${ag ? ` ${esc(ag.name)} takes ${ag.fee} coins.` : ''}`, 'Sign'))) return;
+  if (!(await confirmBox(`Sign with the ${esc(teamFull(team))} for $${o.sal}M × ${o.yrs}?`, 'Sign'))) return;
   const pitch = CAR.careerPitch(L, p, o, careerStore().agent || 'brand');
   const ask = FA.baseAsk(L, p);
   const terms = careerYear().cy.terms || {}, sal = CL2.withTerms(o.sal, terms);
@@ -2059,7 +2070,6 @@ actions.careerSign = async d => {
   if (CL2.hometownTeam(L, p)?.id === team.id && !o.own) { careerFans(0.05); drift(p, 'career:home', 'loyalty', 1, 'came home'); careerMorale(p, 5); }
   L.season.teamId = team.id;
   const cr = (L.career ||= {});
-  if (ag) careerCoins(-ag.fee, `${ag.name || 'Agent'} fee`);
   const fans = Math.round((cr.fans || 0) * Math.max(0, pitch.fans));
   if (fans) careerBump('fans', fans, `Signed with ${team.shortName}`);
   if (ag?.coach) careerCoach(team, ag.coach);
@@ -2304,7 +2314,7 @@ actions.careerExt = async d => {
   const { p, team } = me, x = CL.extensionTalks(L, p, team); if (!x) return;
   const { st, cy } = careerYear(), ag = careerAgent();
   const terms = cy.terms || {};
-  const sign = (sal0, yrs, text0) => { const sal = CL2.withTerms(sal0, terms), text = sal !== sal0 ? `${text0} ($${sal}M a year after terms.)` : text0; signExtension(L, team, p, { sal, yrs }); if (terms.ntc) p.contract.ext.noTrd = 1; if (terms.bonus) st.bonus = { until: L.season.currentYear + p.contract.yrs + yrs, coins: CL2.TERMS.bonus.coins }; if (ag) careerCoins(-ag.fee, `${ag.name || 'Agent'} fee`); cy.ext = 'signed'; cy.extText = text; careerFeed(cy, team.shortName, `${playerName(p)} has signed a ${yrs}-year, $${sal * yrs}M extension.`); };
+  const sign = (sal0, yrs, text0) => { const sal = CL2.withTerms(sal0, terms), text = sal !== sal0 ? `${text0} ($${sal}M a year after terms.)` : text0; signExtension(L, team, p, { sal, yrs }); if (terms.ntc) p.contract.ext.noTrd = 1; if (terms.bonus) st.bonus = { until: L.season.currentYear + p.contract.yrs + yrs, coins: CL2.TERMS.bonus.coins }; cy.ext = 'signed'; cy.extText = text; careerFeed(cy, team.shortName, `${playerName(p)} has signed a ${yrs}-year, $${sal * yrs}M extension.`); };
   if (d.v === 'take') { const sal = cy.extSal || x.sal; if (!(await confirmBox(`Extend for $${sal}M × ${x.yrs}?`, 'Sign'))) return; sign(sal, x.yrs, `You extended: $${sal}M × ${x.yrs}.`); }
   else if (d.v === 'counter') { cy.extCounter = true; if (careerRoll(311) < (ag?.counter || 0.4)) { cy.extSal = Math.min(x.max, Math.round((cy.extSal || x.sal) * 1.1) + 1); toast(`${team.shortName} came up`, `$${cy.extSal}M a year.`); careerTrust(5); } else toast(`${team.shortName} held firm`); }
   else if (d.v === 'super') {
@@ -2608,7 +2618,8 @@ function careerChips() {
   if (!state.data) return '';
   const L = league();
   if (!CAR.isCareer(L)) return '';
-  const chip = k => { const net = ledgerNet(k); return `<button class="btn tiny coin-chip" data-act="nav" data-to="ledger" data-arg="${k}" aria-label="${LEDGER[k].label}">${LEDGER[k].icon} ${(L.career?.[k] ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net.toLocaleString()}</span>` : ''}</button>`; };
+  const on = state.stack[state.stack.length - 1]?.name === 'ledger';
+  const chip = k => { const net = ledgerNet(k); return `<button class="btn tiny coin-chip" data-act="nav"${on ? ' data-replace="1"' : ''} data-to="ledger" data-arg="${k}" aria-label="${LEDGER[k].label}">${LEDGER[k].icon} ${(L.career?.[k] ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net.toLocaleString()}</span>` : ''}</button>`; };
   return `<div class="career-chips">${chip('coins')}${chip('fans')}</div>`;
 }
 screens.ledger = (args = {}) => {
@@ -3098,7 +3109,8 @@ actions.careerEntourage = d => {
   const L = league(), me = CAR.careerPlayer(L); if (!me) return;
   const { p, team } = me, { st, cy } = careerYear(); if (cy.entourage) return;
   const a = CL3.entourageAsk(p, careerSeed(7)), r = a[d.v];
-  if (r.payroll) (st.payroll ||= []).push({ k: a.k, coins: r.payroll, drama: r.drama || 0, paid: L.season.currentYear - 1 });
+  // On payroll: the first year is paid now, then every year when the season turns over.
+  if (r.payroll) { if ((L.career?.coins || 0) < r.payroll) { toast(`Not enough coins: ${r.payroll} a year`); return; } careerCoins(-r.payroll, `Entourage: ${a.k}`); (st.payroll ||= []).push({ k: a.k, coins: r.payroll, drama: r.drama || 0, paid: L.season.currentYear }); }
   if (r.coins) careerCoins(r.coins, `Entourage: ${a.k}`);
   if (r.durability) drift(p, 'career:chef', 'durability', 1, 'eats right now');
   cy.entourage = `${r.t}. ${careerFx(p, team, r.fx, `ent:${a.k}`) || 'No change.'}`;
@@ -5751,8 +5763,19 @@ actions.openPlayer = d => go('player', { id: +d.id });
 // into the save's starting lineup.
 const gameMinutes = () => Math.round(48 / minScale(state.leagueIdx));
 const lineupMode = t => { const s = teamStatus(league(), t); return s === 'contending' || s === 'competing' ? 'compete' : s === 'rebuilding' || s === 'developing' ? 'develop' : 'normal'; };
+// Career mode: a team's rotation as it stands, to look at (the coaches set it).
+function lineupView(L, t) {
+  const byId = new Map(t.roster.map(p => [p.id, p]));
+  const rows = (t.startingLineup || []).map(e => ({ p: byId.get(e.pid), m: e.minutes || [] })).filter(x => x.p && x.m[0] > 0);
+  layout({
+    title: `${t.shortName} Rotation`,
+    body: `<p class="note small muted">👀 Career mode: the coaching staff sets the minutes. ${gameMinutes()}-minute games.</p>
+      <fieldset class="frame"><legend>${esc(teamFull(t))}</legend><div class="stack">${rows.map((x, i) => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="pk">${i < 5 ? LU.SLOTS[i] : '·'}</span><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(POSITIONS[x.p.pos] || '')} · ${x.m.slice(1).map((v, k) => (v ? `${LU.SLOTS[k]} ${v}` : '')).filter(Boolean).join(' · ')}</span></span><b>${x.m[0]}</b></div>`).join('') || '<p class="note small muted">No rotation set yet.</p>'}</div></fieldset>`,
+  });
+}
 screens.lineup = (args = {}) => {
-  const L = league(), t = L.teams.find(x => x.id === +(args.arg ?? args.tid)) || myTeam() || L.teams[0];
+  const L = league(), t = L.teams.find(x => x.id === +(args.arg ?? args.tid)) || myTeam() || viewTeams()[0] || L.teams[0];
+  if (CAR.isCareer(L)) { lineupView(L, t); return; }
   const mode = args.mode || lineupMode(t), size = args.size || 9, over = args.over || {}, game = gameMinutes();
   const plan = LU.planLineup(t, { mode, size, game, over });
   const step = game >= 40 ? 2 : 1;
@@ -6348,7 +6371,7 @@ screens.roster = (args) => {
   const mine = L.teams;
   if (!mine.length) { replace('teams'); return; }
   let idx = mine.findIndex(t => t.id === +args.arg);
-  if (idx < 0) idx = Math.max(0, mine.findIndex(isUserTeam));
+  if (idx < 0) idx = Math.max(0, mine.findIndex(x => viewTeams().includes(x)));
   const t = mine[idx];
   const others = !isUserTeam(t);
   const rows = t.roster.map(p => ({ p, d: diffPlayer(p, snapOf(p)) })).sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
@@ -6357,7 +6380,7 @@ screens.roster = (args) => {
   const prevT = mine[(idx - 1 + mine.length) % mine.length];
   const nextT = mine[(idx + 1) % mine.length];
   layout({
-    title: others ? t.shortName : 'My Team',
+    title: others && t !== careerTeamNow() ? t.shortName : 'My Team',
     body: `
       <div class="team-bar">
         ${many ? `<button class="nav-btn" data-act="nav" data-replace="1" data-to="roster" data-arg="${prevT.id}" aria-label="Previous team">◀</button>` : '<span></span>'}
@@ -6376,7 +6399,7 @@ screens.roster = (args) => {
 // money, and where each season lands against the cap, tax line and aprons.
 screens.payroll = (args = {}) => {
   const L = league();
-  const t = L.teams.find(x => x.id === +(args.arg ?? args.id)) || L.teams.find(isUserTeam) || L.teams[0];
+  const t = L.teams.find(x => x.id === +(args.arg ?? args.id)) || viewTeams()[0] || L.teams[0];
   const yr0 = FA.seasonStart(L), N = 5, cur = L.season.currentYear;
   const lab = k => `${String(yr0 + k).slice(2)}-${String(yr0 + k + 1).slice(2)}`;
   const rows = FA.signedRoster(t).map(p => {
@@ -8366,7 +8389,7 @@ actions.draftTab = d => replace('draft', { tab: d.t });
 // Your teams at a glance: stage, needs and draft capital.
 function outlookCard() {
   const L = league();
-  const mine = L.teams.filter(isUserTeam);
+  const mine = viewTeams();
   if (!mine.length) return '';
   const order = actualDraftOrder(L) || [];
   const yr = L.season.currentYear;
@@ -10967,7 +10990,7 @@ screens.fa = (args = {}) => {
   }
   const s = faState();
   const view = args.view || 'top';
-  const mine = L.teams.filter(isUserTeam);
+  const ro = !!careerTeamNow(), mine = viewTeams();
   const teamName = id => L.teams.find(t => t.id === id)?.shortName || '?';
   const signedIds = new Set(s.signings.map(x => x.p.id));
   // Your own players with expiring deals live under Your Books.
@@ -10994,7 +11017,7 @@ screens.fa = (args = {}) => {
     const M = FA.MOTIVES[m.motive];
     const signed = s.signings.find(x => x.p === m.p);
     const rfa = FA.isRestricted(L, m.p);
-    return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="faOffer" data-id="${m.p.id}" ${signedIds.has(m.p.id) || s.stage === 'done' ? 'disabled' : ''}>
+    return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="${ro ? 'openPlayer' : 'faOffer'}" data-id="${m.p.id}" ${!ro && (signedIds.has(m.p.id) || s.stage === 'done') ? 'disabled' : ''}>
       <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
@@ -11010,7 +11033,7 @@ screens.fa = (args = {}) => {
       <div class="stack">${stageBtn}${s.day >= 2 && isComplete() && s.stage !== 'done' ? '<button class="btn small" data-act="liveTrade">🔁 Trade</button>' : ''}</div>
       ${uiTabs('fa', [
         ['market', 'Market', `      ${s.stage === 'done' ? faResults(s) : ''}
-      ${s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
+      ${ro ? viewOnlyNote() : s.stage === 'open' ? '<p class="note muted small">Make your offers (tap a player), then open bidding.</p>' : s.stage === 'bidding' ? '<p class="note muted small">Raise if you\'re behind. When players decide, other teams get one last chance to outbid you.</p>' : ''}
       <div class="tabs fa-tabs fa-tabs6">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(row).join('')}</div>
       ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`],
@@ -11024,11 +11047,20 @@ screens.fa = (args = {}) => {
         return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBar(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
-      ${mine.length ? faRosterBox(s, mine) : ''}`, expiringSection(s) !== ''],
+      ${mine.length && !ro ? faRosterBox(s, mine) : ''}${ro && mine.length ? faCareerTeamBox(s, mine[0]) : ''}`, expiringSection(s) !== ''],
       ])}`,
   });
 };
 
+// Career mode: your team's summer, to look at: its expiring players and who it has signed so far.
+function faCareerTeamBox(s, t) {
+  const exp = s.market.filter(m => m.from === t), signed = s.signings.filter(x => x.team === t);
+  const line = (p, right) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y</span></span><span class="small">${right}</span></div>`;
+  return `<fieldset class="frame"><legend>${esc(t.shortName)} This Summer</legend>${viewOnlyNote()}
+    ${signed.length ? `<h4 class="ov-h">Signed</h4><div class="stack">${signed.map(x => line(x.p, offerText(x.offer))).join('')}</div>` : ''}
+    ${exp.length ? `<h4 class="ov-h">Their Free Agents</h4><div class="stack">${exp.map(m => { const g = s.signings.find(x => x.p === m.p); return line(m.p, g ? (g.team === t ? '<span class="up">Re-signed</span>' : `<span class="down">→ ${esc(g.team.shortName)}</span>`) : `Asks $${m.ask}M`); }).join('')}</div>` : ''}
+    ${!signed.length && !exp.length ? '<p class="note small muted">A quiet summer so far.</p>' : ''}</fieldset>`;
+}
 // Once bidding opens, the offers you made (other than your own expiring deals) sit at the top: where you stand on
 // each, tap to raise.
 function yourOffers(s) {
@@ -12342,7 +12374,7 @@ screens.options = () => {
   layout({
     title: 'Options Deadline',
     body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, or decline it to let him go. Picked-up options can be extended right after, in the extension window.</p>
-      ${uiTabs('options', [
+      ${careerTeamNow() ? viewOnlyNote() : ''}${uiTabs('options', [
         ['team', 'Team', `      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
         <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span>
         ${x.c.choice === 'ex' ? `<p class="note small up full">${done ? 'Picked up: he can be extended in the extension window.' : 'Picked up: once decisions are final you can talk extension.'}</p>` : ''}</div>`; }).join('') || '<p class="note muted small">No team options this year.</p>'}</div></fieldset>`, !done && myTeamOpts.some(x => !x.c.choice)],
@@ -12355,7 +12387,7 @@ screens.options = () => {
         <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Make Offer')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Let Walk')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
         ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Make Offer: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Let Walk: he\'s unrestricted.</p>' : ''}</fieldset>`, !done && myQO.some(x => st.qo[x.p.id] == null)],
         ['league', 'League', `      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>`],
-      ])}
+      ], CAR.isCareer(league()) ? 'league' : undefined)}
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
     action: done ? { act: 'nav', label: 'On to Extensions', to: 'extensions' } : { act: 'optFinish', label: pending ? `Decide ${pendLabel}` : 'Finalize Decisions' },
   });
@@ -13175,7 +13207,7 @@ function rumorPost(r) {
 screens.overview = (args = {}) => {
   const L = league();
   const tab = args.tab === 'rumors' ? 'rumors' : 'team';
-  const mine = L.teams.filter(isUserTeam);
+  const mine = viewTeams();
   layout({
     title: 'Offseason Overview',
     body: `<div class="tabs">${[['team', 'Your Team'], ['rumors', 'Rumor Mill']].map(([k, l]) => `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="ovTab" data-t="${k}">${l}</button>`).join('')}</div>
@@ -13642,7 +13674,7 @@ screens.extensions = () => {
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
       <span class="name">${esc(playerName(p))} ${lvTag(p)}${proj}</span>
       <span class="right small">$${p.contract.sal}M<br><span class="muted">${(optStore().log && (optStore().team || {})[p.id] === 'ex') ? 'option year' : 'final year'}</span></span>
-      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref} · ${FA.AGENTS[a.agent].icon}${a.holdout ? ' · <span class="down">🚫 holding out</span>' : a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
+      <span class="meta">${esc(posName(p))} · ${p.age}y · ${moraleTag(p)} · asks $${a.sal}M × ${a.pref} ${a.agent !== 'fair' ? ` · ${FA.AGENTS[a.agent].icon}` : ''}${a.holdout ? ' · <span class="down">🚫 holding out</span>' : a.mood === 'market' ? ' · <span class="down">eyeing free agency</span>' : ''}</span>
       ${grudge ? '<span class="chg"><span class="down">🚫 Refuses to meet with you: you broke your promise</span></span>' : status ? `<span class="chg">${status}</span>` : ''}
     </button>`;
   };
@@ -14515,14 +14547,14 @@ screens.cuts = () => {
   const log = calFlags().cutLog;
   layout({
     title: 'Final Cuts',
-    body: `${myTeam() && alphaClash(myTeam()) ? `<p class="note small gold">${esc(alphaClash(myTeam()))}</p>` : ''}<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
+    body: `${careerTeamNow() ? viewOnlyNote() : ''}${myTeam() && alphaClash(myTeam()) ? `<p class="note small gold">${esc(alphaClash(myTeam()))}</p>` : ''}<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${uiTabs('cuts', [
         ['mine', 'Your Cuts', `      ${requestCard()}
       ${myCards}
       ${done ? waiverBox() : ''}`, mine.some(t => cutsShort(t, sel) > 0)],
         ['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`],
-      ])}`,
+      ], CAR.isCareer(league()) ? 'league' : undefined)}`,
     action: done ? null : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
 };

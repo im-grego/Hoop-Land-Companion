@@ -273,22 +273,17 @@ export function askFor(league, p, day, o = FA_DEFAULTS) {
   return Math.max(isVet(p, o) ? minFor(p, o) + 1 : minFor(p, o), Math.round(a));
 }
 
-// Every player has an agent, and agents have a style: a shark squeezes every dollar and isn't afraid of a holdout, a
-// team-friendly one helps a deal get done; most are straight shooters. Stable per player, leaned by his traits.
+// Agents are a career-mode thing: only the career player has one (he hires his own; career.js maps the style to one
+// of these). Everyone else negotiates straight, as 'fair'.
 export const AGENTS = {
   shark: { icon: '🦈', label: 'Hardball agent', ask: 1.07, says: 'squeezes every dollar and isn\'t afraid of a holdout' },
   fair: { icon: '💼', label: 'Straight-shooter agent', ask: 1, says: 'asks for what his client is worth' },
   friendly: { icon: '🏠', label: 'Team-friendly agent', ask: 0.95, says: 'wants a deal done more than the last dollar' },
 };
-// A career player hires his own (career.js maps it to one of these styles).
 let AGENT_FOR = new Map();
 export const setAgentFor = (pid, kind) => { AGENT_FOR = new Map(kind ? [[pid, kind]] : []); };
-export function agentOf(p) {
-  if (AGENT_FOR.has(p.id)) return AGENT_FOR.get(p.id);
-  const r = hash(p.id, 7707), m = traitsSet(p) ? tr(p, 'money') : 10, l = traitsSet(p) ? tr(p, 'loyalty') : 10;
-  const shark = 0.14 + Math.max(0, m - 12) * 0.06, friendly = 0.14 + Math.max(0, l - 13) * 0.05 + Math.max(0, 8 - m) * 0.05;
-  return r < shark ? 'shark' : r > 1 - friendly ? 'friendly' : 'fair';
-}
+export const agentOf = p => AGENT_FOR.get(p.id) || 'fair';
+export const hasAgent = p => AGENT_FOR.has(p.id);
 
 // What a player wants most (stable per player and season).
 export function motiveOf(league, p) {

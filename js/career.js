@@ -109,7 +109,7 @@ export function careerLog(p) {
 
 // ---------------------------------------------------------------------------
 // Agents. He hires one; the style decides what he asks for, what deals he chases, what a counter risks, and what the
-// people around him think of the man on the phone. The fee comes out of his coins when a deal is signed.
+// people around him think of the man on the phone. The fee comes out of his coins when he hires the agent.
 export const CAREER_AGENTS = {
   shark: { icon: '🦈', name: 'Marcus Vane', label: 'The Shark', fa: 'shark', fee: 150, counter: 0.7, walk: 0.35, coach: -3, bond: 0, fans: 0,
     says: 'Gets every dollar. Teams brace when he calls, and coaches remember it.', wants: 'money' },
