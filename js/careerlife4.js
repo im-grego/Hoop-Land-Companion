@@ -121,3 +121,45 @@ export const PARADE = {
 };
 export const isRingNight = L => L.season.phase === 9 && (L.season.currentDay || 0) <= 15;
 export { playerName, trophies };
+
+// ---------------------------------------------------------------------------
+// The GOAT race: every player the league knows (active, free agents, retirees, Hall of Famers), scored by what he
+// won, each award worth its weight. All-NBA counts all three teams; All-Defense and All-Rookie only two, as real life
+// does. Career points break ties.
+export const AWARD_VALUE = {
+  0: 6, 1: 8, 2: 12, 3: 5, 4: 2, 5: 1.5, 6: 1, 7: 3, 8: 1.5, 9: 1.5, 10: 1, 11: 1, 12: 1,
+  13: [5, 3.5, 2], 14: [2, 1, 0], 15: [0.5, 0.25, 0], 96: 0.5, 100: 1, 101: 2,
+};
+export const GOAT_CHIPS = [[0, '🏆'], [2, '🏅'], [1, '🥇'], [3, '🛡️'], [13, '📜'], [101, '🌟']];
+export function goatScore(p) {
+  let score = 0;
+  const n = {};
+  for (const a of p.awards || []) {
+    if ((a.league ?? 0) !== 0) continue;
+    const v = AWARD_VALUE[a.id], times = (a.yearsWon || []).length;
+    if (v == null || !times) continue;
+    const w = Array.isArray(v) ? v[Math.min(2, a.team ?? 0)] : v;
+    if (!w) continue;
+    score += w * times;
+    n[a.id] = (n[a.id] || 0) + times;
+  }
+  const pts = p.careerStats?.season?.PTS || 0;
+  return { score: Math.round(score * 10) / 10, pts, n };
+}
+// Everyone with an award (and the career player), best first.
+export function goatBoard(L, meId) {
+  const seen = new Set(), rows = [];
+  const add = (p, where) => {
+    if (!p || seen.has(p.id)) return;
+    seen.add(p.id);
+    const g = goatScore(p);
+    if (g.score > 0 || p.id === meId) rows.push({ p, where, ...g });
+  };
+  for (const p of L.hallOfFame || []) add(p, 'Hall of Fame');
+  for (const t of L.teams) for (const p of t.roster) add(p, t.shortName);
+  for (const p of L.freeAgents || []) add(p, 'Free agent');
+  for (const p of L.retirees || []) add(p, 'Retired');
+  rows.sort((a, b) => b.score - a.score || b.pts - a.pts);
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  return rows;
+}

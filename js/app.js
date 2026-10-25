@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.212.0';
+const APP_VERSION = '0.213.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2169,7 +2169,6 @@ async function careerAskOut(p, team) {
 // ---------------------------------------------------------------------------
 // Career life: the Moves, Story and Legacy tabs.
 actions.careerTab = d => replace('career', { tab: d.t });
-function careerLegacy(p, n) { if (p.season) p.season.legacyPoints = Math.max(0, (p.season.legacyPoints || 0) + n); state.dirty = true; }
 function careerFeed(cy, who, text) { (cy.feed ||= []).push({ who, text }); }
 // fx from Media Day answers and posts: fans (share of fans), ego, coach, morale, bond [pid, n], mates (every teammate).
 function careerFx(p, team, fx, why) {
@@ -2522,8 +2521,47 @@ function careerClassBox(L, p) {
 
 // ---- Legacy
 function careerLegacyTab(L, p, team) {
-  return `${careerRaceBox(L, p)}${careerGoalsBox(L, p)}${careerDealsBox(L, p, team)}${careerShoeBox(L, p)}${careerInvestBox(L, p)}${careerFoundationBox(L, p)}${careerResumeBox(L, p)}${careerDebateBox(L, p)}${careerHofBox(L, p)}${careerJerseyBox(L, p)}${careerMomentsBox(L, p)}`;
+  return `${careerGoatBox(L, p)}${careerRaceBox(L, p)}${careerGoalsBox(L, p)}${careerDealsBox(L, p, team)}${careerShoeBox(L, p)}${careerInvestBox(L, p)}${careerFoundationBox(L, p)}${careerResumeBox(L, p)}${careerDebateBox(L, p)}${careerHofBox(L, p)}${careerJerseyBox(L, p)}${careerMomentsBox(L, p)}`;
 }
+// The GOAT tracker: the race by total award value (careerlife4 AWARD_VALUE). Where you stand (the three just ahead,
+// you, and the last man you passed), or the whole all-time list in a scroll box. Who you pass is remembered: the
+// players ahead of you last time who are behind you now.
+function goatTrack(L, p) {
+  const board = CL4.goatBoard(L, p.id), me = board.find(r => r.p.id === p.id);
+  if (!me) return null;
+  const st = careerStore(), ahead = board.slice(0, me.rank - 1).map(r => r.p.id);
+  const seen = st.goat?.ahead || null;
+  if (seen) {
+    const passed = board.filter(r => r.rank > me.rank && seen.includes(r.p.id));
+    if (passed.length) st.goatPassed = { ids: passed.map(r => r.p.id), yr: L.season.currentYear };
+  }
+  if (!seen || seen.length !== ahead.length || seen.some((id, i) => id !== ahead[i])) { st.goat = { ahead, score: me.score }; careerSave(st); }
+  const passedRow = (st.goatPassed?.ids || []).map(id => board.find(r => r.p.id === id)).filter(Boolean)[0];
+  return { board, me, passed: passedRow, passedYr: st.goatPassed?.yr, behind: board[me.rank] || null };
+}
+function goatRow(r, me, gap) {
+  const chips = CL4.GOAT_CHIPS.filter(([id]) => r.n[id]).map(([id, ic]) => `${ic}${r.n[id]}`).join(' ');
+  return `<div class="drill-row ${r === me ? 'goat-me' : 'tap'}" ${r === me ? 'id="goat-me"' : `data-act="openPlayer" data-id="${r.p.id}"`}><span class="pk">${r.rank}</span><span class="grow"><b>${esc(playerName(r.p))}</b>${r === me ? ' <span class="gold small">you</span>' : ''}<br><span class="small muted">${esc(r.where)}${chips ? ` · ${chips}` : ''}</span></span><span class="small"><b>${r.score}</b>${gap ? `<br><span class="muted">${gap}</span>` : ''}</span></div>`;
+}
+function careerGoatBox(L, p) {
+  const g = goatTrack(L, p);
+  if (!g) return '';
+  const { board, me } = g, view = state.goatView || 'me';
+  const seg = `<div class="seg" style="margin-bottom:8px">${[['me', 'Where I Stand'], ['all', 'All-Time']].map(([k, l]) => `<button class="btn small ${view === k ? 'on focus' : 'off'}" data-act="goatView" data-v="${k}">${l}</button>`).join('')}</div>`;
+  const body = view === 'all'
+    ? `<div class="goat-list">${board.map(r => goatRow(r, me)).join('')}</div>`
+    : `<div class="stack">${board.slice(Math.max(0, me.rank - 4), me.rank - 1).map(r => goatRow(r, me, r.score > me.score ? `+${(r.score - me.score).toFixed(1)} ahead` : 'tied · more points')).join('')}
+        ${goatRow(me, me)}
+        ${g.passed ? `<p class="note small up" style="margin:6px 0 0">Last passed${g.passedYr ? ` (${g.passedYr})` : ''}:</p>${goatRow(g.passed, me, me.score > g.passed.score ? `${(me.score - g.passed.score).toFixed(1)} behind` : 'tied · fewer points')}` : g.behind ? `<p class="note small muted" style="margin:6px 0 0">Right behind you:</p>${goatRow(g.behind, me, me.score > g.behind.score ? `${(me.score - g.behind.score).toFixed(1)} behind` : 'tied · fewer points')}` : ''}</div>`;
+  return `<fieldset class="frame"><legend>🐐 GOAT Tracker</legend>${seg}
+    <p class="note small">#${me.rank} of ${board.length} all time · <b>${me.score}</b> award points${me.rank > 1 ? (board[me.rank - 2].score > me.score ? ` · ${(board[me.rank - 2].score - me.score).toFixed(1)} to pass ${esc(board[me.rank - 2].p.ln)}` : ` · tied with ${esc(board[me.rank - 2].p.ln)}, who has more career points`) : ' · the GOAT'}</p>
+    ${body}
+    <details class="cmb-fold"><summary>How it's scored</summary><p class="note small muted">MVP 12 · Finals MVP 8 · Title 6 · DPOY 5 · All-NBA 5 / 3.5 / 2 · Scoring title 3 · All-Star 2 · ROTY 2 · All-Defense 2 / 1 · Sixth Man, rebounding and assist titles 1.5 · MIP, steals, blocks, clutch, All-Star MVP 1 · All-Rookie 0.5 / 0.25 · 3-point contest 0.5. Career points break ties.</p></details></fieldset>`;
+}
+actions.goatView = d => {
+  state.goatView = d.v; render();
+  if (d.v === 'all') setTimeout(() => { const box = $app.querySelector('.goat-list'), me = document.getElementById('goat-me'); if (box && me) box.scrollTop = me.offsetTop - box.offsetTop - box.clientHeight / 2; }, 0);
+};
 function careerGoalsBox(L, p) {
   const st = careerStore(), y = L.season.currentYear, g = (st.goals || {})[y] || { keys: [] };
   const past = Object.entries(st.goals || {}).filter(([gy, x]) => +gy < y && x.settled).sort((a, b) => b[0] - a[0]).slice(0, 3);
@@ -2579,7 +2617,11 @@ const careerSeed = (n = 0) => (saveSalt() ^ Math.imul(league().season.playerId +
 // Career coins and fans: every change the app makes goes through careerBump and into the session's ledger (what it
 // was for), shown in the header and on its own screen. Export writes what the file came in with plus the ledger over
 // the file's number, so the save holds exactly what the app did.
-const LEDGER = { coins: { icon: '💵', label: 'Coins', unit: 'coins' }, fans: { icon: '🙌', label: 'Fans', unit: 'fans' } };
+const LEDGER = { coins: { icon: '💵', label: 'Coins', unit: 'coins' }, fans: { icon: '🙌', label: 'Fans', unit: 'fans' }, legacy: { icon: '🏛️', label: 'Legacy', unit: 'legacy points' } };
+// Where each lives: coins and fans on the save's career block, legacy points on the career player.
+const ledgerMe = () => CAR.careerPlayer(league())?.p;
+function ledgerGet(k) { return k === 'legacy' ? ledgerMe()?.season?.legacyPoints ?? 0 : league().career?.[k] ?? 0; }
+function ledgerSet(k, v) { if (k === 'legacy') { const p = ledgerMe(); if (p?.season) p.season.legacyPoints = v; } else (league().career ||= {})[k] = v; }
 // Why, when a caller doesn't say: the button that was tapped.
 const ACT_WHY = { careerMedia: 'Media Day', careerPost: 'Hoop Gram', careerPost2: 'After the playoffs', careerAsw: 'All-Star weekend', careerShoe: 'Sneaker launch',
   careerTrash: 'Nemesis', careerNemesis: 'Nemesis', careerFriendGone: 'A friend traded', careerTakeLess: 'Took less to keep a teammate', careerLife: 'Life event',
@@ -2589,28 +2631,29 @@ const ACT_WHY = { careerMedia: 'Media Day', careerPost: 'Hoop Gram', careerPost2
   careerAsk: 'A teammate asks', careerExit: 'Exit interview', careerDuty: 'Team duty', careerEntourage: 'The entourage', careerInvest: 'Investment', poPick: 'Picked the champion' };
 const actWhy = () => state.curWhy || ACT_WHY[state.curAct] || (state.curAct ? state.curAct.replace(/^career/, '').replace(/([a-z])([A-Z])/g, '$1 $2') : 'Career');
 function careerBump(kind, n, why) {
-  const cr = (league().career ||= {}), was = cr[kind] || 0;
-  cr[kind] = Math.max(0, Math.round(was + n));
-  const d = cr[kind] - was;
+  const was = ledgerGet(kind), now = Math.max(0, Math.round(was + n));
+  ledgerSet(kind, now);
+  const d = now - was;
   if (d) ((state.ledger ||= {})[kind] ||= []).push({ n: d, why: why || actWhy(), at: Date.now() });
   state.dirty = true;
   return d;
 }
 function careerCoins(n, why) { careerBump('coins', n, why); }
 function careerFans(share, why) { return careerBump('fans', (league().career?.fans || 0) * share, why); }
-const ledgerIn = k => state.ledgerIn?.[k] ?? league().career?.[k] ?? 0;
+function careerLegacy(p, n, why) { if (p?.id === league().season.playerId) careerBump('legacy', n, why); else if (p?.season) { p.season.legacyPoints = Math.max(0, (p.season.legacyPoints || 0) + n); state.dirty = true; } }
+const ledgerIn = k => state.ledgerIn?.[k] ?? ledgerGet(k);
 const ledgerNet = k => (state.ledger?.[k] || []).reduce((a, x) => a + x.n, 0);
 // On load: what the file holds, and a fresh ledger.
 function ledgerStart() {
   const L = league();
-  state.ledgerIn = CAR.isCareer(L) ? { coins: L.career?.coins ?? 0, fans: L.career?.fans ?? 0 } : null;
-  state.ledger = { coins: [], fans: [] };
+  state.ledgerIn = CAR.isCareer(L) && CAR.careerPlayer(L) ? Object.fromEntries(Object.keys(LEDGER).map(k => [k, ledgerGet(k)])) : null;
+  state.ledger = { coins: [], fans: [], legacy: [] };
 }
 // At export: the file gets what came in plus what the app did, over whatever it holds.
 function writeLedger() {
   const L = league();
   if (!CAR.isCareer(L) || !state.ledgerIn) return;
-  for (const k of Object.keys(LEDGER)) (L.career ||= {})[k] = Math.max(0, state.ledgerIn[k] + ledgerNet(k));
+  for (const k of Object.keys(LEDGER)) ledgerSet(k, Math.max(0, state.ledgerIn[k] + ledgerNet(k)));
 }
 const ledgerLen = () => Object.fromEntries(Object.keys(LEDGER).map(k => [k, (state.ledger?.[k] || []).length]));
 function ledgerRewind(lens) { if (state.ledger && lens) for (const k of Object.keys(LEDGER)) state.ledger[k] = (state.ledger[k] || []).slice(0, lens[k] ?? state.ledger[k]?.length); }
@@ -2619,17 +2662,17 @@ function careerChips() {
   const L = league();
   if (!CAR.isCareer(L)) return '';
   const on = state.stack[state.stack.length - 1]?.name === 'ledger';
-  const chip = k => { const net = ledgerNet(k); return `<button class="btn tiny coin-chip" data-act="nav"${on ? ' data-replace="1"' : ''} data-to="ledger" data-arg="${k}" aria-label="${LEDGER[k].label}">${LEDGER[k].icon} ${(L.career?.[k] ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net.toLocaleString()}</span>` : ''}</button>`; };
+  const chip = k => { const net = ledgerNet(k); return `<button class="btn tiny coin-chip" data-act="nav"${on ? ' data-replace="1"' : ''} data-to="ledger" data-arg="${k}" aria-label="${LEDGER[k].label}">${LEDGER[k].icon} ${ledgerGet(k).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net.toLocaleString()}</span>` : ''}</button>`; };
   return `<div class="career-chips">${chip('coins')}${chip('fans')}</div>`;
 }
 screens.ledger = (args = {}) => {
-  const L = league(), k = LEDGER[args.arg] ? args.arg : 'coins', D = LEDGER[k], log = state.ledger?.[k] || [], net = ledgerNet(k), from = ledgerIn(k);
+  const k = LEDGER[args.arg] ? args.arg : 'coins', D = LEDGER[k], log = state.ledger?.[k] || [], net = ledgerNet(k), from = ledgerIn(k);
   const verb = k === 'coins' ? (net >= 0 ? 'earned' : 'spent') : (net >= 0 ? 'gained' : 'lost');
   layout({
     title: D.label,
     body: `<div class="tabs">${Object.entries(LEDGER).map(([x, d]) => `<button class="btn ${x === k ? 'on focus' : 'off'}" data-act="nav" data-replace="1" data-to="ledger" data-arg="${x}">${d.icon} ${d.label}</button>`).join('')}</div>
       <fieldset class="frame"><legend>This Session</legend>
-      <p class="note">Came in with <b>${from.toLocaleString()}</b> · ${verb} <b class="${net >= 0 ? 'up' : 'down'}">${Math.abs(net).toLocaleString()}</b> · now <b>${(L.career?.[k] ?? 0).toLocaleString()}</b></p>
+      <p class="note">Came in with <b>${from.toLocaleString()}</b> · ${verb} <b class="${net >= 0 ? 'up' : 'down'}">${Math.abs(net).toLocaleString()}</b> · now <b>${ledgerGet(k).toLocaleString()}</b></p>
       <p class="note small muted">On export the file gets ${from.toLocaleString()} ${net >= 0 ? '+' : '−'} ${Math.abs(net).toLocaleString()} = <b>${Math.max(0, from + net).toLocaleString()}</b> ${D.unit}, written over whatever it holds.</p>
       ${log.length ? `<div class="stack">${[...log].reverse().map(x => `<p class="note small" style="margin:0"><span class="${x.n > 0 ? 'up' : 'down'}">${x.n > 0 ? '+' : ''}${x.n.toLocaleString()}</span> · ${esc(x.why)}</p>`).join('')}</div>` : `<p class="note small muted">No change yet this session.</p>`}
     </fieldset>`,

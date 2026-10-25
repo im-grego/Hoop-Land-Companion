@@ -1494,3 +1494,7 @@ main.panel.bare { margin-top: 10px; }
 /* Career coins in the header */
 .career-chips { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; justify-content: center; }
 .coin-chip { white-space: nowrap; font-size: 13px; line-height: 1.1; padding: 5px 8px; text-align: left; }
+
+/* GOAT tracker */
+.goat-list { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
+.goat-me { outline: 2px solid var(--gold, #f5c542); border-radius: 6px; }
