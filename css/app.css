@@ -1490,3 +1490,6 @@ main.panel.bare { margin-top: 10px; }
 .cr-rank { font-size: 12px; padding: 3px 8px; border: 2px solid var(--panel-edge); color: var(--dim); opacity: .55; }
 .cr-rank.done { opacity: .85; }
 .cr-rank.now { opacity: 1; color: #fff; font-weight: 700; border-color: var(--cyan); }
+
+/* Career coins in the header */
+.coin-chip { flex-shrink: 0; align-self: center; white-space: nowrap; font-size: 14px; padding: 6px 8px; }

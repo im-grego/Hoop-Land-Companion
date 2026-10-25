@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.209.1';
+const APP_VERSION = '0.210.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ function layout({ title, left = '', right = '', body, action = null, actionLeft 
       <div class="marquee" role="heading" aria-level="1" aria-label="${t}">
         <div class="marquee-track" aria-hidden="true"><span>${t}</span><span>${t}</span></div>
       </div>
-      ${right}
+      ${right || coinChip()}
     </div>`}
     <main class="panel ${bare ? 'bare' : ''}">${body}</main>
     ${action ? `<div class="bottom ${actionLeft ? 'two' : ''}">${actionLeft ? `<button class="btn action alt" data-act="${actionLeft.act}" data-id="${actionLeft.id}">${esc(actionLeft.label)}</button>` : ''}<button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}${action.n != null ? ` data-n="${action.n}"` : ''}${action.to ? ` data-to="${esc(action.to)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
@@ -577,6 +577,7 @@ async function loadFile(file) {
     }
     if (!isCollege()) state.fileCheck = fileCheck(league());   // before the app touches anything
     if (!isCollege()) { state.probeCheck = probeCheck(league()); state.probeIn = { [state.leagueIdx]: probe(league()) }; }
+    state.coinsIn = CAR.isCareer(league()) ? (league().career?.coins ?? 0) : null; state.coinLog = [];
     freshSaveCheck();
     if (repairPickYears()) toast('Draft picks moved back a year', 'This save had its picks a year ahead; they now carry the real draft year.');
     recallSetup();
@@ -866,7 +867,7 @@ function buildExport() {
   state.data.seasonLeagues.forEach(usePlaybooks);
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
-  if (!isCollege()) { saveManifest(league()); saveProbe(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
+  if (!isCollege()) { state.coinWrite = writeCareerCoins(); saveManifest(league()); saveProbe(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
   const nudged = !isCollege() ? applyMindNudges(league()) : [];
   const text = serializeSave(state.data);
   for (const [p, k, d] of nudged) p.tendencies[k] -= d;
@@ -994,7 +995,7 @@ actions.share = async () => {
 // Checkpoints before big moves: the last three are kept (each is a full copy of the save, so no more than that on a
 // phone), and Settings → Data can go back to any of them.
 function checkpoint(label) {
-  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty, at: Date.now(), cal: JSON.stringify(state.cal || {}) };
+  state.undo = { label, text: serializeSave(state.data), dirty: state.dirty, at: Date.now(), cal: JSON.stringify(state.cal || {}), coinN: (state.coinLog || []).length };
   state.undoList = [state.undo, ...(state.undoList || [])].slice(0, 3);
 }
 function undoHistoryBox() {
@@ -1009,6 +1010,7 @@ actions.undoTo = async d => {
   const o = overlay('<div class="spinner"></div><p class="note">Restoring…</p>');
   await nextFrame();
   installData(parseSave(u.text), true);
+  if (state.coinLog) state.coinLog = state.coinLog.slice(0, u.coinN ?? state.coinLog.length);   // the coins go back with the save
   try { state.cal = JSON.parse(u.cal || '{}'); } catch { /* keep */ }
   if (!isCollege()) { saveDrift(); saveTraitStore(); saveComeback(); saveJersey(); }
   state.undoList = state.undoList.slice(+d.i + 1);
@@ -1672,7 +1674,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['export', 'checkin', 'myteams', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['export', 'checkin', 'myteams', 'coinLog', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1777,6 +1779,7 @@ actions.undoAdvance = async () => {
   const o = overlay('<div class="spinner"></div><p class="note">Restoring…</p>');
   await nextFrame();
   installData(parseSave(u.text), true);
+  if (state.coinLog) state.coinLog = state.coinLog.slice(0, u.coinN ?? state.coinLog.length);
   state.undo = null;
   state.dirty = u.dirty;
   o.remove();
@@ -2055,7 +2058,7 @@ actions.careerSign = async d => {
   if (CL2.hometownTeam(L, p)?.id === team.id && !o.own) { careerFans(0.05); drift(p, 'career:home', 'loyalty', 1, 'came home'); careerMorale(p, 5); }
   L.season.teamId = team.id;
   const cr = (L.career ||= {});
-  if (ag) cr.coins = Math.max(0, (cr.coins || 0) - ag.fee);
+  if (ag) careerCoins(-ag.fee, `${ag.name || 'Agent'} fee`);
   const fans = Math.round((cr.fans || 0) * Math.max(0, pitch.fans));
   if (fans) cr.fans = (cr.fans || 0) + fans;
   if (ag?.coach) careerCoach(team, ag.coach);
@@ -2206,7 +2209,7 @@ function careerYearly() {
       const boost = pr.mindset === 'takeover' ? 1.5 : 1;
       careerLegacy(p, run.won * 15 + (run.champ ? 60 : 0));
       if (run.won) careerFans(0.03 * run.won * boost);
-      if (run.champ) careerCoins(150);
+      if (run.champ) careerCoins(150, 'Title run');
       if (pr.stakes) { const m = PO.runSwing(run.won, run.champ, pr.featured); st.market = { yr: y, mult: Math.max(0.8, Math.min(1.3, (st.market?.yr === y ? st.market.mult : 1) * m)) }; }
       pr.result = run.champ ? 'Won the title' : run.won ? `Won ${run.won} series` : 'Out in the first round';
       careerFeed(cy, 'Hoop Land', `${playerName(p)}'s playoff run: ${pr.result.toLowerCase()}. +${run.won * 15 + (run.champ ? 60 : 0)} legacy.`);
@@ -2232,7 +2235,7 @@ function careerYearly() {
   for (const e of st.payroll || []) {
     if (e.gone || e.paid >= y) continue;
     if ((L.career?.coins || 0) < e.coins) { e.gone = y; careerFeed(cy, 'Hoop Land', `${playerName(p)} let his ${e.k} go: the money ran out.`); continue; }
-    careerCoins(-e.coins); e.paid = y;
+    careerCoins(-e.coins, `Entourage: ${e.k}`); e.paid = y;
     if (e.drama && careerRoll(e.k.length * 13 + y) < e.drama) { careerFans(-0.02); careerFeed(cy, 'Hoop Land', `${playerName(p)}'s ${e.k} made headlines for the wrong reasons.`); }
   }
   // Sneaker sales from last year's launch.
@@ -2240,7 +2243,7 @@ function careerYearly() {
     if (x.sold != null || x.yr >= y) continue;
     const line = seasonLine(p, state.leagueIdx, x.yr) || seasonLine(p, state.leagueIdx, y - 1), row = team?.season?.find(r => r.yr === y - 1)?.seasonStats;
     x.sold = CL3.shoeSales(x.k, L.career?.fans || 0, line?.ppg || 10, row?.GP ? row.W / row.GP : 0.5, careerSeed(x.yr));
-    careerCoins(x.sold);
+    careerCoins(x.sold, 'Sneaker sales');
     careerFeed(cy, 'Hoop Land', `The ${p.ln} ${CL3.LAUNCHES[x.k].label.toLowerCase()} ${x.sold >= 150 ? 'flew off the shelves' : x.sold >= 60 ? 'sold well' : 'sat on shelves'}: +${x.sold} coins.`);
   }
   // Endorsements: a year's pay, and a brand can walk after a down year.
@@ -2249,7 +2252,7 @@ function careerYearly() {
   for (const d of st.deals || []) {
     if (d.yrs <= 0 || d.paid >= y) continue;
     if (slump && d.k !== 'shoe' && careerRoll(d.brand.length * 7) < 0.35) { d.yrs = 0; d.dropped = y; careerFeed(cy, d.brand, `${d.brand} and ${playerName(p)} have parted ways.`); continue; }
-    (L.career ||= {}).coins = (L.career.coins || 0) + d.coins; d.paid = y; d.yrs--;
+    careerCoins(d.coins, `${d.brand} endorsement`); d.paid = y; d.yrs--;
   }
   // Rivalries from last season's playoffs.
   for (const x of CL.rivalryDrift(L, p, team, y - 1)) { careerBond(x.m, x.d); (cy.rivalry ||= []).push({ pid: x.m.id, d: x.d, why: x.why }); }
@@ -2258,11 +2261,11 @@ function careerYearly() {
     if (x.done || x.yr >= y) continue;
     const res = CL2.settleInvest(x.k, x.amt, careerSeed(x.yr + x.amt));
     x.back = res.back; x.done = true;
-    if (res.back) careerCoins(res.back);
+    if (res.back) careerCoins(res.back, 'Investment payout');
     careerFeed(cy, 'Hoop Land', `${playerName(p)}'s ${CL2.INVEST[x.k].label.toLowerCase()} ${res.mult >= 2 ? 'hit big' : res.mult > 1 ? 'paid off' : res.mult === 1 ? 'broke even' : res.mult > 0 ? 'lost money' : 'went under'}: ${x.amt} in, ${res.back} back.`);
   }
   // The All-Star bonus in his deal.
-  if (st.bonus && st.bonus.until >= y - 1 && CL.goalContext(L, p, y - 1).allStar && st.bonus.paid !== y) { careerCoins(st.bonus.coins); st.bonus.paid = y; careerFeed(cy, 'Hoop Land', `${playerName(p)} cashes his All-Star bonus: +${st.bonus.coins} coins.`); }
+  if (st.bonus && st.bonus.until >= y - 1 && CL.goalContext(L, p, y - 1).allStar && st.bonus.paid !== y) { careerCoins(st.bonus.coins, 'All-Star bonus'); st.bonus.paid = y; careerFeed(cy, 'Hoop Land', `${playerName(p)} cashes his All-Star bonus: +${st.bonus.coins} coins.`); }
   // A nickname for a big season.
   if (!st.nick && !st.nickOpts && CL2.earnsNickname(L, p, y - 1)) { st.nickOpts = { yr: y - 1, list: CL2.nicknameOptions(p, careerSeed(4), careerNickCtx(L, p, team)) }; careerFeed(cy, 'Hoop Land', `After that season, the fans want a nickname for ${playerName(p)}.`); }
   // A new rank.
@@ -2306,7 +2309,7 @@ actions.careerExt = async d => {
   const { p, team } = me, x = CL.extensionTalks(L, p, team); if (!x) return;
   const { st, cy } = careerYear(), ag = careerAgent();
   const terms = cy.terms || {};
-  const sign = (sal0, yrs, text0) => { const sal = CL2.withTerms(sal0, terms), text = sal !== sal0 ? `${text0} ($${sal}M a year after terms.)` : text0; signExtension(L, team, p, { sal, yrs }); if (terms.ntc) p.contract.ext.noTrd = 1; if (terms.bonus) st.bonus = { until: L.season.currentYear + p.contract.yrs + yrs, coins: CL2.TERMS.bonus.coins }; if (ag) L.career.coins = Math.max(0, (L.career.coins || 0) - ag.fee); cy.ext = 'signed'; cy.extText = text; careerFeed(cy, team.shortName, `${playerName(p)} has signed a ${yrs}-year, $${sal * yrs}M extension.`); };
+  const sign = (sal0, yrs, text0) => { const sal = CL2.withTerms(sal0, terms), text = sal !== sal0 ? `${text0} ($${sal}M a year after terms.)` : text0; signExtension(L, team, p, { sal, yrs }); if (terms.ntc) p.contract.ext.noTrd = 1; if (terms.bonus) st.bonus = { until: L.season.currentYear + p.contract.yrs + yrs, coins: CL2.TERMS.bonus.coins }; if (ag) careerCoins(-ag.fee, `${ag.name || 'Agent'} fee`); cy.ext = 'signed'; cy.extText = text; careerFeed(cy, team.shortName, `${playerName(p)} has signed a ${yrs}-year, $${sal * yrs}M extension.`); };
   if (d.v === 'take') { const sal = cy.extSal || x.sal; if (!(await confirmBox(`Extend for $${sal}M × ${x.yrs}?`, 'Sign'))) return; sign(sal, x.yrs, `You extended: $${sal}M × ${x.yrs}.`); }
   else if (d.v === 'counter') { cy.extCounter = true; if (careerRoll(311) < (ag?.counter || 0.4)) { cy.extSal = Math.min(x.max, Math.round((cy.extSal || x.sal) * 1.1) + 1); toast(`${team.shortName} came up`, `$${cy.extSal}M a year.`); careerTrust(5); } else toast(`${team.shortName} held firm`); }
   else if (d.v === 'super') {
@@ -2391,7 +2394,7 @@ actions.careerSummer = d => {
   let text = s.label;
   if (d.k === 'legend') {
     if ((L.career?.coins || 0) < s.cost) return;
-    L.career.coins -= s.cost;
+    careerCoins(-s.cost, s.label || 'Summer program');
     const wk = careerStore().workOn, room = k => p.attributes[k] && p.attributes[k][0] < Math.min(ATTR_MAX, p.attributes[k][1]);
     const ks = [...(wk && room(wk) ? [wk] : []), ...CL.roomiest(p, 2).filter(k => k !== wk)].slice(0, 2); for (const k of ks) p.attributes[k][0]++;   // the exit interview's skill first
     text = `Worked out with a legend: ${ks.join(' and ')} +1.`;
@@ -2546,7 +2549,7 @@ actions.careerDeal = d => {
   const o = CL.endorsementOffers(L, p, team, i => mulberry32((cy.dealSeed ^ Math.imul(i + 1, 2654435761)) >>> 0)(), held)[+d.i];
   if (!o) return;
   (st.deals ||= []).push({ k: o.k, icon: o.icon, brand: o.brand, coins: o.coins, yrs: o.yrs - 1, paid: L.season.currentYear, signature: o.signature });
-  (L.career ||= {}).coins = (L.career.coins || 0) + o.coins;
+  careerCoins(o.coins, `${o.brand} deal`);
   const n = careerFans(o.fans);
   careerFeed(cy, o.brand, `Welcome to the family, ${playerName(p)}. ${o.signature ? 'The signature shoe is coming. 👟' : '🤝'}`);
   toast(`${o.icon} Signed with ${o.brand}`, `+${o.coins} coins · +${n.toLocaleString()} fans`);
@@ -2568,10 +2571,45 @@ function careerMomentsBox(L, p) {
 // ---------------------------------------------------------------------------
 // Career round two (careerlife2.js).
 const careerSeed = (n = 0) => (saveSalt() ^ Math.imul(league().season.playerId + n, 2654435761) ^ league().season.currentYear) >>> 0;
-function careerCoins(n) { const cr = (league().career ||= {}); cr.coins = Math.max(0, (cr.coins || 0) + n); state.dirty = true; }
+// Every coin the app spends or earns goes through here and into the session's ledger (what it was for); export
+// writes the coins the file came in with plus the ledger, so the number in the file is exactly what the app did.
+function careerCoins(n, why = 'Career') {
+  const cr = (league().career ||= {}), was = cr.coins || 0;
+  cr.coins = Math.max(0, was + n);
+  if (cr.coins !== was) (state.coinLog ||= []).push({ n: cr.coins - was, why, at: Date.now() });
+  state.dirty = true;
+}
+const coinsIn = () => state.coinsIn ?? league().career?.coins ?? 0;
+const coinNet = () => (state.coinLog || []).reduce((a, x) => a + x.n, 0);
+// At export: overwrite the file's coins with what came in plus what the app did.
+function writeCareerCoins() {
+  const L = league();
+  if (!CAR.isCareer(L) || state.coinsIn == null) return null;
+  const want = Math.max(0, state.coinsIn + coinNet()), had = L.career?.coins ?? 0;
+  (L.career ||= {}).coins = want;
+  return { from: state.coinsIn, net: coinNet(), to: want, fixed: had !== want };
+}
+function coinChip() {
+  if (!state.data) return '';
+  const L = league();
+  if (!CAR.isCareer(L)) return '';
+  const net = coinNet();
+  return `<button class="btn tiny coin-chip" data-act="nav" data-to="coinLog" aria-label="Coins">🪙 ${(L.career?.coins ?? 0).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net}</span>` : ''}</button>`;
+}
+screens.coinLog = () => {
+  const L = league(), log = state.coinLog || [], net = coinNet();
+  layout({
+    title: 'Coins',
+    body: `<fieldset class="frame"><legend>This Session</legend>
+      <p class="note">Came in with <b>${coinsIn().toLocaleString()}</b> · ${net >= 0 ? 'earned' : 'spent'} <b class="${net >= 0 ? 'up' : 'down'}">${Math.abs(net).toLocaleString()}</b> · now <b>${(L.career?.coins ?? 0).toLocaleString()}</b></p>
+      <p class="note small muted">On export the file gets ${coinsIn().toLocaleString()} ${net >= 0 ? '+' : '−'} ${Math.abs(net).toLocaleString()} = <b>${Math.max(0, coinsIn() + net).toLocaleString()}</b> coins, written over whatever it holds.</p>
+      ${log.length ? `<div class="stack">${[...log].reverse().map(x => `<p class="note small" style="margin:0"><span class="${x.n > 0 ? 'up' : 'down'}">${x.n > 0 ? '+' : ''}${x.n}</span> · ${esc(x.why)}</p>`).join('')}</div>` : '<p class="note small muted">Nothing spent or earned yet.</p>'}
+    </fieldset>`,
+  });
+};
 function careerFx2(p, team, fx, why) {
   const parts = [];
-  if (fx.coins) { careerCoins(fx.coins); parts.push(`${fx.coins > 0 ? '+' : ''}${fx.coins} coins`); }
+  if (fx.coins) { careerCoins(fx.coins, why || 'Career'); parts.push(`${fx.coins > 0 ? '+' : ''}${fx.coins} coins`); }
   if (fx.attr) { const ks = CL.roomiest(p, fx.attr); for (const k of ks) p.attributes[k][0]++; if (ks.length) parts.push(`${ks.join(', ')} +1`); }
   const rest = careerFx(p, team, fx, why);
   return [rest, ...parts].filter(Boolean).join(', ');
@@ -2608,7 +2646,7 @@ actions.careerInvest = async d => {
   const L = league(), { st, cy } = careerYear(), amt = +d.a;
   if (cy.invested || (L.career?.coins || 0) < amt) return;
   if (!(await confirmBox(`Put ${amt} coins into the ${esc(CL2.INVEST[d.k].label.toLowerCase())}?`, 'Invest'))) return;
-  careerCoins(-amt);
+  careerCoins(-amt, `Investment: ${CL2.INVEST[d.k].label}`);
   (st.invest ||= []).push({ k: d.k, amt, yr: L.season.currentYear });
   cy.invested = true;
   careerSave(st); render();
@@ -2624,7 +2662,7 @@ actions.careerGive = d => {
   const L = league(), me = CAR.careerPlayer(L); if (!me) return;
   const { p, team } = me, { st, cy } = careerYear(), [c, f, what] = CL2.GIFTS[+d.i];
   if (cy.gave || (L.career?.coins || 0) < c) return;
-  careerCoins(-c); const n = careerFans(f);
+  careerCoins(-c, `Donation: ${what}`); const n = careerFans(f);
   if (c >= 150) drift(p, 'career:give', 'lockerRoom', 1, 'gives back');
   st.given = (st.given || 0) + c; cy.gave = true;
   careerFeed(cy, `${p.ln} Foundation`, `Proud to open ${what} back home. 🙏`);
@@ -2698,7 +2736,7 @@ actions.careerRuns = d => {
   const mates = team.roster.filter(m => m.id !== p.id && m.status === 3);
   if (d.trip) {
     const host = mates.find(m => m.id === +d.trip); if (!host || (L.career?.coins || 0) < CL2.TRIP_COST) return;
-    careerCoins(-CL2.TRIP_COST);
+    careerCoins(-CL2.TRIP_COST, 'Team trip');
     for (const m of mates) { careerBond(m, 10); if (m.season) m.season.morale = Math.min(100, (m.season.morale ?? 60) + 8); }
     careerBond(host, 5); careerMorale(p, 8);
     const where = CL2.countryName(host.ctry);
@@ -2707,7 +2745,7 @@ actions.careerRuns = d => {
     careerFeed(cy, playerName(p), `${where} was different. Brothers for life. ✈️`);
   } else {
     if ((L.career?.coins || 0) < CL2.RUN_COST) return;
-    careerCoins(-CL2.RUN_COST);
+    careerCoins(-CL2.RUN_COST, 'Summer runs');
     const came = mates.filter(m => careerRoll(m.id + 61) < 0.75);
     for (const m of came) careerBond(m, 6);
     const k = CL2.runLesson(p), young = came.filter(m => m.age <= 23 && tr(m, k) < tr(p, k));
@@ -2936,7 +2974,7 @@ actions.careerAsw = async d => {
   if (part === 'event') {
     if (CL3.CONTESTS[v]) {
       const c = CL3.CONTESTS[v], win = careerRoll(v.length * 17 + 3) < CL3.contestOdds(p, v);
-      if (win) { const n = careerFans(0.05); careerCoins(100); careerLegacy(p, 10); a.event = `${c.icon} You won the ${c.label}! +${n.toLocaleString()} fans, +100 coins, +10 legacy.`; careerFeed(cy, 'Hoop Land', `${playerName(p)} wins the ${c.label}. 🏆`); }
+      if (win) { const n = careerFans(0.05); careerCoins(100, `Won the ${c.label}`); careerLegacy(p, 10); a.event = `${c.icon} You won the ${c.label}! +${n.toLocaleString()} fans, +100 coins, +10 legacy.`; careerFeed(cy, 'Hoop Land', `${playerName(p)} wins the ${c.label}. 🏆`); }
       else { const n = careerFans(0.01); a.event = `${c.icon} You entered the ${c.label} and came up short. +${n.toLocaleString()} fans for the show.`; }
     } else if (v === 'rest') { careerMorale(p, 3); a.event = 'You sat out the events and rested up (morale +3).'; }
     else if (v === 'fuel') { careerMorale(p, 3); drift(p, 'career:asw', 'motor', 1, 'used an All-Star snub as fuel'); a.event = 'Snubbed. You took it to the gym (motor +1, morale +3).'; }
@@ -2976,7 +3014,7 @@ function careerFactionBox(L, p, team) {
 actions.careerFaction = d => {
   const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
   const { p, team } = me, { st, cy } = careerYear(), f = CL3.factions(L, p, team); if (!f || cy.faction) return;
-  if (d.v === 'dinner') { if ((L.career?.coins || 0) < 50) return; careerCoins(-50); for (const m of f.neutral) careerBond(m, 6); cy.faction = `Dinner was on you. ${f.neutral.length} undecided teammates came over to your side (+6).`; }
+  if (d.v === 'dinner') { if ((L.career?.coins || 0) < 50) return; careerCoins(-50, 'Team dinner'); for (const m of f.neutral) careerBond(m, 6); cy.faction = `Dinner was on you. ${f.neutral.length} undecided teammates came over to your side (+6).`; }
   else if (d.v === 'bridge') { careerBond(f.star, 10); drift(p, 'career:faction', EGO_KEY, -1, `made peace with ${f.star.ln}`); cy.faction = `You and ${f.star.ln} talked it out (+10). One room.`; }
   else { for (const m of f.mine) careerBond(m, 3); for (const m of f.his) careerBond(m, -4); careerBond(f.star, -8); drift(p, 'career:faction', EGO_KEY, 1, 'claimed the locker room'); cy.faction = `You made it your team. ${f.star.ln} won't forget it (-8).`; }
   careerSave(st); state.dirty = true; render();
@@ -3044,7 +3082,7 @@ actions.careerEntourage = d => {
   const { p, team } = me, { st, cy } = careerYear(); if (cy.entourage) return;
   const a = CL3.entourageAsk(p, careerSeed(7)), r = a[d.v];
   if (r.payroll) (st.payroll ||= []).push({ k: a.k, coins: r.payroll, drama: r.drama || 0, paid: L.season.currentYear - 1 });
-  if (r.coins) careerCoins(r.coins);
+  if (r.coins) careerCoins(r.coins, `Entourage: ${a.k}`);
   if (r.durability) drift(p, 'career:chef', 'durability', 1, 'eats right now');
   cy.entourage = `${r.t}. ${careerFx(p, team, r.fx, `ent:${a.k}`) || 'No change.'}`;
   careerSave(st); state.dirty = true; render();
@@ -6099,7 +6137,7 @@ actions.ciMe = d => {
   const L = league(), w = ciWindow(L), me = CAR.careerPlayer(L), c = CI_CAREER[w]?.[d.k];
   if (!w || !me || !c) return;
   const st = ciState(); if (st[w]?.me) return;
-  if (c.coins) { if ((L.career?.coins || 0) < -c.coins) { toast('Not enough coins'); return; } careerCoins(c.coins); }
+  if (c.coins) { if ((L.career?.coins || 0) < -c.coins) { toast('Not enough coins'); return; } careerCoins(c.coins, c.label); }
   const text = careerFx(me.p, me.team, c.fx, `checkin-${w}`);
   st[w] = { ...(st[w] || {}), me: d.k, meText: text }; ciSave(st);
   render();
@@ -6195,7 +6233,7 @@ function poSettle() {
   if (s.pick != null) {
     const run = PO.runOf(L, y, s.pick), t = L.teams.find(x => x.id === s.pick);
     if (run?.champ) {
-      if (CAR.isCareer(L)) careerCoins(100); else { const u = L.teams.find(isUserTeam); if (u?.frontOffice) u.frontOffice.coins = (u.frontOffice.coins || 0) + 100; }
+      if (CAR.isCareer(L)) careerCoins(100, 'Picked the champion'); else { const u = L.teams.find(isUserTeam); if (u?.frontOffice) u.frontOffice.coins = (u.frontOffice.coins || 0) + 100; }
       notes.push(`🏆 You called it: ${t.shortName} won the title (+100 coins).`);
     } else if (t) notes.push(`Your title pick, ${t.shortName}, came up short.`);
   }
@@ -14942,6 +14980,7 @@ screens.export = () => {
       ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
         ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
+        ${CAR.isCareer(league()) && state.coinsIn != null ? `<p class="note small">🪙 Coins: ${coinsIn().toLocaleString()} when loaded ${coinNet() >= 0 ? '+' : '−'} ${Math.abs(coinNet()).toLocaleString()} in the app = <b>${Math.max(0, coinsIn() + coinNet()).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="coinLog">Ledger</button></p>` : ''}
         <div class="stack">
           ${canShare ? '<button class="btn big focus" data-act="share">📤 Save to Files / Dropbox</button>' : ''}
           <button class="btn ${canShare ? '' : 'big focus'}" data-act="download">💾 Download File</button>
