@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.213.1';
+const APP_VERSION = '0.214.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2523,7 +2523,7 @@ function careerClassBox(L, p) {
 function careerLegacyTab(L, p, team) {
   return `${careerGoatBox(L, p)}${careerRaceBox(L, p)}${careerGoalsBox(L, p)}${careerDealsBox(L, p, team)}${careerShoeBox(L, p)}${careerInvestBox(L, p)}${careerFoundationBox(L, p)}${careerResumeBox(L, p)}${careerDebateBox(L, p)}${careerHofBox(L, p)}${careerJerseyBox(L, p)}${careerMomentsBox(L, p)}`;
 }
-// The GOAT tracker: the race by Hall of Fame value, each award weighted as the save's award table says (careerlife4). Where you stand (the three just ahead,
+// The GOAT tracker: every player graded out of 100 on peak, accolades, longevity and production (careerlife4). Where you stand (the three just ahead,
 // you, and the last man you passed), or the whole all-time list in a scroll box. Who you pass is remembered: the
 // players ahead of you last time who are behind you now.
 function goatTrack(L, p) {
@@ -2541,7 +2541,7 @@ function goatTrack(L, p) {
 }
 function goatRow(r, me, gap) {
   const chips = CL4.GOAT_CHIPS.filter(([id]) => r.n[id]).map(([id, ic]) => `${ic}${r.n[id]}`).join(' ');
-  return `<div class="drill-row ${r === me ? 'goat-me' : 'tap'}" ${r === me ? 'id="goat-me"' : `data-act="openPlayer" data-id="${r.p.id}"`}><span class="pk">${r.rank}</span><span class="grow"><b>${esc(playerName(r.p))}</b>${r === me ? ' <span class="gold small">you</span>' : ''}<br><span class="small muted">${esc(r.where)}${chips ? ` · ${chips}` : ''}</span></span><span class="small"><b>${r.score}</b>${gap ? `<br><span class="muted">${gap}</span>` : ''}</span></div>`;
+  return `<div class="drill-row ${r === me ? 'goat-me' : 'tap'}" ${r === me ? 'id="goat-me"' : `data-act="openPlayer" data-id="${r.p.id}"`}><span class="pk">${r.rank}</span><span class="grow"><b>${esc(playerName(r.p))}</b>${r === me ? ' <span class="gold small">you</span>' : ''}<br><span class="small muted">${esc(r.where)}${chips ? ` · ${chips}` : ''}</span></span><span class="small"><b>${r.score}</b> <span class="gold">${CL4.goatGrade(r.score)}</span>${gap ? `<br><span class="muted">${gap}</span>` : ''}</span></div>`;
 }
 function careerGoatBox(L, p) {
   const g = goatTrack(L, p);
@@ -2550,13 +2550,15 @@ function careerGoatBox(L, p) {
   const seg = `<div class="seg" style="margin-bottom:8px">${[['me', 'Where I Stand'], ['all', 'All-Time']].map(([k, l]) => `<button class="btn small ${view === k ? 'on focus' : 'off'}" data-act="goatView" data-v="${k}">${l}</button>`).join('')}</div>`;
   const body = view === 'all'
     ? `<div class="goat-list">${board.map(r => goatRow(r, me)).join('')}</div>`
-    : `<div class="stack">${board.slice(Math.max(0, me.rank - 4), me.rank - 1).map(r => goatRow(r, me, r.score > me.score ? `+${+(r.score - me.score).toFixed(2)} ahead` : 'tied · more points')).join('')}
+    : `<div class="stack">${board.slice(Math.max(0, me.rank - 4), me.rank - 1).map(r => goatRow(r, me, r.score > me.score ? `+${+(r.score - me.score).toFixed(2)} ahead` : 'tied')).join('')}
         ${goatRow(me, me)}
-        ${g.passed ? `<p class="note small up" style="margin:6px 0 0">Last passed${g.passedYr ? ` (${g.passedYr})` : ''}:</p>${goatRow(g.passed, me, me.score > g.passed.score ? `${+(me.score - g.passed.score).toFixed(2)} behind` : 'tied · fewer points')}` : g.behind ? `<p class="note small muted" style="margin:6px 0 0">Right behind you:</p>${goatRow(g.behind, me, me.score > g.behind.score ? `${+(me.score - g.behind.score).toFixed(2)} behind` : 'tied · fewer points')}` : ''}</div>`;
+        <p class="note small" style="margin:2px 0 0">${CL4.GOAT_PARTS.map(([k, l, max]) => `${l} <b>${Math.round(me.parts[k])}</b><span class="muted">/${max}</span>`).join(' · ')}</p>
+        <p class="note small muted" style="margin:0">Peak Lv ${me.lv} · ${me.yrs} season${me.yrs === 1 ? '' : 's'} · ${me.hof} Hall of Fame award points${me.perGame ? ` · ${me.perGame.toFixed(1)} pts+reb+ast+stl+blk a game` : ''}</p>
+        ${g.passed ? `<p class="note small up" style="margin:6px 0 0">Last passed${g.passedYr ? ` (${g.passedYr})` : ''}:</p>${goatRow(g.passed, me, me.score > g.passed.score ? `${+(me.score - g.passed.score).toFixed(2)} behind` : 'tied')}` : g.behind ? `<p class="note small muted" style="margin:6px 0 0">Right behind you:</p>${goatRow(g.behind, me, me.score > g.behind.score ? `${+(me.score - g.behind.score).toFixed(2)} behind` : 'tied')}` : ''}</div>`;
   return `<fieldset class="frame"><legend>🐐 GOAT Tracker</legend>${seg}
-    <p class="note small">#${me.rank} of ${board.length} all time · <b>${me.score}</b> Hall of Fame points${me.rank > 1 ? (board[me.rank - 2].score > me.score ? ` · ${+(board[me.rank - 2].score - me.score).toFixed(2)} to pass ${esc(board[me.rank - 2].p.ln)}` : ` · tied with ${esc(board[me.rank - 2].p.ln)}, who has more career points`) : ' · the GOAT'}</p>
+    <p class="note small">#${me.rank} of ${board.length} all time · <b>${me.score}</b>/100 <span class="gold">${CL4.goatGrade(me.score)}</span>${me.rank > 1 ? (board[me.rank - 2].score > me.score ? ` · ${+(board[me.rank - 2].score - me.score).toFixed(2)} to pass ${esc(board[me.rank - 2].p.ln)}` : ` · tied with ${esc(board[me.rank - 2].p.ln)}`) : ' · the GOAT'}</p>
     ${body}
-    <details class="cmb-fold"><summary>How it's scored</summary><p class="note small muted">Each award's Hall of Fame value from this save's award table: ${[...CL4.awardValues(L)].filter(([, x]) => x.v > 0 && x.name).sort((a, b) => b[1].v - a[1].v).map(([, x]) => `${esc(x.name.replace(/ Team 1st Team$| 1st Team$/, ''))} ${+x.v.toFixed(2)}`).join(' · ')}. All-NBA counts all three teams; All-Defense and All-Rookie only two. Career points break ties.</p></details></fieldset>`;
+    <details class="cmb-fold"><summary>How it's scored</summary><p class="note small muted">Out of 100. <b>Peak (35)</b>: his best level (the save keeps peak ratings, so legends are graded at their best). <b>Accolades (35)</b>: what he won, each award worth its Hall of Fame value in this save (${[...CL4.awardValues(L)].filter(([, x]) => x.v > 0 && x.name).sort((a, b) => b[1].v - a[1].v).map(([, x]) => `${esc(x.name.replace(/ Team 1st Team$| 1st Team$/, ''))} ${+x.v.toFixed(2)}`).join(', ')}). <b>Longevity (20)</b>: seasons played, 16 for full marks. <b>Production (10)</b>: career points, rebounds, assists, steals and blocks a game; legends whose stats the save doesn't keep are graded on their peak. Grades: S 85+ · A+ 75 · A 65 · B+ 55 · B 45 · C 35 · D below.</p></details></fieldset>`;
 }
 actions.goatView = d => {
   state.goatView = d.v; render();

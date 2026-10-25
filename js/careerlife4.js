@@ -5,6 +5,7 @@
 import { shownLevel as levelOf } from './regression.js';
 import { seasonLine } from './storylines.js';
 import { careerLog, trophies, rankIdx } from './career.js';
+import { levelOf as storedLevel } from './savefile.js';
 import { playerName } from './savefile.js';
 
 const SKILL_NAMES = { LAY: 'finishing at the rim', DNK: 'dunking', INS: 'the post game', MID: 'the midrange', TPT: 'the three', FTS: 'free throws', DRB: 'ball handling', PAS: 'passing', ORE: 'offensive rebounding', DRE: 'defensive rebounding', STL: 'on-ball defense', BLK: 'rim protection' };
@@ -123,38 +124,57 @@ export const isRingNight = L => L.season.phase === 9 && (L.season.currentDay || 
 export { playerName, trophies };
 
 // ---------------------------------------------------------------------------
-// The GOAT race: every player the league knows (active, free agents, retirees, Hall of Famers), scored by what he
-// won, each award worth the Hall of Fame value the save's own award table gives it (HOFValue). The third All-Defense
-// and All-Rookie teams the game sometimes names don't count (only All-NBA has three). Career points break ties.
+// The GOAT race: every player the league knows (active, free agents, retirees, Hall of Famers), graded out of 100 on
+// four things every player has:
+//   Peak (35)       his best level (the save keeps peak ratings, so a retired legend is graded at his best)
+//   Accolades (35)  what he won, each award worth the Hall of Fame value the save's award table gives it
+//   Longevity (20)  seasons played (16 is full marks)
+//   Production (10) career points, rebounds, assists, steals and blocks a game; a legend whose stats the save
+//                   doesn't carry is graded on his peak instead
+// The third All-Defense and All-Rookie teams the game sometimes names don't count (only All-NBA has three).
 export const awardValues = L => new Map((L.awards || []).map(a => [a.id, { v: +(a.HOFValue ?? 0) || 0, name: a.name || a.shortName || '' }]));
 const thirdTeamOnly2 = new Set([14, 15]);
 export const GOAT_CHIPS = [[0, '🏆'], [2, '🏅'], [1, '🥇'], [3, '🛡️'], [13, '📜'], [101, '🌟']];
+export const GOAT_PARTS = [['peak', 'Peak', 35], ['acc', 'Accolades', 35], ['long', 'Longevity', 20], ['prod', 'Production', 10]];
+const clamp01 = v => Math.max(0, Math.min(1, v));
 export function goatScore(p, vals) {
-  let score = 0;
+  let hof = 0;
   const n = {};
   for (const a of p.awards || []) {
     if ((a.league ?? 0) !== 0) continue;
     const v = vals.get(a.id)?.v || 0, times = (a.yearsWon || []).length;
     if (!v || !times || (thirdTeamOnly2.has(a.id) && (a.team ?? 0) >= 2)) continue;
-    score += v * times;
+    hof += v * times;
     n[a.id] = (n[a.id] || 0) + times;
   }
-  return { score: Math.round(score * 100) / 100, pts: p.careerStats?.season?.PTS || 0, n };
+  const lv = storedLevel(p), cs = p.careerStats?.season || {};
+  const peakR = clamp01((lv - 70) / 30);
+  const full = (cs.GP || 0) >= 82 && (cs.REB || 0) > 0 && (cs.AST || 0) > 0;
+  const perGame = full ? ((cs.PTS || 0) + (cs.REB || 0) + (cs.AST || 0) + (cs.STL || 0) + (cs.BLK || 0)) / cs.GP : 0;
+  const parts = {
+    peak: 35 * peakR,
+    acc: 35 * clamp01(Math.sqrt(hof / 100)),
+    long: 20 * clamp01((p.yrs || 0) / 16),
+    prod: 10 * (full ? clamp01((perGame - 10) / 30) : peakR),
+  };
+  const score = Math.round((parts.peak + parts.acc + parts.long + parts.prod) * 10) / 10;
+  return { score, hof: Math.round(hof * 100) / 100, parts, lv, yrs: p.yrs || 0, perGame, pts: cs.PTS || 0, n };
 }
-// Everyone with an award (and the career player), best first.
+export const goatGrade = s => (s >= 85 ? 'S' : s >= 75 ? 'A+' : s >= 65 ? 'A' : s >= 55 ? 'B+' : s >= 45 ? 'B' : s >= 35 ? 'C' : 'D');
+// Everyone who has played (and the career player), best first.
 export function goatBoard(L, meId) {
   const vals = awardValues(L), seen = new Set(), rows = [];
   const add = (p, where) => {
-    if (!p || seen.has(p.id)) return;
+    if (!p || seen.has(p.id) || !p.attributes) return;
     seen.add(p.id);
-    const g = goatScore(p, vals);
-    if (g.score > 0 || p.id === meId) rows.push({ p, where, ...g });
+    if (!(p.yrs > 0) && p.id !== meId) return;
+    rows.push({ p, where, ...goatScore(p, vals) });
   };
   for (const p of L.hallOfFame || []) add(p, 'Hall of Fame');
   for (const t of L.teams) for (const p of t.roster) add(p, t.shortName);
   for (const p of L.freeAgents || []) add(p, 'Free agent');
   for (const p of L.retirees || []) add(p, 'Retired');
-  rows.sort((a, b) => b.score - a.score || b.pts - a.pts);
+  rows.sort((a, b) => b.score - a.score || b.hof - a.hof || b.pts - a.pts);
   rows.forEach((r, i) => { r.rank = i + 1; });
   return rows;
 }
