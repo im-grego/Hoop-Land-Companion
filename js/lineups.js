@@ -49,10 +49,11 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
   const cands = roster.filter(p => healthy(p) && over[p.id] !== 0).sort((a, b) => score(b) - score(a));
   const starters = pickStarters(cands, score);
   const bench = cands.filter(p => !starters.includes(p));
-  // The bench: one backup each for the guards, wings and bigs (when there's one close enough), then the best of the rest.
+  // The bench: a backup big and a backup guard always (a weaker true center beats a point guard playing the five),
+  // a backup wing when there's one close enough, then the best of the rest.
   const nBench = Math.max(0, Math.min(12, size) - 5), grp = p => ((p.pos ?? 4) <= 2 ? 0 : (p.pos ?? 4) <= 5 ? 1 : 2);
   const picks = bench.filter(p => over[p.id] > 0).slice(0, nBench);
-  for (const g of [2, 0, 1]) { const b = bench.find(p => grp(p) === g && !picks.includes(p)); if (b && bench.length && score(b) >= score(bench[0]) - 10 && picks.length < nBench) picks.push(b); }
+  for (const g of [2, 0, 1]) { const b = bench.find(p => grp(p) === g && !picks.includes(p)); if (b && picks.length < nBench && (g !== 1 || score(b) >= score(bench[0]) - 10)) picks.push(b); }
   for (const p of bench) if (picks.length < nBench && !picks.includes(p)) picks.push(p);
   picks.sort((a, b) => score(b) - score(a));
   const rot = [...starters, ...picks];
