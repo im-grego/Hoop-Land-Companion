@@ -55,7 +55,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.204.0';
+const APP_VERSION = '0.204.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2703,7 +2703,7 @@ function careerRaceBox(L, p) {
   if (p.status === 7) return '';
   const race = CL2.awardRace(L, p, valueOf);
   return `<fieldset class="frame"><legend>Award Race · ${L.season.currentYear}</legend>${race.map(x => `<p class="note small">${{ mvp: '🏅', allstar: '🌟', allnba: '📜', dpoy: '🛡️' }[x.k]} <b>${esc(x.label)}</b>: ${ordN(x.rank)} in the race · <span class="${x.odds >= 0.5 ? 'up' : x.odds >= 0.15 ? 'gold' : 'muted'}">${Math.round(x.odds * 100)}%</span></p>`).join('')}
-    <p class="note small muted">From ratings and last season's production. Your season goals can ride on these.</p></fieldset>`;
+    <p class="note small muted">From ratings and ${(seasonLine(p, state.leagueIdx, L.season.currentYear)?.gp || 0) >= 20 ? 'this season\'s' : 'last season\'s'} production. Your season goals can ride on these.</p></fieldset>`;
 }
 
 // 14. After the career
@@ -2756,7 +2756,7 @@ function careerAllStarBox(L, p, team) {
   const ag = careerAgent(), btn = (act, v, label, sub) => `<button class="btn left small" data-act="${act}" data-v="${v}">${label}${sub ? `<br><span class="note small">${sub}</span>` : ''}</button>`;
   const part = (title, done, body) => `<h4 class="ov-h">${title}</h4>${done ? `<p class="note small">${esc(done)}</p>` : `<div class="stack">${body}</div>`}`;
   const star = h.allStar
-    ? part('🌟 You\'re an All-Star', a.event, Object.entries(CL3.CONTESTS).map(([k, c]) => btn('careerAsw', `event:${k}`, `${c.icon} Enter the ${c.label}`, `${Math.round(CL3.contestOdds(p, k) * 100)}% to win`)).join('') + btn('careerAsw', 'event:rest', '🛋️ Sit the events out', 'Rest for the second half.'))
+    ? part('🌟 You\'re an All-Star', a.event, (CL3.inGameThree(L, p) ? '<p class="note small gold">🎯 You\'re in the Three-Point Contest: the game runs that one.</p>' : '') + Object.entries(CL3.CONTESTS).filter(([k]) => k !== 'three' || !CL3.gameThree(L)).map(([k, c]) => btn('careerAsw', `event:${k}`, `${c.icon} Enter the ${c.label}`, `${Math.round(CL3.contestOdds(p, k) * 100)}% to win`)).join('') + btn('careerAsw', 'event:rest', '🛋️ Sit the events out', 'Rest for the second half.'))
     : part('😤 All-Star snub', a.event, btn('careerAsw', 'event:fuel', '🔥 Use it as fuel', 'Motor +1, morale +3.') + btn('careerAsw', 'event:vent', '📢 Say it publicly', 'Fans love it; the coach doesn\'t.'));
   const mins = h.minutesDown || p.linePos > 4 ? part('⏱️ Your minutes', a.mins, btn('careerAsw', 'mins:ask', '🗣️ Ask the coach for more', `About ${Math.round(careerAswOdds(p, team) * 100)}%.`) + btn('careerAsw', 'mins:work', '🤐 Keep working', 'Coach +3.')) : '';
   const dl = h.losing ? part('📞 The deadline', a.deadline, (ag ? btn('careerAsw', 'deadline:out', `🚪 Have ${esc(ag.name)} get you out`, 'Before the deadline. It burns bridges.') : '') + btn('careerAsw', 'deadline:stay', '🧱 Commit to the team', 'Fans and coach +, loyalty +1.')) : '';

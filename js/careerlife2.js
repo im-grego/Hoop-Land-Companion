@@ -188,7 +188,8 @@ export const TRUST_START = 60, TRUST_WALK = 20;
 // 12. Award race: where he'd stand in each race, from the league's best (val: trade value) and the right stats.
 export function awardRace(L, p, val) {
   const ps = L.teams.flatMap(t => t.roster).filter(x => x.status === 3 || x.status === 2);
-  const yr = Math.max(...careerLog(p).map(x => x.y), 0);
+  // This season once it's 20 games old (the All-Star break), last season before that.
+  const cur = L.season.currentYear, yr = (seasonLine(p, 0, cur)?.gp || 0) >= 20 ? cur : Math.max(...careerLog(p).filter(x => x.y < cur).map(x => x.y), 0);
   const prod = x => { const l = seasonLine(x, 0, yr); return l ? l.gs * Math.min(1, l.gp / 50) : 0; };
   const mvp = x => levelOf(x) * 2 + prod(x) * 3;
   const def = x => ['STL', 'BLK', 'DRE'].reduce((s, k) => s + (x.attributes?.[k]?.[0] || 0), 0) + levelOf(x) * 0.3;
