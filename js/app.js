@@ -1863,7 +1863,7 @@ screens.career = (args = {}) => {
   const coach = st?.coach ? `${st.coach.fn || ''} ${st.coach.ln || ''}`.trim() : '';
   layout({
     title: 'My Career',
-    body: `${tabs}${careerRingBox(L, p, team)}${careerRoundBox(L, p, team)}${careerPlayoffBox(L, p, team)}${careerAllStarBox(L, p, team)}${careerAlerts(L, p, team)}<fieldset class="frame"><legend>${esc(playerName(p))}</legend>
+    body: `${tabs}${careerNowBox(L, p, team)}${careerRingBox(L, p, team)}${careerRoundBox(L, p, team)}${careerPlayoffBox(L, p, team)}${careerAllStarBox(L, p, team)}${careerAlerts(L, p, team)}<fieldset class="frame"><legend>${esc(playerName(p))}</legend>
         ${careerStore().nick ? `<p class="note small gold">"${esc(careerStore().nick.nick)}" · known for ${esc(careerStore().nick.move)}</p>` : ''}
         <p><b>${esc(CAR.roleOf(p, team))}</b>${team ? ` · ${esc(teamFull(team))}` : ''} ${lvTag(p)}</p>
         <p class="note small">Age ${p.age} · ${heightStr(p.ht)} · ${c.sal ? `$${c.sal}M × ${c.yrs}y` : 'No contract'} · ${moraleTag(p)}</p>
@@ -1897,6 +1897,29 @@ screens.career = (args = {}) => {
   });
 };
 
+// Right now: every decision waiting on the other tabs (a box there with a career button in it), so the hub says
+// what this point in the calendar needs. The ones that are always open sit in a fold.
+const CAREER_ANYTIME = new Set(['careerHire', 'careerNemesis', 'careerInvest', 'careerGive']);
+function careerNowBox(L, p, team) {
+  const tabs = { moves: ['Moves', careerMovesTab], story: ['Story', careerStoryTab], legacy: ['Legacy', careerLegacyTab] };
+  const now = [], later = [];
+  for (const [k, [name, fn]] of Object.entries(tabs)) {
+    let html = ''; try { html = fn(L, p, team); } catch { continue; }
+    for (const part of html.split('<legend>').slice(1)) {
+      const acts = [...new Set([...part.matchAll(/data-act="(career[A-Za-z0-9]*)"/g)].map(m => m[1]))];
+      if (!acts.length) continue;
+      const item = { k, name, label: part.slice(0, part.indexOf('</legend>')).replace(/<[^>]+>/g, '').trim() };
+      (acts.every(a => CAREER_ANYTIME.has(a)) ? later : now).push(item);
+    }
+  }
+  const ci = ciWindow(L), ciDone = ci && ciState()[ci]?.me;
+  if (!now.length && !(ci && !ciDone)) return later.length ? `<p class="note small muted">Nothing waiting on you. Anytime: ${later.map(x => esc(x.label)).join(', ')}.</p>` : '';
+  const btn = x => `<button class="btn left small" data-act="careerTab" data-t="${x.k}"><span class="grow"><b>${esc(x.label)}</b> <span class="muted">· ${x.name}</span></span><span>›</span></button>`;
+  return `<fieldset class="frame"><legend>🔔 Right Now</legend><div class="stack">
+    ${ci && !ciDone ? `<button class="btn left small focus" data-act="nav" data-to="checkin"><span class="grow"><b>${ci === 'early' ? 'Early-Season' : 'Stretch-Run'} Check-in</b> <span class="muted">· Season</span></span><span>›</span></button>` : ''}
+    ${now.map(btn).join('')}</div>
+    ${later.length ? `<p class="note small muted" style="margin-top:6px">Anytime: ${later.map(x => esc(x.label)).join(', ')}.</p>` : ''}</fieldset>`;
+}
 // ---------------------------------------------------------------------------
 // Career mode: the agent, free agency on your terms, role fights and asking out.
 const careerKey = () => `hlc:career:${saveTag()}`;
@@ -2248,17 +2271,11 @@ function careerYearly() {
 }
 
 // Things waiting on him, for the hub.
-function careerAlerts(L, p, team) {
-  if (!careerOffseason()) return '';
-  const { cy } = careerYear(), n = [];
-  if ((p.status === FA.STATUS_EXPIRING || p.status === FA.STATUS_FREE) && L.season.phase >= 5) n.push('free agency');
-  if (CL.extensionTalks(L, p, team) && !cy.ext) n.push('extension talks');
-  if (!cy.summer) n.push('summer program');
-  if (!cy.mediaDone) n.push('Media Day');
-  if (!(careerStore().goals || {})[L.season.currentYear]?.keys?.length) n.push('season goals');
-  if (!n.length) return '';
-  return `<fieldset class="frame"><legend>This Offseason</legend><p class="note small">Waiting on you: ${esc(n.join(', '))}.</p>
-    <div class="grid2"><button class="btn small focus" data-act="careerTab" data-t="moves">🧭 Moves</button><button class="btn small" data-act="careerTab" data-t="story">🎤 Story</button></div></fieldset>`;
+// Free agency has its own screen (the Right Now box covers the tabs).
+function careerAlerts(L, p) {
+  if (!careerOffseason() || !((p.status === FA.STATUS_EXPIRING || p.status === FA.STATUS_FREE) && L.season.phase >= 5)) return '';
+  return `<fieldset class="frame"><legend>Free Agency</legend><p class="note small">You're on the market. Offers, your agent and the calls are waiting.</p>
+    <button class="btn focus" data-act="nav" data-to="careerFA">✍️ Free Agency</button></fieldset>`;
 }
 
 // ---- Moves
