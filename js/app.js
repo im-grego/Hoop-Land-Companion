@@ -152,8 +152,10 @@ function saveUserTeams() {
 function loadUserTeams() {
   let ids = null;
   // Franchise saves: always the team the save is built around.
-  { const L = league(); if (L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId)) { state.userTeams = new Set([L.season.teamId]); return; } }
+  { const L = league(); if (L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId)) { state.userTeams = new Set([L.season.teamId]); state.autoTeams = new Set(); return; } }
+  state.autoTeams = new Set();
   if (CAR.isCareer(league())) { state.userTeams = new Set(); return; }   // career: you're a player, every team is the CPU's
+  loadAutoTeams();
   try { ids = JSON.parse(localStorage.getItem(teamsKey())); } catch { /* ignore */ }
   if (!Array.isArray(ids)) {
     const L = league();
@@ -195,7 +197,11 @@ const snapOf = p => {
   if (!state.snaps.has(k)) state.snaps.set(k, snapshot(p));
   return state.snaps.get(k);
 };
-const isUserTeam = t => t && state.userTeams.has(t.id);
+// Commissioner autopilot: a team you run can be handed to the CPU (it stays on your My Teams list).
+const isUserTeam = t => t && state.userTeams.has(t.id) && !state.autoTeams?.has(t.id);
+const autoKey = () => `hlc:autopilot:${saveTag()}`;
+function loadAutoTeams() { try { state.autoTeams = new Set(JSON.parse(localStorage.getItem(autoKey())) || []); } catch { state.autoTeams = new Set(); } }
+function saveAutoTeams() { try { localStorage.setItem(autoKey(), JSON.stringify([...state.autoTeams])); } catch { /* ignore */ } }
 
 function allEntries() { return leaguePlayers(league(), true); }
 function findPlayer(pid) {
@@ -1663,7 +1669,7 @@ const STEP_SCREENS = {
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['export', 'checkin', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['export', 'checkin', 'myteams', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -1819,6 +1825,7 @@ screens.main = () => {
       </div>
       <div class="grid2">
         ${myTeam() ? '<button class="btn left" data-act="nav" data-to="coaching"><span class="ico">🧑‍🏫</span> Coaching</button>' : ''}
+        ${!isCollege() && !isFranchise() && !CAR.isCareer(L) && state.userTeams.size ? `<button class="btn left" data-act="nav" data-to="myteams"><span class="ico">🗂️</span> My Teams <span class="note small">${state.userTeams.size}${state.autoTeams.size ? ` · ${state.autoTeams.size} on autopilot` : ''}</span></button>` : ''}
         ${isCollege() ? '' : '<button class="btn left" data-act="nav" data-to="rumors"><span class="ico">📰</span> League News</button>'}
       </div>
       <input type="search" class="sel-team" placeholder="🔎 Find any player" data-change="pSearch" style="margin-top:8px">
@@ -3319,6 +3326,43 @@ screens.teams = (args) => {
   });
 };
 
+// My Teams (commissioner): every team you run on one screen: where it stands, its money, roster, needs and picks,
+// with autopilot to hand any of them to the CPU (drafting, free agency, camp and cuts) and take it back later.
+screens.myteams = () => {
+  const L = league(), ids = [...state.userTeams], cap = FA.capLines(L), dy = draftYear(L), phase = L.season.phase;
+  const teams = L.teams.filter(t => ids.includes(t.id)).sort((a, b) => a.shortName.localeCompare(b.shortName));
+  // The next draft anyone holds picks in (this year's until it's done).
+  const from = dy + (phase >= PHASE_POST_DRAFT && phase !== 9 && phase !== 11 ? 1 : 0);
+  const nextDraft = Math.min(...L.teams.flatMap(t => t.draftPicks.map(pk => pk.yr)).filter(y => y >= from), Infinity);
+  const card = t => {
+    const auto = state.autoTeams.has(t.id), rec = teamRecord(t), live = dlPct(t), signed = FA.signedRoster(t);
+    const pay = FA.teamCommitted(t), tier = FA.capTier(L, t), o = teamOutlook(t);
+    const top = [...signed].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3);
+    const expiring = t.roster.filter(p => p.status === FA.STATUS_EXPIRING).length;
+    const yrPicks = t.draftPicks.filter(pk => pk.yr === nextDraft);
+    const tierName = { under: `$${Math.round(cap.cap - pay)}M under the cap`, over: 'over the cap', tax: 'in the tax', apron1: 'over the 1st apron', apron2: 'over the 2nd apron' }[tier];
+    return `<fieldset class="frame ${auto ? 'muted' : ''}"><legend>${esc(teamFull(t))}${auto ? ' · 🤖 Autopilot' : ''}</legend>
+      <p class="note small"><b>${phase === 9 || phase === 11 ? `${live.w}-${live.l}` : `${rec.W ?? 0}-${rec.L ?? 0} last season`}</b> · ${esc(STATUS_NAMES[o.status] || o.status)} · $${Math.round(pay)}M, ${esc(tierName)} · ${signed.length} signed${expiring ? ` · ${expiring} expiring` : ''}</p>
+      <p class="note small">${top.map(p => `<b>${esc(p.ln)}</b> ${shownLevel(p)}`).join(' · ')}</p>
+      <p class="note small muted">Needs: ${o.needs.map(n => esc(n.label)).join(', ') || '—'} · ${nextDraft < Infinity ? nextDraft : ''} picks: ${yrPicks.map(pk => `${pk.rd === 1 ? '1st' : '2nd'}${pk.otid !== t.id ? ` (${esc(L.teams.find(x => x.id === pk.otid)?.shortName || '')})` : ''}`).join(', ') || 'none'}</p>
+      <div class="grid3"><button class="btn small" data-act="nav" data-to="roster" data-arg="${t.id}">👥 Roster</button><button class="btn small" data-act="nav" data-to="payroll" data-arg="${t.id}">📒 Payroll</button><button class="btn small" data-act="nav" data-to="lineup" data-arg="${t.id}">⏱️ Lineup</button></div>
+      <button class="btn small ${auto ? 'focus' : 'off'}" data-act="toggleAuto" data-id="${t.id}" style="margin-top:6px">${auto ? '🕹️ Take it back' : '🤖 Put on autopilot'}</button></fieldset>`;
+  };
+  layout({
+    title: 'My Teams',
+    body: `<p class="note small">${teams.length} team${teams.length === 1 ? '' : 's'}. A team on autopilot is run like any CPU team (its draft picks, free agency, camp points and cuts) until you take it back; it stays on this list.</p>
+      ${teams.map(card).join('')}
+      <button class="btn" data-act="nav" data-to="teams">➕ Change Teams</button>`,
+  });
+};
+actions.toggleAuto = d => {
+  const id = +d.id;
+  if (state.autoTeams.has(id)) state.autoTeams.delete(id); else state.autoTeams.add(id);
+  saveAutoTeams();
+  if (state.auto[state.leagueIdx]?.spent) { applyBump(state.auto[state.leagueIdx].seed); toast('Offseason bump re-applied'); }
+  render();
+  toast(state.autoTeams.has(id) ? '🤖 On autopilot' : '🕹️ Back in your hands', league().teams.find(t => t.id === id)?.shortName || '');
+};
 actions.conf = d => replace('teams', { conf: +d.i });
 
 actions.toggleTeam = async d => {
@@ -5309,6 +5353,26 @@ function raftersScreen(args) {
       </fieldset></div>`,
   });
 }
+// Realignment: move a team to another division (and with it, maybe the other conference). Offseason only: the
+// game builds the schedule from the divisions when the season starts.
+function realignBox(L) {
+  if (isCollege() || (L.divisions || []).length < 2) return '';
+  const open = state.leagueFile || phaseRank(L.season) > 0;
+  const rows = L.divisions.map((d, i) => `<p class="note small" style="margin:6px 0 2px"><b>${esc(d)}</b> <span class="muted">${esc(L.conferences?.[i < L.divisions.length / 2 ? 0 : 1] || '')}</span></p>${L.teams.filter(t => t.division === i).map(t => `<div class="row"><span class="grow small">${esc(teamFull(t))}</span>${open ? `<select class="sel-team" data-change="realign" data-id="${t.id}" style="max-width:150px">${L.divisions.map((n, j) => `<option value="${j}" ${j === i ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : ''}</div>`).join('')}`).join('');
+  const sizes = L.divisions.map((_, i) => L.teams.filter(t => t.division === i).length);
+  return `<details class="frame"><summary>🗺️ Realignment</summary>${open ? '' : '<p class="note small muted">Divisions can change in the offseason, before the game builds the next schedule.</p>'}
+    ${new Set(sizes).size > 1 ? `<p class="note small gold">Divisions are uneven (${sizes.join(' / ')}). The game handles it, but schedules even out best with equal divisions.</p>` : ''}${rows}</details>`;
+}
+$app.addEventListener('change', e => {
+  if (e.target.dataset.change !== 'realign') return;
+  const L = league(), t = L.teams.find(x => x.id === +e.target.dataset.id);
+  if (!t) return;
+  const from = t.division;
+  t.division = +e.target.value;
+  state.dirty = true;
+  render();
+  toast(`🗺️ ${t.shortName} move to the ${L.divisions[t.division]}`, (from < L.divisions.length / 2) !== (t.division < L.divisions.length / 2) ? `Now in the ${L.conferences?.[t.division < L.divisions.length / 2 ? 0 : 1] || 'other conference'}.` : '');
+});
 $app.addEventListener('change', e => {
   if (e.target.dataset.change !== 'raftersTeam') return;
   replace('leaders', { m: 'rafters', tid: +e.target.value });
@@ -14880,6 +14944,7 @@ screens.editor = (args = {}) => {
     body = `<fieldset class="frame"><legend>Traits</legend><p class="note small">${missing} players have no traits set. Open a player from a team's roster to edit his, or fill the empty ones with the app's judgments (real careers for known players, generated for the rest).</p>
       <button class="btn" data-act="edFillTraits">Fill empty traits</button></fieldset>
       ${!isCollege() && league().draftClass?.length && phaseRank(league().season) < 3 ? '<fieldset class="frame"><legend>Draft Class</legend><p class="note small">Read the class the game made, or build your own: size, strength, stars, polish, ages, international players and positions.</p><button class="btn" data-act="nav" data-to="classLab">🧪 Draft Class Lab</button></fieldset>' : ''}
+      ${realignBox(L)}
       <fieldset class="frame"><legend>Export</legend><p class="note small">Writes the league file with your edits. Start a new save from it in the game.</p><button class="btn focus" data-act="${state.leagueFile ? 'download' : 'downloadLeague'}">💾 Download League File</button></fieldset>
       ${state.leagueFile ? '' : '<fieldset class="frame"><legend>Stats</legend><button class="btn" data-act="openLeaders" data-m="ratings">🏀 League Leaders</button></fieldset>'}`;
   }
