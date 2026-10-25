@@ -105,7 +105,7 @@ export function cpuAccepts(give, get, margin = 1.08) {
 // the game starts a new stint (a fresh line with the new team and number), and so does this. Returns true when it
 // added one (an undo takes it back off).
 // The whole contract goes with him, as in the NBA and in the game: the team trading him away keeps no dead money.
-const freshStint = s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, typeof v === 'number' ? 0 : Array.isArray(v) ? v.map(x => (typeof x === 'number' ? 0 : x)).filter(x => typeof x === 'number' || k !== 'L10') : v]));
+export const freshStint = s => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, typeof v === 'number' ? 0 : Array.isArray(v) ? v.map(x => (typeof x === 'number' ? 0 : x)).filter(x => typeof x === 'number' || k !== 'L10') : v]));
 export function movePlayer(p, from, to, year, { newStint = true } = {}) {
   const i = from.roster.indexOf(p);
   if (i < 0) throw new Error('Player not on that roster');

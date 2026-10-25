@@ -13,7 +13,7 @@ import {
 import { mentorPairs, runMentorship } from './mentorship.js';
 import { buildStorylines, seasonLine } from './storylines.js';
 import { applyDraft, newLiveDraft, clockIndex, makeSelection, takenIds, tradeableProspects, livePicks, slotPick, tradeUpOffers, rightsTradeOffer, consolidationOffer } from './livedraft.js';
-import { setScarcity, setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
+import { freshStint, setScarcity, setTradeHook, isCornerstone, slotValue, playerValue, cpuAccepts, executeTrade, undoTrade, contractValue, fairSalary, tagGap } from './trades.js';
 import * as FA from './freeagency.js';
 import { destinationParts, destinationGrade } from './destination.js';
 import * as TR from './traderules.js';
@@ -55,7 +55,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.205.1';
+const APP_VERSION = '0.206.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -2762,8 +2762,11 @@ function careerAllStarBox(L, p, team) {
     : part('😤 All-Star snub', a.event, btn('careerAsw', 'event:fuel', '🔥 Use it as fuel', 'Motor +1, morale +3.') + btn('careerAsw', 'event:vent', '📢 Say it publicly', 'Fans love it; the coach doesn\'t.'));
   const mins = h.minutesDown || p.linePos > 4 ? part('⏱️ Your minutes', a.mins, btn('careerAsw', 'mins:ask', '🗣️ Ask the coach for more', `About ${Math.round(careerAswOdds(p, team) * 100)}%.`) + btn('careerAsw', 'mins:work', '🤐 Keep working', 'Coach +3.')) : '';
   const dl = h.losing ? part('📞 The deadline', a.deadline, (ag ? btn('careerAsw', 'deadline:out', `🚪 Have ${esc(ag.name)} get you out`, 'Before the deadline. It burns bridges.') : '') + btn('careerAsw', 'deadline:stay', '🧱 Commit to the team', 'Fans and coach +, loyalty +1.')) : '';
-  const dd = dlState();
-  return `<fieldset class="frame"><legend>⭐ All-Star Weekend</legend><p class="note small">First half: <b>${line}</b>${prev}. ${esc(team.shortName)} are ${h.w}-${h.l}.</p>${star}${mins}${dl}
+  const dd = dlState(), lad = myLadderRank(p);
+  const pool = (L.starTeams || []).flatMap(t => t.roster || []).map(x => L.teams.flatMap(t => t.roster).find(y => y.id === x.id)).filter(x => x && x.id !== p.id && !team.roster.includes(x))
+    .sort((a, b) => (a.contract?.yrs || 9) - (b.contract?.yrs || 9) || shownLevel(b) - shownLevel(a)).slice(0, 5);
+  const rec = pool.length ? part('🤝 In the room with the stars', a.recruit, pool.map(x => btn('careerAsw', `recruit:${x.id}`, `${esc(playerName(x))} · ${esc(L.teams.find(t => t.roster.includes(x))?.shortName || '')}`, `${x.contract?.yrs === 1 ? 'A free agent this summer. ' : ''}Plant the seed: +8 with him.`)).join('')) : '';
+  return `<fieldset class="frame"><legend>⭐ All-Star Weekend</legend><p class="note small">First half: <b>${line}</b>${prev}. ${esc(team.shortName)} are ${h.w}-${h.l}.${lad ? ` You're <b>${ordN(lad)}</b> on the MVP ladder.` : ''}</p>${star}${mins}${dl}${rec}
     <button class="btn small" data-act="nav" data-to="deadline" style="margin-top:8px">🔔 ${dd.done ? `Deadline recap: ${dd.deals.length} deals` : 'Trade deadline: who\'s buying, who\'s selling'}</button></fieldset>`;
 }
 const careerAswOdds = (p, team) => Math.max(0.15, Math.min(0.8, 0.35 + CAR.coachBond(CO.headCoach(team)) / 100 + (CAR.standing(league(), p, team, valueOf)?.rank <= 3 ? 0.15 : 0)));
@@ -2785,7 +2788,13 @@ function careerMoreMinutes(team, p, k) {
 actions.careerAsw = async d => {
   const L = league(), me = CAR.careerPlayer(L); if (!me?.team) return;
   const { p, team } = me, { st, cy } = careerYear(), a = (cy.asw ||= {}), [part, v] = d.v.split(':');
-  if (a[part === 'event' ? 'event' : part === 'mins' ? 'mins' : 'deadline']) return;
+  if (a[part === 'event' ? 'event' : part === 'mins' ? 'mins' : part === 'recruit' ? 'recruit' : 'deadline']) return;
+  if (part === 'recruit') {
+    const x = L.teams.flatMap(t => t.roster).find(y => y.id === +v); if (!x) return;
+    careerBond(x, 8); a.recruit = `You and ${playerName(x)} talked about teaming up someday (+8).`;
+    if (x.contract?.yrs === 1) careerFeed(cy, playerName(x), `Had a good talk with ${p.ln} this weekend. We'll see what the summer brings. 👀`);
+    careerSave(st); state.dirty = true; render(); return;
+  }
   if (part === 'event') {
     if (CL3.CONTESTS[v]) {
       const c = CL3.CONTESTS[v], win = careerRoll(v.length * 17 + 3) < CL3.contestOdds(p, v);
@@ -5368,7 +5377,7 @@ screens.deadline = () => {
   const calls = mine.flatMap(t => FA.signedRoster(t).filter(p => p.age >= 26 && shownLevel(p) >= 74 && !tradeLock(p)).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 4).map(p => ({ t, p })));
   const me = CAR.isCareer(L) ? CAR.careerPlayer(L) : null;
   layout({
-    title: 'Trade Deadline',
+    title: 'All-Star Break',
     body: `<p class="note small">Day ${L.season.currentDay} · the deadline is day ${L.season.tradeDeadline}. Mid-season deals start a new stat line with the new team, and both rotations are reset so the new players get minutes.</p>
       <fieldset class="frame"><legend>The Market</legend><p class="note small"><b>Buying</b></p><div class="style-chips">${group('buyer').map(chip).join('') || '<span class="muted small">nobody yet</span>'}</div>
         <p class="note small" style="margin-top:6px"><b>Selling</b></p><div class="style-chips">${group('seller').map(chip).join('') || '<span class="muted small">nobody yet</span>'}</div></fieldset>
@@ -5376,9 +5385,159 @@ screens.deadline = () => {
         <button class="btn" data-act="nav" data-to="liveTrade" style="margin-top:8px">🔁 Make your own trade</button></fieldset>` : ''}
       ${me?.team ? `<fieldset class="frame"><legend>Your Team</legend><p class="note small">${esc(me.team.shortName)} are ${dlRole(me.team) === 'buyer' ? 'buyers' : dlRole(me.team) === 'seller' ? 'sellers' : 'on the bubble'} at ${dlPct(me.team).w}-${dlPct(me.team).l}.${d.done ? (d.deals.some(x => x.includes(me.team.shortName)) ? ' They made a move.' : ' They stood pat.') : ''}</p></fieldset>` : ''}
       <fieldset class="frame"><legend>Deadline Day</legend>${d.done ? `<div class="stack">${d.deals.map(x => `<p class="note small">${esc(x)}</p>`).join('') || '<p class="note small muted">A quiet deadline: nobody pulled the trigger.</p>'}</div>`
-        : `<p class="note small">Make your moves first. When you're done, the rest of the league makes theirs.</p><button class="btn big focus" data-act="dlRun">⏰ Run deadline day</button>`}</fieldset>`,
+        : `<p class="note small">Make your moves first. When you're done, the rest of the league makes theirs.</p><button class="btn big focus" data-act="dlRun">⏰ Run deadline day</button>`}</fieldset>
+      ${buyoutBox()}${mine.map(t => ownerReviewBox(t) + midExtBox(t)).join('')}${mvpLadderBox()}`,
   });
 };
+// ---------------------------------------------------------------------------
+// The All-Star break, continued: the MVP ladder, the buyout market, the owner's review, midseason extensions.
+// 5. MVP ladder: this season's production (20+ games), level and team record. { k, label, list: [{ p, t, score }] }
+function mvpLadder() {
+  const L = league(), y = L.season.currentYear, li = state.leagueIdx;
+  const rows = L.teams.flatMap(t => t.roster.filter(p => p.status === 3 || p.status === 2).map(p => ({ p, t, l: seasonLine(p, li, y) }))).filter(x => x.l && x.l.gp >= 20);
+  const pct = t => dlPct(t).pct;
+  const def = p => ['STL', 'BLK', 'DRE'].reduce((s, k) => s + (p.attributes?.[k]?.[0] || 0), 0);
+  const top = (f, n = 5) => rows.map(x => ({ ...x, score: f(x) })).sort((a, b) => b.score - a.score).slice(0, n);
+  return [
+    { k: 'mvp', label: '🏅 MVP', list: top(x => x.l.gs * 2.2 + shownLevel(x.p) * 0.6 + pct(x.t) * 25) },
+    { k: 'dpoy', label: '🛡️ Defensive Player', list: top(x => def(x.p) * 1.5 + (x.l.spg + x.l.bpg) * 6 + x.l.rpg * 0.8 + pct(x.t) * 10) },
+    { k: 'roy', label: '🐣 Rookie of the Year', list: rows.filter(x => (x.p.yrs ?? 0) <= 1).map(x => ({ ...x, score: x.l.gs * 2 + x.l.mpg * 0.3 })).sort((a, b) => b.score - a.score).slice(0, 5) },
+    { k: 'smoy', label: '🪑 Sixth Man', list: rows.filter(x => x.l.starts / x.l.gp < 0.25).map(x => ({ ...x, score: x.l.ppg * 2 + x.l.gs })).sort((a, b) => b.score - a.score).slice(0, 5) },
+  ];
+}
+function mvpLadderBox() {
+  const ladder = mvpLadder(), me = CAR.isCareer(league()) ? league().season.playerId : null;
+  const line = x => `${x.l.ppg.toFixed(1)} / ${x.l.rpg.toFixed(1)} / ${x.l.apg.toFixed(1)}`;
+  return `<fieldset class="frame"><legend>Midseason Awards Ladder</legend>${ladder.map(a => `<h4 class="ov-h">${a.label}</h4>${a.list.map((x, i) => `<p class="note small ${x.p.id === me || isUserTeam(x.t) ? 'gold' : ''}">${i + 1}. <b>${esc(playerName(x.p))}</b> <span class="muted">${esc(x.t.shortName)} ${dlPct(x.t).w}-${dlPct(x.t).l}</span> · ${line(x)}</p>`).join('') || '<p class="note small muted">Not enough games yet.</p>'}`).join('')}</fieldset>`;
+}
+// Where the career player sits on each ladder (rank among everyone, not just the top five).
+function myLadderRank(p) {
+  const L = league(), y = L.season.currentYear, li = state.leagueIdx, me = seasonLine(p, li, y);
+  if (!me || me.gp < 20) return null;
+  const rows = L.teams.flatMap(t => t.roster.filter(x => x.status === 3).map(x => ({ x, t, l: seasonLine(x, li, y) }))).filter(r => r.l && r.l.gp >= 20);
+  const sc = r => r.l.gs * 2.2 + shownLevel(r.x) * 0.6 + dlPct(r.t).pct * 25;
+  const team = L.teams.find(t => t.roster.includes(p));
+  const mine = sc({ x: p, t: team, l: me });
+  return rows.filter(r => sc(r) > mine).length + 1;
+}
+
+// 7. Buyout market: after the deadline, sellers buy out veterans on expiring deals; contenders sign them for the
+// minimum. Your teams get first call on anyone who fits; the CPU signs the rest when you close the market.
+const MIN_SAL = p => FA.minFor(p);
+function buyoutCands() {
+  const L = league(), d = dlState();
+  if (!d.done) return [];
+  if (d.buyouts) return d.buyouts.map(b => ({ ...b, p: L.freeAgents.find(x => x.id === b.pid) })).filter(b => b.p);
+  const out = [];
+  for (const t of L.teams.filter(x => !isUserTeam(x) && dlRole(x) === 'seller')) {
+    // Veterans past their best on an expiring deal (a star gets traded, not bought out).
+    for (const p of FA.signedRoster(t).filter(x => x.age >= 30 && x.contract?.yrs === 1 && shownLevel(x) >= 72 && shownLevel(x) <= 86 && !FA.isLifer(L, x, t) && !tradeLock(x)).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 1)) {
+      if (mulberry32((saveSalt() ^ Math.imul(p.id + 91, 2654435761)) >>> 0)() > 0.65) continue;
+      FA.releasePlayer(L, t, p);
+      resetRotation(t);
+      out.push({ pid: p.id, from: t.shortName });
+    }
+  }
+  d.buyouts = out; dlSave(d); state.dirty = true;
+  return out.map(b => ({ ...b, p: L.freeAgents.find(x => x.id === b.pid) })).filter(b => b.p);
+}
+// Sign him mid-season: on the roster, the minimum for the rest of the year, and a new stint with his new team.
+function signBuyout(p, team) {
+  const L = league();
+  FA.signPlayer(L, p, team, { sal: MIN_SAL(p), yrs: 1 }, 1);
+  const row = (p.stats || []).find(s => s.league === 0 && s.yr === L.season.currentYear), last = row?.season?.[row.season.length - 1];
+  if (last && last.GP && last.tid !== team.id) row.season.push({ ...freshStint(last), tid: team.id, num: p.num });
+  resetRotation(team);
+}
+function buyoutBox() {
+  const d = dlState(), L = league();
+  if (!d.done) return '';
+  const list = buyoutCands(), mine = L.teams.filter(isUserTeam);
+  if (d.buyoutDone) return d.buyoutLog?.length ? `<fieldset class="frame"><legend>Buyout Market</legend>${d.buyoutLog.map(x => `<p class="note small">${esc(x)}</p>`).join('')}</fieldset>` : '';
+  if (!list.length) return '<fieldset class="frame"><legend>Buyout Market</legend><p class="note small muted">No buyouts this year.</p></fieldset>';
+  return `<fieldset class="frame"><legend>Buyout Market</legend><p class="note small">Bought out after the deadline: they'll sign with a contender for the minimum.</p><div class="stack">${list.map(b => `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(b.p))}</b> ${lvTag(b.p)} <span class="muted small">${b.p.age}y · ${esc(POSITIONS[b.p.pos] || '')} · from ${esc(b.from)}</span></span>${mine.map(t => `<button class="btn tiny" data-act="buyoutSign" data-id="${b.p.id}" data-t="${t.id}" ${FA.signedRoster(t).length >= 15 ? 'disabled' : ''}>Sign${mine.length > 1 ? ` (${esc(t.shortName)})` : ''}</button>`).join('')}</div>`).join('')}</div>
+    <button class="btn focus" data-act="buyoutClose" style="margin-top:8px">🔒 Close the market (the CPU signs the rest)</button></fieldset>`;
+}
+actions.buyoutSign = d => {
+  const L = league(), p = L.freeAgents.find(x => x.id === +d.id), t = L.teams.find(x => x.id === +d.t);
+  if (!p || !t) return;
+  signBuyout(p, t);
+  const s = dlState(); (s.buyoutLog ||= []).push(`✍️ ${t.shortName} sign ${playerName(p)} off the buyout market`); dlSave(s);
+  toast(`✍️ ${playerName(p)} signs with ${t.shortName}`, `The minimum for the rest of the year.`);
+  state.dirty = true; render();
+};
+actions.buyoutClose = () => {
+  const L = league(), s = dlState(), used = new Set();
+  for (const b of buyoutCands()) {
+    // The best contender with a roster spot that needs him (a hole at his spot first).
+    const t = L.teams.filter(x => !isUserTeam(x) && dlRole(x) === 'buyer' && !used.has(x.id) && FA.signedRoster(x).length < 15)
+      .sort((a, b2) => (tradeFit(b2, b.p) - tradeFit(a, b.p)) || dlPct(b2).pct - dlPct(a).pct)[0];
+    if (!t) { (s.buyoutLog ||= []).push(`🏠 ${playerName(b.p)} stays unsigned`); continue; }
+    signBuyout(b.p, t); used.add(t.id);
+    (s.buyoutLog ||= []).push(`✍️ ${t.shortName} sign ${playerName(b.p)} off the buyout market`);
+  }
+  s.buyoutDone = true; dlSave(s); state.dirty = true; render();
+};
+
+// 8. The owner's midseason review: the first half against what this team was built to do.
+const EXPECT = { contending: 0.62, competing: 0.54, developing: 0.42, rebuilding: 0.32 };
+function ownerReview(t) {
+  const L = league(), tier = teamStatus(L, t), { pct, gp, w, l } = dlPct(t);
+  if (gp < 20) return null;
+  const want = EXPECT[tier] ?? 0.5, diff = pct - want;
+  const grade = diff >= 0.1 ? 'A' : diff >= 0.03 ? 'B' : diff >= -0.04 ? 'C' : diff >= -0.11 ? 'D' : 'F';
+  return { tier, want, pct, w, l, grade };
+}
+function ownerReviewBox(t) {
+  const r = ownerReview(t); if (!r) return '';
+  const s = dlState(), done = (s.owner || {})[t.id], c = headCoachOf(t);
+  const say = { A: 'The owner is thrilled. Whatever you\'re doing, keep doing it.', B: 'The owner is pleased: ahead of where we thought.', C: 'Right about where the owner expected.', D: 'The owner expected more. The coach is feeling it.', F: 'The owner is furious. Someone has to answer for this.' }[r.grade];
+  return `<fieldset class="frame"><legend>Owner's Review${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>
+    <p class="note small">Grade <b class="${'AB'.includes(r.grade) ? 'up' : 'CD'.includes(r.grade) ? 'gold' : 'down'}">${r.grade}</b> · ${r.w}-${r.l} for a ${esc(r.tier)} team (expected about ${Math.round(r.want * 82)} wins over 82). ${esc(say)}</p>
+    ${done ? `<p class="note small">${esc(done)}</p>` : 'AB'.includes(r.grade) ? `<button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="bonus">🎁 Collect the owner's bonus (+${r.grade === 'A' ? 100 : 50} coins)</button>`
+      : 'DF'.includes(r.grade) && c ? `<div class="grid2"><button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="back">🤝 Back ${esc(c.ln)}</button><button class="btn small off" data-act="ownerAct" data-t="${t.id}" data-v="fire">🔥 Fire ${esc(c.ln)}</button></div>` : ''}</fieldset>`;
+}
+actions.ownerAct = async d => {
+  const L = league(), t = L.teams.find(x => x.id === +d.t), r = ownerReview(t), s = dlState(); if (!r || (s.owner || {})[t.id]) return;
+  let text;
+  if (d.v === 'bonus') { const n = r.grade === 'A' ? 100 : 50; t.frontOffice.coins = (t.frontOffice.coins || 0) + n; text = `The owner sent over ${n} coins.`; }
+  else if (d.v === 'back') { for (const p of FA.signedRoster(t)) moraleEvent(p, `backcoach:${L.season.currentYear}`, 2, 'the GM backed the coach'); text = `You backed ${headCoachOf(t).ln}. The owner gives it until the end of the year.`; }
+  else {
+    const next = CL.bestPoolCoach(L), old = headCoachOf(t);
+    if (!next) { toast('No coaches available'); return; }
+    if (!(await confirmBox(`Fire ${esc(old.fn)} ${esc(old.ln)} and hand the team to ${esc(next.fn)} ${esc(next.ln)} for the rest of the year?`, 'Fire'))) return;
+    hireHeadCoach(L, t, next); coachChangeMorale(L, t, old, next);
+    text = `${old.fn} ${old.ln} is out. ${next.fn} ${next.ln} takes over at the break.`;
+  }
+  (s.owner ||= {})[t.id] = text; dlSave(s); state.dirty = true; render();
+};
+
+// 9. Midseason extensions: players in the last year of their deal will talk now, a little cheaper than the summer.
+function midExtOffer(t, p) {
+  const a = extAsk(p, t), sal = Math.max(MIN_SAL(p), Math.round(a.sal * 0.94)), yrs = a.pref;
+  // His mood decides it: eager ones sign, market ones want to test free agency, a holdout won't take a discount.
+  const odds = a.holdout ? 0.05 : Math.max(0.1, Math.min(0.9, (a.mood === 'eager' ? 0.65 : a.mood === 'market' ? 0.15 : 0.4) + (tr(p, 'loyalty') - 10) * 0.02 - (tr(p, 'money') - 10) * 0.02));
+  return { sal, yrs, odds };
+}
+function midExtBox(t) {
+  const L = league(), s = dlState(), done = s.ext || {};
+  const list = FA.signedRoster(t).filter(p => p.contract?.yrs === 1 && !(p.contract.ext?.yrs > 0) && shownLevel(p) >= 70).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 5);
+  if (!list.length && !Object.keys(done).length) return '';
+  return `<fieldset class="frame"><legend>Midseason Extensions${L.teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend><p class="note small">In the last year of their deals. Before free agency they'll take a little less (about 6%).</p><div class="stack">${list.map(p => {
+    if (done[p.id]) return `<p class="note small">${esc(done[p.id])}</p>`;
+    const o = midExtOffer(t, p);
+    return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)} <span class="muted small">${p.age}y · ${moraleTag(p)}</span><br><span class="note small">$${o.sal}M × ${o.yrs} · ${Math.round(o.odds * 100)}% he signs now</span></span><button class="btn tiny" data-act="midExt" data-id="${p.id}" data-t="${t.id}">Offer</button></div>`;
+  }).join('')}${Object.entries(done).filter(([id]) => !list.some(p => p.id === +id)).map(([, x]) => `<p class="note small">${esc(x)}</p>`).join('')}</div></fieldset>`;
+}
+actions.midExt = d => {
+  const L = league(), t = L.teams.find(x => x.id === +d.t), p = t?.roster.find(x => x.id === +d.id), s = dlState();
+  if (!p || (s.ext || {})[p.id]) return;
+  const o = midExtOffer(t, p), yes = mulberry32((saveSalt() ^ Math.imul(p.id + 57, 2654435761) ^ L.season.currentYear) >>> 0)() < o.odds;
+  if (yes) { signExtension(L, t, p, { sal: o.sal, yrs: o.yrs }); (s.ext ||= {})[p.id] = `✍️ ${playerName(p)} extended: $${o.sal}M × ${o.yrs}.`; }
+  else { moraleEvent(p, `midext:${L.season.currentYear}`, -2, 'wants to test free agency'); (s.ext ||= {})[p.id] = `${playerName(p)} wants to test free agency this summer.`; }
+  dlSave(s); state.dirty = true; render();
+};
+
 actions.dlCalls = d => {
   const L = league(), t = L.teams.find(x => isUserTeam(x) && x.roster.some(p => p.id === +d.id));
   if (!t) return;
@@ -5392,7 +5551,7 @@ actions.dlRun = async () => {
   await nextFrame();
   const deals = runDeadline();
   o.remove();
-  dlSave({ done: true, deals });
+  dlSave({ ...dlState(), done: true, deals });   // keep the owner's review and extensions already settled
   // Career: a move by his team is news in his feed.
   const L = league(), me = CAR.isCareer(L) ? CAR.careerPlayer(L) : null;
   if (me?.team) { const mine = deals.filter(x => x.includes(me.team.shortName)); if (mine.length) { const { st, cy } = careerYear(); for (const x of mine) careerFeed(cy, 'Hoop Land', x.replace(/^🔁 /, '')); careerSave(st); } }
