@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.216.1';
+const APP_VERSION = '0.216.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -793,7 +793,7 @@ function floorFill(L, log = []) {
     const rebuild = ['rebuilding', 'developing'].includes(teamStatus(L, t));
     for (let guard = 0; guard < 4; guard++) {
       const gap = floor - FA.teamCommitted(t);
-      if (gap < 3) break;
+      if (gap < 3) break;   // a few million short: the payout below covers it
       const pool = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && shownLevel(x) >= 64);
       if (!pool.length) break;
       const score = x => (rebuild ? (x.age <= 24 ? shownLevel(x) + (x.pot || 0) * 2 : x.age >= 29 ? shownLevel(x) - 2 : shownLevel(x) - 6) : shownLevel(x));
@@ -834,8 +834,21 @@ function floorFill(L, log = []) {
       executeTrade({ team: deal.d, players: [deal.q], picks, prospects: [] }, { team: t, players: [back], picks: [], prospects: [] }, L.season.currentYear);
       log.push(`${t.shortName} took on ${playerName(deal.q)} ($${deal.q.contract.sal}M) from ${deal.d.shortName} for ${playerName(back)}${picks.length ? ` and ${picks.map(pk => `a ${pk.yr} ${pk.rd === 1 ? '1st' : '2nd'}`).join(' and ')}` : ''} to reach the floor`);
     }
+    // Whatever's left is paid out to the players, as the NBA does: a raise split across up to three expiring deals
+    // (so it's this season only), or the cheapest deals if nobody's expiring.
     const short = floor - FA.teamCommitted(t);
-    if (short >= 3) log.push(`${t.shortName} finish $${short}M under the floor and pay it out to their players`);
+    if (short > 0) {
+      const ros = FA.signedRoster(t).filter(q => q.contract && !extPending(q));
+      const exp = ros.filter(q => (q.contract.yrs || 0) <= 1).sort((a, b) => shownLevel(b) - shownLevel(a));
+      const to = (exp.length ? exp : [...ros].sort((a, b) => (a.contract.yrs || 0) - (b.contract.yrs || 0) || shownLevel(b) - shownLevel(a))).slice(0, 3);
+      to.forEach((q, i) => {
+        const add = Math.floor(short / to.length) + (i < short % to.length ? 1 : 0);
+        q.contract.sal += add;
+        const row = (q.stats || []).filter(r => r.yr === L.season.currentYear && r.league === 0).pop();
+        if (row) row.sal = q.contract.sal;
+      });
+      if (to.length) log.push(`${t.shortName} paid the last $${short}M under the floor out to ${to.map(playerName).join(', ')}`);
+    }
   }
   if (log.length) (calFlags().dumpLog ||= []).push(...log);
   return log;
