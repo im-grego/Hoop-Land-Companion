@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.215.0';
+const APP_VERSION = '0.215.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -841,7 +841,15 @@ function retireOff(L, t, p, retireNum) {
   Object.assign(p, { status: 7, tid: 0, linePos: -1 });
   if (p.history && !p.history.yearRetired) p.history.yearRetired = L.season.currentYear;
   if (!(L.retirees ||= []).some(x => x.id === p.id)) L.retirees.push(p);
-  if (retireNum && p.num != null && !(t.retiredNumbers || []).some(r => r.num === p.num)) (t.retiredNumbers ||= []).push({ num: p.num, pid: p.id, yr: L.season.currentYear });
+  if (retireNum && p.num != null && !(t.retiredNumbers || []).some(r => r.num === p.num)) {
+    const r = { num: p.num, pid: p.id, yr: L.season.currentYear };
+    (t.retiredNumbers ||= []).push(r);
+    // The game's own "number retired" story (type 25), built the way it writes one.
+    const said = L.season.news.find(n => n.type === 17 && n.pid === p.id);
+    L.season.news.push({ league: 0, rating: said?.rating ?? 7, date: said?.date ?? 0, phase: L.season.phase, category: 0, type: 25, tid: t.id, pid: p.id, gid: 0,
+      data: { awardId: 0, awardTeam: 0, retiredNumber: { ...r }, facility: { type: 0, tier: 0, upgrade: 0, condition: 5 }, focus: 0, regimen: 0 }, read: false });
+  }
+  if (p.contract) p.contract.canExt = false;
   state.dirty = true;
 }
 function settleRetirees(L, all = false) {
