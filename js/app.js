@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.215.1';
+const APP_VERSION = '0.216.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -774,7 +774,9 @@ function dumpPicks(L, t, weight) {
 // on the best player left, a rebuilder on young upside or a veteran it can flip at the deadline. Whatever's still short
 // is paid out to its players, the way the league settles it.
 const FLOOR_SHARE = 0.9;
-const salaryFloor = L => Math.round(FA.capLines(L).cap * FLOOR_SHARE);
+// 90% of the season's cap, to the nearest $5M, and down when it's close: it only rounds up from within $1.5M of the
+// next mark (90% of $176M = $158.4M → $155M; of $200M = $180M; of $235M = $211.5M → $210M).
+const salaryFloor = L => Math.floor((FA.capLines(L).cap * FLOOR_SHARE + 1.5) / 5) * 5;
 const underFloor = (L, t) => (FA.capSystemOn() && FA.teamCommitted(t) < salaryFloor(L) ? 1 : 0);
 function floorFill(L, log = []) {
   if (!FA.capSystemOn()) return log;
@@ -5977,6 +5979,13 @@ actions.openPlayer = d => go('player', { id: +d.id });
 // into the save's starting lineup.
 const gameMinutes = () => Math.round(48 / minScale(state.leagueIdx));
 const lineupMode = t => { const s = teamStatus(league(), t); return s === 'contending' || s === 'competing' ? 'compete' : s === 'rebuilding' || s === 'developing' ? 'develop' : 'normal'; };
+// A player's minutes as a bar out of a full game, split by position (out of position striped), with his share.
+function minBar(p, m, game) {
+  const segs = m.slice(1).map((v, k) => (v > 0 ? `<i class="seg s${k}${LU.inPos(p, k) ? '' : ' off'}" style="width:${(v / game * 100).toFixed(1)}%" title="${LU.SLOTS[k]} ${v}"></i>` : '')).join('');
+  const split = m.slice(1).map((v, k) => (v ? `<span class="${LU.inPos(p, k) ? '' : 'down'}">${LU.SLOTS[k]} ${v}</span>` : '')).filter(Boolean).join(' · ');
+  return `<div class="mbar-row"><div class="mbar">${segs}</div><span class="mbar-pct">${Math.round(m[0] / game * 100)}%</span></div><span class="small muted">${split || 'Out of the rotation'}</span>`;
+}
+const minLegend = () => `<div class="mbar-legend small muted">${LU.SLOTS.map((x, k) => `<span><i class="seg s${k}"></i>${x}</span>`).join('')}<span><i class="seg off s4"></i>out of position</span></div>`;
 // Career mode: a team's rotation as it stands, to look at (the coaches set it).
 function lineupView(L, t) {
   const byId = new Map(t.roster.map(p => [p.id, p]));
@@ -5984,7 +5993,7 @@ function lineupView(L, t) {
   layout({
     title: `${t.shortName} Rotation`,
     body: `<p class="note small muted">👀 Career mode: the coaching staff sets the minutes. ${gameMinutes()}-minute games.</p>
-      <fieldset class="frame"><legend>${esc(teamFull(t))}</legend><div class="stack">${rows.map((x, i) => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="pk">${i < 5 ? LU.SLOTS[i] : '·'}</span><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(POSITIONS[x.p.pos] || '')} · ${x.m.slice(1).map((v, k) => (v ? `${LU.SLOTS[k]} ${v}` : '')).filter(Boolean).join(' · ')}</span></span><b>${x.m[0]}</b></div>`).join('') || '<p class="note small muted">No rotation set yet.</p>'}</div></fieldset>`,
+      <fieldset class="frame"><legend>${esc(teamFull(t))}</legend>${minLegend()}<div class="stack">${rows.map((x, i) => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="pk">${i < 5 ? LU.SLOTS[i] : '·'}</span><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} <span class="small muted">${esc(POSITIONS[x.p.pos] || '')}</span>${minBar(x.p, x.m, gameMinutes())}</span><b>${x.m[0]}</b></div>`).join('') || '<p class="note small muted">No rotation set yet.</p>'}</div></fieldset>`,
   });
 }
 screens.lineup = (args = {}) => {
@@ -5996,9 +6005,8 @@ screens.lineup = (args = {}) => {
   const posN = p => POSITIONS[p.pos] || '';
   const row = r => {
     const p = r.p, inRot = r.minutes[0] > 0, now = p.minutes?.[0] ?? 0;
-    const split = r.minutes.slice(1).map((m, i) => (m ? `${LU.SLOTS[i]} ${m}` : '')).filter(Boolean).join(' · ');
-    return `<div class="drill-row wrap ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}</span>
-      <br><span class="small ${inRot ? '' : 'muted'}">${inRot ? `${split}` : 'Out of the rotation'}${now !== r.minutes[0] ? ` <span class="muted">(now ${now})</span>` : ''}${r.hand ? ' <span class="gold">✋ set by hand</span>' : ''}</span></span>
+    return `<div class="drill-row wrap lu-row ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}</span>${r.off ? ' <span class="small down">⚠️ out of position</span>' : ''}
+      ${inRot ? minBar(p, r.minutes, game) : '<br><span class="small muted">Out of the rotation</span>'}${now !== r.minutes[0] ? ` <span class="small muted">(now ${now})</span>` : ''}${r.hand ? ' <span class="small gold">✋ set by hand</span>' : ''}</span>
       ${inRot || r.hand ? `<span class="trait-ctl"><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="-${step}" aria-label="Fewer minutes">−</button><b class="small" style="min-width:2.2em;text-align:center">${r.minutes[0]}</b><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="${step}" aria-label="More minutes">+</button></span>` : `<button class="btn tiny off" data-act="luMin" data-id="${p.id}" data-d="${step * 4}">Play him</button>`}</div>`;
   };
   const total = plan.rows.reduce((s, r) => s + r.minutes[0], 0);
@@ -6008,7 +6016,8 @@ screens.lineup = (args = {}) => {
       <div class="tabs fa-tabs">${Object.entries(LU.MODES).filter(([k]) => k !== 'playoffs' || PO.atPlayoffStart(L) || mode === 'playoffs').map(([k, m]) => `<button class="btn small ${k === mode ? 'on focus' : 'off'}" data-act="luSet" data-k="mode" data-v="${k}">${esc(m.label)}</button>`).join('')}</div>
       <p class="note small muted">${esc(LU.MODES[mode].says)}${mode === lineupMode(t) ? ' (fits where this team is)' : ''}</p>
       <div class="drill-row"><span class="grow small">Players in the rotation</span><span class="trait-ctl"><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.max(7, size - 1)}">−</button><b class="small" style="min-width:2em;text-align:center">${size}</b><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.min(12, size + 1)}">+</button></span></div>
-      <fieldset class="frame"><legend>Rotation · ${total} of ${5 * game} minutes</legend><div class="stack">${plan.rows.map(row).join('')}</div>
+      <fieldset class="frame"><legend>Rotation · ${total} of ${5 * game} minutes</legend>${minLegend()}<div class="stack">${plan.rows.map(row).join('')}</div>
+        <p class="note small muted">Bars are minutes out of a full ${game}; the % is his share of the game. Nobody plays out of position unless the roster has no one within 14 levels of the rotation's worst player who can play the spot.</p>
         ${plan.short.length ? `<p class="note small down">Short at ${plan.short.map(x => `${x.slot} (${x.v})`).join(', ')}: add a player or minutes.</p>` : ''}</fieldset>
       <div class="grid2"><button class="btn off" data-act="luSet" data-k="over" data-v="">↩ Clear hand edits</button><button class="btn focus" data-act="luApply">✅ Set this lineup</button></div>
       <p class="note muted small">Writes the starting five, the bench order and every player's minutes by position into the save.</p>`,

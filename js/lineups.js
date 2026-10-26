@@ -21,25 +21,104 @@ export function playScore(p, mode) {
   return lv;
 }
 const dist = (p, s) => Math.abs((p.pos ?? 4) - SLOT_POS[s]);
-// The starting five: the best five players at their spots (all slot orders over the top eight; out of position
-// costs about a level and a half a step).
+// In position: his own spot or the next one over on the game's scale (a G plays either guard spot, an FC either big
+// spot). Two steps or more is out of position, and only happens when nobody on the roster within 14 levels of the
+// worst player in the rotation can play the spot.
+export const inPos = (p, s) => dist(p, s) <= 1;
+const POS_GAP = 14;
+// The starting five: the best five players at their spots, over the top eight plus the best man at each spot. A step
+// over costs a little; out of position only when nobody who can play the spot is within 14 levels of the worst
+// starter.
 function pickStarters(cands, score) {
-  const top = cands.slice(0, 8);
+  const top = [...new Set([...cands.slice(0, 8), ...[0, 1, 2, 3, 4].flatMap(s => cands.filter(q => inPos(q, s)).slice(0, 2))])];
   let best = null, bestV = -Infinity;
   const go = (s, used, pick, v) => {
-    if (s === 5) { if (v > bestV) { bestV = v; best = [...pick]; } return; }
+    if (s === 5) {
+      const worst = Math.min(...pick.map(levelOf));
+      const ok = pick.every((p, k) => inPos(p, k) || !cands.some(q => !used.has(q) && inPos(q, k) && levelOf(q) >= worst - POS_GAP));
+      if (ok && v > bestV) { bestV = v; best = [...pick]; }
+      return;
+    }
     for (const p of top) {
       if (used.has(p)) continue;
       const d = dist(p, s);
       if (d > 3) continue;
       used.add(p); pick.push(p);
-      go(s + 1, used, pick, v + score(p) - d * d * 1.5);
+      go(s + 1, used, pick, v + score(p) - (d <= 1 ? d * 1.5 : 3 * d * d));
       used.delete(p); pick.pop();
     }
   };
   go(0, new Set(), [], 0);
-  return best || top.slice(0, 5);
+  return best || cands.slice(0, 5);
 }
+// Minutes each: by the mode's weights, scaled to 5 games' worth of slots, kept between 12% and 80% of a game.
+function minutesFor(rot, mode, game, over) {
+  const W = MODES[mode].w, total = 5 * game, lo = Math.round(game * 0.12), hi = Math.round(game * (MODES[mode].hi || 0.8));
+  const fixed = rot.filter(p => over[p.id] != null), free = rot.filter(p => over[p.id] == null);
+  const want = new Map(fixed.map(p => [p, Math.max(0, Math.min(game, over[p.id]))]));
+  const left = total - [...want.values()].reduce((s, v) => s + v, 0);
+  const wOf = p => W[rot.indexOf(p)] ?? 0.2, sumW = free.reduce((s, p) => s + wOf(p), 0);
+  for (const p of free) want.set(p, Math.max(lo, Math.min(hi, Math.round(left * wOf(p) / sumW))));
+  // Hand the rounding and the clamps' leftovers to whoever has room, a minute at a time.
+  let d = left - free.reduce((s, p) => s + want.get(p), 0);
+  for (let i = 0; d !== 0 && i < 2000 && free.length; i++) {
+    const p = free[i % free.length], v = want.get(p) + Math.sign(d);
+    if (v >= lo && v <= hi) { want.set(p, v); d -= Math.sign(d); }
+  }
+  return { want, lo, hi };
+}
+// Each player's minutes by slot, as the cheapest way to cover all five spots (a min-cost flow of minutes): a step
+// over costs a little, out of position costs far more and grows with the distance, so a power forward covers center
+// before a guard does. A player can go past his share of minutes (up to the mode's limit) at a small cost, which is
+// how a true center's backup soaks up minutes instead of a forward playing the five. Starters keep at least half
+// their minutes at their own spot but can stagger into the next one: with no true center behind them, an FC starting
+// at power forward takes the backup center minutes and the bench forwards cover his.
+const slotCost = (p, s, own) => (own ? -1 : 0) + (dist(p, s) <= 1 ? dist(p, s) * 3 : 1000 * dist(p, s) ** 2);
+const EXTRA = 30;
+function assign(rot, starters, want, hi, game, over) {
+  const slots = new Map(rot.map(p => [p, [0, 0, 0, 0, 0]]));
+  const need = [game, game, game, game, game];
+  const used = p => slots.get(p).reduce((a, b) => a + b, 0);
+  const capOf = p => (over[p.id] != null ? want.get(p) : Math.max(want.get(p), hi));
+  starters.forEach((p, s) => { const m = Math.ceil(Math.min(game, want.get(p)) / 2); slots.get(p)[s] = m; need[s] -= m; });
+  // The cost of one more minute from a player: free up to his share (hand-set minutes come first), a little past it.
+  const startCost = p => (used(p) < want.get(p) ? (over[p.id] != null ? -50 : 0) : used(p) < capOf(p) ? EXTRA : Infinity);
+  const tierLeft = p => (used(p) < want.get(p) ? want.get(p) - used(p) : capOf(p) - used(p));
+  // Successive shortest paths: player → slot at its cost; the residual slot → player edges let a later path move
+  // someone already placed (a starter never below half his minutes at his own spot).
+  const n = rot.length;
+  const keep = (p, s) => (starters[s] === p ? Math.ceil(Math.min(game, want.get(p)) / 2) : 0);
+  for (let guard = 0; guard < 500 && need.some(v => v > 0); guard++) {
+    const D = new Array(n + 5).fill(Infinity), prev = new Array(n + 5).fill(-1);
+    rot.forEach((p, i) => { D[i] = startCost(p); });
+    for (let k = 0; k < n + 5; k++) {
+      let ch = false;
+      for (let i = 0; i < n; i++) if (D[i] < Infinity) for (let s = 0; s < 5; s++) {
+        const c = D[i] + slotCost(rot[i], s, starters[s] === rot[i]);
+        if (c < D[n + s]) { D[n + s] = c; prev[n + s] = i; ch = true; }
+      }
+      for (let s = 0; s < 5; s++) if (D[n + s] < Infinity) for (let i = 0; i < n; i++) {
+        if (!(slots.get(rot[i])[s] - keep(rot[i], s) > 0)) continue;
+        const c = D[n + s] - slotCost(rot[i], s, starters[s] === rot[i]);
+        if (c < D[i]) { D[i] = c; prev[i] = n + s; ch = true; }
+      }
+      if (!ch) break;
+    }
+    let end = -1;
+    for (let s = 0; s < 5; s++) if (need[s] > 0 && D[n + s] < Infinity && (end < 0 || D[n + s] < D[end])) end = n + s;
+    if (end < 0) break;
+    const path = []; for (let v = end; v !== -1 && path.length <= 2 * (n + 5); v = prev[v]) path.push(v);
+    const start = path[path.length - 1];
+    if (start >= n) break;
+    let f = Math.min(need[end - n], tierLeft(rot[start]));
+    for (let k = path.length - 1; k > 0; k--) { const u = path[k], v = path[k - 1]; if (u >= n) f = Math.min(f, slots.get(rot[v])[u - n] - keep(rot[v], u - n)); }
+    if (!(f > 0)) break;
+    for (let k = path.length - 1; k > 0; k--) { const u = path[k], v = path[k - 1]; if (u < n) slots.get(rot[u])[v - n] += f; else slots.get(rot[v])[u - n] -= f; }
+    need[end - n] -= f;
+  }
+  return { slots, need };
+}
+const offMinutes = (rot, g) => rot.reduce((a, q) => a + g.slots.get(q).reduce((b, v, t) => b + (inPos(q, t) ? 0 : v), 0), 0);
 // The plan: starters by slot, the bench in order, each player's minutes by slot. size: players in the rotation (7-12).
 // over: { pid: total } minutes you've set by hand (the rest share what's left).
 export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = {} } = {}) {
@@ -56,62 +135,42 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
   for (const g of [2, 0, 1]) { const b = bench.find(p => grp(p) === g && !picks.includes(p)); if (b && picks.length < nBench && (g !== 1 || score(b) >= score(bench[0]) - 10)) picks.push(b); }
   for (const p of bench) if (picks.length < nBench && !picks.includes(p)) picks.push(p);
   picks.sort((a, b) => score(b) - score(a));
-  const rot = [...starters, ...picks];
-  // Minutes each: by the mode's weights, scaled to 5 games' worth of slots, kept between 12% and 80% of a game.
-  const W = MODES[mode].w, total = 5 * game, lo = Math.round(game * 0.12), hi = Math.round(game * (MODES[mode].hi || 0.8));
-  const fixed = rot.filter(p => over[p.id] != null), free = rot.filter(p => over[p.id] == null);
-  const want = new Map(fixed.map(p => [p, Math.max(0, Math.min(game, over[p.id]))]));
-  const left = total - [...want.values()].reduce((s, v) => s + v, 0);
-  const wOf = p => W[rot.indexOf(p)] ?? 0.2, sumW = free.reduce((s, p) => s + wOf(p), 0);
-  for (const p of free) want.set(p, Math.max(lo, Math.min(hi, Math.round(left * wOf(p) / sumW))));
-  // Hand the rounding and the clamps' leftovers to whoever has room, a minute at a time.
-  let d = left - free.reduce((s, p) => s + want.get(p), 0);
-  for (let i = 0; d !== 0 && i < 2000 && free.length; i++) {
-    const p = free[i % free.length], v = want.get(p) + Math.sign(d);
-    if (v >= lo && v <= hi) { want.set(p, v); d -= Math.sign(d); }
+  let rot = [...starters, ...picks];
+  let { want, hi } = minutesFor(rot, mode, game, over), got = assign(rot, starters, want, hi, game, over);
+  // Still out of position somewhere? Bring in a bench player who can play the spot, if he's within 14 levels of the
+  // worst player in the rotation, in place of the last man whose spots are covered without him. Kept only if it
+  // cuts the out-of-position minutes.
+  const tried = new Set();
+  for (let it = 0; it < 8 && offMinutes(rot, got) > 0; it++) {
+    const holes = [0, 1, 2, 3, 4].filter(s => rot.some(q => got.slots.get(q)[s] > 0 && !inPos(q, s)));
+    const worst = Math.min(...rot.map(levelOf));
+    const add = cands.find(q => !rot.includes(q) && !tried.has(q) && holes.some(s => inPos(q, s)) && levelOf(q) >= worst - POS_GAP);
+    if (!add) break;
+    tried.add(add);
+    const covered = q => [0, 1, 2, 3, 4].every(t => !inPos(q, t) || rot.filter(r => r !== q && inPos(r, t)).length >= 2);
+    const drop = rot.length >= Math.min(12, size) ? [...rot.slice(5)].reverse().find(q => over[q.id] == null && !tried.has(q) && covered(q)) : null;
+    const nextRot = [...starters, ...[...rot.slice(5).filter(q => q !== drop), add].sort((a, b) => score(b) - score(a))];
+    const m2 = minutesFor(nextRot, mode, game, over), g2 = assign(nextRot, starters, m2.want, m2.hi, game, over);
+    if (offMinutes(nextRot, g2) < offMinutes(rot, got)) { rot = nextRot; want = m2.want; hi = m2.hi; got = g2; }
   }
-  // Slots: each starter plays his slot; the bench fills what's left, nearest positions first.
-  const slots = new Map(rot.map(p => [p, [0, 0, 0, 0, 0]]));
-  const need = [game, game, game, game, game];
-  starters.forEach((p, s) => { const m = Math.min(want.get(p), game); slots.get(p)[s] = m; need[s] -= m; });
-  // The bench (and any starter with minutes left) covers the slots still short: closest fits first across the whole
-  // rotation, so a point guard backs up the point and a big backs up the bigs.
-  const restOf = p => want.get(p) - slots.get(p).reduce((a, b) => a + b, 0);
-  const pairs = rot.flatMap((p, i) => [0, 1, 2, 3, 4].map(s => ({ p, s, d: dist(p, s), i }))).sort((a, b) => a.d - b.d || a.i - b.i);
-  for (const { p, s } of pairs) {
-    const m = Math.min(restOf(p), need[s]);
-    if (m > 0) { slots.get(p)[s] += m; need[s] -= m; }
-  }
-  // Trade minutes between players where both end up closer to their positions (a guard playing center and a big
-  // playing the wing swap). Starters keep their own slot.
-  const locked = (p, s) => starters[s] === p;
-  for (let it = 0, moved = true; moved && it < 200; it++) {
-    moved = false;
-    for (const x of rot) for (const y of rot) {
-      if (x === y) continue;
-      for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) {
-        if (i === j || locked(x, i) || locked(y, j)) continue;
-        const a = slots.get(x)[i], b = slots.get(y)[j];
-        if (!a || !b || dist(x, j) + dist(y, i) >= dist(x, i) + dist(y, j)) continue;
-        const k = Math.min(a, b);
-        slots.get(x)[i] -= k; slots.get(x)[j] += k; slots.get(y)[j] -= k; slots.get(y)[i] += k;
-        moved = true;
-      }
+  // A rotation spot that ends up with no minutes (a third center behind two) goes to the next man who can play.
+  for (let it = 0; it < 4; it++) {
+    const idle = rot.slice(5).find(q => over[q.id] == null && !got.slots.get(q).some(v => v > 0));
+    if (!idle) break;
+    let swapped = false;
+    for (const add of cands.filter(q => !rot.includes(q) && !tried.has(q)).slice(0, 4)) {
+      tried.add(add);
+      const nextRot = [...starters, ...[...rot.slice(5).filter(q => q !== idle), add].sort((a, b) => score(b) - score(a))];
+      const m2 = minutesFor(nextRot, mode, game, over), g2 = assign(nextRot, starters, m2.want, m2.hi, game, over);
+      if (g2.slots.get(add).some(v => v > 0) && offMinutes(nextRot, g2) <= offMinutes(rot, got)) { rot = nextRot; want = m2.want; hi = m2.hi; got = g2; swapped = true; break; }
     }
+    if (!swapped) { rot = rot.filter(q => q !== idle); break; }
   }
-  // Anything still short goes to whoever fits best and can play more.
-  for (let s = 0; s < 5; s++) {
-    while (need[s] > 0) {
-      const p = [...rot].sort((a, b) => dist(a, s) - dist(b, s)).find(x => slots.get(x).reduce((a, b) => a + b, 0) < game);
-      if (!p) break;
-      const m = Math.min(need[s], game - slots.get(p).reduce((a, b) => a + b, 0));
-      slots.get(p)[s] += m; need[s] -= m;
-    }
-  }
+  const { slots, need } = got;
   const order = [...rot, ...roster.filter(p => !rot.includes(p)).sort((a, b) => score(b) - score(a))];
   return {
     order, starters, rot, game,
-    rows: order.map((p, i) => { const sl = slots.get(p) || [0, 0, 0, 0, 0], tot = sl.reduce((a, b) => a + b, 0); return { p, linePos: i, slot: starters.includes(p) ? starters.indexOf(p) : tot ? sl.indexOf(Math.max(...sl)) : nearestSlot(p), minutes: [tot, ...sl], hand: over[p.id] != null }; }),
+    rows: order.map((p, i) => { const sl = slots.get(p) || [0, 0, 0, 0, 0], tot = sl.reduce((a, b) => a + b, 0); return { p, linePos: i, slot: starters.includes(p) ? starters.indexOf(p) : tot ? sl.indexOf(Math.max(...sl)) : nearestSlot(p), minutes: [tot, ...sl], hand: over[p.id] != null, off: sl.some((m, k) => m > 0 && !inPos(p, k)) }; }),
     short: need.map((v, i) => ({ slot: SLOTS[i], v })).filter(x => x.v > 0),
   };
 }

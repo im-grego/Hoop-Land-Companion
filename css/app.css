@@ -1498,3 +1498,14 @@ main.panel.bare { margin-top: 10px; }
 /* GOAT tracker */
 .goat-list { max-height: 420px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding-right: 4px; }
 .goat-me { outline: 2px solid var(--gold, #f5c542); border-radius: 6px; }
+
+/* Lineup minutes bars: a full game wide, split by position. */
+.mbar-row { display: flex; align-items: center; gap: 6px; margin: 4px 0 2px; }
+.mbar { flex: 1; display: flex; height: 10px; background: var(--bg-dark); border: 2px solid var(--btn-edge); overflow: hidden; }
+.mbar-pct { font-family: var(--pixel); font-size: 11px; min-width: 3.2em; text-align: right; color: var(--cyan); }
+.seg { display: inline-block; height: 100%; }
+.seg.s0 { background: #5cc8ff; } .seg.s1 { background: #4fe08a; } .seg.s2 { background: #ffb43a; } .seg.s3 { background: #ff8a5c; } .seg.s4 { background: #c08bff; }
+.seg.off { background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 60, 80, 0.85) 3px 6px); }
+.mbar-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 6px; }
+.mbar-legend .seg { width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--btn-edge); }
+.lu-row .grow { min-width: 0; }
