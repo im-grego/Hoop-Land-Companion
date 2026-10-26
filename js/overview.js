@@ -144,7 +144,7 @@ export function teamBooks(L, team, { level = levelOf, worth, qoEligible }) {
     .sort((a, b) => b.level - a.level);
   const options = roster.filter(p => p.contract && (p.contract.yrs || 0) <= 1 && (p.contract.opt === 1 || p.contract.opt === 2) && p.status !== 4)
     .map(p => ({ p, kind: p.contract.opt === 1 ? 'team' : 'player', sal: p.contract.sal, worth: worth(p), level: level(p) })).sort((a, b) => b.level - a.level);
-  const ext = roster.filter(p => p.status === 3 && (p.contract?.yrs || 0) === 1 && p.contract.canExt !== false && !options.some(o => o.p === p))
+  const ext = roster.filter(p => p.status === 3 && (p.contract?.yrs || 0) === 1 && !(p.contract?.ext?.yrs > 0) && p.contract.canExt !== false && !options.some(o => o.p === p))
     .map(p => ({ p, level: level(p), sal: p.contract.sal, worth: worth(p) })).sort((a, b) => b.level - a.level);
   const committed = roster.filter(p => p.status === 3 && (p.contract?.yrs || 0) >= 1).reduce((a, p) => a + (p.contract.sal || 0), 0);
   const cap = FA.capLines(L).cap;

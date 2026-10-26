@@ -33,8 +33,12 @@ export const tagGap = fair => Math.max(4, fair * 0.17);
 // in full and a bit worse); a team option takes the edge off the last year;
 // an expiring deal is mostly harmless and even worth a little as cap room.
 // Returns { adj, tag } (tag: 'Final Year' | 'Overpaid' | 'Bargain' | '').
+// A signed extension that hasn't started yet: the current deal's last year, then the extension.
+export const pendingExt = p => (p.contract?.ext?.yrs || 0) > 0;
 export function contractValue(p) {
-  const c = p.contract || {};
+  let c = p.contract || {};
+  // Extended: valued on the deal he's actually signed through (this year, then the extension's years at its salary).
+  if (pendingExt(p) && (c.yrs || 0) <= 1) c = { sal: c.ext.sal, yrs: (c.yrs || 0) + c.ext.yrs, opt: c.ext.opt || 0 };
   const yrs = c.yrs || 0, sal = c.sal || 0;
   if (!yrs || !sal) return { adj: 0, tag: '' };
   const lv = levelOf(p);

@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.214.3';
+const APP_VERSION = '0.214.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -199,6 +199,8 @@ const snapOf = p => {
 };
 // Commissioner autopilot: a team you run can be handed to the CPU (it stays on your My Teams list).
 const isUserTeam = t => t && state.userTeams.has(t.id) && !state.autoTeams?.has(t.id);
+// Signed an extension that starts when this deal ends: not in a contract year, and not tradable until it starts.
+const extPending = p => (p?.contract?.ext?.yrs || 0) > 0;
 // The teams you actually run right now (your picks minus the ones on autopilot): what the league logic goes by.
 const ctrlTeams = () => new Set([...state.userTeams].filter(id => !state.autoTeams?.has(id)));
 const autoKey = () => `hlc:autopilot:${saveTag()}`;
@@ -850,7 +852,7 @@ function exportCuts(L) {
     const left = FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax;
     if (left > 0) {
       const top = new Set([...FA.signedRoster(t)].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 8).map(p => p.id));
-      const rest = FA.signedRoster(t).filter(p => !top.has(p.id) && !FA.isLifer(L, p, t)).sort((a, b) => FA.cutScore(a, shownLevel(a), L.season.currentYear) - FA.cutScore(b, shownLevel(b), L.season.currentYear));
+      const rest = FA.signedRoster(t).filter(p => !top.has(p.id) && !FA.isLifer(L, p, t) && !extPending(p)).sort((a, b) => FA.cutScore(a, shownLevel(a), L.season.currentYear) - FA.cutScore(b, shownLevel(b), L.season.currentYear));
       for (const p of rest.slice(0, left)) { FA.cutPlayer(L, t, p); log.push(`${t.shortName} cut ${playerName(p)}`); }
     }
   }
@@ -2493,7 +2495,7 @@ function careerStoryTab(L, p, team) {
 function careerMediaCtx(L, p, team) {
   const log = CAR.careerLog(p), last = log[log.length - 1]?.l;
   const rel = CAR.relationships(L, p), alpha = CAR.lockerRoom(L, p, team).find(x => x.kind === 'alpha')?.m || null;
-  return { newTeam: !!team && !!last && last.tid !== team.id, rival: rel.rivals[0]?.m || null, alpha, contractYear: p.contract?.yrs === 1, lastPpg: last?.ppg || 0 };
+  return { newTeam: !!team && !!last && last.tid !== team.id, rival: rel.rivals[0]?.m || null, alpha, contractYear: p.contract?.yrs === 1 && !extPending(p), lastPpg: last?.ppg || 0 };
 }
 function careerMediaBox(L, p, team) {
   if (!team || !careerOffseason()) return '';
@@ -3073,7 +3075,7 @@ actions.careerAsw = async d => {
   if (part === 'recruit') {
     const x = L.teams.flatMap(t => t.roster).find(y => y.id === +v); if (!x) return;
     careerBond(x, 8); a.recruit = `You and ${playerName(x)} talked about teaming up someday (+8).`;
-    if (x.contract?.yrs === 1) careerFeed(cy, playerName(x), `Had a good talk with ${p.ln} this weekend. We'll see what the summer brings. 👀`);
+    if (x.contract?.yrs === 1 && !extPending(x)) careerFeed(cy, playerName(x), `Had a good talk with ${p.ln} this weekend. We'll see what the summer brings. 👀`);
     careerSave(st); state.dirty = true; render(); return;
   }
   if (part === 'event') {
@@ -5935,7 +5937,7 @@ function runDeadline() {
         const core = new Set([...u.roster].sort((a, b) => val(b) - val(a)).slice(0, 3));
         // Contenders pay in youth and picks, with a salary to make it work.
         const assets = [
-          ...FA.signedRoster(u).filter(x => !core.has(x) && !tradeLock(x) && !justMoved(x) && (x.age <= 25 || x.contract?.yrs <= 1)).map(x => ({ player: x, value: val(x), young: x.age <= 25 })),
+          ...FA.signedRoster(u).filter(x => !core.has(x) && !tradeLock(x) && !justMoved(x) && (x.age <= 25 || (x.contract?.yrs <= 1 && !extPending(x)))).map(x => ({ player: x, value: val(x), young: x.age <= 25 })),
           ...u.draftPicks.filter(pk => pk.yr > draftYear(L) && !FA.pickFrozen(L, u, pk)).map(pk => ({ pick: pk, value: futureValue(pk), young: true })),
         ];
         for (let i = 0; i < assets.length; i++) for (let j = i; j < assets.length; j++) {
@@ -6023,7 +6025,7 @@ function buyoutCands() {
   const out = [];
   for (const t of L.teams.filter(x => !isUserTeam(x) && dlRole(x) === 'seller')) {
     // Veterans past their best on an expiring deal (a star gets traded, not bought out).
-    for (const p of FA.signedRoster(t).filter(x => x.age >= 30 && x.contract?.yrs === 1 && shownLevel(x) >= 72 && shownLevel(x) <= 86 && !FA.isLifer(L, x, t) && !tradeLock(x)).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 1)) {
+    for (const p of FA.signedRoster(t).filter(x => x.age >= 30 && x.contract?.yrs === 1 && !extPending(x) && shownLevel(x) >= 72 && shownLevel(x) <= 86 && !FA.isLifer(L, x, t) && !tradeLock(x)).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 1)) {
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 91, 2654435761)) >>> 0)() > 0.65) continue;
       FA.releasePlayer(L, t, p);
       resetRotation(t);
@@ -6378,7 +6380,7 @@ function careerPlayoffBox(L, p, team) {
   const opp = ser.opp, mu = PO.matchup(p, opp), bad = opp.roster.filter(x => (x.season?.relationship || 0) <= -5), nem = careerStore().nemesis;
   const hurt = (p.season?.injury?.gamesOut || 0) > 0, star = opp.roster.filter(x => x.status === 3).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
   const st = CAR.standing(L, p, team, valueOf), featured = (st?.rank || 9) <= 2;
-  const ask = FA.baseAsk(L, p), stakes = (p.contract?.yrs || 0) <= 1;
+  const ask = FA.baseAsk(L, p), stakes = (p.contract?.yrs || 0) <= 1 && !extPending(p);
   const scen = [['First-round exit', 0, false], ['Win a round', 1, false], ['Conference finals', 2, false], ['Win it all', 4, true]];
   const agent = ag ? part(`${ag.icon} ${esc(ag.name)} on the stakes`, c.agent ? esc(c.agent) : '', `<p class="note small">"${stakes ? `You're a free agent this summer. Right now I can get you about $${ask}M a year.` : `You're signed through ${L.season.currentYear + (p.contract?.yrs || 1) - 1}, so this is about your name, your fans and your next deal.`} Here's what this run does:"</p>
       ${scen.map(([label, won, champ]) => { const m = PO.runSwing(won, champ, featured); return `<p class="note small">${esc(label)}: ${stakes ? `<b>$${Math.round(ask * m)}M</b> a year (${m >= 1 ? '+' : ''}${Math.round((m - 1) * 100)}%)` : `${won * 15 + (champ ? 60 : 0)} legacy, ${won ? `+${won * 3}% fans` : 'no new fans'}`}</p>`; }).join('')}
@@ -6416,7 +6418,7 @@ actions.careerPo = d => {
     else { careerCoach(team, 2); c.board = 'You let your game do the talking (coach +2).'; }
   } else if (k === 'agent') {
     const s2 = CAR.standing(L, p, team, valueOf);
-    pr.stakes = (p.contract?.yrs || 0) <= 1; pr.featured = (s2?.rank || 9) <= 2;
+    pr.stakes = (p.contract?.yrs || 0) <= 1 && !extPending(p); pr.featured = (s2?.rank || 9) <= 2;
     c.agent = pr.stakes ? 'Your agent will use this run at the table this summer.' : 'Your agent is watching. A deep run builds the name.';
   }
   careerSave(st); state.dirty = true; render();
@@ -7353,9 +7355,9 @@ function playerTags(p) {
   const inj = p.season?.injury?.gamesOut > 0 ? p.season.injury.gamesOut : 0;
   if (inj) add(`Injured · ${inj} g`, 'down-b');
   if (p.status === 4) add('Expiring', 'lvl');
-  else if (c.yrs === 1 && c.sal && !t.some(x => /Final Year/.test(x))) add('Final Year', 'lvl');   // once: the value tag may already say it
+  else if (c.yrs === 1 && c.sal && !extPending(p) && !t.some(x => /Final Year/.test(x))) add('Final Year', 'lvl');   // once: the value tag may already say it
   if (c.noTrd) add('No-Trade');
-  if (c.ext?.yrs > 0) add(`Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');
+  if (c.ext?.yrs > 0) add(c.sal && c.yrs ? 'Extended' : `Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');   // the contract badge already spells it out
   else if (c.canExt) add('Extension Eligible', 'new');
   if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
   if (isComplete() && p.tid != null && frictionFor(p)?.clash) add('Clashing With Coach', 'down-b');
@@ -10114,6 +10116,7 @@ const stepPast = key => { const cal = activeCal(), cur = cal.indexOf(currentStep
 function tradeLock(p) {
   if (isCareerMe(p) && careerStore().askedOut !== league().season.currentYear) return 'Career player';   // he moves when he asks to
   if (!isComplete() || p.status !== FA.STATUS_SIGNED) return null;
+  if (extPending(p)) return 'Extension pending';   // signed through the extension: off the market until it starts
   // A signed rookie waits 30 days (draft rights trade any time).
   if (p.history?.draft?.yr === league().season.currentYear && !stepPast('cuts')) return 'Rookie deal';
   const x = offGet('signed')[p.id];
@@ -10498,7 +10501,7 @@ actions.liveFinish = async () => {
 function contractText(p, withOpt = false) {
   const c = p.contract || {};
   if (!c.sal || !c.yrs) return p.status === 4 ? 'Pending FA' : '';
-  return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}${withOpt && c.opt === 1 ? ' · TO' : withOpt && c.opt === 2 ? ' · PO' : ''}`;
+  return `$${c.sal}M · ${c.yrs} yr${c.yrs > 1 ? 's' : ''}${withOpt && c.opt === 1 ? ' · TO' : withOpt && c.opt === 2 ? ' · PO' : ''}${extPending(p) ? `, then $${c.ext.sal}M × ${c.ext.yrs}` : ''}`;
 }
 function contractBadge(p) {
   const { tag } = contractValue(p);
@@ -13476,7 +13479,7 @@ function taxMood(L, t) {
     }
   }
   if (st === 'blowup') for (const p of roster.filter(p => p.age >= 28 && tr(p, 'winning') >= 13)) add(p, -5, 'stuck in a teardown');
-  if (st !== 'pay') for (const p of roster.filter(p => tr(p, 'money') >= 15 && p.contract?.yrs === 1 && shownLevel(p) >= 75)) add(p, -3, 'doubts the team will pay him next summer');
+  if (st !== 'pay') for (const p of roster.filter(p => tr(p, 'money') >= 15 && p.contract?.yrs === 1 && !extPending(p) && shownLevel(p) >= 75)) add(p, -3, 'doubts the team will pay him next summer');
   return out.filter(x => x.n);
 }
 // Cap bar: payroll, dead money (red) and room, with ticks at the cap, the
@@ -14593,7 +14596,7 @@ actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[
 const cutSel = () => (state.cutSel ||= {});
 // CPU teams only cut players in the last year of their deal; you can cut
 // anyone, and years left become dead money.
-const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1 && !FA.isLifer(league(), p, t)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
+const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1 && !extPending(p) && !FA.isLifer(league(), p, t)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
 screens.cuts = () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const done = !!calFlags().cuts;

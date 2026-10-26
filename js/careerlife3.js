@@ -39,7 +39,7 @@ export const contestOdds = (p, k) => Math.max(0.08, Math.min(0.7, ((p.attributes
 
 // ---------------------------------------------------------------------------
 // 2. Contract year: the last year of his deal. Goals hit push his price up, misses pull it down.
-export const isContractYear = p => p.status === 3 && p.contract?.yrs === 1;
+export const isContractYear = p => p.status === 3 && p.contract?.yrs === 1 && !(p.contract?.ext?.yrs > 0);   // not once he's extended
 export const marketSwing = (hits, misses) => Math.max(0.85, Math.min(1.15, 1 + hits * 0.05 - misses * 0.05));
 
 // ---------------------------------------------------------------------------
