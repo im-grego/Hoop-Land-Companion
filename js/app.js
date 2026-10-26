@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.214.2';
+const APP_VERSION = '0.214.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -10440,8 +10440,6 @@ const showVals = () => !!state.params.tradeValues;
 const valTag = v => showVals() ? `<span class="muted small">${Math.round(v)}</span>` : '';
 // What a side is sending, by name, under its team at the top (so you can see it without scrolling the list).
 const sendingLine = (items, v) => items.length ? `<p class="note small center trade-sending">${items.map(x => esc(itemText(x))).join(', ')}${showVals() ? ` <span class="muted">· ${Math.round(v)}</span>` : ''}</p>` : '';
-// The team's direction tag (Contending, Selling, ...) under its name.
-const tradeTag = T => { try { return teamTag(teamStanding(league(), T).tier); } catch { return ''; } };
 function itemText(x, order = liveOrder()) {
   const L = league();
   if (x.player) return playerName(x.player);
@@ -10614,7 +10612,7 @@ screens.liveTrade = (args) => {
     const T = L.teams.find(t => t.id === cur);
     const many = side === 'b' || left.length > 1;
     const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : `<span class="tsel-arrow off" aria-hidden="true"></span>`;
-    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span>${tradeTag(T)}</span>${arrow(1, '▶')}</div>`;
+    return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span></span>${arrow(1, '▶')}</div>`;
   };
   layout({
     title: order.length ? 'Draft-Day Trade' : 'Trade',
@@ -10748,7 +10746,7 @@ function liveTrade3(args, A, B, C, left) {
     body: `
       <div class="tabs">${teams.map(t => `<button class="btn ${t === tab ? 'on focus' : 'off'}" data-act="liveTab3" data-id="${t.id}">${esc(t.shortName)}${items.filter(i => i.from === t).length ? ` · ${items.filter(i => i.from === t).length}` : ''}</button>`).join('')}</div>
       <fieldset class="frame"><legend>Cap</legend>${teams.map(t => tradeCap(t, items.filter(i => i.from === t && i.x.player).map(i => i.x.player), items.filter(i => i.to === t && i.x.player).map(i => i.x.player), true)).join('')}</fieldset>
-      ${many(tab) ? `<div class="tsel">${arrow(-1, '◀', side)}<span class="tsel-team"><span class="tsel-name"><b>${esc(tab.shortName)}</b></span>${tradeTag(tab)}</span>${arrow(1, '▶', side)}</div>` : `<div class="center">${tradeTag(tab)}</div>`}
+      ${many(tab) ? `<div class="tsel">${arrow(-1, '◀', side)}<span class="tsel-team"><span class="tsel-name"><b>${esc(tab.shortName)}</b></span></span>${arrow(1, '▶', side)}</div>` : `<div class="center"></div>`}
       ${items.filter(i => i.from === tab).length ? `<p class="note small center trade-sending">${items.filter(i => i.from === tab).map(i => `${esc(itemText(i.x))} → ${esc(i.to.shortName)}`).join(', ')}</p>` : ''}
       <p class="note small muted">Tap to send to ${esc(others[0].shortName)}, again for ${esc(others[1].shortName)}.</p>
       <div class="list">${list}</div>
