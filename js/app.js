@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.214.4';
+const APP_VERSION = '0.214.5';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -896,6 +896,13 @@ function buildExport() {
   const startWas = (!isCollege() && state.params.startYear > 0) ? state.data.seasonLeagues.map(x => x.season.startingYear) : null;
   if (startWas) state.data.seasonLeagues.forEach(x => { x.season.startingYear = state.params.startYear; });
   state.data.seasonLeagues.forEach(usePlaybooks);
+  // The game's next-player-id counter (meta.uPID) must sit at or above every id in the league: the app makes players
+  // too (draft classes, signings), and the game would otherwise hand out an id that's already taken.
+  for (const L of state.data.seasonLeagues) {
+    if (!L.meta) continue;
+    const top = Math.max(0, ...[...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.retirees || []), ...(L.hallOfFame || []), ...(L.draftClass || [])].map(p => p.id || 0));
+    if (top > (L.meta.uPID || 0)) L.meta.uPID = top;
+  }
   // Extensions go out in the contract's extension slot (the salary stays the current deal's): the game kicks them in
   // when the season ends. The app's ledger is a fallback for a deal that comes back expiring without one.
   if (!isCollege()) { writeLedger(); saveManifest(league()); saveProbe(league()); saveTraitStore(); pushTraits(); cleanCoachPool(league()); }   // free-agent coaches go out clean, so the game lists them
