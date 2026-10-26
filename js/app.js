@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.214.5';
+const APP_VERSION = '0.215.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -614,6 +614,7 @@ async function loadFile(file) {
     if (!state.leagueFile) { const n = cleanCoachPool(data.seasonLeagues[0]); if (n) state.coachPoolFixed = n; }
     const signedIn = isCollege() ? applyRecruiting() : 0;
     const planned = !isCollege() && applyClassPlan();
+    if (!isCollege() && settleRetirees(league())) state.dirty = true;
     if (!isCollege()) logClass(league());
     if (planned) setTimeout(() => toast('📅 Your planned class is in', `${league().draftClass.length} prospects. The game\'s own class can be put back in the Draft Class Lab.`), 1200);
     o.remove();
@@ -743,7 +744,7 @@ function dumpSalary(L, t, limit, pay = filePay, log = [], o = {}) {
     const order = [...cands.filter(p => sal(p) >= over && overpaid(p) > -3), ...cands];
     let moved = false;
     for (const p of order) {
-      const to = others.filter(x => fits(x, p) && cpuPhysical(p, x) !== 'fail').sort((a, b) => reb(a) - reb(b) || pay(a) - pay(b))[0];
+      const to = others.filter(x => fits(x, p) && cpuPhysical(p, x) !== 'fail').sort((a, b) => underFloor(L, b) - underFloor(L, a) || reb(a) - reb(b) || pay(a) - pay(b))[0];
       if (!to) continue;
       const picks = o.picks ? dumpPicks(L, t, Math.max(0, overpaid(p)) * Math.max(1, p.contract?.yrs || 1)) : [];
       if (cpuPhysical(p, to) === 'flag') { const sw = sweetener2nd(L, t, picks); if (sw) picks.push(sw); }
@@ -767,6 +768,122 @@ function dumpPicks(L, t, weight) {
   if (weight >= 25) { const f = own(1); if (f) out.push(f); }
   if (weight >= 6 && (weight >= 45 || !out.length)) { const s2 = own(2); if (s2) out.push(s2); }
   return out;
+}
+// The salary floor: 90% of the cap, as in the NBA. A team under it by the end of the summer takes on salary first
+// (salary dumps go to it ahead of anyone, picks attached as always), then spends the rest on short deals: a contender
+// on the best player left, a rebuilder on young upside or a veteran it can flip at the deadline. Whatever's still short
+// is paid out to its players, the way the league settles it.
+const FLOOR_SHARE = 0.9;
+const salaryFloor = L => Math.round(FA.capLines(L).cap * FLOOR_SHARE);
+const underFloor = (L, t) => (FA.capSystemOn() && FA.teamCommitted(t) < salaryFloor(L) ? 1 : 0);
+function floorFill(L, log = []) {
+  if (!FA.capSystemOn()) return log;
+  const floor = salaryFloor(L), day = L.season.currentDay || 3, O = FA.FA_DEFAULTS;
+  const teams = L.teams.filter(t => !isUserTeam(t) && FA.teamCommitted(t) < floor).sort((a, b) => FA.teamCommitted(a) - FA.teamCommitted(b));
+  for (const t of teams) {
+    const rebuild = ['rebuilding', 'developing'].includes(teamStatus(L, t));
+    for (let guard = 0; guard < 4; guard++) {
+      const gap = floor - FA.teamCommitted(t);
+      if (gap < 3) break;
+      const pool = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && shownLevel(x) >= 64);
+      if (!pool.length) break;
+      const score = x => (rebuild ? (x.age <= 24 ? shownLevel(x) + (x.pot || 0) * 2 : x.age >= 29 ? shownLevel(x) - 2 : shownLevel(x) - 6) : shownLevel(x));
+      const p = pool.sort((a, b) => score(b) - score(a))[0];
+      // A full roster makes room: a one-year minimum first, otherwise the weakest one-year deal outside the top eight,
+      // as long as the man coming in is clearly better.
+      if (FA.signedRoster(t).length >= O.seasonMax) {
+        const top8 = new Set([...FA.signedRoster(t)].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 8).map(q => q.id));
+        const ok = q => (q.contract?.yrs || 0) <= 1 && !extPending(q) && !top8.has(q.id) && !FA.isLifer(L, q, t) && shownLevel(q) < shownLevel(p) - 3;
+        const c = FA.signedRoster(t).filter(q => ok(q) && (q.contract?.sal || 0) <= lateMin(q) + 1).sort((a, b) => fillScore(a) - fillScore(b))[0]
+          || FA.signedRoster(t).filter(ok).sort((a, b) => fillScore(a) - fillScore(b))[0];
+        if (!c) break;
+        FA.cutPlayer(L, t, c);
+        log.push(`${t.shortName} released ${playerName(c)} to make room`);
+      }
+      const ask = Math.max(lateMin(p), Math.round(FA.baseAsk(L, p) || 0));
+      const sal = Math.max(lateMin(p), Math.min(gap, Math.round(ask * 1.25)));   // an overpay on a short deal is the cheap way to the floor
+      const yrs = rebuild && p.age <= 24 ? 2 : 1;
+      FA.signPlayer(L, p, t, { tid: t.id, sal, yrs, opt: 0 }, day);
+      lockSigning(p, 'Signed this offseason');
+      if (rebuild && p.age >= 29 && p.season) p.season.onTradeBlock = 1;
+      log.push(`${t.shortName} reached for the floor: ${playerName(p)} (Lv ${shownLevel(p)}) at $${sal}M × ${yrs}`);
+    }
+    // Still short with a full roster: take on salary in a trade. A team over the tax hands over an overpaid veteran
+    // (a year or two left) plus a pick for the favor, and gets a cheap player back.
+    for (let guard = 0; guard < 2 && floor - FA.teamCommitted(t) >= 3; guard++) {
+      const gap = floor - FA.teamCommitted(t), c = FA.capLines(L);
+      const top8 = new Set([...FA.signedRoster(t)].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 8).map(q => q.id));
+      const back = FA.signedRoster(t).filter(q => !top8.has(q.id) && !FA.isLifer(L, q, t) && !tradeLock(q) && !extPending(q)).sort((a, b) => fillScore(a) - fillScore(b))[0];
+      if (!back) break;
+      const deal = L.teams.filter(d => d !== t && !isUserTeam(d) && FA.teamCommitted(d) > c.tax).flatMap(d => {
+        const core = new Set([...d.roster].sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 3).map(q => q.id));
+        return FA.signedRoster(d).filter(q => !core.has(q.id) && !tradeLock(q) && !FA.isLifer(L, q, d) && (q.contract?.yrs || 0) <= 2 && (q.contract?.sal || 0) - (back.contract?.sal || 0) >= Math.min(gap, 6) && (q.contract?.sal || 0) - (back.contract?.sal || 0) <= gap + 12)
+          .map(q => ({ d, q, over: (q.contract?.sal || 0) - fairSalary(shownLevel(q)) }));
+      }).sort((a, b) => b.over - a.over)[0];
+      if (!deal) break;
+      const picks = dumpPicks(L, deal.d, Math.max(0, deal.over) * (deal.q.contract?.yrs || 1));
+      executeTrade({ team: deal.d, players: [deal.q], picks, prospects: [] }, { team: t, players: [back], picks: [], prospects: [] }, L.season.currentYear);
+      log.push(`${t.shortName} took on ${playerName(deal.q)} ($${deal.q.contract.sal}M) from ${deal.d.shortName} for ${playerName(back)}${picks.length ? ` and ${picks.map(pk => `a ${pk.yr} ${pk.rd === 1 ? '1st' : '2nd'}`).join(' and ')}` : ''} to reach the floor`);
+    }
+    const short = floor - FA.teamCommitted(t);
+    if (short >= 3) log.push(`${t.shortName} finish $${short}M under the floor and pay it out to their players`);
+  }
+  if (log.length) (calFlags().dumpLog ||= []).push(...log);
+  return log;
+}
+// Retirements: a player who retires off a team's roster (the game marks him retired and leaves him there) has to be let
+// go, and his team can retire his number. CPU teams do it on their own; yours wait for you on the home screen.
+const retiringOn = t => t.roster.filter(p => p.status === 7);
+function retireOff(L, t, p, retireNum) {
+  t.roster = t.roster.filter(x => x !== p);
+  t.startingLineup = (t.startingLineup || []).filter(e => e.pid !== p.id);
+  t.startingLineup.forEach((e, i) => { e.linePos = i; const q = t.roster.find(x => x.id === e.pid); if (q) q.linePos = i; });
+  Object.assign(p, { status: 7, tid: 0, linePos: -1 });
+  if (p.history && !p.history.yearRetired) p.history.yearRetired = L.season.currentYear;
+  if (!(L.retirees ||= []).some(x => x.id === p.id)) L.retirees.push(p);
+  if (retireNum && p.num != null && !(t.retiredNumbers || []).some(r => r.num === p.num)) (t.retiredNumbers ||= []).push({ num: p.num, pid: p.id, yr: L.season.currentYear });
+  state.dirty = true;
+}
+function settleRetirees(L, all = false) {
+  let n = 0;
+  for (const t of L.teams) if (all || !isUserTeam(t)) for (const p of retiringOn(t)) { retireOff(L, t, p, false); n++; }
+  return n;
+}
+// His years with this team: seasons, games and per-game line.
+function teamTenure(p, t) {
+  const rows = (p.stats || []).filter(s => s.league === 0).flatMap(s => (s.season || []).filter(r => r.tid === t.id && r.GP > 0).map(r => ({ ...r, yr: s.yr })));
+  const tot = k => rows.reduce((a, r) => a + (r[k] || 0), 0), gp = tot('GP');
+  return { seasons: new Set(rows.map(r => r.yr)).size, gp, first: Math.min(...rows.map(r => r.yr)), last: Math.max(...rows.map(r => r.yr)), ppg: gp ? tot('PTS') / gp : 0, rpg: gp ? tot('REB') / gp : 0, apg: gp ? tot('AST') / gp : 0 };
+}
+function retireeCard() {
+  if (isCollege() || !state.data) return '';
+  const L = league(), list = L.teams.filter(isUserTeam).flatMap(t => retiringOn(t).map(p => ({ p, t })));
+  if (!list.length) return '';
+  return list.map(({ p, t }) => {
+    const x = teamTenure(p, t), taken = (t.retiredNumbers || []).some(r => r.num === p.num), numTxt = p.num === 100 ? '00' : p.num;
+    return `<fieldset class="frame"><legend>🎖️ ${esc(playerName(p))} Retires</legend>
+      <p class="note small">${p.age}y · ${esc(posName(p))} · ${x.seasons ? `${x.seasons} season${x.seasons === 1 ? '' : 's'} with the ${esc(t.shortName)} (${x.first === x.last ? x.first : `${x.first}–${x.last}`}) · ${x.gp} games · ${x.ppg.toFixed(1)} / ${x.rpg.toFixed(1)} / ${x.apg.toFixed(1)}` : `Never played a game for the ${esc(t.shortName)}`}</p>
+      <p class="note small muted">He comes off your roster and joins the retired players.${taken ? ` #${numTxt} is already retired here.` : ''}</p>
+      <div class="grid2"><button class="btn small" data-act="retireeAccept" data-id="${p.id}" data-t="${t.id}">🫡 Accept</button>${taken || p.num == null ? '' : `<button class="btn small focus" data-act="retireeAccept" data-id="${p.id}" data-t="${t.id}" data-num="1">🏟️ Accept + Retire #${numTxt}</button>`}</div></fieldset>`;
+  }).join('');
+}
+actions.retireeAccept = d => {
+  const L = league(), t = L.teams.find(x => x.id === +d.t), p = t?.roster.find(x => x.id === +d.id);
+  if (!t || !p) return;
+  retireOff(L, t, p, d.num === '1');
+  render();
+  toast(`🫡 ${playerName(p)} retires`, d.num === '1' ? `#${p.num === 100 ? '00' : p.num} goes to the rafters.` : 'Thanks for everything.');
+};
+// Lineups that still point at players who left (trades, releases, retirements) or skip spots: rebuilt before export,
+// so the game starts the season from a lineup that matches each roster.
+function lineupOk(t) {
+  const ids = new Set(t.roster.map(p => p.id)), sl = t.startingLineup || [];
+  return sl.length === t.roster.length && sl.every(e => ids.has(e.pid)) && new Set(sl.map(e => e.pid)).size === sl.length && new Set(t.roster.map(p => p.linePos)).size === t.roster.length && t.roster.every(p => p.linePos >= 0 && p.linePos < t.roster.length);
+}
+function fixLineups(L) {
+  let n = 0;
+  for (const t of L.teams) if (!lineupOk(t)) { LU.applyLineup(t, LU.planLineup(t, { mode: lineupMode(t), size: 9, game: gameMinutes() })); n++; }
+  return n;
 }
 // Late in free agency the teams at the top of the cap (over the 1st apron, or over the tax and not contending) move
 // their overpaid veterans to rebuilding teams with space, paying in picks, even for less back.
@@ -883,7 +1000,9 @@ function buildExport() {
     const s = league().season;
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
-  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); }
+  if (!isCollege()) settleRetirees(league(), true);   // anyone still retiring off a roster (yours included) goes now
+  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); }
+  if (!isCollege()) fixLineups(league());
   if (!isCollege()) pickWindow(league());
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
@@ -1869,6 +1988,7 @@ screens.main = () => {
           <span class="note small">${esc(isCollege() ? collegePhaseName(s) : phaseName(s))} · ${CAR.isCareer(L) ? 'Career mode' : `Your ${isCollege() || isFranchise() ? (isCollege() ? 'school' : 'team') : 'teams'}: ${esc(yourTeams)}`}</span></div>
       </div>
       ${fileCheckCard()}
+      ${retireeCard()}
       ${careerCard()}
       ${calendarCard()}
       ${coachMarketCard()}
@@ -14907,6 +15027,7 @@ function lateCpu(L) {
   // Teams at the top of the cap move overpaid veterans (with picks) to rebuilders with space, then every CPU team fills
   // to 15 with one-year minimums, short only where the next signing would cross a tax line.
   apronDumps(L);
+  floorFill(L);
   for (const t of L.teams.filter(x => !isUserTeam(x)).sort(() => Math.random() - 0.5)) {
     const adds = [];
     fillRoster(L, t, O.seasonMax, adds);
@@ -15114,6 +15235,7 @@ screens.export = () => {
       ${(() => { const prep = jerseyCard() + gearCard() + capWarn(); const warn = capWarn() || (!isCollege() && jerseyClashes(league()).length && !(state.jerseys || {})[state.leagueIdx]); return uiTabs('export', [
         ['file', 'File', `      <fieldset class="frame"><legend>Season File</legend>
         <p class="note file-name">${esc(state.fileName)}</p>
+        ${(() => { const L = league(); if (isCollege() || !FA.capSystemOn()) return ''; const fl = salaryFloor(L); return L.teams.filter(isUserTeam).filter(t => FA.teamCommitted(t) < fl).map(t => `<p class="note small gold">💸 ${esc(t.shortName)} are $${fl - FA.teamCommitted(t)}M under the salary floor ($${fl}M, 90% of the cap). Sign someone, or the shortfall is paid out to your players.</p>`).join(''); })()}
         ${(() => { const L = league(); if (isCollege() || L.season.phase !== BUMP_PHASES[0] || calFlags().cuts) return ''; const over = overFifteen(L), mineOver = over.filter(isUserTeam); return over.length ? `<p class="note small ${mineOver.length ? 'down' : 'gold'}">✂️ Roster Finalization isn't done: ${over.length} team${over.length === 1 ? ' is' : 's are'} over 15. ${mineOver.length ? `<b>${mineOver.map(t => esc(t.shortName)).join(', ')}</b> ${mineOver.length === 1 ? 'is yours' : 'are yours'}: make your cuts first, or the game cuts for you without looking at ratings. ` : ''}The CPU teams make their cuts when you export.</p>` : ''; })()}
         ${CAR.isCareer(league()) && state.ledgerIn ? Object.entries(LEDGER).map(([k, d]) => `<p class="note small">${d.icon} ${d.label}: ${ledgerIn(k).toLocaleString()} when loaded ${ledgerNet(k) >= 0 ? '+' : '−'} ${Math.abs(ledgerNet(k)).toLocaleString()} in the app = <b>${Math.max(0, ledgerIn(k) + ledgerNet(k)).toLocaleString()}</b> written to the file. <button class="btn tiny" data-act="nav" data-to="ledger" data-arg="${k}">Ledger</button></p>`).join('') : ''}
         <div class="stack">
