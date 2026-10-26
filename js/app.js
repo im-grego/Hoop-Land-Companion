@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.216.0';
+const APP_VERSION = '0.216.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -436,7 +436,14 @@ function render() {
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
   const y = window.scrollY;
   $app.dataset.screen = top.name;
-  screens[top.name](top.args);
+  // A screen that throws never leaves you stuck on the last one (where Back and its tabs would keep failing): it
+  // says what broke and gives you a way out.
+  try { screens[top.name](top.args); } catch (err) {
+    console.error(err);
+    layout({ title: 'Something Broke', body: `<p class="note">This screen (${esc(top.name)}) hit an error and couldn't draw. Everything else still works, and nothing was changed.</p>
+      <p class="note small muted">Send this to get it fixed:</p><pre class="note small" style="white-space:pre-wrap;user-select:text">${esc(`v${APP_VERSION} · ${top.name}\n${err?.message || err}\n${String(err?.stack || '').split('\n').slice(0, 6).join('\n')}`)}</pre>
+      <button class="btn focus" data-act="goHomeCuts">🏠 Home</button>` });
+  }
   let target = view === lastView ? y : top.y ?? 0;
   if (view === lastView && state.anchor) {
     const n = document.querySelector(`[data-anchor="${state.anchor.key}"]`);
