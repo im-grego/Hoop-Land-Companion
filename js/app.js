@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.216.2';
+const APP_VERSION = '0.217.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -622,6 +622,7 @@ async function loadFile(file) {
     const signedIn = isCollege() ? applyRecruiting() : 0;
     const planned = !isCollege() && applyClassPlan();
     if (!isCollege() && settleRetirees(league())) state.dirty = true;
+    if (!isCollege() && playoffRotations()) state.dirty = true;
     if (!isCollege()) logClass(league());
     if (planned) setTimeout(() => toast('📅 Your planned class is in', `${league().draftClass.length} prospects. The game\'s own class can be put back in the Draft Class Lab.`), 1200);
     o.remove();
@@ -912,7 +913,7 @@ function lineupOk(t) {
 }
 function fixLineups(L) {
   let n = 0;
-  for (const t of L.teams) if (!lineupOk(t)) { LU.applyLineup(t, LU.planLineup(t, { mode: lineupMode(t), size: 9, game: gameMinutes() })); n++; }
+  for (const t of L.teams) if (!lineupOk(t)) { LU.applyLineup(t, defaultPlan(t)); n++; }
   return n;
 }
 // Late in free agency the teams at the top of the cap (over the 1st apron, or over the tax and not contending) move
@@ -1031,7 +1032,7 @@ function buildExport() {
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
   if (!isCollege()) settleRetirees(league(), true);   // anyone still retiring off a roster (yours included) goes now
-  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); }
+  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); for (const t of league().teams) if (!isUserTeam(t) && t.roster.length) LU.applyLineup(t, defaultPlan(t)); }
   if (!isCollege()) fixLineups(league());
   if (!isCollege()) pickWindow(league());
   rememberExport();
@@ -5998,6 +5999,10 @@ actions.openPlayer = d => go('player', { id: +d.id });
 // Lineup and minutes (lineups.js): an auto-sorted rotation by mode and size, minutes you can set by hand, written
 // into the save's starting lineup.
 const gameMinutes = () => Math.round(48 / minScale(state.leagueIdx));
+// The head coach's default rotation (lineups.js coachRotation): size and the starters' share of the minutes.
+const coachRot = (t, po = false) => LU.coachRotation(CO.headCoach(t), po);
+const defaultPlan = (t, po = false) => LU.planLineup(t, { mode: po ? 'playoffs' : lineupMode(t), ...coachRot(t, po), game: gameMinutes() });
+const ROT_TXT = { bd: ['Average bench', 'Deep bench', 'Short bench'], bu: ['low bench usage', 'medium bench usage', 'high bench usage'] };
 const lineupMode = t => { const s = teamStatus(league(), t); return s === 'contending' || s === 'competing' ? 'compete' : s === 'rebuilding' || s === 'developing' ? 'develop' : 'normal'; };
 // A player's minutes as a bar out of a full game, split by position (out of position striped), with his share.
 function minBar(p, m, game) {
@@ -6019,8 +6024,9 @@ function lineupView(L, t) {
 screens.lineup = (args = {}) => {
   const L = league(), t = L.teams.find(x => x.id === +(args.arg ?? args.tid)) || myTeam() || viewTeams()[0] || L.teams[0];
   if (CAR.isCareer(L)) { lineupView(L, t); return; }
-  const mode = args.mode || lineupMode(t), size = args.size || 9, over = args.over || {}, game = gameMinutes();
-  const plan = LU.planLineup(t, { mode, size, game, over });
+  const mode = args.mode || lineupMode(t), over = args.over || {}, game = gameMinutes(), cr = coachRot(t, mode === 'playoffs'), size = args.size || cr.size;
+  const plan = luPlan(t, args), hc = CO.headCoach(t), tn = hc?.tendencies || {};
+  const stMin = plan.rows.slice(0, 5).reduce((a, r) => a + r.minutes[0], 0);
   const step = game >= 40 ? 2 : 1;
   const posN = p => POSITIONS[p.pos] || '';
   const row = r => {
@@ -6035,6 +6041,7 @@ screens.lineup = (args = {}) => {
     body: `<p class="note small">${logoImg(t)} <b>${esc(teamFull(t))}</b> · ${game}-minute games: every position plays ${game}, ${5 * game} minutes in all.</p>
       <div class="tabs fa-tabs">${Object.entries(LU.MODES).filter(([k]) => k !== 'playoffs' || PO.atPlayoffStart(L) || mode === 'playoffs').map(([k, m]) => `<button class="btn small ${k === mode ? 'on focus' : 'off'}" data-act="luSet" data-k="mode" data-v="${k}">${esc(m.label)}</button>`).join('')}</div>
       <p class="note small muted">${esc(LU.MODES[mode].says)}${mode === lineupMode(t) ? ' (fits where this team is)' : ''}</p>
+      <p class="note small">📋 ${hc ? `${esc(hc.fn ? `${hc.fn} ${hc.ln}` : 'Head coach')}: ` : ''}${esc(ROT_TXT.bd[tn.benchDepth ?? 0] || ROT_TXT.bd[0])}, ${esc(ROT_TXT.bu[tn.benchUtilization ?? 1] || ROT_TXT.bu[1])} → ${mode === 'playoffs' ? 'playoffs: ' : ''}${cr.size}-man rotation, starters ${Math.round(cr.share * 100)}% / bench ${100 - Math.round(cr.share * 100)}%. <span class="muted">Now: starters ${Math.round(stMin / (5 * game) * 100)}%.</span></p>
       <div class="drill-row"><span class="grow small">Players in the rotation</span><span class="trait-ctl"><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.max(7, size - 1)}">−</button><b class="small" style="min-width:2em;text-align:center">${size}</b><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.min(12, size + 1)}">+</button></span></div>
       <fieldset class="frame"><legend>Rotation · ${total} of ${5 * game} minutes</legend>${minLegend()}<div class="stack">${plan.rows.map(row).join('')}</div>
         <p class="note small muted">Bars are minutes out of a full ${game}; the % is his share of the game. Nobody plays out of position unless the roster has no one within 14 levels of the rotation's worst player who can play the spot.</p>
@@ -6044,18 +6051,24 @@ screens.lineup = (args = {}) => {
   });
 };
 const luArgs = () => state.stack[state.stack.length - 1].args || {};
+// The screen's plan: the mode you picked, the coach's rotation size and minutes split unless you changed the size.
+function luPlan(t, a) {
+  const mode = a.mode || lineupMode(t), cr = coachRot(t, mode === 'playoffs');
+  return LU.planLineup(t, { mode, size: a.size || cr.size, share: cr.share, game: gameMinutes(), over: a.over || {} });
+}
 actions.luSet = d => { const a = { ...luArgs() }; if (d.k === 'over') a.over = {}; else a[d.k] = d.k === 'size' ? +d.v : d.v; replace('lineup', a); };
 actions.luMin = d => {
   const a = { ...luArgs() }, L = league(), t = L.teams.find(x => x.id === +(a.arg ?? a.tid)) || myTeam();
-  const game = gameMinutes(), plan = LU.planLineup(t, { mode: a.mode || lineupMode(t), size: a.size || 9, game, over: a.over || {} });
+  const game = gameMinutes(), plan = luPlan(t, a);
   const r = plan.rows.find(x => x.p.id === +d.id); if (!r) return;
   a.over = { ...(a.over || {}), [d.id]: Math.max(0, Math.min(game, r.minutes[0] + +d.d)) };
-  if (r.linePos >= (a.size || 9) && +d.d > 0) a.size = Math.min(12, (a.size || 9) + 1);   // "Play him": he joins the rotation
+  const sz = a.size || coachRot(t, a.mode === 'playoffs').size;
+  if (r.linePos >= sz && +d.d > 0) a.size = Math.min(12, sz + 1);   // "Play him": he joins the rotation
   replace('lineup', a);
 };
 actions.luApply = async () => {
   const a = luArgs(), L = league(), t = L.teams.find(x => x.id === +(a.arg ?? a.tid)) || myTeam();
-  const plan = LU.planLineup(t, { mode: a.mode || lineupMode(t), size: a.size || 9, game: gameMinutes(), over: a.over || {} });
+  const plan = luPlan(t, a);
   if (plan.short.length && !(await confirmBox('Some positions are short of a full game. Set it anyway?', 'Set it'))) return;
   LU.applyLineup(t, plan);
   state.dirty = true;
@@ -6070,7 +6083,7 @@ const dlKey = () => `hlc:deadline:${saveTag()}:${league().season.currentYear}`;
 function dlState() { try { return JSON.parse(localStorage.getItem(dlKey())) || {}; } catch { return {}; } }
 function dlSave(s) { try { localStorage.setItem(dlKey(), JSON.stringify(s)); } catch { /* ignore */ } }
 // A rotation that fits after players come and go mid-season.
-function resetRotation(t) { LU.applyLineup(t, LU.planLineup(t, { mode: lineupMode(t), size: 9, game: gameMinutes() })); state.dirty = true; }
+function resetRotation(t) { LU.applyLineup(t, defaultPlan(t)); state.dirty = true; }
 const dlPct = t => { const r = t.season?.find(x => x.yr === league().season.currentYear)?.seasonStats || {}; return { w: r.W || 0, l: r.L || 0, pct: r.GP ? r.W / r.GP : 0.5, gp: r.GP || 0 }; };
 const dlRole = t => { const { pct, gp } = dlPct(t); return gp < 15 ? 'bubble' : pct >= 0.56 ? 'buyer' : pct <= 0.44 ? 'seller' : 'bubble'; };
 // Just traded (a fresh stint with no games yet): not flipped again the same deadline.
@@ -6301,6 +6314,21 @@ actions.midExt = d => {
 const poKey = (yr = league().season.currentYear) => `hlc:po:${saveTag()}:${yr}`;
 function poState(yr) { try { return JSON.parse(localStorage.getItem(poKey(yr))) || {}; } catch { return {}; } }
 function poSave(s, yr) { try { localStorage.setItem(poKey(yr), JSON.stringify(s)); } catch { /* ignore */ } }
+// A file loaded at the start of the playoffs: every team tightens to its coach's playoff rotation (best nine at 70/30,
+// or eight at 75/25 for a short-bench coach), every time the file comes in fresh from the game. Your teams keep their regular-season rotation to go
+// back to from the playoff check-in.
+function playoffRotations() {
+  const L = league();
+  if (!PO.atPlayoffStart(L)) return 0;
+  const s = poState();
+  let n = 0;
+  for (const t of L.teams.filter(t => t.roster.length)) {
+    if (isUserTeam(t)) (s.rot ||= {})[t.id] = { sl: structuredClone(t.startingLineup || []), ps: t.roster.map(p => [p.id, p.linePos, [...(p.minutes || [])], p.teamPos, p.posRnk]) };
+    LU.applyLineup(t, defaultPlan(t, true)); n++;
+  }
+  poSave(s);
+  return n;
+}
 // ---------------------------------------------------------------------------
 // Season check-ins: the two long stretches between the big stops. Early season (two weeks in, up to the All-Star
 // break) and the stretch run (after the deadline, up to the playoffs): where each of your teams stands against what
@@ -6490,7 +6518,7 @@ function poTeamBox(t) {
     ${weak.length ? `<p class="note small">Weak spots: ${weak.map(esc).join('; ')}.</p>` : ''}
     ${key && style ? `<p class="note small gold">Game plan: ${esc(ADVICE[style] || 'Make him work for everything.')} (${esc(key.p.ln)})</p>` : ''}
     <h4 class="ov-h">Playoff Rotation</h4>
-    ${rot ? `<p class="note small">Playoff rotation set: eight men, the stars near 40 minutes.</p><button class="btn small off" data-act="poRot" data-t="${t.id}" data-v="undo">↩ Back to the regular-season rotation</button>`
+    ${rot ? `<p class="note small">Playoff rotation set: ${coachRot(t, true).size} men, ${Math.round(coachRot(t, true).share * 100)}/${100 - Math.round(coachRot(t, true).share * 100)} starters to bench.</p><button class="btn small off" data-act="poRot" data-t="${t.id}" data-v="undo">↩ Back to the regular-season rotation</button>`
       : `<div class="grid2"><button class="btn small focus" data-act="poRot" data-t="${t.id}" data-v="set">🔒 Shorten the rotation</button><button class="btn small" data-act="nav" data-to="lineup" data-arg="${t.id}">🔁 Set it by hand</button></div>`}</fieldset>`;
 }
 actions.poRot = d => {
@@ -6498,8 +6526,9 @@ actions.poRot = d => {
   if (!t) return;
   if (d.v === 'set') {
     (s.rot ||= {})[t.id] = { sl: structuredClone(t.startingLineup || []), ps: t.roster.map(p => [p.id, p.linePos, [...(p.minutes || [])], p.teamPos, p.posRnk]) };
-    LU.applyLineup(t, LU.planLineup(t, { mode: 'playoffs', size: 8, game: gameMinutes() }));
-    toast('🔒 Playoff rotation set', 'Eight men; the stars play heavy minutes.');
+    const r = coachRot(t, true);
+    LU.applyLineup(t, defaultPlan(t, true));
+    toast('🔒 Playoff rotation set', `${r.size} men, ${Math.round(r.share * 100)}/${Math.round(100 - r.share * 100)} starters to bench.`);
   } else {
     const r = (s.rot || {})[t.id]; if (!r) return;
     t.startingLineup = r.sl;
