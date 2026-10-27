@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.218.1';
+const APP_VERSION = '0.219.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1009,6 +1009,32 @@ function gameCapCheck(L, cap) {
 // over 15 when the season starts by its own rule, which doesn't look at how good a player is (it let Lv 87 players go
 // and kept Lv 62 rookies). So the CPU teams make their cuts here first, the same way they do at Roster Finalization.
 const overFifteen = L => L.teams.filter(t => FA.signedRoster(t).length > FA.FA_DEFAULTS.seasonMax);
+// Second-round picks the CPU won't carry: 2nd-rounders in their first three seasons (still on the non-guaranteed deal)
+// rated 1.5 stars or less overall (Lv 54 and under), unless the upside is elite (potential 9+, a stash). Second-round deals aren't guaranteed, so the cut costs
+// nothing; the spot goes to the best free agent on a one-year minimum when he's a real upgrade. Once an offseason.
+function cutWeakSeconds(L) {
+  if (isCollege() || L.leagueType !== 0 || calFlags().weakSeconds === L.season.currentYear) return [];
+  calFlags().weakSeconds = L.season.currentYear;
+  const log = [], dy = draftYear(L), day = L.season.currentDay || 3;
+  for (const t of L.teams.filter(x => !isUserTeam(x) && x.roster.length)) {
+    const weak = FA.signedRoster(t).filter(p => p.history?.draft?.rd === 2 && p.history.draft.yr >= dy - 2 && levelStarsOf(shownLevel(p)) <= 3 && (p.pot || 0) < 9 && !extPending(p));
+    for (const p of weak) {
+      FA.cutPlayer(L, t, p);
+      // A late-summer price (about 60% of his ask, never under the minimum) that fits before the team's next tax line.
+      const price = x => Math.max(lateMin(x), Math.round((FA.baseAsk(L, x) || 0) * 0.6));
+      const room = lateMin(p) + Math.max(0, FA.bracketRoom(L, t));
+      const up = (L.freeAgents || []).filter(x => x.status === FA.STATUS_FREE && x.id !== p.id && shownLevel(x) >= shownLevel(p) + 8 && (price(x) <= lateMin(x) || price(x) <= room)).sort((a, b) => fillScore(b) - fillScore(a))[0];
+      if (up) {
+        const sal = price(up);
+        FA.signPlayer(L, up, t, { tid: t.id, sal, yrs: 1, opt: 0 }, day);
+        lockSigning(up, 'Signed this offseason');
+        log.push(`${t.shortName} cut 2nd-rounder ${playerName(p)} (Lv ${shownLevel(p)}) and signed ${playerName(up)} (Lv ${shownLevel(up)}, $${sal}M)`);
+      } else log.push(`${t.shortName} cut 2nd-rounder ${playerName(p)} (Lv ${shownLevel(p)})`);
+    }
+  }
+  if (log.length) { (calFlags().dumpLog ||= []).push(...log); state.dirty = true; }
+  return log;
+}
 function exportCuts(L) {
   if (isCollege() || L.season.phase !== BUMP_PHASES[0] || calFlags().cuts) return [];
   const log = [];
@@ -1051,7 +1077,7 @@ function buildExport() {
     if (s.phase === 6) s.currentDay = s.signingDays || 3;
   }
   if (!isCollege()) settleRetirees(league(), true);   // anyone still retiring off a roster (yours included) goes now
-  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); for (const t of league().teams) if (!isUserTeam(t) && t.roster.length) LU.applyLineup(t, defaultPlan(t)); }
+  if (!isCollege() && league().season.phase === 6) { exportCuts(league()); cutWeakSeconds(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); for (const t of league().teams) if (!isUserTeam(t) && t.roster.length) LU.applyLineup(t, defaultPlan(t)); }
   if (!isCollege()) { fixLineups(league()); pruneStaleNews(league()); proLeagueFlags(league()); }
   if (!isCollege()) pickWindow(league());
   rememberExport();
@@ -15249,6 +15275,7 @@ actions.cutsFinish = async () => {
     if (lift) for (const p of t.roster) if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + lift);
     if (fx.moraleFloor) for (const p of t.roster) if (p.season && (p.season.morale ?? 60) < fx.moraleFloor) p.season.morale = fx.moraleFloor;
   }
+  cutWeakSeconds(L);   // after the cuts, so the free agent who takes the spot isn't cut right back out
   const pen = recordApron();
   if (pen.some(isUserTeam)) toast('2nd apron penalty', 'Over it 3 of the last 5 seasons: your furthest-out first moves to the end of the 1st round', 4200, true);
   calFlags().cuts = true;
