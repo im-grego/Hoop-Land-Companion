@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.223.0';
+const APP_VERSION = '0.224.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -9784,16 +9784,16 @@ function draftOffice() {
     html: `
       ${mine.length > 1 ? `<div class="opts">${mine.map(t => `<button class="btn small ${t === team ? 'on focus' : 'off'}" data-act="officeTeam" data-id="${t.id}">${esc(t.shortName)}</button>`).join('')}</div>` : ''}
       <fieldset class="frame"><legend>Offers</legend>
-        ${offers.length ? `<div class="stack">${offers.map((o, i) => `<div class="offer"><p class="note small"><b>${esc(o.team.shortName)}</b> ${o.kind === 'up' ? 'want to move up' : 'offer'} ${offerRating(o)}: ${esc(o.give.map(x => x.text).join(' + '))}<br><span class="muted">for ${esc(o.get.map(x => x.text).join(' + '))}</span></p>
-          <button class="btn small" data-act="officeAccept" data-i="${i}">Accept</button></div>`).join('')}</div>`
-        : `<p class="note">No offers yet. Put players or picks on the block below${block.size ? ', then field offers' : ''}.</p>`}
+        ${offers.length ? `<div class="stack">${offers.map((o, i) => `<div class="offer tap" data-act="officeCounter" data-i="${i}"><p class="note small"><b>${esc(o.team.shortName)}</b> ${o.kind === 'up' ? 'want to move up' : 'offer'} ${offerRating(o)}: ${esc(o.give.map(x => x.text).join(' + '))}<br><span class="muted">for ${esc(o.get.map(x => x.text).join(' + '))}</span></p>
+          <div class="offer-btns"><button class="btn small focus" data-act="officeAccept" data-i="${i}">Accept</button><button class="btn small off" data-act="officeCounter" data-i="${i}">Counter</button></div></div>`).join('')}</div>`
+        : `<p class="note">No offers yet.${block.size ? '' : ' Put someone on the block first.'}</p>`}
         <div class="grid2" style="margin-top:10px">
           <button class="btn focus" data-act="officeField">📞 Field Offers</button>
           <button class="btn" data-act="liveTrade">🔁 Build a Trade</button>
         </div>
       </fieldset>
       <fieldset class="frame"><legend>Trade Block</legend>
-        <p class="note muted small" style="margin-bottom:8px">Tap to put a player or pick on the block. Teams pick up the phone for what's on it; teams behind your picks may call about moving up anyway.</p>
+        <p class="note muted small" style="margin-bottom:8px">Select an asset to put on the block, then field offers. Teams may also call about moving up in the draft.</p>
         ${(() => {
           const row = x => `<button class="pick ${block.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="officeBlock" data-k="${x.key}"`}>
           <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span></button>`;
@@ -9887,6 +9887,16 @@ actions.officeField = () => {
   ds.offers = frontOfficeOffers(team);
   render();
   toast(ds.offers.length ? `${ds.offers.length} offer${ds.offers.length > 1 ? 's' : ''} came in` : 'No takers right now');
+};
+// Counter: open the offer in the trade builder, both sides filled in, to work from.
+actions.officeCounter = d => {
+  const ds = draftState(), L = league();
+  const o = ds.offers?.[+d.i];
+  if (!o) return;
+  const mine = L.teams.filter(isUserTeam);
+  const team = L.teams.find(t => t.id === (ds.officeTeam ?? mine[0].id)) || mine[0];
+  tradeBarPos = 50;
+  go('liveTrade', { a: team.id, b: o.team.id, selA: o.get.map(x => x.key), selB: o.give.map(x => x.key), step: 'you' });
 };
 actions.officeAccept = async d => {
   const ds = draftState();
@@ -10752,8 +10762,8 @@ function draftLive() {
       </div>
       ${deck}
       ${user ? `<button class="btn big focus" data-act="liveChoose">🎯 Make Pick #${o.overall}</button>` : ''}
-      ${offerRows.map(({ x, i }) => `<div class="offer"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${sortedGive(x).map(pk => pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
-        <button class="btn small" data-act="liveOffer" data-i="${i}">Accept</button></div>`).join('')}
+      ${offerRows.map(({ x, i }) => `<div class="offer tap" data-act="liveCounter" data-i="${i}"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${sortedGive(x).map(pk => pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
+        <div class="offer-btns"><button class="btn small focus" data-act="liveOffer" data-i="${i}">Accept</button><button class="btn small off" data-act="liveCounter" data-i="${i}">Counter</button></div></div>`).join('')}
       <div class="grid2">
         <button class="btn" data-act="liveSim" data-m="one" ${user ? 'disabled' : ''}>▶ Next Pick</button>
         <button class="btn" data-act="liveSim" data-m="user" ${user ? 'disabled' : ''}>⏩ To My Pick</button>
@@ -10889,6 +10899,15 @@ actions.liveOffer = async d => {
   render();
 };
 
+actions.liveCounter = d => {
+  const live = liveState(), L = league(), order = liveOrder();
+  const o = order[clockIndex(live, order)];
+  const x = live.offers[o.overall]?.filter(y => y.give.every(pk => L.teams.find(t => t.id === y.tid).draftPicks.includes(pk)))[+d.i];
+  if (!x) return;
+  const key = pk => pk.yr === draftYear(L) ? `c:${order.find(q => slotPick(L, q) === pk)?.overall}` : `f:${pk.yr}:${pk.rd}:${pk.otid}`;
+  tradeBarPos = 50;
+  go('liveTrade', { a: o.owner.id, b: x.tid, selA: [`c:${o.overall}`], selB: x.give.map(key), step: 'them' });
+};
 actions.liveReset = async () => {
   const live = liveState();
   if (live.trades.length && !(await confirmBox('Reset the draft? Draft-day trades are undone too.', 'Reset'))) return;
@@ -11072,6 +11091,17 @@ function liveAssets(team) {
 }
 
 
+// One line on a team's cap after the deal: room under the next line that matters, and the payroll.
+// "$56M space · Payroll $119M", "$18M to the tax", "$9M to the 2nd apron", "Over the 2nd apron".
+function capRoomLine(t, outP = [], inP = []) {
+  const sal = ps => ps.reduce((s, p) => s + (p.contract?.sal || 0), 0);
+  const pay = FA.payroll(t), after = pay - sal(outP) + sal(inP), d = after - pay;
+  const C = FA.capLines(league()), com = FA.teamCommitted(t) - pay + after;
+  const room = C.off ? '' : com <= C.cap ? `$${C.cap - com}M space` : com <= C.tax ? `$${C.tax - com}M to the tax`
+    : com <= C.apron1 ? `$${C.apron1 - com}M to the 1st apron` : com <= C.apron2 ? `$${C.apron2 - com}M to the 2nd apron` : '<span class="down">Over the 2nd apron</span>';
+  const payTxt = d ? `Payroll $${pay}M → <b class="${d > 0 ? 'down' : 'up'}">$${after}M</b>` : `Payroll $${pay}M`;
+  return `<p class="small muted trade-cap-line">${room ? `${room} · ` : ''}${payTxt}</p>`;
+}
 // A team's cap in a trade: the bar shows payroll as it would be after the deal.
 function tradeCap(t, outP, inP, label = false) {
   const sal = ps => ps.reduce((s, p) => s + (p.contract?.sal || 0), 0);
@@ -11133,25 +11163,42 @@ screens.liveTrade = (args) => {
   const protRows = !isComplete() ? [] : firsts.map(x => protOf(x.pick)
     ? `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><span class="small muted">already protected</span></div>`
     : `<div class="prot-row"><span class="grow small">${esc(pickLabel(x.pick))}</span><div class="seg">${TR.PROTECTIONS.map(v => `<button class="btn ${(prot[x.key] || 0) === v ? 'on focus' : 'off'}" data-act="liveProt" data-k="${x.key}" data-v="${v}">${protName(v, true)}</button>`).join('')}</div></div>`).join('');
-  const list = (items, sel, side) => items.map(x => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
-      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span>${valTag(pv(x))}</button>`).join('') || '<p class="note muted">Nothing to trade.</p>';
+  const row = (x, sel, side) => `<button class="pick ${sel.has(x.key) ? 'sel' : ''} ${x.locked ? 'locked' : ''}" ${x.locked ? 'disabled' : `data-act="liveToggle" data-side="${side}" data-k="${x.key}"`}>
+      <span class="check"></span><span class="grow">${x.html ? x.label : esc(x.label)}</span>${valTag(pv(x))}</button>`;
+  // Players first, the way a trade block reads; picks after in a tighter grid.
+  const list = (items, sel, side) => {
+    const ps = items.filter(x => !x.pick), pk = items.filter(x => x.pick);
+    return (ps.map(x => row(x, sel, side)).join('') + (pk.length ? `<div class="pick-grid" style="margin-top:8px">${pk.map(x => row(x, sel, side)).join('')}</div>` : '')) || '<p class="note muted">Nothing to trade.</p>';
+  };
   const select = (side, cur) => {
     const T = L.teams.find(t => t.id === cur);
     const many = side === 'b' || left.length > 1;
     const arrow = (dir, ch) => many ? `<button class="tsel-arrow" data-act="liveCycle" data-side="${side}" data-dir="${dir}" aria-label="${dir < 0 ? 'Previous' : 'Next'} team">${ch}</button>` : `<span class="tsel-arrow off" aria-hidden="true"></span>`;
     return `<div class="tsel">${arrow(-1, '◀')}<span class="tsel-team"><span class="tsel-name"><b>${esc(T.shortName)}</b></span></span>${arrow(1, '▶')}</div>`;
   };
+  // Step by step: what you want from them, then what you'll give. The deal and the bar stay pinned on top.
+  const step = args.step === 'you' ? 'you' : 'them';
+  const sentA = aa.filter(x => selA.has(x.key)), sentB = bb.filter(x => selB.has(x.key));
+  const playersOf = xs => xs.filter(x => x.player).map(x => x.player);
+  const T = step === 'them' ? B : A;
+  const assetList = step === 'them' ? list(bb, selB, 'b') : list(aa, selA, 'a');
   layout({
     title: order.length ? 'Draft-Day Trade' : 'Trade',
     body: `
-      <div class="grid2 trade">
-        <div class="stack">${select('a', aId)}${sendingLine(aa.filter(x => selA.has(x.key)), vA)}${tradeCap(A, aa.filter(x => selA.has(x.key) && x.player).map(x => x.player), bb.filter(x => selB.has(x.key) && x.player).map(x => x.player))}</div>
-        <div class="stack">${select('b', bId)}${sendingLine(bb.filter(x => selB.has(x.key)), vB)}${tradeCap(B, bb.filter(x => selB.has(x.key) && x.player).map(x => x.player), aa.filter(x => selA.has(x.key) && x.player).map(x => x.player))}</div>
+      <div class="trade-top">
+        <div class="grid2 trade">
+          <div class="stack">${select('a', aId)}${capRoomLine(A, playersOf(sentA), playersOf(sentB))}${sendingLine(sentA, vA)}</div>
+          <div class="stack">${select('b', bId)}${capRoomLine(B, playersOf(sentB), playersOf(sentA))}${sendingLine(sentB, vB)}</div>
+        </div>
+        ${tradeBar(A, B, vA, vB)}
       </div>
-      ${tradeBar(A, B, vA, vB)}
-      <div class="grid2 trade">
-        <div class="list">${list(aa, selA, 'a')}</div>
-        <div class="list">${list(bb, selB, 'b')}</div>
+      <div class="trade-step">
+        <div class="trade-step-head"><b>${esc(teamFull(T))} Assets</b><span class="small muted">${step === 'them' ? 'Step 1 of 2: what you want' : 'Step 2 of 2: what you give'}</span></div>
+        <div class="list trade-list">${assetList}</div>
+        <div class="grid2" style="margin-top:8px">
+          ${step === 'them' ? `<span></span><button class="btn focus" data-act="liveStep" data-s="you">Next: ${esc(A.shortName)} Assets ▶</button>`
+            : `<button class="btn off" data-act="liveStep" data-s="them">◀ ${esc(B.shortName)} Assets</button><span></span>`}
+        </div>
       </div>
       ${sw ? `<fieldset class="frame"><legend>Swap</legend><p class="note small muted">Instead of trading the two ${sw.xa.pick.yr} R${sw.xa.pick.rd} picks, each team keeps its own and the order decides who gets which.</p>
         <div class="seg">${[[null, 'No swap'], ['best', `${esc(A.shortName)} get best`], ['worst', `${esc(A.shortName)} get worst`]].map(([v, t]) => `<button class="btn ${(mode || null) === v ? 'on focus' : 'off'}" data-act="liveSwap" data-v="${v || ''}">${t}</button>`).join('')}</div></fieldset>` : ''}
@@ -11160,7 +11207,7 @@ screens.liveTrade = (args) => {
         <button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>
         <button class="btn" data-act="liveTradeGo" data-force="1">⚡ Force</button>
       </div>` : '<button class="btn focus" data-act="liveTradeGo" data-force="0">🤝 Propose</button>'}
-      ${isComplete() ? '<button class="btn" data-act="liveAdd3">➕ Add a Third Team</button>' : ''}`,
+      ${isComplete() ? '<button class="btn small off" data-act="liveAdd3" style="margin-top:8px">➕ Add a Third Team</button>' : ''}`,
   });
   slideTradeBar();
 };
@@ -11358,7 +11405,7 @@ function tradeBar(A, B, vA, vB) {
   tradeBarPos = pos;
   return `<div class="tbar-wrap">
     <div class="tbar ${cpu ? (judge === B ? 'to-right' : 'to-left') : ''}"><span class="tbar-mid"></span><span class="tbar-mark ${empty ? 'idle' : ''}" style="left:${from}%" data-to="${pos}"></span></div>
-    <p class="note center small">${empty ? '<span class="muted">Tap players or picks on either side</span>'
+    <p class="note center small">${empty ? '<span class="muted">Even</span>'
       : `<b>${esc(word)}</b>${cpu ? `${ok ? `<span class="up">${esc(judge.shortName)} would accept</span>` : `<span class="down">${esc(judge.shortName)} would decline</span>`}` : ''}`}</p>
   </div>`;
 }
@@ -11384,7 +11431,7 @@ actions.liveCycle = d => {
   const next = pool[(cur + +d.dir + pool.length) % pool.length];
   const upd = { ...a, [d.side]: next.id };
   if (three) { upd.sel3 = {}; upd.tab = next.id; }
-  else upd[d.side === 'a' ? 'selA' : 'selB'] = [];
+  else { upd[d.side === 'a' ? 'selA' : 'selB'] = []; if (d.side === 'b') upd.step = 'them'; }
   // Moving your team onto another slot's team sends that slot elsewhere.
   if (d.side === 'a') for (const k of three ? ['b', 'c'] : ['b']) if (upd[k] === next.id) {
     upd[k] = teams.find(t => ![upd.a, upd.b, upd.c].includes(t.id)).id;
@@ -11392,6 +11439,7 @@ actions.liveCycle = d => {
   }
   replace('liveTrade', upd);
 };
+actions.liveStep = d => { const a = tradeArgs(); replace('liveTrade', { ...a, step: d.s }); };
 actions.liveSwap = d => { const a = tradeArgs(); replace('liveTrade', { ...a, swap: d.v || null }); };
 actions.liveProt = d => { const a = tradeArgs(); replace('liveTrade', { ...a, prot: { ...(a.prot || {}), [d.k]: +d.v } }); };
 actions.liveToggle = d => {

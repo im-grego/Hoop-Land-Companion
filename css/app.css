@@ -1530,3 +1530,12 @@ main.panel.bare { margin-top: 10px; }
 .di-clock .logo-sm { width: 40px; height: 40px; }
 @keyframes introIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 .draft-intro .btn.big { width: 100%; }
+/* Trade builder: the deal and bar pinned on top, one team's assets at a time */
+.trade-top { position: sticky; top: 0; z-index: 5; background: var(--panel, #0d3d8a); padding: 4px 0 2px; margin: -4px 0 6px; box-shadow: 0 6px 8px -6px rgba(0,0,0,0.5); }
+.trade-top .tbar-wrap { margin: 6px 0 4px; padding: 8px 10px 8px; }
+.trade-top .tbar-wrap > .note { margin-top: 10px; }
+.trade-top .trade-cap-line { margin: 2px 0 0; text-align: center; }
+.trade-step-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 6px 0; }
+.trade-list { max-height: none; }
+.offer.tap { cursor: pointer; }
+.offer-btns { display: flex; flex-direction: column; gap: 6px; }
