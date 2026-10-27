@@ -121,9 +121,13 @@ export function askingContract(c, field = []) {
 // The free-agent coach pool, the way the game keeps it: no team, free (status 3), an empty contract. A coach who goes
 // back to the pool with pieces of his old job (still marked hired, his team or his own id left on the contract)
 // doesn't show up as available in the game. Returns how many were cleaned.
+// A coach the game has marked as passed away (cause of death set, status 4) stays where the game left him: never
+// hireable, never "cleaned" back to available.
+export const coachGone = c => (c?.causeOfDeath || 0) > 0 || c?.status === 4;
 export function cleanCoachPool(league) {
   let n = 0;
   for (const c of league.coaches || []) {
+    if (coachGone(c)) continue;
     const ok = c.tid === 0 && c.status === 3 && c.contract && !c.contract.tid && !c.contract.pid && !c.contract.yrs && !c.contract.sal;
     if (ok) continue;
     c.tid = 0; c.status = 3;

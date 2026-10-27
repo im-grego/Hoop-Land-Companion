@@ -109,7 +109,8 @@ export function makeOne(ctx, spec = {}) {
   const d = (near.length ? near : pool)[Math.floor(r() * (near.length || pool.length))];
   const p = clone(d);
   p.id = spec.id ?? ctx.nextId++;
-  p.tid = 0; p.status = 1; p.yrs = 0; p.linePos = -1; p.awards = []; p.records = 0;
+  // A donor can be a college player: the prospect belongs to the pro league's draft (league 0), as the game's own are.
+  p.league = 0; p.tid = 0; p.status = 1; p.yrs = 0; p.linePos = -1; p.awards = []; p.records = 0;
   p.pos = spec.pos ?? (A.pos.includes(d.pos) ? d.pos : A.pos.filter(x => group(x) === g)[Math.floor(r() * A.pos.filter(x => group(x) === g).length)] ?? d.pos);
   p.age = spec.age ?? pickW(r, AGE_W[o.ages] || AGE_W.mixed);
   p.ht = spec.ht ?? clamp(Math.round(d.ht + (r() * 2 - 1) * 1.5 + (p.pos - d.pos) * 0.8), 70, 90);

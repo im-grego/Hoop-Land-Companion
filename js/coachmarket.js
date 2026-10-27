@@ -4,7 +4,7 @@
 import { teamStatus, teamRecord } from './draft.js';
 import { shownLevel } from './regression.js';
 import * as FA from './freeagency.js';
-import { coachLevel, coachCeiling, askingContract, careerOf, securityOf } from './coachprofile.js';
+import { coachLevel, coachCeiling, askingContract, careerOf, securityOf, coachGone } from './coachprofile.js';
 import { planOption } from './coaching.js';
 import { playStyles } from './overview.js';
 import { POSITIONS } from './savefile.js';
@@ -136,7 +136,7 @@ export function pressureOn(league, team, coach, map = profiles(league)) {
 function bestCandidate(league, team, map) {
   let best = null;
   for (const c of league.coaches || []) {
-    if (!c.attributes || !c.fn) continue;
+    if (!c.attributes || !c.fn || coachGone(c)) continue;
     const v = coachValue(c, team, league, map);
     if (!best || v > best.v) best = { c, v };
   }

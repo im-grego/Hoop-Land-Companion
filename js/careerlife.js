@@ -53,7 +53,7 @@ export function coachRift(L, p, team, standingRank) {
   return { coach: c, power, odds: power ? Math.max(0.15, Math.min(0.75, 0.3 + (rankIdx(p) - 3) * 0.1 + (-(c.rp || 0) - 15) / 100)) : 0 };
 }
 // Who'd replace him: the best coach in the free pool.
-export const bestPoolCoach = L => [...(L.coaches || [])].filter(c => c.attributes).sort((a, b) => sumAttrs(b) - sumAttrs(a))[0] || null;
+export const bestPoolCoach = L => [...(L.coaches || [])].filter(c => c.attributes && !(c.causeOfDeath > 0 || c.status === 4)).sort((a, b) => sumAttrs(b) - sumAttrs(a))[0] || null;
 const sumAttrs = c => Object.values(c.attributes || {}).reduce((s, v) => s + (v?.[0] || 0), 0);
 
 // ---------------------------------------------------------------------------

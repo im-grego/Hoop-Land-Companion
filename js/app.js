@@ -27,7 +27,7 @@ import { refitCeilings, potBumpCeilings, autoTendencies, normalizeTendencies } f
 import { saveToLeague } from './leagueexport.js';
 import * as RP from './realpicks.js';
 import { SKILL_INFO, skillDoes, skillSays } from './skillinfo.js';
-import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach, cleanCoachPool } from './coachprofile.js';
+import { archName as coachArch, strengthName, shownRating, shownCeiling, potentialStars, schemeOf, careerOf, securityOf, philosophyOf, coachGrade, askingContract, hireHeadCoach, cleanCoachPool, coachGone } from './coachprofile.js';
 import { signatureOf, evolve, STYLE_WORD } from './schemeevo.js';
 import { runMeeting, traitName } from './influence.js';
 import { FOCUS, MAX_USAGE, MIN_USAGE, MAX_TOTAL, focusFor, autoOptions, fixOptions } from './scoring.js';
@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.217.3';
+const APP_VERSION = '0.218.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -922,6 +922,14 @@ function pruneStaleNews(L) {
   L.season.news = (L.season.news || []).filter(n => !(n.pid > 0 && n.tid > 0 && at.has(n.pid)) || at.get(n.pid) === n.tid || ((n.type === 17 || n.type === 25) && at.get(n.pid) === 'retirees'));
   return n0 - L.season.news.length;
 }
+// Every player in the pro league carries league 0, the way the game keeps them. Prospects built from a college donor
+// came in marked 1 (the college league), and 39 of them on NBA rosters broke the game's league hub.
+function proLeagueFlags(L) {
+  if (L.leagueType !== 0) return 0;
+  let n = 0;
+  for (const p of [...L.teams.flatMap(t => t.roster), ...(L.freeAgents || []), ...(L.draftClass || []), ...(L.retirees || []), ...(L.hallOfFame || [])]) if (p.league !== 0) { p.league = 0; n++; }
+  return n;
+}
 function fixLineups(L) {
   let n = 0;
   for (const t of L.teams) if (!lineupOk(t)) { LU.applyLineup(t, defaultPlan(t)); n++; }
@@ -1044,7 +1052,7 @@ function buildExport() {
   }
   if (!isCollege()) settleRetirees(league(), true);   // anyone still retiring off a roster (yours included) goes now
   if (!isCollege() && league().season.phase === 6) { exportCuts(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); for (const t of league().teams) if (!isUserTeam(t) && t.roster.length) LU.applyLineup(t, defaultPlan(t)); }
-  if (!isCollege()) { fixLineups(league()); pruneStaleNews(league()); }
+  if (!isCollege()) { fixLineups(league()); pruneStaleNews(league()); proLeagueFlags(league()); }
   if (!isCollege()) pickWindow(league());
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
@@ -4342,7 +4350,7 @@ screens.playbookEdit = () => {
 const allCoaches = () => {
   const L = league();
   const out = L.teams.map(t => ({ c: CO.headCoach(t), t })).filter(x => x.c);
-  const pool = (L.coaches || []).filter(c => c.fn).map(c => ({ c, t: null }));
+  const pool = (L.coaches || []).filter(c => c.fn && !coachGone(c)).map(c => ({ c, t: null }));
   return { staff: out, pool };
 };
 const secCls = tag => (tag === 'Hot Seat' ? 'down-b' : tag === 'Secure' ? 'lvl' : tag === 'Final Year' ? 'new' : '');
@@ -15517,7 +15525,7 @@ screens.editor = (args = {}) => {
       <div class="stack">${list.map(p => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> <span class="gold small">Peak ${levelOf(p)}</span><br><span class="small muted">${esc(POSITIONS[p.pos] ?? p.pos)} · ${first(p) < 9999 ? first(p) : '—'} · ${avg(p, 'PTS')} / ${avg(p, 'REB')} / ${avg(p, 'AST')}${titles(p) ? ` · 🏆 ${titles(p)}` : ''}</span></span></div>`).join('') || '<p class="note muted small">No match.</p>'}</div>`;
   } else if (tab === 'coaches') {
     const staffs = L.teams.flatMap(t => (t.frontOffice?.staff || []).filter(c => c.pri === 1 || (c.attributes?.development?.[1] || 0) > 0).map(c => ({ c, t })));
-    const pool = (L.coaches || []).filter(c => c.attributes).map(c => ({ c, t: null }));
+    const pool = (L.coaches || []).filter(c => c.attributes && !coachGone(c)).map(c => ({ c, t: null }));
     const row = ({ c, t }) => `<fieldset class="frame"><legend>${esc(c.fn)} ${esc(c.ln)} · ${t ? esc(t.shortName) : 'Free agent'}</legend>
       ${['development', 'motivation', 'leadership'].map(k => `${edStep(k[0].toUpperCase() + k.slice(1) + ' now', c.attributes[k][0], 'edCoach', `data-id="${c.id}" data-k="${k}" data-w="0"`)}${edStep('&nbsp;&nbsp;max', c.attributes[k][1], 'edCoach', `data-id="${c.id}" data-k="${k}" data-w="1"`)}`).join('')}</fieldset>`;
     body = `<p class="note small">Each coach's three skill-tree levels (current and max): Development, Motivation (culture) and Leadership (scheme).</p>${[...staffs, ...pool].map(row).join('')}`;
