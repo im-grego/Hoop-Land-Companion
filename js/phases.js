@@ -14,7 +14,7 @@
 //   new-season stats row gets the salary; phase 6, day 1.
 // - Each day: currentDay + 1 (signings are the app's free agency).
 
-import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY, draftYear } from './savefile.js';
+import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY, draftYear, cloneData } from './savefile.js';
 import { seedOrder } from './draft.js';
 import { capLines } from './freeagency.js';
 
@@ -46,7 +46,7 @@ export function applyLottery(league, r1) {
   const news = league.season.news;
   const template = news.find(n => n.data?.contract) || news[0];
   if (template) {
-    const n = structuredClone(template);
+    const n = cloneData(template);
     Object.assign(n, { league: 0, rating: 10, date: 0, phase: PHASE_PRE_LOTTERY, category: 0, type: 1, tid: r1[0].id, pid: 0, gid: 0, read: false });
     if (n.data?.contract) Object.assign(n.data.contract, { tid: 0, pid: 0, type: 0, yrs: 0, sal: 0, nil: 0, opt: 0, noTrd: 0, canExt: false });
     if (n.data?.draftPick) n.data.draftPick = { pk: 0, rd: 0, tid: 0, otid: 0, yr: 0 };

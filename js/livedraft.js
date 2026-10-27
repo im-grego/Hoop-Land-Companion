@@ -15,7 +15,7 @@
 // - one news item per pick; the phase goes 4 → 5.
 
 import { draftDrop, SKILL_ATTRS } from './draft.js';
-import { PHASE_PRE_DRAFT, PHASE_POST_DRAFT, jerseyNumber, draftYear } from './savefile.js';
+import { PHASE_PRE_DRAFT, PHASE_POST_DRAFT, jerseyNumber, draftYear, cloneData } from './savefile.js';
 
 const KEEP = new Set(['tid', 'num']);
 
@@ -73,7 +73,7 @@ function resetProspect(p, leagueIdx, year, tid) {
 
 // One news item, shaped like the game's (cloned from an existing item).
 function draftNews(league, template, { pid, tid, rd, pk, year, rating }) {
-  const n = structuredClone(template);
+  const n = cloneData(template);
   zeroInPlace(n.data);
   Object.assign(n, { league: n.league, rating, date: 0, phase: PHASE_PRE_DRAFT, category: 0, type: 2, tid, pid, gid: 0, read: false });
   Object.assign(n.data.contract, { canExt: true });

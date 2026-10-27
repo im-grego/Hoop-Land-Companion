@@ -12,7 +12,7 @@
 
 import { tr, traitsSet } from './traits.js';
 import { facilityFx } from './facilities.js';
-import { jerseyNumber, playerName, draftYear } from './savefile.js';
+import { jerseyNumber, playerName, draftYear, cloneData } from './savefile.js';
 import { seasonLine } from './storylines.js';
 import { playerValue, fairSalary } from './trades.js';
 import { shownLevel as levelOf } from './regression.js';
@@ -748,7 +748,7 @@ export function signPlayer(league, p, team, offer, day) {
   const fromTeam = league.teams.find(t => t.roster.includes(p)) || null;
   const rec = {
     p, team, fromTeam, fromIdx: fromTeam ? fromTeam.roster.indexOf(p) : league.freeAgents.indexOf(p),
-    status: p.status, tid: p.tid, num: p.num, linePos: p.linePos, contract: structuredClone(p.contract),
+    status: p.status, tid: p.tid, num: p.num, linePos: p.linePos, contract: cloneData(p.contract),
     focus: p.season?.focus, block: p.season?.onTradeBlock,
     offers: league.contractOffers.map((o, i) => [o, i]).filter(([o]) => o.pid === p.id),
   };
@@ -775,9 +775,9 @@ export function signPlayer(league, p, team, offer, day) {
   league.contractOffers = league.contractOffers.filter(x => x.pid !== p.id);
   const template = league.season.news.find(n => n.data?.contract) || league.season.news[0];
   if (template) {
-    const n = structuredClone(template);
+    const n = cloneData(template);
     Object.assign(n, { league: 0, rating: offer.sal >= 20 ? 6 : offer.sal >= 10 ? 5 : 4, date: day, phase: league.season.phase, category: 2, type: 3, tid: team.id, pid: p.id, gid: 0, read: false });
-    n.data.contract = { ...structuredClone(p.contract) };
+    n.data.contract = { ...cloneData(p.contract) };
     if (n.data.draftPick) n.data.draftPick = { pk: 0, rd: 0, tid: 0, otid: 0, yr: 0 };
     league.season.news.push(n);
     rec.news = n;
@@ -836,7 +836,7 @@ function cutScoreBase(p, level) {
   return level + young + Math.min(10, (p.contract?.sal || 0) * 0.3);
 }
 export function cutPlayer(league, team, p) {
-  const keep = { status: p.status, contract: structuredClone(p.contract) };
+  const keep = { status: p.status, contract: cloneData(p.contract) };
   const rec = releasePlayer(league, team, p);
   Object.assign(p.contract, { tid: 0, yrs: 0, sal: 0, opt: 0, canExt: false });
   const row = (p.stats || []).filter(s => s.yr === league.season.currentYear && s.league === 0).pop();

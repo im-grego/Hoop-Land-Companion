@@ -1,6 +1,6 @@
 // Career mode, round two: life off the court, the team around him, contract terms, the season ahead and what comes
 // after. Pure reads and plans; the app applies them.
-import { playerName } from './savefile.js';
+import { playerName, cloneData } from './savefile.js';
 import { shownLevel as levelOf } from './regression.js';
 import { tr } from './traits.js';
 import { egoVal } from './ego.js';
@@ -221,7 +221,7 @@ export const AFTER = {
 // fields the game wants, a clean career line among them).
 export const coachTemplate = L => (L.coaches || []).find(c => c.attributes && c.career?.season && !c.career.season.GP) || (L.coaches || [])[0] || null;
 export function coachFromPlayer(L, p, template) {
-  const c = structuredClone(template);
+  const c = cloneData(template);
   const ids = [...(L.coaches || []), ...L.teams.flatMap(t => t.frontOffice?.staff || [])].map(x => x.id || 0);
   const r = rankIdx(p), at = (k, lo) => Math.max(lo, Math.min(20, Math.round(tr(p, k) * 0.7 + r * 0.8)));
   Object.assign(c, { id: Math.max(0, ...ids) + 1, tid: 0, fn: p.fn, ln: p.ln, tag: p.tag || '', home: p.home, ctry: p.ctry, loc: p.loc, age: p.age + 1, ht: p.ht, wt: p.wt, yrs: 0, gender: p.gender ?? 0,
@@ -230,7 +230,7 @@ export function coachFromPlayer(L, p, template) {
   c.attributes = { development: [at('roadWarrior', 4), Math.min(20, at('roadWarrior', 4) + 6)], motivation: [at('motor', 4), Math.min(20, at('motor', 4) + 6)], leadership: [at('lockerRoom', 4), Math.min(20, at('lockerRoom', 4) + 6)] };
   c.contract = { tid: 0, pid: 0, type: 0, yrs: 0, sal: 0, nil: 0, opt: 0, noTrd: 0, canExt: true, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } };
   // His face: the template's appearance fields, filled from his.
-  for (const k of Object.keys(c.appearance || {})) if (p.appearance?.[k] !== undefined) c.appearance[k] = structuredClone(p.appearance[k]);
+  for (const k of Object.keys(c.appearance || {})) if (p.appearance?.[k] !== undefined) c.appearance[k] = cloneData(p.appearance[k]);
   return c;
 }
 

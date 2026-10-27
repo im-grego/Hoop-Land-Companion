@@ -43,6 +43,9 @@ for (const save of saves) {
     if (career) for (const t of ['moves', 'story', 'legacy']) { try { window.__go('career', { tab: t }); out.push(`career:${t}`); } catch (e) { out.push(`career:${t}!${e.message}`); } }
     const file = window.__be(), text = await file.text();
     out.push(`export ${(text.length / 1e6).toFixed(1)}MB`);
+    // A float copied without its class ({ raw } objects) can't be read by the game (it broke the league hub).
+    const stray = (text.match(/\{"raw":/g) || []).length;
+    if (stray) out.push(`stray floats!${stray}`);
     return out;
   });
   await page.waitForTimeout(300);

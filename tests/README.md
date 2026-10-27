@@ -4,6 +4,7 @@ Saves aren't kept in the repo (they're big and personal), so most tests take a s
 
 | Test | Needs | Checks |
 |---|---|---|
+| `node tests/savefile.test.mjs` | nothing | Floats survive the round trip and copies (a copied float written as an object broke the game's league hub) |
 | `node tests/regression.test.mjs` | nothing | In-game regression: every rating and level of a seven-season decline read off the game |
 | `node tests/roundtrip.test.mjs <save>` | any save | Load and save is byte-for-byte lossless (and how long each takes) |
 | `node tests/smoke.test.mjs <save> [...]` | any saves | Real browser: loads each save, opens every screen for its mode and point in the season, builds the export, fails on any page error |

@@ -1,6 +1,6 @@
 import {
   parseSave, serializeSave, injuryHistory, ATTRS, ATTR_NAMES, PHYSICAL, attrMin, skillName, skillCategory, isEliteSkill, isFreeSkill, ELITE_REQUIREMENTS, ELITE_MIN, ATTR_MAX, activeSkills, isLeveled, CATEGORIES, SKILL_MAX_LEVEL, SKILL_CATEGORIES, POSITIONS, MODE_NAMES, phaseName, BUMP_PHASES, BUMP_DAY, POT_MIN, POT_MAX, regressionYear, injuryName, PHASE_POST_DRAFT, PHASE_PRE_DRAFT, leagueRookies, draftYear,
-  setBlessed, playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf,
+  setBlessed, playerName, heightStr, avgRating, lastSeasonMpg, leaguePlayers, snapshot, restore, diffPlayer, jerseyClashes, fixJerseyNumbers, undoJerseyNumbers, levelOf, cloneData,
 } from './savefile.js';
 import { DEFAULT_PARAMS, runProgression, buildSkillProfiles, rankSkillsFor, unlockSkill, mulberry32, runRookieBump, injuryRisk, earnsNaturalLongevity, productionScores, spendHeldPoints } from './progression.js';
 import {
@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.217.0';
+const APP_VERSION = '0.217.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6323,7 +6323,7 @@ function playoffRotations() {
   const s = poState();
   let n = 0;
   for (const t of L.teams.filter(t => t.roster.length)) {
-    if (isUserTeam(t)) (s.rot ||= {})[t.id] = { sl: structuredClone(t.startingLineup || []), ps: t.roster.map(p => [p.id, p.linePos, [...(p.minutes || [])], p.teamPos, p.posRnk]) };
+    if (isUserTeam(t)) (s.rot ||= {})[t.id] = { sl: cloneData(t.startingLineup || []), ps: t.roster.map(p => [p.id, p.linePos, [...(p.minutes || [])], p.teamPos, p.posRnk]) };
     LU.applyLineup(t, defaultPlan(t, true)); n++;
   }
   poSave(s);
@@ -6525,7 +6525,7 @@ actions.poRot = d => {
   const L = league(), t = L.teams.find(x => x.id === +d.t), s = poState();
   if (!t) return;
   if (d.v === 'set') {
-    (s.rot ||= {})[t.id] = { sl: structuredClone(t.startingLineup || []), ps: t.roster.map(p => [p.id, p.linePos, [...(p.minutes || [])], p.teamPos, p.posRnk]) };
+    (s.rot ||= {})[t.id] = { sl: cloneData(t.startingLineup || []), ps: t.roster.map(p => [p.id, p.linePos, [...(p.minutes || [])], p.teamPos, p.posRnk]) };
     const r = coachRot(t, true);
     LU.applyLineup(t, defaultPlan(t, true));
     toast('🔒 Playoff rotation set', `${r.size} men, ${Math.round(r.share * 100)}/${Math.round(100 - r.share * 100)} starters to bench.`);
@@ -8596,7 +8596,7 @@ actions.looksMatch = () => {
     const look = looks ? leagueLook(L, rng, p) : null;
     if (!look) looks = false;
     const b = classBuild(p, rng2);
-    before.push({ p, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories), reg: p.regressionAge, stm: [...p.attributes.STM] });
+    before.push({ p, appearance: cloneData(p.appearance), accessories: cloneData(p.accessories), reg: p.regressionAge, stm: [...p.attributes.STM] });
     if (look) Object.assign(p, look);
     p.regressionAge = b.reg;
     p.attributes.STM[0] = p.attributes.STM[1] = b.stm;
@@ -8632,7 +8632,7 @@ actions.namesMake = () => {
   const before = [], done = [];
   for (const p of cls) {
     const abroad = isForeign(p);
-    before.push({ p, fn: p.fn, ln: p.ln, home: p.home, ctry: p.ctry, loc: p.loc && { ...p.loc }, appearance: structuredClone(p.appearance), accessories: structuredClone(p.accessories) });
+    before.push({ p, fn: p.fn, ln: p.ln, home: p.home, ctry: p.ctry, loc: p.loc && { ...p.loc }, appearance: cloneData(p.appearance), accessories: cloneData(p.accessories) });
     // A player from abroad gets a skin tone (and matching eye, brow and hair colors) that fits his country.
     const look = abroad ? lookFor(rng, p.ctry, APPEARANCE_POOL.players) : null;
     if (look) {
@@ -14025,7 +14025,7 @@ actions.extOpen = d => {
 // the signing is undone.
 function extSignAndTrade(p, team, deal) {
   const L = league(), ds = draftState();
-  const keep = structuredClone(p.contract);
+  const keep = cloneData(p.contract);
   Object.assign(p.contract, { yrs: deal.yrs, sal: deal.sal, opt: deal.opt || 0 });
   ds.offerSeed = Math.floor(Math.random() * 1e9);
   let offers = [];
@@ -14040,7 +14040,7 @@ function extSignAndTrade(p, team, deal) {
     if (!b) return;
     const o = offers[+b.dataset.i];
     box.remove();
-    const had = structuredClone(p.contract);
+    const had = cloneData(p.contract);
     const ledBefore = extLedger();
     signExtension(L, team, p, deal);
     const m = offGet('signed'); delete m[p.id]; offSet('signed', m);      // the 6-month lock doesn't apply to a sign-and-trade

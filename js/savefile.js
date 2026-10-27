@@ -71,8 +71,19 @@ export function parseSave(text) {
 
 const TAG_RE = new RegExp('"\\\\u0001f:([^"]*)"', 'g');
 
+// A float copied with structuredClone loses its class and comes back as a plain { raw } object; written as an object
+// the game can't read it (news items cloned from a template broke the in-game league hub this way). Copy save data with
+// cloneData, and the export writes any stray { raw } back as the number it was.
+const STRAY_RE = /\{"raw":"(-?[0-9][0-9.eE+-]*)"\}/g;
 export function serializeSave(data) {
-  return JSON.stringify(data).replace(TAG_RE, '$1');
+  return JSON.stringify(data).replace(TAG_RE, '$1').replace(STRAY_RE, '$1');
+}
+// structuredClone for save data: keeps the exact floats.
+export function cloneData(v) {
+  if (v instanceof RawNumber) return new RawNumber(v.raw);
+  if (Array.isArray(v)) return v.map(cloneData);
+  if (v && typeof v === 'object') { const o = {}; for (const k in v) o[k] = cloneData(v[k]); return o; }
+  return v;
 }
 
 // ---------------------------------------------------------------------------
