@@ -26,7 +26,7 @@ const lc = t => t.toLowerCase().replace(/\b(acl|mcl)\b/g, m => m.toUpperCase());
 export const DRILLS = [
   { k: 'lane', short: 'Lane Agility', name: 'Lane Agility', unit: 's', low: true, dec: 2, group: 'ath' },
   { k: 'shuttle', short: 'Shuttle', name: 'Shuttle Run', unit: 's', low: true, dec: 2, group: 'ath' },
-  { k: 'sprint', short: '¾ Sprint', name: '3/4-Court Sprint', unit: 's', low: true, dec: 2, group: 'ath' },
+  { k: 'sprint', short: '¾ Sprint', name: '¾-Court Sprint', unit: 's', low: true, dec: 2, group: 'ath' },
   { k: 'standVert', short: 'Standing Vert', name: 'Standing Vertical', unit: '"', dec: 1, group: 'ath' },
   { k: 'maxVert', short: 'Max Vert', name: 'Max Vertical', unit: '"', dec: 1, group: 'ath' },
   { k: 'bench', short: 'Bench', name: 'Bench Press (185 lb)', unit: ' reps', dec: 0, group: 'ath' },
@@ -45,16 +45,18 @@ export const MEASURES = [
   { k: 'reach', name: 'Standing Reach', fmt: v => inchStr(v) },
   { k: 'wt', name: 'Weight', fmt: v => `${v} lb` },
   { k: 'fat', name: 'Body Fat', fmt: v => `${v.toFixed(1)}%` },
-  { k: 'handL', name: 'Hand Length', fmt: v => `${v.toFixed(2)}"` },
-  { k: 'handW', name: 'Hand Width', fmt: v => `${v.toFixed(2)}"` },
+  { k: 'handL', name: 'Hand Length', fmt: v => `${fracIn(v)}"` },
+  { k: 'handW', name: 'Hand Width', fmt: v => `${fracIn(v)}"` },
 ];
 
-// Inches as 6'7.25".
+// Inches as 6'7¼" (quarters as fractions, the way measurements are printed).
+const FRAC = { 0: '', 1: '¼', 2: '½', 3: '¾' };
+export const fracIn = v => { const q = Math.round(v * 4); return `${Math.floor(q / 4)}${FRAC[q % 4]}`; };
 export const inchStr = v => {
-  const ft = Math.floor(v / 12), inch = v - ft * 12;
-  return `${ft}'${Number.isInteger(inch) ? inch : inch.toFixed(2).replace(/0$/, '')}"`;
+  const q = Math.round(v * 4), ft = Math.floor(q / 48);
+  return `${ft}'${fracIn((q - ft * 48) / 4)}"`;
 };
-export const fmtDrill = (d, v) => v == null ? 'DNP' : d.n ? `${v}/${d.n}` : `${v.toFixed(d.dec)}${d.unit}`;
+export const fmtDrill = (d, v) => v == null ? 'DNP' : d.n ? `${v}/${d.n}` : d.unit === '"' ? `${fracIn(v)}"` : `${v.toFixed(d.dec)}${d.unit}`;
 
 // Medical flags from the prospect's injury history in the save.
 export function medicalFlag(p) {
@@ -198,7 +200,8 @@ export function hoopGram(cls, combine, rank = new Map(), salt = 0) {
   const name = p => playerName(p);
   const known = p => (rank.get(p.id) ?? 99) < 45;
   const rk = p => rank.get(p.id);
-  const proj = p => rk(p) != null && rk(p) < 30 ? ` (No. ${rk(p) + 1} in our first mock)` : '';
+  // Where he's projected, the way people say it: a top pick, a lottery pick, a first-rounder.
+  const proj = p => { const r = rk(p); return r == null || r >= 30 ? '' : r < 3 ? ', a projected top-3 pick,' : r < 14 ? ', a projected lottery pick,' : ', a projected first-rounder,'; };
   const add = (p, score, text, tag, handle = 0) => posts.push({ p, score, text, tag, handle: handleFor(p.id, handle), likes: 800 + ((Math.imul(p.id + salt, 2654435761) >>> 0) % 9000) + Math.round(score * 900) });
   const C = combine.byId;
 
@@ -207,17 +210,17 @@ export function hoopGram(cls, combine, rank = new Map(), salt = 0) {
     const x = C.get(p.id);
     for (const [k, label] of [['spot', 'spot-up'], ['dribble', 'off-the-dribble'], ['star3', '3-point star']]) {
       const n = DRILLS.find(d => d.k === k).n;
-      if (x[k] === n && n >= 25) add(p, 9 + (known(p) ? 2 : 0), `PERFECT. ${name(p)} went ${n} for ${n} in the ${label} drill${proj(p)}. Scouts in the gym stopped talking.`, '🎯 Perfect', 1);
-      else if (x[k] === n - 1 && n >= 25 && known(p)) add(p, 5, `${name(p)} hit ${n - 1} of ${n} in the ${label} drill${proj(p)}. That jumper is real.`, '🔥 Shooting', 1);
+      if (x[k] === n && n >= 25) add(p, 9 + (known(p) ? 2 : 0), `PERFECT. ${name(p)}${proj(p)} went ${n} for ${n} in the ${label} drill. Scouts in the gym stopped talking.`, '🎯 Perfect', 1);
+      else if (x[k] === n - 1 && n >= 25 && known(p)) add(p, 5, `${name(p)}${proj(p)} hit ${n - 1} of ${n} in the ${label} drill. That jumper is real.`, '🔥 Shooting', 1);
     }
   }
   // Arms.
   const arms = cls.map(p => ({ p, d: C.get(p.id).wingDiff })).sort((a, b) => a.d - b.d);
   for (const { p, d } of arms.filter(a => a.d < 0).slice(0, 2)) {
-    add(p, 6 + (known(p) ? 2 : 0) - d, `Measurements are out: ${name(p)} has a ${inchStr(C.get(p.id).ws)} wingspan, ${Math.abs(d).toFixed(2).replace(/\.?0+$/, '')}" SHORTER than his height${proj(p)}. Short arms show up on defense.`, '📏 Short Arms', 2);
+    add(p, 6 + (known(p) ? 2 : 0) - d, `Measurements are out: ${name(p)}${proj(p)} has a ${inchStr(C.get(p.id).ws)} wingspan, shorter than he is tall. Short arms show up on defense.`, '📏 Short Arms', 2);
   }
   for (const { p, d } of arms.filter(a => a.d >= 7).slice(-2).reverse()) {
-    add(p, 5 + (known(p) ? 2 : 0) + d / 3, `${name(p)} measured a ${inchStr(C.get(p.id).ws)} wingspan, +${d.toFixed(2).replace(/\.?0+$/, '')}" on his height${proj(p)}. Those are pterodactyl arms.`, '🦅 Wingspan', 2);
+    add(p, 5 + (known(p) ? 2 : 0) + d / 3, `${name(p)}${proj(p)} measured a ${inchStr(C.get(p.id).ws)} wingspan, ${fracIn(d)} inches longer than he is tall. Those are pterodactyl arms.`, '🦅 Wingspan', 2);
   }
   // Small for the pros at his position (height and weight).
   const POS = ['PG', 'G', 'SG', 'GF', 'SF', 'F', 'PF', 'FC', 'C'];
@@ -227,21 +230,21 @@ export function hoopGram(cls, combine, rank = new Map(), salt = 0) {
     const slight = x.pro.wtZ < -1.6 && x.pro.htZ > -0.6;
     const ftIn = v => `${Math.floor(v / 12)}'${Math.round(v % 12)}"`;
     add(p, 6 + (rk(p) < 14 ? 2 : 0), slight
-      ? `${name(p)} weighed in at ${p.wt} lb${proj(p)}. The average pro ${POS[p.pos]} is ${Math.round(x.pro.wt)}. He'll need to add weight to hold up.`
-      : `${name(p)} measured ${inchStr(x.htNs)} without shoes at ${p.wt} lb${proj(p)}. Small for a pro ${POS[p.pos]} (avg ${ftIn(x.pro.ht)}, ${Math.round(x.pro.wt)} lb).`,
+      ? `${name(p)}${proj(p)} weighed in at ${p.wt} lb. The average pro ${POS[p.pos]} is ${Math.round(x.pro.wt)}. He'll need to add weight to hold up.`
+      : `${name(p)}${proj(p)} measured ${inchStr(x.htNs)} without shoes at ${p.wt} lb. Small for a pro ${POS[p.pos]}.`,
       slight ? '⚖️ Slight Frame' : '📐 Undersized', 2);
   }
   // Leaders.
   const lead = (k, text, tag, h) => { const top = combine.boards[k][0]; if (top?.v != null) add(top.p, 4 + (known(top.p) ? 2 : 0), text(top.p, top.v), tag, h); };
-  lead('maxVert', (p, v) => `${name(p)} touched the sky: a ${v.toFixed(1)}" max vertical, best in the class${proj(p)}.`, '🚀 Bounce', 3);
-  lead('sprint', (p, v) => `Fastest man in the building: ${name(p)}, ${v.toFixed(2)}s in the 3/4-court sprint${proj(p)}.`, '⚡ Speed', 3);
-  lead('bench', (p, v) => `${name(p)} put up 185 lb ${v} times. Grown-man strength${proj(p)}.`, '💪 Strength', 3);
+  lead('maxVert', (p, v) => `${name(p)}${proj(p)} touched the sky: a ${fracIn(v)}-inch max vertical, best in the class.`, '🚀 Bounce', 3);
+  lead('sprint', (p, v) => `Fastest man in the building: ${name(p)}${proj(p)} ran the ¾-court sprint in ${v.toFixed(2)} seconds.`, '⚡ Speed', 3);
+  lead('bench', (p, v) => `${name(p)}${proj(p)} put up 185 pounds ${v} times. Grown-man strength.`, '💪 Strength', 3);
   // Sat out.
   for (const [id, why] of combine.skips) {
     const p = cls.find(x => x.id === id);
     if (!p) continue;
     const reason = why.startsWith('Medical') ? `he's still working back from a ${why.split('from a ')[1]}` : why.startsWith('Projected') ? 'he\'s a projected top pick with nothing to prove in the drills' : 'he\'s saving it for private workouts with teams';
-    add(p, 7 + (known(p) ? 2 : 0), `${name(p)} won't take part in athletic testing${proj(p)}. Word from his camp: ${reason}.`, why.startsWith('Medical') ? '🩺 Medical' : '🪑 Sat Out', 4);
+    add(p, 7 + (known(p) ? 2 : 0), `${name(p)}${proj(p)} won't take part in athletic testing. Word from his camp: ${reason}.`, why.startsWith('Medical') ? '🩺 Medical' : '🪑 Sat Out', 4);
   }
   // Medical reports for names people know.
   for (const p of cls.filter(known)) {

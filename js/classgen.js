@@ -18,13 +18,17 @@ export const DEPTH = { top: 'Top-heavy', normal: 'Normal', deep: 'Deep' };
 export const BOOM = { none: 'None', some: 'A few', lots: 'Lots' };
 export const DEFAULTS = { size: 75, strength: 'normal', stars: 1, polish: 'balanced', ages: 'mixed', intl: 10, lean: 'none', flavor: 'mixed', depth: 'normal', boom: 'some', stories: 3, seed: 1 };
 
-// Potential tiers by class strength (share of the class), from what the game's own classes look like.
+// Potential tiers by class strength (share of the class): most of a class is 3.5-4 stars (7-8), 3 stars (6) is less
+// common and 2.5 (5) rare; the top end grows with the class. Guaranteed stars come on top of this.
 const POT_W = {
-  weak: { 4: 6, 5: 64, 6: 16, 7: 9, 8: 4, 9: 1 },
-  normal: { 5: 58, 6: 17, 7: 11, 8: 8, 9: 5, 10: 1 },
-  strong: { 5: 46, 6: 19, 7: 15, 8: 11, 9: 7, 10: 2 },
-  loaded: { 5: 36, 6: 20, 7: 18, 8: 14, 9: 9, 10: 3 },
+  weak: { 5: 12, 6: 26, 7: 38, 8: 20, 9: 4 },
+  normal: { 5: 6, 6: 16, 7: 38, 8: 30, 9: 8, 10: 2 },
+  strong: { 5: 4, 6: 12, 7: 34, 8: 34, 9: 13, 10: 3 },
+  loaded: { 5: 2, 6: 8, 7: 30, 8: 38, 9: 17, 10: 5 },
 };
+// Older prospects: closer to what they'll be. Potential tops out lower (22+ at 8, 21 at 9) and they come in nearer
+// their ceiling, the reason a senior can be pro-ready without being a star in the making.
+export const AGE_POT_CAP = age => (age >= 22 ? 8 : age >= 21 ? 9 : 10);
 const AGE_W = { young: { 18: 45, 19: 35, 20: 15, 21: 5 }, mixed: { 18: 27, 19: 24, 20: 24, 21: 20, 22: 5 }, older: { 19: 10, 20: 30, 21: 35, 22: 25 } };
 // Current level by tier, from the game's own classes (potential 5 averages about 52, 9 about 77).
 const LEVEL_AT = { 4: 47, 5: 52, 6: 57, 7: 61, 8: 70, 9: 76, 10: 80 };
@@ -115,12 +119,12 @@ export function makeOne(ctx, spec = {}) {
   p.age = spec.age ?? pickW(r, AGE_W[o.ages] || AGE_W.mixed);
   p.ht = spec.ht ?? clamp(Math.round(d.ht + (r() * 2 - 1) * 1.5 + (p.pos - d.pos) * 0.8), 70, 90);
   p.wt = clamp(Math.round(d.wt + (r() * 2 - 1) * 10 + (p.ht - d.ht) * 4), 160, 300);
-  p.pot = pot;
+  p.pot = spec.pot != null && spec.keepPot ? pot : Math.min(pot, AGE_POT_CAP(p.age));
   p.regressionAge = 30 + Math.floor(r() * 5);
   // Ratings: the donor's shape bent toward the archetype, scaled so his level lands where the game's own classes put
   // his tier (older and more polished a little higher), with each rating nudged; ceilings follow the target potential.
   const before = levelOf(d);
-  const target = clamp(Math.round(spec.level ?? ((LEVEL_AT[pot] ?? 52) + (p.age - 19.5) * 1.2 + (POLISH_LV[o.polish] ?? 0) + gauss(r) * 2.5)), 35, 92);
+  const target = clamp(Math.round(spec.level ?? ((LEVEL_AT[p.pot] ?? 52) + (p.age - 19.5) * 2.4 + (POLISH_LV[o.polish] ?? 0) + gauss(r) * 2.5)), 35, 92);
   const want = 168 - 2 * (100 - target);
   const bent = Object.fromEntries(SKILL_KEYS.map(k => [k, Math.max(1, (d.attributes[k]?.[0] || 1) * (0.55 + 0.45 * (A.w[k] ?? 1)) * (A.w[k] ?? 1) ** 0.5)]));
   const sum0 = SKILL_KEYS.reduce((a, k) => a + bent[k], 0) || 1;
@@ -141,7 +145,7 @@ export function makeOne(ctx, spec = {}) {
   for (const k of SKILL_KEYS) p.attributes[k][1] = Math.max(p.attributes[k][1], p.attributes[k][0]);
   // Ceilings: room to grow into what his potential promises (the same ladder recruits use: a 10 tops out near a
   // 20/20 total, each step down 14 points less), spread by the donor's own room and the archetype.
-  const ceilSum = 168 - (10 - Math.min(10, pot)) * 14, curSum = SKILL_KEYS.reduce((a, k) => a + p.attributes[k][0], 0);
+  const ceilSum = 168 - (10 - Math.min(10, p.pot)) * 14, curSum = SKILL_KEYS.reduce((a, k) => a + p.attributes[k][0], 0);
   const roomW = Object.fromEntries(SKILL_KEYS.map(k => [k, (Math.max(0, (d.attributes[k]?.[1] || 0) - (d.attributes[k]?.[0] || 0)) + 1) * (A.w[k] ?? 1) * (0.8 + r() * 0.4)]));
   let need = Math.max(0, ceilSum - curSum);
   for (let pass = 0; pass < 3 && need > 0; pass++) {
@@ -239,6 +243,8 @@ export function generate(data, o, { locked = [], homeTeam = null, meta: keepMeta
   const flips = { none: 0, some: 2, lots: 5 }[o.boom] ?? 0;
   pots.forEach((pot, i) => {
     let spec = { pot, batch: out };
+    // The guaranteed stars are young (the age cap would take their ceiling otherwise).
+    if (i < o.stars) spec.age = 18 + Math.floor(ctx.r() * 3);
     let tag = null;
     if (i >= o.stars && i < o.stars + flips) { spec = { ...spec, pot: 8 + Math.floor(ctx.r() * 2), level: 50 + Math.floor(ctx.r() * 5) }; tag = 'sleeper'; }
     else if (i >= o.stars + flips && i < o.stars + 2 * flips) { spec = { ...spec, pot: 5, level: 68 + Math.floor(ctx.r() * 6), body: { SPD: 2, STR: 1 } }; tag = 'bust'; }

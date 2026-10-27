@@ -55,10 +55,10 @@ import * as CO from './coaching.js';
 import { JERSEYS } from './jerseys.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation, playerReplies, setHoldouts } from './presser.js';
-import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fmtDrill, medicalFlag } from './predraft.js';
+import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.221.0';
+const APP_VERSION = '0.222.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -136,12 +136,14 @@ setRecoveryBonus(p => {
 });
 // Readiness: how much of the game's −4 draft drop a rookie wins back right away, by his motor, whatever his age.
 // Relentless workers (motor 15+) are Pro-Ready (−2 net), most are Base (−3), low-motor players (10 or less) are Projects (−4).
-const READINESS = { pro: { tag: 'Pro-Ready', icon: '🎯', back: 2, cls: 'up' }, base: { tag: 'Base', icon: '⚖️', back: 1, cls: 'muted' }, project: { tag: 'Project', icon: '🛠️', back: 0, cls: 'gold' } };
+// How soon a prospect helps: his age and how far he is from his ceiling (an older player comes in closer to what he'll
+// be). Ready now, 1-2 years, or a project; it also sets how much of his college level carries into his first season.
+const READINESS = { pro: { tag: 'Ready now', icon: '🎯', back: 2, cls: 'up' }, base: { tag: '1–2 years', icon: '⏳', back: 1, cls: 'muted' }, project: { tag: 'Project', icon: '🛠️', back: 0, cls: 'gold' } };
 function readinessOf(p) {
-  const m = traitsSet(p) ? tr(p, 'motor') : 10;
-  return m >= 15 ? READINESS.pro : m <= 10 ? READINESS.project : READINESS.base;
+  const gap = (100 - (10 - Math.min(10, p.pot || 5)) * 7) - shownLevel(p);
+  return p.age >= 22 || gap <= 12 ? READINESS.pro : gap >= 24 && p.age <= 20 ? READINESS.project : READINESS.base;
 }
-const readyChip = p => { const r = readinessOf(p); return `<span class="badge ${r.cls === 'up' ? 'lvl' : r.cls === 'gold' ? 'new' : ''}" title="Draft drop ${r.back - 4}">${r.icon} ${r.tag}</span>`; };
+const readyChip = p => { const r = readinessOf(p); return `<span class="badge ${r.cls === 'up' ? 'lvl' : r.cls === 'gold' ? 'new' : ''}">${r.icon} ${r.tag}</span>`; };
 setReadiness(p => (state.params.readiness === 'age' ? null : readinessOf(p).back));
 function saveParams() {
   try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 12 })); } catch { /* ignore */ }
@@ -6115,11 +6117,11 @@ const ROT_TXT = { bd: ['Average bench', 'Deep bench', 'Short bench'], bu: ['low 
 const lineupMode = t => { const s = teamStatus(league(), t); return s === 'contending' || s === 'competing' ? 'compete' : s === 'rebuilding' || s === 'developing' ? 'develop' : 'normal'; };
 // A player's minutes as a bar out of a full game, split by position (out of position striped), with his share.
 function minBar(p, m, game) {
-  const segs = m.slice(1).map((v, k) => (v > 0 ? `<i class="seg s${k}${LU.inPos(p, k) ? '' : ' off'}" style="width:${(v / game * 100).toFixed(1)}%" title="${LU.SLOTS[k]} ${v}"></i>` : '')).join('');
+  const segs = m.slice(1).map((v, k) => (v > 0 ? `<i class="mseg s${k}${LU.inPos(p, k) ? '' : ' off'}" style="width:${(v / game * 100).toFixed(1)}%" title="${LU.SLOTS[k]} ${v}"></i>` : '')).join('');
   const split = m.slice(1).map((v, k) => (v ? `<span class="${LU.inPos(p, k) ? '' : 'down'}">${LU.SLOTS[k]} ${v}</span>` : '')).filter(Boolean).join(' · ');
   return `<div class="mbar-row"><div class="mbar">${segs}</div><span class="mbar-pct">${Math.round(m[0] / game * 100)}%</span></div><span class="small muted">${split || 'Out of the rotation'}</span>`;
 }
-const minLegend = () => `<div class="mbar-legend small muted">${LU.SLOTS.map((x, k) => `<span><i class="seg s${k}"></i>${x}</span>`).join('')}<span><i class="seg off s4"></i>out of position</span></div>`;
+const minLegend = () => `<div class="mbar-legend small muted">${LU.SLOTS.map((x, k) => `<span><i class="mseg s${k}"></i>${x}</span>`).join('')}<span><i class="mseg off s4"></i>out of position</span></div>`;
 // Career mode: a team's rotation as it stands, to look at (the coaches set it).
 function lineupView(L, t) {
   const byId = new Map(t.roster.map(p => [p.id, p]));
@@ -6948,10 +6950,12 @@ function labHeadlinerForm() {
     ${sch.length ? `<label class="field"><span>School</span>${labSel('lh-sch', [['', 'Any'], ...sch.map(x => [`${x.li}:${x.tid}`, x.name])], o.sch || '')}</label>` : ''}
     <button class="btn focus" data-act="labHeadliner" style="margin-top:6px">⭐ Add Him</button></details>`;
 }
+// This year's class can be reworked until scouting starts; after that it's locked in (next year's plan stays open).
+const labOpen = (L = league()) => phaseRank(L.season) < 3 && !preDone('mock1');
 screens.classLab = () => {
   const L = league(), o = labSettings();
   if (isCollege()) { layout({ title: 'Draft Class Lab', body: '<p class="note">The lab works on pro saves.</p>' }); return; }
-  const live = L.draftClass?.length && phaseRank(L.season) < 3;
+  const live = L.draftClass?.length && labOpen(L);
   const seg = (label, k, opts) => `<div class="pts-row"><span class="grow small">${label}</span></div><div class="seg lab-seg">${opts.map(([v, l]) => `<button class="btn small ${o[k] === v ? 'on focus' : 'off'}" data-act="labSet" data-k="${k}" data-v="${v}">${esc(l)}</button>`).join('')}</div>`;
   const prev = state.labPreview, plan = labPlan(), presets = labPresets();
   const nextYr = draftYear(L) + (live ? 1 : phaseRank(L.season) >= 3 && L.season.phase !== 9 && L.season.phase !== 11 ? 1 : 0);
@@ -6963,8 +6967,6 @@ screens.classLab = () => {
         ${seg('Strength', 'strength', Object.entries(CG.STRENGTH))}
         ${seg('Franchise or star talents guaranteed', 'stars', [[0, '0'], [1, '1'], [2, '2'], [3, '3'], [4, '4']])}
         ${seg('Depth', 'depth', Object.entries(CG.DEPTH))}
-        ${seg('Flavor (the archetypes that come up most)', 'flavor', Object.entries(CG.FLAVOR))}
-        ${seg('Polish (how ready they are now)', 'polish', Object.entries(CG.POLISH))}
         ${seg('Ages', 'ages', Object.entries(CG.AGES))}
         ${seg('International players', 'intl', [[0, 'None'], [10, '10%'], [20, '20%'], [35, '35%']])}
         ${seg('Position lean', 'lean', Object.entries(CG.LEAN))}
@@ -8170,8 +8172,9 @@ screens.settings = (args) => {
     body = setGroup('Scouting', [
       options('Scouting accuracy', 'scoutVariance', [[0, 'Perfect'], [15, 'Sharp'], [25, 'Normal'], [40, 'Murky']], 'How often your scouts misread a prospect\'s potential before the workouts.'),
       options('Private workouts', 'workoutSlots', [[2, '2'], [4, '4'], [6, '6'], [8, '8']], 'Workouts per team you run (scouting trips are this plus two).'),
+      options('Edit prospects', 'editProspects', [[false, 'Off'], [true, 'On']], 'Lets you change a prospect\'s traits and tendencies by hand. Off keeps each class as it came in.'),
       ...(pro && league().draftClass?.length && phaseRank(league().season) < 3 ? ['<button class="btn" data-act="nav" data-to="classLab">🧪 Draft Class Lab</button>'] : []),
-    ]) + setGroup('Rookies', [options('Draft drop', 'readiness', [['motor', 'By readiness (motor)'], ['age', 'By age']], 'The game takes 4 off every rating at the draft. By readiness, a rookie\'s motor decides how much comes back: Pro-Ready −2, Base −3, Project −4, at any age. By age: older rookies get more back (the bands under Age Adjustment).'),
+    ]) + setGroup('Rookies', [options('Draft drop', 'readiness', [['motor', 'By readiness'], ['age', 'By age']], 'The game takes 4 off every rating at the draft. By readiness, how close he is to his ceiling decides how much comes back: Ready now −2, 1–2 years −3, Project −4. By age: older rookies get more back (the bands under Age Adjustment).'),
       options('Undrafted rookies', 'rookieIncludeUndrafted', [[false, 'Skip'], [true, 'Include']], 'Whether undrafted rookies get the rookie bump and the drop adjustment.')]) +
       advGroup('Rookie Bump', ['rookieBands'], [
         '<div class="band-head three"><span>Ages</span><span>Min</span><span>Max</span></div>',
@@ -8447,8 +8450,30 @@ function gradeScore(p) {
   const age = p.age <= 19 ? (19 - p.age) * 0.15 : -(p.age - 19) * 0.2;
   return scoutPot(p) + 0.5 * (top8(v.fns.floorOf(p)) - 11.5) + 0.25 * (top8(v.fns.ceilOf(p)) - 13) + age;
 }
+// Grades come off the consensus board, scaled to the class. A #1 pick is a consensus #1: the top of the board by a
+// margin, with a high floor (ready now) as well as the ceiling. First-round grades run 20 to 40 deep and second-round
+// to 40-70 by how much talent the class has; a deep class leaves almost nobody ungraded.
+function gradeTable() {
+  const cache = (state.compCache[state.leagueIdx] ||= new Map());
+  if (cache.has('grades')) return cache.get('grades');
+  const cls = league().draftClass || [];
+  const rows = cls.map(p => ({ p, s: gradeScore(p) })).sort((a, b) => b.s - a.s);
+  const r1 = Math.max(20, Math.min(40, rows.filter(r => r.s >= 7.5).length));
+  const r2 = Math.max(45, r1 + 15, Math.min(70, rows.filter(r => r.s >= 6).length + 10));
+  const out = new Map();
+  rows.forEach((r, i) => {
+    const n = i + 1;
+    const g = n === 1 && r.s >= 9.8 && shownLevel(r.p) >= 68 && r.s - (rows[1]?.s ?? 0) >= 0.25 ? 0
+      : n <= 5 && r.s >= 9 ? 1 : n <= 14 && r.s >= 8.2 ? 2 : n <= r1 ? 3 : n <= r2 ? 4 : r.s >= 3.8 ? 5 : 6;
+    out.set(r.p.id, g);
+  });
+  cache.set('grades', out);
+  return out;
+}
 function gradeOf(p) {
-  const s = gradeScore(p);
+  const g = gradeTable().get(p.id);
+  if (g != null) return GRADES[g];
+  const s = gradeScore(p);   // not in this class (a past prospect): the old fixed cutoffs
   return GRADES[s >= 10.2 ? 0 : s >= 9.4 ? 1 : s >= 8.2 ? 2 : s >= 7.5 ? 3 : s >= 6.3 ? 4 : s >= 5.6 ? 5 : 6];
 }
 const valueChip = p => { const [label, cls] = gradeOf(p); return `<span class="grade ${cls}">${label}</span>`; };
@@ -8615,7 +8640,7 @@ screens.draft = (args) => {
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="draftTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const body = { live: draftLive, consensus: draftConsensus, warroom: draftWarRoom, office: draftOffice }[tab](args);
   const preview = isStep('mock1');
-  const labBtn = !isCollege() && tab !== 'live' && phaseRank(L.season) < 3 && L.draftClass?.length ? '<button class="btn small" data-act="nav" data-to="classLab" style="margin-bottom:8px">🧪 Draft Class Lab</button>' : '';
+  const labBtn = !isCollege() && tab !== 'live' && labOpen(L) && L.draftClass?.length ? '<div class="setup-card"><button class="btn small" data-act="nav" data-to="classLab">🧪 Keep this class or customize it in the Lab</button></div><p class="note small muted" style="margin:-4px 0 8px">The class locks once scouting starts.</p>' : '';
   const tripsCard = isStep('scout') && tab !== 'live' ? `<fieldset class="frame"><legend>🔎 Scouting Trips</legend><p class="note small"><b>${tripsLeft()} of ${scoutTrips()}</b> left. Open a prospect and send a scout: his athletic ceilings come out early, his potential reads truer, and you get a preview of his combine (length, testing, shooting, medical).</p></fieldset>` : '';
   layout({ title: preview ? 'Draft Preview' : tab === 'live' ? 'NBA Draft' : 'War Room', body: labBtn + planLine() + (tab === 'live' || isStep('draft') ? '' : outlookCard()) + (preview && !isCollege() ? looksCard() : '') + tripsCard + tabs + body.html, action: preview ? (preStore().mock1Seen ? { act: 'preFinish', label: 'Continue to Scouting', k: 'mock1' } : { act: 'openMock', label: 'Read Mock 1.0', n: 1 }) : body.action });
   if (tab === 'live') centerBoard();
@@ -8980,16 +9005,18 @@ screens.combine = (args) => {
   // The NBA's three sections (Anthro, Strength & Agility, Shooting Drills), then Hoop Gram.
   const tabs = `<div class="tabs">${[['anthro', 'Anthro'], ['ath', 'Athletic'], ['shoot', 'Shooting'], ['trending', 'Trending']].map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="combineTab" data-t="${k}">${l}</button>`).join('')}</div>`;
-  const nameBtn = p => `<button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button>`;
+  const nameBtn = p => `<b>${esc(playerName(p))}</b>`;
+  const rowAct = p => `data-act="openProspect" data-id="${p.id}"`;
+  const apeStr = d => `${d < 0 ? '−' : '+'}${fracIn(Math.abs(d))}"`;
   let body = '';
   if (tab === 'trending') {
     const posts = hoopGram(L.draftClass, C, rank, saveSalt());
-    body = `<p class="note muted small">Trending from the combine on Hoop Gram.</p>
-      <div class="stack">${posts.map(x => `<div class="hg-post">
+    body = `<p class="note muted small">Check the buzz on Hoop Gram.</p>
+      <div class="stack">${posts.map(x => `<button class="hg-post" ${rowAct(x.p)}>
         <div class="hg-head"><span class="hg-avatar">HG</span><b>${esc(x.handle)}</b><span class="hg-tag">${esc(x.tag)}</span></div>
         <p class="hg-text">${esc(x.text)}</p>
-        <div class="hg-foot"><span>❤️ ${x.likes.toLocaleString()}</span>${nameBtn(x.p)}</div>
-      </div>`).join('') || '<p class="note">Quiet combine.</p>'}</div>`;
+        <div class="hg-foot"><span>❤️ ${x.likes.toLocaleString()}</span><span class="cyan">${esc(playerName(x.p))} ›</span></div>
+      </button>`).join('') || '<p class="note">Quiet combine.</p>'}</div>`;
   } else if (tab === 'ath' || tab === 'shoot') {
     // Shooting adds a total: every make out of every attempt across the drills.
     const group = DRILLS.filter(x => x.group === tab);
@@ -9000,10 +9027,12 @@ screens.combine = (args) => {
     const board = d.k === 'total' ? L.draftClass.map(p => ({ p, v: valOf(p) })).sort((a, b) => b.v - a.v) : C.boards[d.k];
     const dnp = board.filter(r => r.v == null);
     const live = board.filter(r => r.v != null), shown = args.all ? live : live.slice(0, 25);
-    const fmt = v => d.n ? `${v}/${d.n} <span class="small muted">${Math.round(v / d.n * 100)}%</span>` : fmtDrill(d, v);
-    body = `<p class="note muted small">${tab === 'ath' ? 'Strength & agility: lane agility, shuttle and the ¾ sprint (lower is better), the verticals and the bench press.' : 'Shooting drills, made out of attempted: off the dribble (30), spot up, the 3-point and midrange star and side drills (25 each) and free throws (10).'}</p>
-      <div class="drill-opts">${opts.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.short || x.name)}</button>`).join('')}</div>
-      <fieldset class="frame"><legend>${esc(d.name)}</legend><div class="stack">${shown.map((r, i) => `<div class="drill-row ${rank.has(r.p.id) && rank.get(r.p.id) < 30 ? 'r1' : ''}">
+    // Percentile within the class: the share of the other testers he beat.
+    const vals = live.map(r => r.v);
+    const pctl = v => { const lo = d.low ? vals.filter(y => y > v).length : vals.filter(y => y < v).length; return Math.round(lo / Math.max(1, vals.length - 1) * 100); };
+    const fmt = v => `${d.n ? `${v}/${d.n}` : fmtDrill(d, v)} <span class="small muted">${ordinal(Math.max(1, Math.min(99, pctl(v))))} pct</span>`;
+    body = `<div class="drill-opts">${opts.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.short || x.name)}</button>`).join('')}</div>
+      <fieldset class="frame"><legend>${esc(d.name)}</legend><div class="stack">${shown.map((r, i) => `<div class="drill-row tap ${rank.has(r.p.id) && rank.get(r.p.id) < 30 ? 'r1' : ''}" ${rowAct(r.p)}>
         <span class="pk">${i + 1}</span><span class="grow">${nameBtn(r.p)}<br><span class="small muted">${esc(posName(r.p))} · ${heightStr(r.p.ht)} · ${r.p.wt} lb</span></span>
         <b class="drill-val">${fmt(r.v)}</b></div>`).join('')}</div>
         ${!args.all && live.length > 25 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${live.length}</button>` : ''}
@@ -9011,16 +9040,15 @@ screens.combine = (args) => {
       </fieldset>`;
   } else {
     const sort = args.sort || 'diff';
-    const val = { diff: x => x.wingDiff, ws: x => x.ws, reach: x => x.reach, hands: x => x.handL * x.handW, fat: x => -x.fat, size: x => -x.pro.sizeZ }[sort] || (x => x.wingDiff);
+    const val = { diff: x => x.wingDiff, ws: x => x.ws, size: x => -x.pro.sizeZ }[sort] || (x => x.wingDiff);
     const rows = L.draftClass.map(p => ({ p, x: C.byId.get(p.id) })).sort((a, b) => val(b.x) - val(a.x));
     const shown = args.all ? rows : rows.slice(0, 30);
-    body = `<div class="combine-sorts">${[['diff', 'Ape Index'], ['ws', 'Wingspan'], ['reach', 'Reach'], ['hands', 'Hands'], ['fat', 'Leanest'], ['size', 'Undersized']].map(([k, l]) =>
+    body = `<div class="combine-sorts">${[['diff', 'Ape Index'], ['ws', 'Wingspan'], ['size', 'Undersized']].map(([k, l]) =>
         `<button class="btn small ${k === sort ? 'on focus' : 'off'}" data-act="combineSort" data-s="${k}">${l}</button>`).join('')}</div>
-      <p class="note muted small" style="margin:6px 0">Ape index = wingspan minus height without shoes. Size compares height and weight with pros at his position.</p>
-      <div class="stack">${shown.map(({ p, x }) => `<div class="drill-row">
+      <div class="stack" style="margin-top:6px">${shown.map(({ p, x }) => `<div class="drill-row tap" ${rowAct(p)}>
         <span class="grow">${nameBtn(p)}<br><span class="small muted">${esc(posName(p))} · ${inchStr(x.htNs)} (${inchStr(x.htShoes)} in shoes) · ${x.wt} lb · Reach ${inchStr(x.reach)}</span>
-          <br><span class="small muted">Hands ${x.handL.toFixed(2)}" × ${x.handW.toFixed(2)}" · Body fat ${x.fat.toFixed(1)}%</span><br>${sizeLine(p, x)}</span>
-        <span class="meas"><b>${inchStr(x.ws)}</b><span class="small ${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}"</span></span></div>`).join('')}</div>
+          <br><span class="small muted">Hands ${fracIn(x.handL)}" × ${fracIn(x.handW)}" · Body fat ${x.fat.toFixed(1)}%</span><br>${sizeLine(p, x)}</span>
+        <span class="meas"><b>${inchStr(x.ws)}</b><span class="small ${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">${apeStr(x.wingDiff)}</span></span></div>`).join('')}</div>
       ${!args.all && rows.length > 30 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`;
   }
   layout({
@@ -9039,7 +9067,7 @@ actions.openProspect = d => go('prospect', { id: +d.id });
 // Height and weight against the average pro at his position.
 function sizeLine(p, x, label = true) {
   const dh = p.ht - x.pro.ht, dw = p.wt - x.pro.wt;
-  const f = (v, u) => `${v >= 0 ? '+' : '−'}${Math.abs(Math.round(v))}${u}`;
+  const f = (v, u) => { const r = Math.round(v); return r === 0 ? `even${u === '"' ? ' height' : ' weight'}` : `${r > 0 ? '+' : '−'}${Math.abs(r)}${u}`; };
   const cls = x.pro.sizeZ < -1.3 || (x.pro.wtZ < -1.6 && x.pro.htZ > -0.6) ? 'down' : x.pro.sizeZ > 1 ? 'up' : 'muted';
   return `<span class="small ${cls}">${label ? `vs pro ${esc(posName(p))}: ` : ''}${f(dh, '"')} · ${f(dw, ' lb')}</span>`;
 }
@@ -9070,9 +9098,10 @@ actions.sendScout = d => {
   scoutedMap()[id] = true;
   savePre();
   state.compCache = {};   // ceilings and potential reads change
+  (state.uiTab ||= {}).prospect = 'work';   // straight to what the scouts brought back
   render();
   const p = league().draftClass.find(x => x.id === id);
-  toast(`🔎 Scouts saw ${p ? playerName(p) : 'him'} in person`, `${tripsLeft()} trip${tripsLeft() === 1 ? '' : 's'} left`);
+  toast(`🔎 Scouts saw ${p ? playerName(p) : 'him'} in person`, `His athletic ceilings, a truer potential read, his play style and a combine outlook · ${tripsLeft()} trip${tripsLeft() === 1 ? '' : 's'} left`, 4200);
 };
 // What the scouts expect at the combine, from the real results with a scout's margin (fixed per save + prospect).
 const TIER_WORDS = z => z == null ? null : z >= 1 ? 'elite' : z >= 0.4 ? 'above average' : z > -0.4 ? 'about average' : z > -1 ? 'below average' : 'poor';
@@ -9119,7 +9148,7 @@ function combineBox(p) {
   const o = scouted(p.id) ? combineOutlook(p) : null;
   const read = o && !o.skip ? (TIER_WORDS(x.athZ) === o.ath ? '<span class="up">scouts called it</span>' : `<span class="gold">scouts had him ${esc(o.ath)}</span>`) : '';
   return `<fieldset class="frame"><legend>Draft Combine</legend>
-    <p class="note small">${inchStr(x.htNs)} · WS ${inchStr(x.ws)} <span class="${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">(${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}")</span> · ${x.wt} lb</p>
+    <p class="note small">${inchStr(x.htNs)} · WS ${inchStr(x.ws)} <span class="${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">(${x.wingDiff < 0 ? '−' : '+'}${fracIn(Math.abs(x.wingDiff))}")</span> · ${x.wt} lb</p>
     <p class="note small">${x.skip ? `<span class="muted">Sat out testing: ${esc(x.skip)}</span>` : `Tester: <span class="${tierCls(TIER_WORDS(x.athZ))}">${esc(TIER_WORDS(x.athZ) || '—')}</span> · Shooter: <span class="${tierCls(TIER_WORDS(x.shootZ))}">${esc(TIER_WORDS(x.shootZ))}</span>${best && best.r.rank <= 3 ? ` · Best: ${esc(best.d.short || best.d.name)} <span class="pos-rank top">#${best.r.rank} ${esc(posName(p))}</span>` : ''}`}${read ? ` · ${read}` : ''}</p>
     ${x.medical && x.medical.level !== 'note' ? `<p class="note small ${x.medical.level === 'red' ? 'down' : 'gold'}">🩺 ${esc(x.medical.text)}</p>` : ''}
     <details class="cmb-fold"><summary>📏 Anthro</summary><div class="combine-grid">
@@ -9859,7 +9888,7 @@ function collegeBox(p) {
         .map(([k, v], i) => i < 5 && c.li != null
           ? `<button class="stat-cell" data-act="openLeaders" data-m="college" data-k="${RANK_STATS[i][0]}" data-li="${c.li}" data-yr="${c.yr}" aria-label="College ${RANK_STATS[i][1]} leaders"><span class="muted small">${k}</span><b>${v}</b>${collegeRank(p, c, RANK_STATS[i][0])}</button>`
           : `<div><span class="muted small">${k}</span><b>${v}</b>${i < 5 ? collegeRank(p, c, RANK_STATS[i][0]) : ''}</div>`).join('')}
-    </div>${c.li != null && seasonRanks(c.yr, c.li).ranks.get(p.id)?.qualified ? (sr => `<p class="note muted small" style="margin-top:6px">Ranks among ${sr.of} qualified college players. Qualified: at least ${sr.minGp} games played, half of the league high (${sr.maxGp}).</p>`)(seasonRanks(c.yr, c.li)) : ''}</fieldset>`;
+    </div>${c.li != null && seasonRanks(c.yr, c.li).ranks.get(p.id)?.qualified ? (sr => `<p class="note muted small" style="margin-top:6px">Ranks among ${sr.of} qualified college players.</p>`)(seasonRanks(c.yr, c.li)) : ''}</fieldset>`;
 }
 
 // Where the prospect would slot on each of your teams, as a rookie and at
@@ -9900,11 +9929,12 @@ screens.prospect = (args) => {
         <p class="note small"><span class="age-chip">Age ${p.age} · ${classYear(p)}</span> ${state.params.readiness === 'age' ? '' : readyChip(p)}</p>
         ${labStoryLine(p)}
       </div>
+      ${scoutBtn(p) ? `<div style="margin-bottom:8px">${scoutBtn(p)}</div>` : ''}
       ${uiTabs('prospect', [
-        ['over', 'Overview', `${collegeBox(p)}
-      <fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}${scoutBtn(p) ? `<div style="margin-top:8px">${scoutBtn(p)}</div>` : ''}</fieldset>
+        ['over', 'Overview', `<fieldset class="frame"><legend>Scouting Report</legend>${scoutList(p)}</fieldset>
       <fieldset class="frame"><legend>Player Comps</legend>${compRow('Ceiling', c.ceiling)}${compRow('Floor', c.floor)}</fieldset>`],
-        ['game', 'Game', `${playStyleBox(p)}${traitsBox(p, true)}`],
+        ['stats', 'Stats', collegeBox(p) || '<p class="note muted">No college stats on record.</p>'],
+        ['game', 'Traits', `${traitsBox(p, true)}${scouted(p.id) || workoutDone(p.id) ? playStyleBox(p) : '<fieldset class="frame"><legend>Play Style</legend><p class="note small muted">Send a scout to see how he plays.</p></fieldset>'}`],
         ['work', 'Workout', `${workoutBox(p)}${revealBox(p)}${combineBox(p)}`],
         ['rate', 'Ratings', `<fieldset class="frame"><legend>Ratings</legend>
         <div class="rk-head rk2"><span></span><span>Now</span><span>Ceiling</span></div>
@@ -10138,12 +10168,21 @@ async function revealLottery() {
   const done = $app.querySelector('[data-act=faHome]');
   list.classList.add('revealing');
   if (done) done.style.display = 'none';
-  const skipped = false; // no skipping: everyone watches the reveal
+  // Everyone watches until your team's spot is out; then a small Skip finishes the reveal at once.
+  let skipped = false, skipBtn = null;
+  const offerSkip = () => {
+    if (skipBtn) return;
+    skipBtn = document.createElement('button');
+    skipBtn.className = 'btn small lot-skip';
+    skipBtn.textContent = '⏭ Skip';
+    skipBtn.onclick = () => { skipped = true; skipBtn.remove(); };
+    document.body.appendChild(skipBtn);
+  };
   const wait = ms => new Promise(r => { const t0 = Date.now(); const tick = () => (skipped || Date.now() - t0 >= ms ? r() : requestAnimationFrame(tick)); tick(); });
   const ord = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 - 20) % 10] || ['th', 'st', 'nd', 'rd'][n % 100] || 'th');
   await wait(500);
   for (const row of [...rows].reverse()) {
-    if (!row.isConnected) return; // left the screen
+    if (!row.isConnected) { skipBtn?.remove(); return; } // left the screen
     const pick = +row.dataset.pick;
     const big = pick <= 5;
     row.scrollIntoView({ behavior: skipped ? 'auto' : 'smooth', block: 'center' });
@@ -10156,9 +10195,11 @@ async function revealLottery() {
     }
     row.classList.add('shown');
     updateTray(row.dataset.tid, pick);
+    if (!skipped && isUserTeam(league().teams.find(t => t.id === +row.dataset.tid))) offerSkip();
     if (big) row.classList.add(pick === 1 ? 'top1' : 'big');
     await wait(big ? 1500 : 2300);
   }
+  skipBtn?.remove();
   // Let #1 land, then fold the tray away and glide back to the top of the
   // full order.
   await wait(1200);
@@ -13675,7 +13716,7 @@ function traitsBox(p, prospect = false) {
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
     return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"><span style="width:${v * 5}%" class="${v >= 16 ? 'top' : v >= 10 ? 'hi' : v <= 4 ? 'lo' : ''}"></span></span>
       <span class="small"><b>${v}</b> <span class="${v >= 16 ? 'gold' : 'muted'}">${traitLabel(t, v)}</span></span>
-      <span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span></div>`;
+      ${prospect && !state.params.editProspects ? '<span></span>' : `<span class="trait-ctl"><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="-1" aria-label="Lower ${t.label}">−</button><button class="btn tiny" data-act="traitAdj" data-id="${p.id}" data-k="${t.k}" data-d="1" aria-label="Raise ${t.label}">+</button></span>`}</div>`;
   }).join('')}</div>`).join('')}</details>${prospect && !workoutDone(p.id) ? '<p class="note muted small" style="margin-top:6px">Bring him in for a private workout to learn the rest.</p>' : ''}</fieldset>`;
 }
 actions.tendAdj = d => {
@@ -13699,13 +13740,14 @@ actions.traitAdj = d => {
 // Play style from the save's tendencies (players and prospects).
 function playStyleBox(p) {
   if (!p.tendencies) return '';
+  const lockTend = (league().draftClass || []).includes(p) && !state.params.editProspects;   // prospects stay as scouted
   const st = playStyles(p, 3), w = wontDo(p);
   const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(styleSentence(p))}${earnedSkills(p).length ? ` ${esc(`He ${earnedSkills(p).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toLowerCase())}.`)}` : ''}</p>
     <details class="tend-wrap" data-anchor="tend-all" data-keep="tend-all" ${state.keepOpen?.['tend-all'] ? 'open' : ''}><summary class="small">All tendencies</summary>
-      ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row tend-edit2"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k] || 0}</span><span class="trait-ctl"><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="-1" aria-label="Lower ${TEND_LABELS[k]}">−</button><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="1" aria-label="Raise ${TEND_LABELS[k]}">+</button></span></div>`).join('')}`).join('')}
+      ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row tend-edit2"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k] || 0}</span>${lockTend ? '' : `<span class="trait-ctl"><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="-1" aria-label="Lower ${TEND_LABELS[k]}">−</button><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="1" aria-label="Raise ${TEND_LABELS[k]}">+</button></span>`}</div>`).join('')}`).join('')}
     </details>
   </fieldset>`;
 }
