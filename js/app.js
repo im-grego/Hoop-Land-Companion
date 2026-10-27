@@ -1298,7 +1298,7 @@ const CALENDAR = [
     done: () => preDone('scout') },
   { key: 'combine', date: 'May 14', title: 'Draft Combine', blurb: 'Measurements, athletic testing and shooting drills, then Mock 2.0: who rose, who fell and who fell out of the first round.',
     done: () => preDone('combine') },
-  { key: 'workouts', date: 'Jun 1', title: 'Private Workouts', blurb: 'Bring prospects in, see them up close and ask the questions that matter.',
+  { key: 'workouts', date: 'Jun 1', title: 'Private Workouts', blurb: 'Bring in prospects for an interview: it reveals their potential and the ceiling on every rating.',
     done: () => preDone('workouts') },
   { key: 'draft', date: 'Jun 23', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
@@ -1676,8 +1676,12 @@ function stepActions(key) {
     case 'scout': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🔎 Begin</button><button class="btn" data-act="preFinish" data-k="scout">⏭ Skip</button></div>`;
     case 'combine': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="combine">⏱ Attend</button><button class="btn ${preStore().combineSeen ? 'focus' : ''}" data-act="openMock" data-n="2" ${preStore().combineSeen ? '' : 'disabled'}>🗒️ Mock 2.0</button></div>
       <button class="btn small off" data-act="preFinish" data-k="combine" style="margin-top:8px">⏭ Skip</button>`;
-    case 'workouts': return `<button class="btn big focus" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
-      <button class="btn small off" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
+    case 'workouts': {
+      // Once every slot is used, the next thing to do is the draft.
+      const full = Object.keys(preStore().workouts).length >= workoutSlots();
+      return `<button class="btn big ${full ? 'off' : 'focus'}" data-act="nav" data-to="workouts">🏋️ Private Workouts</button>
+      <button class="btn ${full ? 'big focus' : 'small off'}" data-act="preAdvance" data-k="workouts" style="margin-top:8px">Advance to the Draft</button>`;
+    }
     case 'draft': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="draft">🎓 Begin</button><button class="btn" data-act="homeSimDraft">⏭ Sim</button></div>`;
     case 'options': return optStore().done
       ? `<div class="grid2"><button class="btn focus" data-act="nav" data-to="extensions">✍️ Extensions</button><button class="btn" data-act="homeSimExt">⏭ Sim</button></div>`
@@ -9305,9 +9309,29 @@ function fullTake(p, f, noGrowth = false) {
   if (f.size) growth = room >= 4 ? (frame >= 0.35 ? 'with a frame to build on and a high ceiling' : 'with a high ceiling but a frame that limits him') : growth;
   const eth = ethicLine(p, f);
   const sk = (SKILL_COVER[f.area] || []).find(id => (p.skills || []).some(x => x.id === id && x.level >= 1));
-  return `${f.text}${noGrowth ? '' : `, ${growth}`}${eth ? `${noGrowth ? '; ' : '; '}${eth}` : ''}${sk ? `. On the plus side, he ${skillSays(sk)} (${skillName(sk)})` : ''}`;
+  return `${f.text}${noGrowth ? '' : `, ${growth}`}${eth ? `${noGrowth ? '; ' : '; '}${eth}` : ''}${sk ? `. On the plus side, ${/^(is|has|can|makes|finishes|feeds|keeps|clamps|locks|wins|plays|snatches|sparks|bullies|leaves)\b/.test(skillSays(sk)) ? 'he ' : ''}${skillSays(sk)}` : ''}`;
 }
-const tendFlags = p => gameRead(p).filter(f => f.kind === 'weak').sort((a, b) => b.gap - a.gap).map(f => ({ ...f, quote: traitQuote(p, GROWTH[f.k] || 'game', f) || `I'm working on it.` }));
+// What a kid says when you put a tendency to him: a little defensive, a little rambling, but his own words.
+function tendQuote(p, f) {
+  const what = GROWTH[f.k] || 'game';
+  const hes = f.label?.includes('Hesitance') || ['Tunnel Vision', 'Passive Finishing', 'Soft on the Glass'].includes(f.label);
+  const bank = f.area === 'dribble' ? [
+    'That\'s how I grew up playing. The ball was always in my hands, and nobody told me to give it up. I\'m learning to move it quicker.',
+    'I like to make plays, man. But yeah, I\'ve been watching a lot of film with my trainer on when to move it and when to go.',
+    'My college coach said the same thing. I\'m getting better at it, honestly. Two dribbles and make a decision, that\'s what we\'ve been working on.']
+    : hes ? [
+    `I guess I've always been the guy who makes the extra pass. My trainer keeps telling me to be more selfish with my ${what}.`,
+    `Honestly? Confidence. We had a system in college and I played inside it. I'm going to be way more aggressive.`,
+    `I didn't want to force anything. But I know I have to look for it more. I've been working on that every single day.`,
+    `People keep telling me that. I'm not a selfish guy, but I hear it. This summer I'm hunting those looks.`]
+    : [
+    `I'm a competitor, I want to make plays. But I've been sitting with my coaches watching film, and some of those I've got to pass up.`,
+    `Some of those are good looks, I think. But yeah, my skills coach and I have been working on taking the right ones.`,
+    `That's fair. I was the guy at my school, so I took a lot of tough ones. At this level I know it's different.`,
+    `I've heard that a lot this spring. I'm working on my ${what} with my trainer twice a day, so it won't be a question for long.`];
+  return traitQuote(p, what, f) || vary2(p, 40 + f.area.length, bank);
+}
+const tendFlags = p => gameRead(p).filter(f => f.kind === 'weak').sort((a, b) => b.gap - a.gap).map(f => ({ ...f, quote: tendQuote(p, f) }));
 function scoutTake(p, a, room, what, coachSpeaks = false) {
   const tf = tendFlags(p).find(f => f.k === a);
   if (tf) return `Scouts: ${fullTake(p, tf, coachSpeaks)}.`;
@@ -9319,9 +9343,13 @@ function scoutTake(p, a, room, what, coachSpeaks = false) {
     : vary2(p, 13, [`his ${what} is about what it'll be. Teams have to be comfortable with that.`, `don't expect his ${what} to change much; he'll have to win with the rest of his game.`]);
   return `Scouts: ${tail}`;
 }
-const growthNote = (room, what) => room >= 4 ? `real room to grow in his ${what}.`
-  : room >= 2 ? `his ${what} should get better, but not by a lot.`
-  : `his ${what} is close to what it'll be.`;
+// Where a rating stands today, in words.
+const levelWord = v => v >= 16 ? 'elite' : v >= 13 ? 'good' : v >= 10 ? 'solid' : v >= 7 ? 'below average' : 'poor';
+const growthNote = (room, what, v) => {
+  const lv = v == null ? '' : levelWord(v);
+  if (!lv) return room >= 4 ? `real room to grow in his ${what}.` : room >= 2 ? `his ${what} should get better, but not by a lot.` : `his ${what} is close to what it'll be.`;
+  return room >= 4 ? `his ${what} is ${lv} now, with real room to grow.` : room >= 2 ? `his ${what} is ${lv} and should get better, but not by a lot.` : `his ${what} is ${lv} and close to what it'll be.`;
+};
 const scoringRoom = p => Math.max(roomFor(p, 'LAY'), roomFor(p, 'MID'), roomFor(p, 'TPT'));
 // Physical ratings don't move after the draft in the game, so a frame read
 // is about time and room: youth, height and how light he is for a pro at
@@ -9369,9 +9397,8 @@ function workoutQs(p) {
   return [...qs,
     { k: 'body', q: 'How\'s the body holding up?' },
     { k: 'ready', q: 'Are you ready to play right away, or do you need time?' },
-    { k: 'fit', q: 'How do you see yourself fitting with us?' },
     { k: 'bench', q: 'How would you handle coming off the bench?' },
-    { k: 'future', q: 'Where do you see yourself in five years?' },
+    { k: 'future', q: 'Where do you see your game in five years?' },
     { k: 'model', q: 'Who do you model your game after?' },
     { k: 'work', q: 'What do you need to work on?' },
   ];
@@ -9427,9 +9454,11 @@ function workoutAnswer(p, k) {
     const w = r().weaknesses;
     const firstPerson = t => t.toLowerCase().replace(/\bhim\b/g, 'me').replace(/\bhis\b/g, 'my').replace(/\bhe\b/g, 'I').replace(/\bhimself\b/g, 'myself');
     // The scouts' side: what the tape says (tendencies vs ratings), then room to grow or cover.
-    const takes = [...tendFlags(p).slice(0, 1).map(f => fullTake(p, f)), ...w.filter(x => SKILL_ATTRS.includes(x.k)).slice(0, 2).map(x => scoutTake(p, x.k, roomFor(p, x.k), GROWTH[x.k] || 'game').replace(/^Scouts: /, '').replace(/\.$/, ''))];
+    const takes = [...w.filter(x => SKILL_ATTRS.includes(x.k)).slice(0, 2).map(x => scoutTake(p, x.k, roomFor(p, x.k), GROWTH[x.k] || 'game').replace(/^Scouts: /, '').replace(/\.$/, ''))];
     const uniq = [...new Set(takes)].slice(0, 3);
-    return { quote: w.length ? `Honestly? ${w.map(x => firstPerson(x.text)).join(', and ')}. I know it.` : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '', scout: uniq.length ? `Scouts: ${uniq.join('. ')}.` : '' };
+    const names = [...new Set(w.slice(0, 2).map(x => GROWTH[x.k] || firstPerson(x.text)))];
+    return { quote: names.length ? vary2(p, 14, [`Honestly? My ${names.join(' and my ')}. I know it, everybody knows it. That's what this summer is for.`, `My ${names.join(', and my ')}. I watch my film, I see it. I've been in the gym on it since the season ended.`, `I'd say my ${names.join(' and ')}. My trainer has me doing the same drills every morning until it's automatic.`])
+      : 'I don\'t think there\'s one big thing. Just get better everywhere.', staff: '', scout: uniq.length ? `Scouts: ${uniq.join('. ')}.` : '' };
   }
   if (k === 'motor') {
     return { quote: vary2(p, 2, ['People who say that haven\'t watched me in the fourth quarter. But yeah, my conditioning is my summer focus.', 'That\'s fair. I\'m getting in the best shape of my life this summer.']),
@@ -9445,8 +9474,9 @@ function workoutAnswer(p, k) {
     const what = GROWTH[a] || 'game';
     if (PHYSICAL.includes(a)) return { quote: vary2(p, a.charCodeAt(0), ['I\'m living in the weight room this summer.', 'Give me a year with a real strength program.']), staff: frameNote(p) };
     const room = a === 'SCO' ? scoringRoom(p) : roomFor(p, a);
-    return { quote: traitQuote(p, what, null) || vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not.`]),
-      staff: `Coaches: ${growthNote(room, what)}`, scout: scoutTake(p, a, room, what, true) };
+    const v = a === 'SCO' ? Math.max(p.attributes.LAY[0], p.attributes.MID[0], p.attributes.TPT[0]) : p.attributes[a]?.[0];
+    return { quote: traitQuote(p, what, null) || vary2(p, a.charCodeAt(0), [`I hear it. I've been in the gym every day working on my ${what}, sending my trainer clips at like midnight.`, `That's the old me. Wait until you see my ${what} this year.`, `It's a work in progress. I'm not going to pretend it's not. But I'm a lot better than I was in January.`, `Yeah, that's fair. I've been working out with some guys from the league back home, and they've been on me about my ${what} every day.`]),
+      staff: `Coaches: ${growthNote(room, what, v)}`, scout: scoutTake(p, a, room, what, true) };
   }
   if (k === 'best') {
     const st = r().strengths[0];
@@ -9457,15 +9487,17 @@ function workoutAnswer(p, k) {
   if (k === 'ready') {
     const t = myTeam();
     const slot = t ? rosterSlot(t.roster, rookieLine(p, state.params.recoveryBands), p.pos).rank : 99;
-    return { quote: p.age >= 22 ? 'I\'m ready now. I\'ve played a lot of college basketball.' : vary2(p, 4, ['I\'m ready now. Throw me out there.', 'Whatever the team needs. If I have to earn it, I\'ll earn it.']),
+    // Every kid says he's ready; how he says it gives away where he is and who he is.
+    const rd = readinessOf(p), motor = tr(p, 'motor'), win = tr(p, 'winning'), ego = tr(p, EGO_KEY);
+    const quote = rd === READINESS.pro
+      ? (p.age >= 22 ? vary2(p, 4, ['I\'ve played a lot of college basketball. I know how to play, I know my role. I can help right away.', 'Four years of games against grown men. I\'m not going to be overwhelmed.']) : vary2(p, 4, ['I\'m ready now. Throw me out there.', 'Right away. I\'ve been playing up my whole life.']))
+      : motor >= 14 ? vary2(p, 4, ['Nobody in camp is going to outwork me. I\'ll earn minutes, whatever it takes.', 'I\'ll be the first one in and the last one out. The minutes will come.'])
+      : win >= 14 ? 'I want to help us win games, whatever that looks like in year one. If that\'s bringing energy in practice, I\'ll do that.'
+      : rd === READINESS.project && ego <= 9 ? vary2(p, 4, ['Honestly? I know I\'ve got stuff to learn. But I\'m a quick learner.', 'I\'m young. I\'d rather get it right than rush it. Give me a year and watch.'])
+      : ego >= 14 ? 'I\'m ready now. I don\'t care what anybody says about me being raw.'
+      : vary2(p, 4, ['I think I can make an impact right away. Maybe not every night, but I\'ll be ready.', 'Whatever the team needs. If I have to earn it, I\'ll earn it.']);
+    return { quote,
       staff: slot <= 8 ? 'Coaches: he could crack our rotation as a rookie.' : slot <= 11 ? 'Coaches: bench minutes early, more in year two.' : 'Coaches: he\'s a year or two away from real minutes for us.' };
-  }
-  if (k === 'fit') {
-    const t = myTeam();
-    const fills = t ? fillsFor(t, p) : [];
-    return fills.length
-      ? { quote: `You need ${fills[0].label.toLowerCase().replace(' · ', ' who bring ')}. That's exactly what I do.`, staff: `Front office: he fills ${fills.map(n => n.label).join(' and ')}.` }
-      : { quote: 'I\'ll do whatever you need. I just want to win.', staff: 'Front office: he doesn\'t fill one of our needs on paper.' };
   }
   if (k === 'skip') {
     const x = combineData().byId.get(p.id);
@@ -9485,12 +9517,12 @@ function workoutAnswer(p, k) {
       ['I\'d take it, and I\'d work to change it.', 'I want to start, sure. But I\'d do the job.'],
       ['I\'d be fine for a while. Not forever.', 'I\'d do it, but I think I\'m better than that.'],
       ['Respectfully? I\'m not a bench guy. Draft me to play.', 'I wouldn\'t. I\'m the best player in this class.']][band]),
-      staff: `Staff read: 🎭 Ego ${v} (${traitLabel(TRAITS.find(t => t.k === EGO_KEY), v)}), ${['takes whatever role helps', 'happy to fit in', 'wants a fair role', 'wants his touches and his credit', 'needs to be the man'][band]}.` };
+      staff: `Staff read: ${v >= 16 ? 'he has an alpha mentality' : v <= 4 ? 'he\'s humble' : v <= 8 ? 'he has a low ego' : 'he has a solid ego'} (🎭 ${v}) and ${['takes whatever role helps', 'is happy to fit in', 'wants a fair role', 'wants his touches and his credit', 'needs to be the man'][band]}.` };
   }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
-    return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a really good team.']),
-      staff: `Trainers: ${reg >= 33 ? 'built to last, holding his peak into his mid-30s.' : reg >= 31 ? 'takes care of his body, should hold his peak into his early 30s.' : reg >= 29 ? 'a normal arc, holding his peak until about 30.' : 'peaks early, decline could start in his late 20s.'}` };
+    return { quote: vary2(p, 6, ['An All-Star. Nothing less.', 'Winning. Rings. That\'s it.', 'The best player on a playoff team.', 'A guy you can build around. Somebody you trust in the fourth quarter.']),
+      staff: `Trainers: ${reg >= 34 ? 'built to last, he should hold his peak into his mid-30s.' : reg >= 32 ? 'he takes care of his body and should hold his peak into his early 30s.' : reg === 31 ? 'his body may not age well; the decline could start in his early 30s.' : 'his body is a concern long-term; expect the decline to start around 30.'}` };
   }
   const idols = idolFor(p, true);
   const idol = idols[0];
@@ -9534,6 +9566,16 @@ function idolSkill(x) {
   return IDOL_SKILL[best] || 'game';
 }
 const plainLast = x => (x.ln || playerName(x)).replace(/\s+(Jr\.?|Sr\.?|II|III|IV)$/i, '');
+// The name people actually say: Shai, LeBron, Giannis, Curry.
+const COMMON_NAME = { 'Shai Gilgeous-Alexander': 'Shai', 'LeBron James': 'LeBron', 'Giannis Antetokounmpo': 'Giannis', 'Luka Doncic': 'Luka', 'Luka Dončić': 'Luka',
+  'Stephen Curry': 'Curry', 'Kyrie Irving': 'Kyrie', 'Jayson Tatum': 'Tatum', 'Kevin Durant': 'KD', 'Nikola Jokic': 'Jokic', 'Nikola Jokić': 'Jokic',
+  'Victor Wembanyama': 'Wemby', 'Anthony Edwards': 'Ant', 'Kawhi Leonard': 'Kawhi', 'Dwyane Wade': 'D-Wade', 'Kobe Bryant': 'Kobe', 'Tim Duncan': 'Duncan',
+  'Joel Embiid': 'Embiid', 'Damian Lillard': 'Dame', 'Russell Westbrook': 'Westbrook', 'Chris Paul': 'CP3', 'James Harden': 'Harden', 'Ja Morant': 'Ja',
+  'Zion Williamson': 'Zion', 'Trae Young': 'Trae', 'Paul George': 'PG', 'Anthony Davis': 'AD',
+  'Dirk Nowitzki': 'Dirk', 'Allen Iverson': 'AI', 'Shaquille O\'Neal': 'Shaq', 'Kevin Garnett': 'KG', 'Carmelo Anthony': 'Melo',
+  'Manu Ginobili': 'Manu', 'Paul Pierce': 'Pierce', 'Dwight Howard': 'Dwight', 'Klay Thompson': 'Klay', 'Draymond Green': 'Draymond',
+  'Cade Cunningham': 'Cade', 'Chet Holmgren': 'Chet', 'Paolo Banchero': 'Paolo' };
+const spoken = name => COMMON_NAME[name] || name;
 // `all`: the closest few, ordered with a little chance (fixed per prospect) so similar prospects don't all name the same star.
 function idolFor(p, all = false) {
   const L = league();
@@ -9558,7 +9600,7 @@ function idolFor(p, all = false) {
     const ys = proYears(x);
     if (ys.length && ys.filter(y => y >= kid[0] && y <= kid[1]).length < 2) continue;
     const dist = compDistance(v, { ht: p.ht, wt: p.wt, pos: p.pos }, e);
-    cands.push({ score: dist - ((x.pot || 8) - 8) * 2.5, dist, name: playerName(x), last: plainLast(x), pot: x.pot || 0, skill: idolSkill(x), active: active.has(x.id) });
+    cands.push({ score: dist - ((x.pot || 8) - 8) * 2.5, dist, name: spoken(playerName(x)), last: COMMON_NAME[playerName(x)] || plainLast(x), pot: x.pot || 0, skill: idolSkill(x), active: active.has(x.id) });
   }
   cands.sort((a, b) => a.score - b.score);
   const top = cands.slice(0, 6);
@@ -9574,7 +9616,7 @@ function idolFor(p, all = false) {
 const answerHtml = a => typeof a === 'string' ? esc(a) : `<span class="wk-quote">"${esc(a.quote)}"</span>${a.staff ? `<br><span class="muted">${esc(a.staff)}</span>` : ''}${a.scout ? `<br><span class="muted">${esc(a.scout)}</span>` : ''}`;
 
 function workoutResult(p) {
-  if (!workoutDone(p.id)) return `<span class="muted">Workout in progress: the full read comes after the interview.</span>`;
+  if (!workoutDone(p.id)) return '';
   const before = scoutedPot(p, saveSalt(), scoutFog());
   const t = tierFor(p.pot);
   if (before === p.pot) return `Our scouts had him right: ${t} ceiling. Every rating's ceiling is now on his page.`;
@@ -9644,28 +9686,27 @@ screens.workouts = (args) => {
   const rank = new Map(boardOrder().map((p, i) => [p.id, i + 1]));
   const me = myTeam();
   const picks = liveOrder().filter(o => isUserTeam(o.owner)).map(o => o.overall);
-  const range = picks.length ? [Math.max(1, picks[0] - 5), picks[0] + 5] : null;
   const hidden = p => [...SKILL_ATTRS, ...PHYSICAL].filter(k => !ceilKnown(p, k)).length;
   const fview = args.f || 'board', fpos = args.pos || 'all';
-  const FILTERS = [['board', '★ Board'], ['range', range ? `🎯 #${range[0]}–${range[1]}` : '🎯 Range'], ['needs', '🧩 Needs'], ['scouted', '🔎 Scouted'], ['all', 'All']];
+  const FILTERS = [['board', '★ Board'], ['needs', '🧩 Needs'], ['scouted', '🔎 Scouted'], ['all', 'All']];
   let pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
   // Your board (or, with nothing on it yet, the consensus board).
   if (fview === 'board' && pool.some(p => onBoard(p.id))) pool = pool.filter(p => onBoard(p.id));
-  if (fview === 'range' && range) pool = pool.filter(p => rank.get(p.id) >= range[0] && rank.get(p.id) <= range[1]);
   if (fview === 'needs' && me) pool = pool.filter(p => fillsFor(me, p).length);
   if (fview === 'scouted') pool = pool.filter(p => scouted(p.id));
   if (fpos !== 'all') pool = pool.filter(p => posGroup(p) === fpos);
   const shown = args.all ? pool : pool.slice(0, 30);
   const dots = `<span class="wk-dots">${Array.from({ length: cap }, (_, i) => `<i class="${i < ids.length ? 'used' : ''}"></i>`).join('')}</span>`;
   const inviteRow = p => {
-    const h = hidden(p), r = rank.get(p.id), inRange = range && r >= range[0] && r <= range[1], fit = me && fillsFor(me, p).length;
-    return `<div class="drill-row wk-row">
-      <span class="grow"><button class="linkish" data-act="openProspect" data-id="${p.id}"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b></button> ${valueChip(p)}${fit ? ' <span title="Fills a need">🧩</span>' : ''}${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}<br>
-        <span class="small muted">#${r} consensus${inRange ? ' · <span class="up">in your range</span>' : ''} · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span>${state.params.readiness !== 'age' ? ` ${readyChip(p)}` : ''}<br>
-        <span class="small ${h ? 'gold' : 'muted'}">${revealed(p.id) ? 'Potential known' : 'Reveals potential'}${h ? ` + ${h} hidden ceiling${h > 1 ? 's' : ''}` : ''}</span></span>
+    const h = hidden(p), r = rank.get(p.id), fit = me && fillsFor(me, p).length;
+    return `<div class="drill-row wk-row tap" data-act="openProspect" data-id="${p.id}">
+      <span class="grow"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b> ${valueChip(p)}${fit ? ' <span title="Fills a need">🧩</span>' : ''}${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}${state.params.readiness !== 'age' ? ` ${readyChip(p)}` : ''}<br>
+        <span class="small muted">#${r} consensus · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span><br>
+        <span class="small ${h || !revealed(p.id) ? 'gold' : 'muted'}">${revealed(p.id) ? (h ? 'Reveals attributes' : 'Nothing hidden') : 'Reveals potential and attributes'}</span></span>
       <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`;
   };
-  const inviteHtml = `<p class="note small">${dots} <b>${left} of ${cap}</b> workouts left. A workout fully scouts him: his true potential and every rating's ceiling, once his interview is done.</p>
+  const pickLine = picks.length ? `<p class="note small">Your pick${picks.length > 1 ? 's' : ''}: ${picks.map(n => `<b>#${n}</b>`).join(' · ')}</p>` : '<p class="note small muted">You don\'t have a pick right now.</p>';
+  const inviteHtml = `${pickLine}<p class="note small">${dots} <b>${left} of ${cap}</b> left</p>
     <div class="seg lab-seg">${FILTERS.map(([k, l]) => `<button class="btn small ${k === fview ? 'on focus' : 'off'}" data-act="wkFilter" data-f="${k}">${esc(l)}</button>`).join('')}</div>
     <div class="seg lab-seg">${[['all', 'All'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']].map(([k, l]) => `<button class="btn small ${k === fpos ? 'on focus' : 'off'}" data-act="wkPos" data-p="${k}">${l}</button>`).join('')}</div>
     <div class="stack">${shown.map(inviteRow).join('') || '<p class="note small muted">Nobody here. Try another filter.</p>'}</div>
@@ -9673,12 +9714,12 @@ screens.workouts = (args) => {
   const live = order.filter(p => (pre.workouts[p.id].qs.length || 0) < interviewQs());
   layout({
     title: 'Private Workouts',
-    body: `<p class="note small">Three rounds of questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''}</p>
+    body: `<p class="note small">Three questions: pick one of two each time.${FX.facilityFx(myTeam()).goodCop ? ' Good cop, bad cop: once he\'s done you can ask the other three too.' : ''}</p>
       ${uiTabs('workouts', [
         ['invite', `Invite · ${left}`, inviteHtml],
-        ['gym', 'In the Gym', inGym ? `<div class="stack">${inGym}</div>` : '<p class="note small muted">Nobody yet. Bring someone in from Invite.</p>', live.length > 0],
+        ['gym', 'Interview', inGym ? `<div class="stack">${inGym}</div>` : '<p class="note small muted">Nobody yet. Bring someone in from Invite.</p>', live.length > 0],
       ], live.length ? 'gym' : 'invite')}`,
-    action: isStep('workouts') ? { act: 'preAdvance', label: 'Advance to the Draft', k: 'workouts' } : null,
+    action: isStep('workouts') ? { act: 'preAdvance', label: left <= 0 && !live.length ? '✅ Advance to the Draft' : 'Advance to the Draft', k: 'workouts' } : null,
   });
 };
 actions.wkFilter = d => replace('workouts', { ...(state.stack[state.stack.length - 1].args || {}), f: d.f, all: false });
