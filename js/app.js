@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.222.0';
+const APP_VERSION = '0.223.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -8661,7 +8661,8 @@ async function revealPicks(overalls) {
   const L = league();
   const live = liveState();
   const order = liveOrder();
-  const wait = ms => new Promise(r => setTimeout(r, ms));
+  state.skipReveal = false;
+  const wait = ms => state.skipReveal ? Promise.resolve() : new Promise(r => { const t0 = Date.now(); const tick = () => (state.skipReveal || Date.now() - t0 >= ms ? r() : setTimeout(tick, 50)); tick(); });
   for (const ov of overalls) $app.querySelector(`.lot-row[data-ov="${ov}"]`)?.classList.add('pending');
   state.revealing = true;
   try {
@@ -8936,10 +8937,12 @@ function mockPicks(n) {
   const k = `mock${n}`;
   if (!pre[k] && league().draftClass?.length && lotteryDone(league())) {
     const order = actualDraftOrder(league()).filter(o => n === 2 || o.rd === 1);
-    const rng = mulberry32((saveSalt() ^ (n === 1 ? 0x51a7 : 0x2c0e)) >>> 0);
+    const rng = mulberry32((saveSalt() ^ (n === 1 ? 0x51a7 : n === 2 ? 0x2c0e : 0x3f1a)) >>> 0);
     const taken = new Set();
+    // Boards agree at the top; further down the round there are more reaches and steals.
+    const noise = o => (n === 1 ? 0.75 : n === 2 ? 0.45 : 0.3) + Math.max(0, o.overall - 8) * 0.025;
     pre[k] = order.map(o => {
-      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng, n === 1 ? 0.75 : 0.45, n === 2);
+      const p = teamDraftPick(o.owner, league().draftClass.filter(x => !taken.has(x.id)), rng, noise(o), n >= 2);
       if (p) taken.add(p.id);
       return { overall: o.overall, rd: o.rd, tid: o.owner.id, orig: o.orig.id, pid: p?.id ?? null };
     });
@@ -8948,24 +8951,25 @@ function mockPicks(n) {
   return pre[k] || null;
 }
 actions.openMock = d => go('mock', { n: +d.n });
-actions.mockView = d => replace('mock', { n: 2, view: d.v });
+actions.mockView = d => replace('mock', { n: +d.n || 2, view: d.v });
 
 screens.mock = (args) => {
   const L = league();
-  const n = args.n === 2 ? 2 : 1;
-  const view = n === 2 && args.view === 'v1' ? 1 : n;
-  const m1 = mockPicks(1);
-  const m2 = n === 2 ? mockPicks(2) : null;
+  const n = [2, 3].includes(args.n) ? args.n : 1;
+  // The final mock (3.0) compares against 2.0; 2.0 against 1.0.
+  const view = n >= 2 && args.view === 'v1' ? 1 : n;
+  const m1 = n === 3 ? mockPicks(2) : mockPicks(1);
+  const m2 = n >= 2 ? mockPicks(n) : null;
   if (!m1) { layout({ title: 'Mock Draft', body: '<p class="note">The mock comes out once the lottery is drawn.</p>' }); return; }
   if (n === 1 && isStep('mock1') && !preStore().mock1Seen) { preStore().mock1Seen = true; savePre(); }
   const byId = new Map(L.draftClass.map(p => [p.id, p]));
   const teams = new Map(L.teams.map(t => [t.id, t]));
-  const r1 = n === 2 ? m2.filter(x => x.rd === 1) : m1;
+  const r1 = n >= 2 ? m2.filter(x => x.rd === 1) : m1;
   const list = view === 1 ? m1 : r1;
   const slot1 = new Map(m1.map(x => [x.pid, x.overall]));
   const slot2 = new Map((m2 || []).map(x => [x.pid, x.overall]));
   const move = pk => {
-    if (view !== 2 || pk.pid == null) return '';
+    if (view === 1 || pk.pid == null) return '';
     const was = slot1.get(pk.pid);
     if (was == null) return '<span class="mv-chip new">NEW</span>';
     const d = was - pk.overall;
@@ -8977,7 +8981,7 @@ screens.mock = (args) => {
     return pickCard({ overall: pk.overall, team, p, showLv: false, right: move(pk), cls: isUserTeam(team) ? 'mine' : '',
       extra: { sub: via, star: p && onBoard(p.id) ? '<span class="gold">★</span> ' : '' } });
   }).join('');
-  const out = view === 2 ? m1.filter(x => x.pid != null && !r1.some(y => y.pid === x.pid)) : [];
+  const out = view !== 1 ? m1.filter(x => x.pid != null && !r1.some(y => y.pid === x.pid)) : [];
   const outBox = out.length ? `<fieldset class="frame"><legend>Out of the First Round</legend><div class="stack">${out.map(x => {
       const p = byId.get(x.pid);
       const now = slot2.get(x.pid);
@@ -8986,11 +8990,11 @@ screens.mock = (args) => {
     }).join('')}</div></fieldset>` : '';
   const isCur = isStep(`mock${n}`);
   layout({
-    title: `Mock Draft ${n}.0`,
+    title: n === 3 ? 'Final Mock' : `Mock Draft ${n}.0`,
     body: `<p class="note small">${n === 1
         ? 'The lottery is set and our first mock of the cycle is out: how the first round shakes out from each team\'s stage, needs and board.'
-        : 'After the combine, boards tighten up. Green and red show the move from Mock 1.0.'}</p>
-      ${n === 2 ? `<div class="opts recap-sort"><button class="btn small ${view === 2 ? 'on focus' : 'off'}" data-act="mockView" data-v="v2">Mock 2.0</button><button class="btn small ${view === 1 ? 'on focus' : 'off'}" data-act="mockView" data-v="v1">Mock 1.0</button></div>` : ''}
+        : n === 2 ? 'After the combine, boards tighten up.' : 'Draft night: the last word from around the league, after the workouts.'}</p>
+      ${n >= 2 ? `<div class="opts recap-sort"><button class="btn small ${view !== 1 ? 'on focus' : 'off'}" data-act="mockView" data-n="${n}" data-v="v2">${n === 3 ? 'Final' : 'Mock 2.0'}</button><button class="btn small ${view === 1 ? 'on focus' : 'off'}" data-act="mockView" data-n="${n}" data-v="v1">${n === 3 ? 'Mock 2.0' : 'Mock 1.0'}</button></div>` : ''}
       <div class="stack recap" style="margin-top:8px">${rows}</div>
       ${outBox}`,
     action: n === 1 && isCur ? (preStore().previewSeen ? { act: 'preFinish', label: 'Continue to Scouting', k: 'mock1' } : { act: 'nav', label: 'See the Draft Preview', to: 'draft' }) : n === 2 && isStep('combine') ? { act: 'preFinish', label: 'Continue to Workouts', k: 'combine' } : null,
@@ -10407,12 +10411,102 @@ const liveAvailable = live => league().draftClass.filter(p => !takenIds(live).ha
 // CPU picks, with the odd CPU trade: a trade-up in round 1, two seconds
 // packaged to move up in round 2, or a team flipping a player it just took.
 // A team makes one CPU trade a draft at most, and user teams aren't touched.
+// A team a few picks back jumps the line when the last player in a tier who fills its need is about to go to a
+// team ahead of it that needs the same thing. Returns { offer, target } or null.
+function needJump(live, order, idx, opts) {
+  const L = league(), here = order[idx];
+  if (!slotPick(L, here)) return null;
+  const v = draftVecs(), outl = new Map(), memo = new Map();
+  const outlook = t => outl.get(t.id) || outl.set(t.id, teamOutlook(t)).get(t.id);
+  const fills = (t, p) => {
+    const key = `${t.id}:${p.id}`;
+    if (!memo.has(key)) { const o = outlook(t), c = v.fns.ceilOf(p), f = v.fns.floorOf(p); memo.set(key, needsFilled(p, o.needs, o.baseline, c.map((x, i) => (x + f[i]) / 2)).map(n => n.label)); }
+    return memo.get(key);
+  };
+  const avail = liveAvailable(live).sort((a, b) => scoutValue(b) - scoutValue(a)).slice(0, 25);
+  for (let j = idx + 2; j <= Math.min(order.length - 1, idx + 8); j++) {
+    const o = order[j];
+    if (o.rd !== here.rd || opts.exclude.has(o.owner.id) || o.owner.id === here.owner.id) continue;
+    const target = avail.find(p => fills(o.owner, p).length);
+    if (!target) continue;
+    const need = new Set(fills(o.owner, target)), tier = gradeOf(target)[0];
+    if (avail.some(p => p !== target && gradeOf(p)[0] === tier && fills(o.owner, p).some(n => need.has(n)))) continue;   // not scarce
+    if (!order.slice(idx, j).some(q => q.owner.id !== o.owner.id && fills(q.owner, target).some(n => need.has(n)))) continue;   // nobody ahead wants him
+    // His pick plus the smallest add-on (one or two future picks) that covers the gap: no overpaying for a short hop.
+    const mine = slotPick(L, o), get = slotPick(L, here);
+    if (!mine || !get) continue;
+    const want = opts.slot(here.overall) * 1.03, base = opts.slot(o.overall), yr = draftYear(L);
+    const fut = o.owner.draftPicks.filter(pk => pk.yr > yr && (pk.rd > 1 || pk.yr >= yr + 2) && !opts.frozen(o.owner, pk)).map(pk => ({ pk, v: opts.value(pk) }));
+    let best = null;
+    for (let a = 0; a < fut.length; a++) for (let c = a; c < fut.length; c++) {
+      const set = a === c ? [fut[a]] : [fut[a], fut[c]];
+      if (set.filter(x => x.pk.rd === 1).length > 1) continue;
+      const tot = base + set.reduce((t, x) => t + x.v, 0);
+      if (tot >= want && (!best || tot < best.tot)) best = { tot, give: [mine, ...set.map(x => x.pk)] };
+    }
+    if (best && best.tot <= want * 1.35) return { offer: { team: o.owner, give: best.give, get }, target };
+  }
+  return null;
+}
+// Draft-day veteran deals: a contender with a pick coming up turns it into a rotation player from a team that isn't
+// contending, at about the pick's value (a quality starter at most). Returns { A, B } trade sides or null.
+function vetDeal(live, order, idx, busy) {
+  const L = league(), vy = lastYear(), rng = live.rng;
+  for (let j = idx + 1; j <= Math.min(order.length - 1, idx + 6); j++) {
+    const o = order[j], buyer = o.owner;
+    if (busy.has(buyer.id) || isUserTeam(buyer) || teamStatus(L, buyer) !== 'contending') continue;
+    const pk = slotPick(L, o);
+    if (!pk) continue;
+    const want = slotValue(o.overall);
+    const cands = L.teams.filter(t => t !== buyer && !busy.has(t.id) && !isUserTeam(t) && teamStatus(L, t) !== 'contending')
+      .flatMap(t => FA.signedRoster(t).filter(x => x.age >= 24 && !tradeLock(x) && !justMoved(x) && levelOf(x) <= 76).map(x => ({ t, x, v: playerValue(x, state.leagueIdx, vy) })))
+      .filter(c => c.v >= want * 0.75 && c.v <= want * 1.25)
+      .map(c => ({ ...c, r: rng() })).sort((a, b) => a.r - b.r).slice(0, 8);
+    // Over the cap, the buyer sends back salary: a bench contract worth little to him, close to the incoming deal.
+    const keep = new Set([...FA.signedRoster(buyer)].sort((a, b) => levelOf(b) - levelOf(a)).slice(0, 7));
+    const fillers = FA.signedRoster(buyer).filter(x => !keep.has(x) && !tradeLock(x) && !justMoved(x));
+    for (const c of cands) {
+      const sal = c.x.contract?.sal || 0;
+      const tries = [[], ...fillers.filter(f => (f.contract?.sal || 0) * 1.25 + 1 >= sal).sort((a, b) => (a.contract?.sal || 0) - (b.contract?.sal || 0)).slice(0, 3).map(f => [f])];
+      for (const back of tries) {
+        const fv = back.reduce((t, f) => t + playerValue(f, state.leagueIdx, vy), 0);
+        if (c.v < (want + fv) * 0.75 || c.v > (want + fv) * 1.3) continue;
+        const A = { team: c.t, players: [c.x], picks: [] }, B = { team: buyer, players: back, picks: [pk] };
+        if (!tradeRulesErr(L, A, B) && !ntcRefusal(L, A, B)) return { A, B };
+      }
+    }
+  }
+  return null;
+}
 function liveCpuStep(live, order, idx) {
   const L = league();
   const o = order[idx];
   const chance = state.params.liveCpuTradeChance;
   const busy = new Set([...(live.cpuTeams ||= []), ...L.teams.filter(isUserTeam).map(t => t.id)]);
   const opts = { value: futureValue, slot: slotValue, rng: live.rng, exclude: busy, frozen: frozenFn };
+  // Jumping the line for a need, then the odd veteran-for-pick deal.
+  if (chance > 0 && !busy.has(o.owner.id) && (live.jumps || 0) < 3 && live.rng() * 100 < chance * 3) {
+    const jump = needJump(live, order, idx, opts);
+    if (jump && !TR.stepienErr(L, { team: jump.offer.team, picks: jump.offer.give }, { team: o.owner, picks: [jump.offer.get] }, isProt)) {
+      const entry = liveExecute({ team: jump.offer.team, picks: jump.offer.give, players: [], prospects: [] },
+        { team: o.owner, picks: [jump.offer.get], players: [], prospects: [] }, 'CPU');
+      live.cpuTeams.push(jump.offer.team.id, o.owner.id);
+      live.jumps = (live.jumps || 0) + 1;
+      order = liveOrder();
+      makeSelection(live, order, idx, jump.target.id);
+      entry.text += ` · ${jump.offer.team.shortName} moved up for ${playerName(jump.target)}`;
+      return true;
+    }
+  }
+  if (chance > 0 && (live.vets || 0) < 3 && live.rng() * 100 < chance * 0.4) {
+    const deal = vetDeal(live, order, idx, new Set([...busy, ...live.cpuTeams]));
+    if (deal) {
+      liveExecute({ ...deal.A, prospects: [] }, { ...deal.B, prospects: [] }, 'CPU');
+      live.cpuTeams.push(deal.A.team.id, deal.B.team.id);
+      live.vets = (live.vets || 0) + 1;
+      order = liveOrder();
+    }
+  }
   if (!busy.has(o.owner.id) && live.rng() * 100 < chance) {
     const offer = o.rd === 1 ? tradeUpOffers(L, order, idx, { ...opts, far: 4, count: 1, eager: 0.6 })[0] : consolidationOffer(L, order, idx, opts);
     if (offer && !TR.stepienErr(L, { team: offer.team, picks: offer.give }, { team: o.owner, picks: [offer.get] }, isProt)) {
@@ -10623,26 +10717,50 @@ function draftLive() {
       && !TR.stepienErr(L, { team: teamById(x.tid), picks: x.give }, { team: o.owner, picks: [x.get] }, isProt));
   }
   const done = idx < 0;
+  const pkVal = pk => pk.yr === draftYear(L) ? slotValue(order.find(q => slotPick(L, q) === pk)?.overall ?? 60) : futureValue(pk);
+  const pkRank = pk => (pk.yr === draftYear(L) ? 0 : pk.rd === 1 ? 1 : 2);
+  const sortedGive = x => [...x.give].sort((a, b) => pkRank(a) - pkRank(b) || pkVal(b) - pkVal(a) || a.yr - b.yr);
+  const offerRows = offers.map((x, i) => ({ x, i, v: x.give.reduce((a, pk) => a + pkVal(pk), 0) })).sort((a, b) => b.v - a.v);
+  // Around the pick: the one before and the next three.
+  const deck = done ? '' : (() => {
+    const near = [order[idx - 1], ...order.slice(idx + 1, idx + 4)].filter(Boolean);
+    return `<div class="on-deck">${near.map(q => {
+      const sel = live.sel[q.overall], p = sel ? byId.get(sel.pid) : null;
+      return `<div class="od-item ${isUserTeam(q.owner) ? 'mine' : ''} ${p ? 'past' : ''}"><span class="od-no">#${q.overall}</span>${logoImg(q.owner)}<span class="small">${p ? esc(p.ln || playerName(p)) : esc(q.owner.shortName)}</span></div>`;
+    }).join('')}</div>`;
+  })();
+  // A welcome card the first time the draft room opens.
+  if (!done && !live.introSeen && idx === 0) {
+    return { html: `<div class="draft-intro">
+        <p class="di-year">Welcome to the</p>
+        <h2 class="di-title">${L.season.currentYear} ${esc(L.shortName || 'NBA')} Draft</h2>
+        <div class="di-clock" ${teamTint(o.owner) ? `style="${teamTint(o.owner)}"` : ''}>${logoImg(o.owner)}<span><b>The ${esc(teamFull(o.owner))}</b> are on the clock.</span></div>
+        ${user ? '<p class="note up">That\'s you.</p>' : ''}
+        <button class="btn big focus" data-act="liveIntro">Let's Go</button>
+      </div>` };
+  }
   return {
     html: `
       ${ctrlTeams().size ? '' : '<p class="note muted small">Select your teams to draft for them.</p>'}
       ${done ? draftRecap(live, order) : `
       <h3 class="draft-head">${L.season.currentYear} ${esc(L.shortName || 'NBA')} Draft</h3>
-      ${user ? '<div class="you-clock">🚨 You are on the clock</div>' : ''}
+      ${user ? `<div class="you-clock">🚨 ${esc(o.owner.shortName)}, you are on the clock</div>` : ''}
       <div class="clock-card ${user ? 'mine' : ''}" ${teamTint(o.owner) ? `style="${teamTint(o.owner)}"` : ''}>
         <span class="pk">#${o.overall}</span>
         <span class="grow"><b>${esc(teamFull(o.owner))}</b><br><span class="small muted">On the clock · R${o.rd}${o.owner.id !== o.orig.id ? ` · via ${esc(o.orig.shortName)}` : ''}</span>
           <span class="needs-line">${needChips(teamOutlook(o.owner).needs)}</span></span>
       </div>
+      ${deck}
       ${user ? `<button class="btn big focus" data-act="liveChoose">🎯 Make Pick #${o.overall}</button>` : ''}
-      ${offers.map((x, i) => `<div class="offer"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${x.give.map(pk => pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
+      ${offerRows.map(({ x, i }) => `<div class="offer"><p class="note small"><b>${esc(teamById(x.tid).shortName)}</b> offers ${sortedGive(x).map(pk => pk.yr === draftYear(L) ? `#${order.find(q => slotPick(L, q) === pk)?.overall}` : pickLabel(pk)).join(' + ')} for #${o.overall}</p>
         <button class="btn small" data-act="liveOffer" data-i="${i}">Accept</button></div>`).join('')}
       <div class="grid2">
         <button class="btn" data-act="liveSim" data-m="one" ${user ? 'disabled' : ''}>▶ Next Pick</button>
         <button class="btn" data-act="liveSim" data-m="user" ${user ? 'disabled' : ''}>⏩ To My Pick</button>
         <button class="btn" data-act="liveTrade">🔁 Trade</button>
         <button class="btn" data-act="liveSim" data-m="all">⏭ Sim All</button>
-      </div>`}
+      </div>
+      <button class="btn small off" data-act="openMock" data-n="3" style="margin-top:8px">🗒️ Final Mock</button>`}
       ${done ? '' : `<div class="list draft-board">
         ${order.map((q, j) => {
           const sel = live.sel[q.overall];
@@ -10652,8 +10770,7 @@ function draftLive() {
           return `<div class="lot-row ${isUserTeam(q.owner) ? 'mine' : ''} ${j === idx ? 'clock' : ''} ${tint ? 'tc' : ''}" data-ov="${q.overall}" ${tint ? `style="${tint}"` : ''}>
             <span class="pk">${q.overall}</span>${logoImg(q.owner)}
             <span class="grow">${esc(q.owner.shortName)}${q.owner.id !== q.orig.id ? ` <span class="muted small">via ${esc(q.orig.shortName)}</span>` : ''}${q.rd > 1 ? ` <span class="muted small">R${q.rd}</span>` : ''}<br>
-              ${p ? `<span class="pl"><span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}</span>` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
-            ${p ? `<span class="pl">${valueChip(p)}</span>` : ''}
+              ${p ? `<span class="pl"><span class="small">${esc(playerName(p))} <span class="muted">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span></span>${moved ? ` <span class="small gold">→ ${esc(teamById(sel.to).shortName)}</span>` : ''}</span>` : `<span class="small muted">${j === idx ? 'On the clock' : '—'}</span>`}</span>
           </div>`;
         }).join('')}
       </div>`}
@@ -10687,7 +10804,7 @@ function pickCard({ overall, team, p, extra = {}, cls = '', empty = '—', showL
     ${right}${p && showLv ? `<span class="lv"><b>${rk}</b><span class="small">Lv${now !== rk ? ` <s>${now}</s>` : ''}</span></span>` : ''}
   </div>`;
 }
-const sortToggle = (key, cur) => `<div class="opts recap-sort"><button class="btn small ${cur === 'pick' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="pick">By Pick</button><button class="btn small ${cur === 'level' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="level">By Level</button></div>`;
+const sortToggle = (key, cur) => `<div class="opts recap-sort"><button class="btn small ${cur === 'pick' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="pick">By Pick</button><button class="btn small ${cur === 'level' ? 'on focus' : 'off'}" data-act="cardSort" data-k="${key}" data-s="level">Most Pro-Ready</button></div>`;
 // Level sort: drafted players by projected level, open picks after in order.
 const byReadiness = rows => rows.sort((a, b) => (b.lv ?? -1) - (a.lv ?? -1) || a.overall - b.overall);
 actions.cardSort = d => { draftState()[d.k] = d.s; render(); };
@@ -10708,7 +10825,7 @@ function draftRecap(live, order) {
     ${live.trades.length ? tradesBox(live, true) : ''}
     <fieldset class="frame"><legend>Draft Recap</legend>
       ${sortToggle('recapSort', sortBy)}
-      <p class="note muted small" style="margin:6px 0 8px">Levels are as rookies: every pick's ratings dip moving up to the pros, and older rookies get some of it back.</p>
+      <p class="note muted small" style="margin:6px 0 8px">${sortBy === 'level' ? 'These players can make an instant impact.' : 'Their level now, with their college level crossed out.'}</p>
       <div class="stack recap recap-scroll">${rows.map(r => pickCard(r)).join('')}</div>
     </fieldset>`;
 }
@@ -10720,8 +10837,10 @@ actions.homeSimDraft = () => {
   liveSim('all');
   go('draft', {});
 };
+actions.liveIntro = () => { liveState().introSeen = true; render(); };
 actions.liveSim = d => {
-  if (state.revealing) return;
+  // Tapping again mid-reveal skips the animation.
+  if (state.revealing) { state.skipReveal = true; return; }
   const live = liveState();
   const before = new Set(Object.keys(live.sel).map(Number));
   liveSim(d.m);

@@ -1516,3 +1516,17 @@ main.panel.bare { margin-top: 10px; }
 .setup-opt { width: 100%; text-align: left; }
 .setup-opt[disabled] { opacity: 0.7; }
 .lot-skip { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 60; }
+/* Live draft: the picks around yours, and the welcome card */
+.on-deck { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: -2px 0 10px; }
+.od-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; background: var(--btn); border: 2px solid var(--btn-edge); min-width: 0; }
+.od-item .small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.od-item.mine { border-color: var(--gold); }
+.od-item.past { opacity: 0.6; }
+.od-no { font-weight: 800; color: var(--gold); font-size: 13px; }
+.draft-intro { text-align: center; padding: 28px 12px; animation: introIn 0.6s ease-out both; }
+.di-year { margin: 0; letter-spacing: 2px; text-transform: uppercase; color: var(--cyan); }
+.di-title { margin: 4px 0 18px; font-size: 26px; }
+.di-clock { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 12px; margin-bottom: 14px; background: var(--marquee); border: 3px solid var(--gold); animation: introIn 0.6s 0.5s ease-out both; }
+.di-clock .logo-sm { width: 40px; height: 40px; }
+@keyframes introIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.draft-intro .btn.big { width: 100%; }
