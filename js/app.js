@@ -54,10 +54,10 @@ import APPEARANCE_POOL from './appearance-pool.js';
 import * as CO from './coaching.js';
 import { TIER_NAMES, setStyleRefs, teamStanding, teamBooks, rosterNeeds, teamIdentity, draftPosition, rumorMill, playStyles, styleLine, styleSentence, wontDo, TEND_LABELS, TEND_GROUPS, groupOf } from './overview.js';
 import { presserQuestions, presserStories, promiseStories, leagueGram, teamSituation, playerReplies, setHoldouts } from './presser.js';
-import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
+import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.219.0';
+const APP_VERSION = '0.220.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -8910,9 +8910,10 @@ screens.combine = (args) => {
   const pre = preStore();
   if (!pre.combineSeen) { pre.combineSeen = true; savePre(); state.compCache = {}; }
   const C = combineData();
-  const tab = args.tab || 'measure';
+  const tab = { measure: 'anthro', drills: 'ath' }[args.tab] || args.tab || 'anthro';
   const rank = new Map((mockPicks(1) || []).map((m, i) => [m.pid, i]));
-  const tabs = `<div class="tabs">${[['measure', 'Measured'], ['drills', 'Drills'], ['trending', 'Trending']].map(([k, l]) =>
+  // The NBA's three sections (Anthro, Strength & Agility, Shooting Drills), then Hoop Gram.
+  const tabs = `<div class="tabs">${[['anthro', 'Anthro'], ['ath', 'Athletic'], ['shoot', 'Shooting'], ['trending', 'Trending']].map(([k, l]) =>
     `<button class="btn ${k === tab ? 'on focus' : 'off'}" data-act="combineTab" data-t="${k}">${l}</button>`).join('')}</div>`;
   const nameBtn = p => `<button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button>`;
   let body = '';
@@ -8924,28 +8925,36 @@ screens.combine = (args) => {
         <p class="hg-text">${esc(x.text)}</p>
         <div class="hg-foot"><span>❤️ ${x.likes.toLocaleString()}</span>${nameBtn(x.p)}</div>
       </div>`).join('') || '<p class="note">Quiet combine.</p>'}</div>`;
-  } else if (tab === 'drills') {
-    const d = DRILLS.find(x => x.k === args.drill) || DRILLS[0];
-    const board = C.boards[d.k];
+  } else if (tab === 'ath' || tab === 'shoot') {
+    // Shooting adds a total: every make out of every attempt across the drills.
+    const group = DRILLS.filter(x => x.group === tab);
+    const TOTAL = { k: 'total', short: 'Total', name: 'All Shooting Drills', n: group.reduce((a, x) => a + x.n, 0), group: 'shoot' };
+    const opts = tab === 'shoot' ? [TOTAL, ...group] : group;
+    const d = opts.find(x => x.k === args.drill) || opts[0];
+    const valOf = p => { const x = C.byId.get(p.id); return d.k === 'total' ? group.reduce((a, g) => a + (x[g.k] ?? 0), 0) : x[d.k]; };
+    const board = d.k === 'total' ? L.draftClass.map(p => ({ p, v: valOf(p) })).sort((a, b) => b.v - a.v) : C.boards[d.k];
     const dnp = board.filter(r => r.v == null);
-    const shown = args.all ? board.filter(r => r.v != null) : board.filter(r => r.v != null).slice(0, 25);
-    body = `<div class="drill-opts">${DRILLS.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.short || x.name)}</button>`).join('')}</div>
+    const live = board.filter(r => r.v != null), shown = args.all ? live : live.slice(0, 25);
+    const fmt = v => d.n ? `${v}/${d.n} <span class="small muted">${Math.round(v / d.n * 100)}%</span>` : fmtDrill(d, v);
+    body = `<p class="note muted small">${tab === 'ath' ? 'Strength & agility: lane agility, shuttle and the ¾ sprint (lower is better), the verticals and the bench press.' : 'Shooting drills, made out of attempted: off the dribble (30), spot up, the 3-point and midrange star and side drills (25 each) and free throws (10).'}</p>
+      <div class="drill-opts">${opts.map(x => `<button class="btn small ${x === d ? 'on focus' : 'off'}" data-act="combineDrill" data-d="${x.k}">${esc(x.short || x.name)}</button>`).join('')}</div>
       <fieldset class="frame"><legend>${esc(d.name)}</legend><div class="stack">${shown.map((r, i) => `<div class="drill-row ${rank.has(r.p.id) && rank.get(r.p.id) < 30 ? 'r1' : ''}">
         <span class="pk">${i + 1}</span><span class="grow">${nameBtn(r.p)}<br><span class="small muted">${esc(posName(r.p))} · ${heightStr(r.p.ht)} · ${r.p.wt} lb</span></span>
-        <b class="drill-val">${fmtDrill(d, r.v)}</b></div>`).join('')}</div>
-        ${!args.all && board.filter(r => r.v != null).length > 25 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${board.filter(r => r.v != null).length}</button>` : ''}
+        <b class="drill-val">${fmt(r.v)}</b></div>`).join('')}</div>
+        ${!args.all && live.length > 25 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${live.length}</button>` : ''}
         ${dnp.length ? `<p class="note muted small" style="margin-top:8px">Did not participate: ${dnp.map(r => esc(playerName(r.p))).join(', ')}</p>` : ''}
       </fieldset>`;
   } else {
     const sort = args.sort || 'diff';
-    const val = { diff: x => x.wingDiff, ws: x => x.ws, reach: x => x.reach, ht: x => x.htNs, size: x => -x.pro.sizeZ }[sort] || (x => x.wingDiff);
+    const val = { diff: x => x.wingDiff, ws: x => x.ws, reach: x => x.reach, hands: x => x.handL * x.handW, fat: x => -x.fat, size: x => -x.pro.sizeZ }[sort] || (x => x.wingDiff);
     const rows = L.draftClass.map(p => ({ p, x: C.byId.get(p.id) })).sort((a, b) => val(b.x) - val(a.x));
     const shown = args.all ? rows : rows.slice(0, 30);
-    body = `<div class="combine-sorts">${[['diff', 'Ape Index'], ['size', 'Undersized'], ['ws', 'Wingspan'], ['reach', 'Reach']].map(([k, l]) =>
+    body = `<div class="combine-sorts">${[['diff', 'Ape Index'], ['ws', 'Wingspan'], ['reach', 'Reach'], ['hands', 'Hands'], ['fat', 'Leanest'], ['size', 'Undersized']].map(([k, l]) =>
         `<button class="btn small ${k === sort ? 'on focus' : 'off'}" data-act="combineSort" data-s="${k}">${l}</button>`).join('')}</div>
-      <p class="note muted small" style="margin:6px 0">Ape index = wingspan minus height (no shoes). Size compares height and weight with pros at his position.</p>
+      <p class="note muted small" style="margin:6px 0">Ape index = wingspan minus height without shoes. Size compares height and weight with pros at his position.</p>
       <div class="stack">${shown.map(({ p, x }) => `<div class="drill-row">
-        <span class="grow">${nameBtn(p)}<br><span class="small muted">${esc(posName(p))} · ${inchStr(x.htNs)} · ${x.wt} lb · Reach ${inchStr(x.reach)}</span><br>${sizeLine(p, x)}</span>
+        <span class="grow">${nameBtn(p)}<br><span class="small muted">${esc(posName(p))} · ${inchStr(x.htNs)} (${inchStr(x.htShoes)} in shoes) · ${x.wt} lb · Reach ${inchStr(x.reach)}</span>
+          <br><span class="small muted">Hands ${x.handL.toFixed(2)}" × ${x.handW.toFixed(2)}" · Body fat ${x.fat.toFixed(1)}%</span><br>${sizeLine(p, x)}</span>
         <span class="meas"><b>${inchStr(x.ws)}</b><span class="small ${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}"</span></span></div>`).join('')}</div>
       ${!args.all && rows.length > 30 ? `<button class="btn small" data-act="combineAll" style="margin-top:8px">Show all ${rows.length}</button>` : ''}`;
   }
@@ -9048,14 +9057,16 @@ function combineBox(p) {
     <p class="note small">${inchStr(x.htNs)} · WS ${inchStr(x.ws)} <span class="${x.wingDiff < 0 ? 'down' : x.wingDiff >= 6 ? 'up' : 'muted'}">(${x.wingDiff >= 0 ? '+' : ''}${x.wingDiff}")</span> · ${x.wt} lb</p>
     <p class="note small">${x.skip ? `<span class="muted">Sat out testing: ${esc(x.skip)}</span>` : `Tester: <span class="${tierCls(TIER_WORDS(x.athZ))}">${esc(TIER_WORDS(x.athZ) || '—')}</span> · Shooter: <span class="${tierCls(TIER_WORDS(x.shootZ))}">${esc(TIER_WORDS(x.shootZ))}</span>${best && best.r.rank <= 3 ? ` · Best: ${esc(best.d.short || best.d.name)} <span class="pos-rank top">#${best.r.rank} ${esc(posName(p))}</span>` : ''}`}${read ? ` · ${read}` : ''}</p>
     ${x.medical && x.medical.level !== 'note' ? `<p class="note small ${x.medical.level === 'red' ? 'down' : 'gold'}">🩺 ${esc(x.medical.text)}</p>` : ''}
-    <details class="cmb-fold"><summary>📏 Measurables</summary><div class="combine-grid">
-      <span>Height (no shoes)</span><b>${inchStr(x.htNs)}</b><span>Wingspan</span><b>${inchStr(x.ws)}</b>
-      <span>Standing Reach</span><b>${inchStr(x.reach)}</b><span>Weight</span><b>${x.wt} lb</b>
+    <details class="cmb-fold"><summary>📏 Anthro</summary><div class="combine-grid">
+      ${MEASURES.map(m => `<span>${esc(m.name)}</span><b>${x[m.k] != null ? m.fmt(x[m.k]) : '—'}</b>`).join('')}
       <span>Vs avg pro ${esc(posName(p))}</span><b>${sizeLine(p, x, false)}</b>
     </div></details>
-    ${x.skip ? '' : `<details class="cmb-fold"><summary>⏱ Drills</summary><div class="combine-grid">
-      ${DRILLS.map(d => `<span>${esc(d.name)}</span><b>${fmtDrill(d, x[d.k])}${posRank(p, d)}</b>`).join('')}
+    ${x.skip ? '' : `<details class="cmb-fold"><summary>⏱ Strength & Agility</summary><div class="combine-grid">
+      ${DRILLS.filter(d => d.group === 'ath').map(d => `<span>${esc(d.name)}</span><b>${fmtDrill(d, x[d.k])}${posRank(p, d)}</b>`).join('')}
     </div></details>`}
+    <details class="cmb-fold"><summary>🎯 Shooting Drills</summary><div class="combine-grid">
+      ${DRILLS.filter(d => d.group === 'shoot').map(d => `<span>${esc(d.name)}</span><b>${fmtDrill(d, x[d.k])}${posRank(p, d)}</b>`).join('')}
+    </div></details>
   </fieldset>`;
 }
 // Where a result ranks among prospects at his position: { rank, of } or null.

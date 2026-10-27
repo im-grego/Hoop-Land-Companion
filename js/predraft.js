@@ -21,22 +21,32 @@ function gauss(rng) {
 const q = v => Math.round(v * 4) / 4;     // quarter inches
 const lc = t => t.toLowerCase().replace(/\b(acl|mcl)\b/g, m => m.toUpperCase());
 
+// The combine's three parts, the way the NBA publishes them: anthropometrics, strength & agility, shooting drills.
+// Shooting results are makes out of the drill's attempts (n).
 export const DRILLS = [
-  { k: 'sprint', short: '¾ Sprint', name: '3/4-Court Sprint', unit: 's', low: true, dec: 2, group: 'ath' },
   { k: 'lane', short: 'Lane Agility', name: 'Lane Agility', unit: 's', low: true, dec: 2, group: 'ath' },
-  { k: 'shuttle', short: 'Shuttle Run', name: 'Shuttle Run', unit: 's', low: true, dec: 2, group: 'ath' },
-  { k: 'maxVert', short: 'Max Vert', name: 'Max Vertical', unit: '"', dec: 1, group: 'ath' },
+  { k: 'shuttle', short: 'Shuttle', name: 'Shuttle Run', unit: 's', low: true, dec: 2, group: 'ath' },
+  { k: 'sprint', short: '¾ Sprint', name: '3/4-Court Sprint', unit: 's', low: true, dec: 2, group: 'ath' },
   { k: 'standVert', short: 'Standing Vert', name: 'Standing Vertical', unit: '"', dec: 1, group: 'ath' },
-  { k: 'bench', short: 'Bench Press', name: 'Bench Press (185 lb)', unit: ' reps', dec: 0, group: 'ath' },
-  { k: 'spot', short: 'Spot-Up', name: 'Spot-Up Shooting', unit: '/25', dec: 0, group: 'shoot' },
-  { k: 'dribble', short: 'Off Dribble', name: 'Off-the-Dribble Shooting', unit: '/25', dec: 0, group: 'shoot' },
-  { k: 'ft', short: 'Free Throws', name: 'Free Throws', unit: '/25', dec: 0, group: 'shoot' },
+  { k: 'maxVert', short: 'Max Vert', name: 'Max Vertical', unit: '"', dec: 1, group: 'ath' },
+  { k: 'bench', short: 'Bench', name: 'Bench Press (185 lb)', unit: ' reps', dec: 0, group: 'ath' },
+  { k: 'dribble', short: 'Off Dribble', name: 'Off the Dribble', n: 30, group: 'shoot' },
+  { k: 'spot', short: 'Spot Up', name: 'Spot Up', n: 25, group: 'shoot' },
+  { k: 'star3', short: '3PT Star', name: '3-Point Star', n: 25, group: 'shoot' },
+  { k: 'side3', short: '3PT Side', name: '3-Point Side', n: 25, group: 'shoot' },
+  { k: 'starMid', short: 'Mid Star', name: 'Midrange Star', n: 25, group: 'shoot' },
+  { k: 'sideMid', short: 'Mid Side', name: 'Midrange Side', n: 25, group: 'shoot' },
+  { k: 'ft', short: 'Free Throws', name: 'Free Throws', n: 10, group: 'shoot' },
 ];
 export const MEASURES = [
-  { k: 'htNs', name: 'Height (no shoes)' },
-  { k: 'ws', name: 'Wingspan' },
-  { k: 'reach', name: 'Standing Reach' },
-  { k: 'wt', name: 'Weight' },
+  { k: 'htNs', name: 'Height w/o shoes', fmt: v => inchStr(v) },
+  { k: 'htShoes', name: 'Height w/ shoes', fmt: v => inchStr(v) },
+  { k: 'ws', name: 'Wingspan', fmt: v => inchStr(v) },
+  { k: 'reach', name: 'Standing Reach', fmt: v => inchStr(v) },
+  { k: 'wt', name: 'Weight', fmt: v => `${v} lb` },
+  { k: 'fat', name: 'Body Fat', fmt: v => `${v.toFixed(1)}%` },
+  { k: 'handL', name: 'Hand Length', fmt: v => `${v.toFixed(2)}"` },
+  { k: 'handW', name: 'Hand Width', fmt: v => `${v.toFixed(2)}"` },
 ];
 
 // Inches as 6'7.25".
@@ -44,7 +54,7 @@ export const inchStr = v => {
   const ft = Math.floor(v / 12), inch = v - ft * 12;
   return `${ft}'${Number.isInteger(inch) ? inch : inch.toFixed(2).replace(/0$/, '')}"`;
 };
-export const fmtDrill = (d, v) => v == null ? 'DNP' : `${v.toFixed(d.dec)}${d.unit}`;
+export const fmtDrill = (d, v) => v == null ? 'DNP' : d.n ? `${v}/${d.n}` : `${v.toFixed(d.dec)}${d.unit}`;
 
 // Medical flags from the prospect's injury history in the save.
 export function medicalFlag(p) {
@@ -79,13 +89,30 @@ function testPlayer(p, salt, skipAth) {
   ath.maxVert = 30 + DNK * 0.32 + (SPD - 8) * 0.38 - (wt - 205) * 0.035 + g() * 2.6;
   ath.standVert = ath.maxVert * 0.79 - 0.5 + g() * 1.6;
   ath.bench = Math.max(0, Math.round(3 + (STR - 8) * 1.45 + (wt - 205) * 0.05 + g() * 3));
-  const shot = (base, per, rating, sd) => clamp(Math.round(25 * clamp(base + rating * per, 0, 1) + g() * sd), 0, 25);
+  // Makes out of n: a make rate from the rating, with spread that scales with the attempts.
+  const shot = (n, base, per, rating, sd) => clamp(Math.round(n * clamp(base + rating * per, 0, 1) + g() * sd * n / 25), 0, n);
   const shoot = {
-    spot: shot(0.28, 0.032, A(p, 'TPT'), 2.4),
-    dribble: shot(0.22, 0.031, A(p, 'MID') * 0.6 + A(p, 'DRB') * 0.4, 2.4),
+    spot: shot(25, 0.25, 0.03, A(p, 'TPT'), 2.4),
+    dribble: shot(30, 0.22, 0.031, A(p, 'MID') * 0.6 + A(p, 'DRB') * 0.4, 2.4),
     // Free throws: FTS (16 is a real-world elite cap) with a little mid-range touch.
-    ft: shot(0.36, 0.032, A(p, 'FTS') * 0.8 + A(p, 'MID') * 0.2, 2.0),
+    ft: shot(10, 0.36, 0.032, A(p, 'FTS') * 0.8 + A(p, 'MID') * 0.2, 2.0),
   };
+  // The rest of the measurements and drills draw from their own stream, so the ones above keep their values.
+  const r2 = rngFor(salt, p.id, 11), g2 = () => gauss(r2);
+  const shot2 = (n, base, per, rating, sd) => clamp(Math.round(n * clamp(base + rating * per, 0, 1) + g2() * sd * n / 25), 0, n);
+  Object.assign(shoot, {
+    star3: shot2(25, 0.15, 0.03, A(p, 'TPT'), 2.4),
+    side3: shot2(25, 0.2, 0.03, A(p, 'TPT'), 2.4),
+    starMid: shot2(25, 0.25, 0.03, A(p, 'MID'), 2.4),
+    sideMid: shot2(25, 0.28, 0.03, A(p, 'MID'), 2.4),
+  });
+  res.htShoes = q(htNs + 1.25 + g2() * 0.15);
+  // Hands: length and width grow with height; big hands help rebounding and finishing.
+  res.handL = q(clamp(8.65 + (ht - 78) * 0.07 + ((A(p, 'DRE') + A(p, 'ORE')) / 2 - 9) * 0.03 + g2() * 0.3, 7.75, 10));
+  res.handW = q(clamp(9.55 + (ht - 78) * 0.09 + (A(p, 'STR') - 9) * 0.04 + g2() * 0.45, 8.25, 11.25));
+  // Body fat: heavy for his height and slow raise it.
+  const wtFor = 205 + (ht - 78) * 7.5;
+  res.fat = +clamp(9.2 + (wt - wtFor) * 0.045 - (A(p, 'SPD') - 9) * 0.18 - (A(p, 'STM') - 9) * 0.1 + g2() * 1.5, 3.8, 16).toFixed(1);
   ath.sprint = +ath.sprint.toFixed(2); ath.lane = +ath.lane.toFixed(2); ath.shuttle = +ath.shuttle.toFixed(2);
   ath.maxVert = +ath.maxVert.toFixed(1); ath.standVert = +ath.standVert.toFixed(1);
   for (const k of Object.keys(ath)) res[k] = skipAth ? null : ath[k];
@@ -178,9 +205,10 @@ export function hoopGram(cls, combine, rank = new Map(), salt = 0) {
   // Perfect / near-perfect shooting.
   for (const p of cls) {
     const x = C.get(p.id);
-    for (const [k, label] of [['spot', 'spot-up'], ['dribble', 'off-the-dribble'], ['ft', 'free throw']]) {
-      if (x[k] === 25) add(p, 9 + (known(p) ? 2 : 0), `PERFECT. ${name(p)} went 25 for 25 in the ${label} drill${proj(p)}. Scouts in the gym stopped talking.`, '🎯 Perfect', 1);
-      else if (x[k] === 24 && known(p)) add(p, 5, `${name(p)} hit 24 of 25 in the ${label} drill${proj(p)}. That jumper is real.`, '🔥 Shooting', 1);
+    for (const [k, label] of [['spot', 'spot-up'], ['dribble', 'off-the-dribble'], ['star3', '3-point star']]) {
+      const n = DRILLS.find(d => d.k === k).n;
+      if (x[k] === n && n >= 25) add(p, 9 + (known(p) ? 2 : 0), `PERFECT. ${name(p)} went ${n} for ${n} in the ${label} drill${proj(p)}. Scouts in the gym stopped talking.`, '🎯 Perfect', 1);
+      else if (x[k] === n - 1 && n >= 25 && known(p)) add(p, 5, `${name(p)} hit ${n - 1} of ${n} in the ${label} drill${proj(p)}. That jumper is real.`, '🔥 Shooting', 1);
     }
   }
   // Arms.
