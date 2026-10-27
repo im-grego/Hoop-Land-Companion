@@ -1,6 +1,6 @@
 // Offline support: cache-first for the app shell, stale-while-revalidate for
 // fonts and team logos.
-const VERSION = 'hlc-v0.220.0';
+const VERSION = 'hlc-v0.221.0';
 const SHELL = [
   './',
   'index.html',
@@ -17,7 +17,7 @@ const SHELL = [
   'js/traderules.js', 'js/regression.js', 'js/skillinfo.js', 'js/autoplay.js', 'js/leagueexport.js', 'js/settle.js', 'js/leaguepack.js', 'js/leaguetemplate.js', 'js/plays.js', 'js/coachprofile.js', 'js/coachmarket.js', 'js/schemeevo.js', 'js/names.js', 'js/classgen.js', 'js/ego.js', 'js/career.js', 'js/careerlife.js', 'js/talks.js', 'js/careerlife2.js', 'js/lineups.js', 'js/careerlife3.js', 'js/playoffs.js', 'js/careerlife4.js', 'js/gameclock.js', 'js/gear.js', 'js/scoring.js',
   'js/realpicks.js', 'js/influence.js',
   'js/facilities.js',
-  'js/predraft.js',
+  'js/predraft.js', 'js/jerseys.js',
   'js/presser.js',
   'js/survey.js',
   'js/freeagency.js',

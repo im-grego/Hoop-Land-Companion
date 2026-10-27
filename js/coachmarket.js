@@ -133,7 +133,7 @@ export function pressureOn(league, team, coach, map = profiles(league)) {
 }
 
 // The best available replacement for this team, by value to it.
-function bestCandidate(league, team, map) {
+export function bestCandidate(league, team, map = profiles(league)) {
   let best = null;
   for (const c of league.coaches || []) {
     if (!c.attributes || !c.fn || coachGone(c)) continue;

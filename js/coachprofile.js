@@ -123,6 +123,7 @@ export function askingContract(c, field = []) {
 // doesn't show up as available in the game. Returns how many were cleaned.
 // A coach the game has marked as passed away (cause of death set, status 4) stays where the game left him: never
 // hireable, never "cleaned" back to available.
+export const headVacant = team => !(team.frontOffice?.staff || []).some(s => s.pos === 1);
 export const coachGone = c => (c?.causeOfDeath || 0) > 0 || c?.status === 4;
 export function cleanCoachPool(league) {
   let n = 0;
@@ -138,9 +139,11 @@ export function cleanCoachPool(league) {
 }
 export function hireHeadCoach(league, team, coach) {
   const staff = team.frontOffice?.staff || [];
-  const i = staff.findIndex(s => s.pos === 1);
+  // The head coach's slot, or the empty one the game leaves when it fires a coach and hires nobody.
+  let i = staff.findIndex(s => s.pos === 1);
+  if (i < 0) i = staff.findIndex(s => !s.fn && !s.ln);
   if (i < 0) return null;
-  const old = staff[i], ask = askingContract(coach, league.teams.map(t => (t.frontOffice?.staff || []).find(s => s.pos === 1)).filter(Boolean));
+  const old = staff[i], vacant = !old.fn && !old.ln, ask = askingContract(coach, league.teams.map(t => (t.frontOffice?.staff || []).find(s => s.pos === 1)).filter(Boolean));
   const empty = tid => ({ tid, pid: 0, type: 0, yrs: 0, sal: 0, nil: 0, opt: 0, noTrd: 0, canExt: true, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } });
   const pool = league.coaches || (league.coaches = []);
   const j = pool.indexOf(coach);
@@ -148,7 +151,6 @@ export function hireHeadCoach(league, team, coach) {
   coach.tid = team.id; coach.status = 1; coach.pos = 1;
   coach.contract = { tid: team.id, pid: coach.id, type: 0, yrs: ask.yrs, sal: ask.sal, nil: 0, opt: 0, noTrd: 0, canExt: false, ext: { yrs: 0, sal: 0, opt: 0, noTrd: 0 } };
   staff[i] = coach;
-  old.tid = 0; old.status = 3; old.contract = empty(0);
-  pool.push(old);
-  return { old, ask };
+  if (!vacant) { old.tid = 0; old.status = 3; old.contract = empty(0); pool.push(old); }
+  return { old: vacant ? null : old, ask };
 }

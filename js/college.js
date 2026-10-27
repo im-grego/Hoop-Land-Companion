@@ -61,7 +61,8 @@ export function seasonReview(data, li, team) {
     runnerUp = T.get(fin.winner === fin.topSeed ? fin.lowerSeed : fin.topSeed) || null;
     // Series score: the loser won the games past the winner's first-to.
     if (fin.firstTo > 1) finalsScore = `${fin.firstTo}-${Math.max(0, Math.min(fin.firstTo - 1, (fin.currentGame || fin.firstTo) - fin.firstTo))}`;
-    semis = (bracket.rounds[rounds - 2]?.series || []).map(x => [T.get(x.topSeed), T.get(x.lowerSeed)]).filter(x => x[0] && x[1]);
+    // The series winner first ("PHI over NYK"), the way a bracket reads after it's played.
+    semis = (bracket.rounds[rounds - 2]?.series || []).map(x => (x.winner === x.lowerSeed ? [T.get(x.lowerSeed), T.get(x.topSeed)] : [T.get(x.topSeed), T.get(x.lowerSeed)])).filter(x => x[0] && x[1]);
     finalFour = semis.flat();
   }
   // Where the team's numbers ranked in the league (1 = best).

@@ -1509,3 +1509,9 @@ main.panel.bare { margin-top: 10px; }
 .mbar-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 6px; }
 .mbar-legend .seg { width: 10px; height: 10px; margin-right: 4px; vertical-align: -1px; border: 1px solid var(--btn-edge); }
 .lu-row .grow { min-width: 0; }
+
+/* Realistic NBA setup: the card on top of the calendar and the page's options. */
+.setup-card { display: flex; gap: 8px; align-items: stretch; margin: 0 0 10px; }
+.setup-card .btn.focus { flex: 1; }
+.setup-opt { width: 100%; text-align: left; }
+.setup-opt[disabled] { opacity: 0.7; }

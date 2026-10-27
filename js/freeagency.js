@@ -835,7 +835,11 @@ function cutScoreBase(p, level) {
   const young = p.age <= 24 ? Math.max(0, (p.pot || 0) - 6) * (25 - p.age) * 0.8 : 0;  // pot: half stars (10 = 5★)
   return level + young + Math.min(10, (p.contract?.sal || 0) * 0.3);
 }
+// Who cut whom this session: a team doesn't sign back a player it just released.
+const CUT_BY = new Map();
+export const cutBy = p => CUT_BY.get(p.id);
 export function cutPlayer(league, team, p) {
+  CUT_BY.set(p.id, team.id);
   const keep = { status: p.status, contract: cloneData(p.contract) };
   const rec = releasePlayer(league, team, p);
   Object.assign(p.contract, { tid: 0, yrs: 0, sal: 0, opt: 0, canExt: false });
@@ -844,6 +848,7 @@ export function cutPlayer(league, team, p) {
   return { ...rec, keep };
 }
 export function uncut(league, recs) {
+  for (const r of recs) CUT_BY.delete(r.p.id);
   unreleaseUnsigned(league, recs);
   for (const r of recs) {
     r.p.status = r.keep.status;
