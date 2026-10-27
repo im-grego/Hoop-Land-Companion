@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.217.2';
+const APP_VERSION = '0.217.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -911,6 +911,17 @@ function lineupOk(t) {
   const ids = new Set(t.roster.map(p => p.id)), sl = t.startingLineup || [];
   return sl.length === t.roster.length && sl.every(e => ids.has(e.pid)) && new Set(sl.map(e => e.pid)).size === sl.length && new Set(t.roster.map(p => p.linePos)).size === t.roster.length && t.roster.every(p => p.linePos >= 0 && p.linePos < t.roster.length);
 }
+// The game writes its offseason stories (options, extensions, picks, signings) before the app's trades and releases,
+// and its own files never hold one that's gone stale. A story naming a team the player has since left (traded,
+// released, unsigned) goes before export; retirements from a team stay, and so do stories with no team.
+function pruneStaleNews(L) {
+  const at = new Map();
+  for (const t of L.teams) for (const p of t.roster) at.set(p.id, t.id);
+  for (const k of ['freeAgents', 'retirees', 'draftClass', 'hallOfFame']) for (const p of L[k] || []) at.set(p.id, k);
+  const n0 = L.season.news?.length || 0;
+  L.season.news = (L.season.news || []).filter(n => !(n.pid > 0 && n.tid > 0 && at.has(n.pid)) || at.get(n.pid) === n.tid || ((n.type === 17 || n.type === 25) && at.get(n.pid) === 'retirees'));
+  return n0 - L.season.news.length;
+}
 function fixLineups(L) {
   let n = 0;
   for (const t of L.teams) if (!lineupOk(t)) { LU.applyLineup(t, defaultPlan(t)); n++; }
@@ -1033,7 +1044,7 @@ function buildExport() {
   }
   if (!isCollege()) settleRetirees(league(), true);   // anyone still retiring off a roster (yours included) goes now
   if (!isCollege() && league().season.phase === 6) { exportCuts(league()); floorFill(league()); gameCapCheck(league(), league().season.salaryCap); rebuildBlock(league()); for (const t of league().teams) if (!isUserTeam(t) && t.roster.length) LU.applyLineup(t, defaultPlan(t)); }
-  if (!isCollege()) fixLineups(league());
+  if (!isCollege()) { fixLineups(league()); pruneStaleNews(league()); }
   if (!isCollege()) pickWindow(league());
   rememberExport();
   // The game extends a pile of players when the season opens, at values we
