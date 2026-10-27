@@ -242,7 +242,10 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
     const star = roster[0], second = roster[1];
     if (!star) continue;
     const prime = star.age >= 24 && star.age < (star.regressionAge || 32);
-    const losing = st.trend.filter(s => s.pct < 0.45).length;
+    // Losing seasons in a row, from the team's whole history.
+    const hist = (team.season || []).filter(s => s.yr <= yr && s.seasonStats?.GP > 0).sort((a, b) => b.yr - a.yr);
+    let losing = 0;
+    for (const s of hist) { if ((s.seasonStats.W || 0) >= (s.seasonStats.L || 0)) break; losing++; }
     const l = seasonLine(star, li, yr);
     const mpg = l?.mpg ?? 0;
     const morale = star.season?.morale ?? 70;
@@ -254,7 +257,7 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
       if (st.round >= 1 && st.round <= 1 && !st.champ && st.status !== 'rebuilding' && st.trend.length >= 2 && st.trend.every(s => s.pct >= 0.5)) { heat += 1; why.push('another early playoff exit'); }
       if (!second || level(second) < level(star) - 8) { heat += 1.5; why.push('no co-star'); }
       if (st.tier === 'rebuilding' || st.tier === 'selling') { heat += 1; why.push('a team heading into a rebuild'); }
-      if (morale < 40) { heat += 2; why.push(`morale at ${morale}`); } else if (morale < 60) { heat += 1; why.push(`morale slipping (${morale})`); }
+      if (morale < 40) { heat += 2; why.push('an unhappy star'); } else if (morale < 60) { heat += 1; why.push('his mood slipping'); }
       if (traitsSet(star)) {
         if (losing && tr(star, 'winning') >= 15) { heat += 1; why.push('wants to win now'); }
         if (tr(star, 'loyalty') >= 16) { heat -= 1.5; }
@@ -282,7 +285,8 @@ export function rumorMill(L, { level = levelOf, li = 0, skip = () => false } = {
         if (level(p) >= 79 && p.age >= (p.regressionAge || 32) - 4) out.push({ kind: 'vet', p, team, heat: level(p) >= 82 ? 2 : 1, why: [`${p.age} years old on a ${st.tier} team`], level: level(p), morale: p.season?.morale ?? 70 });
       }
       // Veterans it's shopping (the contracts it took on included) are on the market too.
-      for (const p of roster) if (p.season?.onTradeBlock === 1 && p.age >= 28 && level(p) >= 70 && !out.some(x => x.p === p)) out.push({ kind: 'block', p, team, heat: 1, why: [], level: level(p), morale: p.season?.morale ?? 70 });
+      // Only names that would make headlines.
+      for (const p of roster) if (p.season?.onTradeBlock === 1 && p.age >= 28 && level(p) >= 75 && (p.pot || 0) >= 8 && !out.some(x => x.p === p)) out.push({ kind: 'block', p, team, heat: 1, why: [], level: level(p), morale: p.season?.morale ?? 70 });
     }
   }
   return out.sort((a, b) => b.heat - a.heat || b.level - a.level);

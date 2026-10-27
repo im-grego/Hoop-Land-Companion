@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.224.0';
+const APP_VERSION = '0.225.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -316,6 +316,9 @@ function toast(msg, detail = '', ms = detail ? 4000 : 2400, warning = false) {
   setTimeout(() => t.remove(), ms + 400);
 }
 
+// ⓘ in a box's corner: the explanation opens on tap instead of taking up room on the page.
+const INFO = {};
+const infoBtn = (key, text) => { INFO[key] = text; return `<button class="info-i" data-act="infoPop" data-k="${esc(key)}" aria-label="What this means">ⓘ</button>`; };
 function overlay(html) {
   const o = document.createElement('div');
   o.className = 'overlay';
@@ -1969,11 +1972,11 @@ actions.calDev = () => { ensureMeetings(); calFlags().dev = true; applySchemeEvo
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
   hof: ['hofClass', 'player'],
-  office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade'], options: ['options', 'extensions'],
+  office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade', 'mock'], options: ['options', 'extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
   meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
   dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
-  review: ['review'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
+  review: ['review', 'teamStats', 'player'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
 const ALWAYS = ['nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
@@ -4514,8 +4517,7 @@ function hotSeatBox(L) {
     .filter(x => x.pr.pressure >= 0.45).sort((a, b) => b.pr.pressure - a.pr.pressure).slice(0, 6);
   if (!rows.length) return '';
   const heat = p => p >= 0.8 ? '🔥🔥🔥' : p >= 0.6 ? '🔥🔥' : '🔥';
-  return `<fieldset class="frame"><legend>Hot Seat</legend><div class="stack">${rows.map(x => `<p class="note small" style="margin:0">${heat(x.pr.pressure)} <b>${esc(x.c.fn)} ${esc(x.c.ln)}</b> <span class="muted">${esc(x.t.shortName)} · ${x.pr.gap < 0 ? `${Math.round(-x.pr.gap * 82)} wins under what the roster should do` : 'results have stalled'}</span></p>`).join('')}</div>
-    <p class="note muted small" style="margin-top:6px">Fired coaches go into the pool, where you can hire them.</p></fieldset>`;
+  return `<fieldset class="frame"><legend>Coaching Hot Seat</legend><div class="stack">${rows.map(x => `<p class="note small" style="margin:0">${heat(x.pr.pressure)} <b>${esc(x.c.fn)} ${esc(x.c.ln)}</b> <span class="muted">${esc(x.t.shortName)} · ${x.pr.gap < 0 ? `${Math.round(-x.pr.gap * 82)} wins under expectation` : 'results have stalled'}</span></p>`).join('')}</div></fieldset>`;
 }
 // What the CPU did this offseason.
 function coachChangesBox() {
@@ -7674,6 +7676,15 @@ function playerTags(p) {
   return t.join('');
 }
 // A Hall of Famer: the same profile as an active player, read-only, with the whole career.
+// A retired player's report reads in the past tense: "He threw lobs, put his body on the line and looked to set teammates up."
+const PAST = { is: 'was', has: 'had', can: 'could', "won't": "wouldn't", "doesn't": "didn't", "isn't": "wasn't", lives: 'lived', gets: 'got', finishes: 'finished', pulls: 'pulled', wants: 'wanted',
+  creates: 'created', looks: 'looked', catches: 'caught', throws: 'threw', scores: 'scored', crashes: 'crashed', goes: 'went', jumps: 'jumped', pokes: 'poked', stands: 'stood',
+  puts: 'put', gives: 'gave', makes: 'made', feeds: 'fed', keeps: 'kept', clamps: 'clamped', locks: 'locked', wins: 'won', plays: 'played', snatches: 'snatched', sparks: 'sparked',
+  bullies: 'bullied', leaves: 'left', seems: 'seemed', misses: 'missed', follows: 'followed', stays: 'stayed', coasts: 'coasted', stops: 'stopped', sets: 'set', takes: 'took',
+  needs: 'needed', does: 'did', soaks: 'soaked', tires: 'tired', fires: 'fired', protects: 'protected', hits: 'hit', loves: 'loved', hates: 'hated', works: 'worked', runs: 'ran' };
+const pastTense = t => t
+  .replace(/(^|\b(?:He|he|never|rarely|always|barely|also|and|or|often)\s+|[,;]\s+)(is|has|can|won't|doesn't|isn't|[a-z]+s)\b/g, (m, pre, w) => (PAST[w] ? pre + PAST[w] : m))
+  .replace(/\bhe's\b/g, 'he was');
 function hofProfile(p, args) {
   const L = league();
   fillHallOfFame(L);
@@ -7691,7 +7702,7 @@ function hofProfile(p, args) {
       <p class="note small">${span ? `${span} · ` : ''}${yearsOf.length || p.yrs || 0} seasons${teamsOf.length ? ` · ${esc(teamsOf.join(', '))}` : ''}${champs ? ` · 🏆 ${champs} title${champs > 1 ? 's' : ''}` : ''}</p>
       ${row('Regular season', cs)}${row('Playoffs', po)}</fieldset>`;
   const report = `<fieldset class="frame"><legend>Scouting Report</legend>
-      <p class="note small scout-p">${(() => { try { const t = personality(p); const st = styleSentence(p); return `${esc(st)}${traitsSet(p) ? ` He ${esc(t[0].toLowerCase() + t.slice(1))}` : ''}`; } catch { return ''; } })()}</p></fieldset>`;
+      <p class="note small scout-p">${(() => { try { const t = personality(p); const st = styleSentence(p); const sk = earnedSkills(p).map(x => skillSays(x.id)).filter(w => PAST[w.split(' ')[0]]).slice(0, 2); const pers = t.startsWith('A steady pro') ? ` He was a steady pro with no strong tendencies either way.` : ` He ${t[0].toLowerCase() + t.slice(1)}`; return esc(pastTense(`${st}${sk.length ? ` He ${sk.join(' and ')}.` : ''}${traitsSet(p) ? pers : ''}`)); } catch { return ''; } })()}</p></fieldset>`;
   const ratings = `<fieldset class="frame"><legend>Ratings</legend>
     ${[...SKILL_ATTRS, ...PHYSICAL].map(k => { const now = p.attributes[k][0]; return `<div class="rk rk2" style="grid-template-columns:1fr 44px"><span>${k} <span class="muted small">${ATTR_NAMES[k]}</span></span><span>${now}</span><div class="${barClass(k)}"><div class="fill" style="width:${now / ATTR_MAX * 100}%"></div></div></div>`; }).join('')}
   </fieldset>
@@ -7851,12 +7862,14 @@ function statsTab(p, args) {
       ${line('Career', '', sumRows(rows.map(x => x.r)), 'tot')}</tbody></table></div>` : `<p class="note muted">No ${sv === 'playoffs' ? 'playoff' : 'regular season'} games on record.</p>`;
   const tot = sumRows(rows.map(x => x.r));
   const n = v => (v || 0).toLocaleString();
-  return `${head}${tabs}
-    <fieldset class="frame"><legend>${sv === 'playoffs' ? 'Playoffs' : 'Regular Season'} by Year</legend>${table}</fieldset>
-    ${rows.length ? `<fieldset class="frame"><legend>Season Highs</legend>
-      ${avgLine(topOf(rows, sv === 'playoffs' ? 5 : 20))}
-      <p class="note small" style="margin-top:8px">${n(tot.PTS)} points · ${n(tot.REB)} rebounds · ${n(tot.AST)} assists · ${n(tot.STL)} steals · ${n(tot.BLK)} blocks · ${n(tot.TO)} turnovers</p>
-    </fieldset>` : ''}`;
+  // Career averages up top; the highs live on their own tab.
+  const pg = k => (tot.GP ? tot[k] / tot.GP : 0);
+  const career = rows.length ? `<fieldset class="frame"><legend>Career ${sv === 'playoffs' ? 'Playoffs' : 'Averages'}</legend>
+      <div class="statline">${[['PPG', 'PTS'], ['RPG', 'REB'], ['APG', 'AST'], ['SPG', 'STL'], ['BPG', 'BLK']].map(([l, k]) => `<div><span class="muted small">${l}</span><b>${f(pg(k))}</b></div>`).join('')}</div>
+      <p class="note small" style="margin-top:8px">${n(tot.GP)} games · ${n(tot.PTS)} points · ${n(tot.REB)} rebounds · ${n(tot.AST)} assists · ${n(tot.STL)} steals · ${n(tot.BLK)} blocks</p>
+    </fieldset>` : '';
+  return `${head}${tabs}${career}
+    <fieldset class="frame"><legend>${sv === 'playoffs' ? 'Playoffs' : 'Regular Season'} by Year</legend>${table}</fieldset>`;
 }
 
 // Rating bar colors by group: finishing (light blue), shooting (green),
@@ -13362,11 +13375,15 @@ function seasonDrift() {
   saveDrift(); saveTraitStore();
 }
 // This offseason's trait changes for your players, newest reasons first.
+// Ego and Money read the other way: going down is the good direction.
+const driftGood = x => ([EGO_KEY, 'money'].includes(x.k) ? x.d < 0 : x.d > 0);
+const driftShort = x => `${traitIcon(x.k)} ${traitLbl(x.k)} ${x.d > 0 ? '+' : '−'}${Math.abs(x.d)}`;
 function traitChangesCard(filter = () => true, title = 'Trait Changes') {
   if (!isComplete() || isCollege()) return '';
   const rows = league().teams.filter(isUserTeam).flatMap(t => t.roster).map(p => ({ p, ds: driftsOf(p).filter(filter) })).filter(x => x.ds.length);
   if (!rows.length) return '';
-  return `<fieldset class="frame"><legend>${title}</legend><div class="stack">${rows.map(({ p, ds }) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small">${ds.map(x => `<span class="${x.d > 0 ? 'up' : 'down'}">${esc(driftText(x))}</span>`).join(' · ')}</span></span></div>`).join('')}</div></fieldset>`;
+  const why = rows.map(({ p, ds }) => `<p class="small"><b>${esc(playerName(p))}</b>: ${ds.map(x => `${esc(driftShort(x))} (${esc(x.why)})`).join('; ')}</p>`).join('');
+  return `<fieldset class="frame"><legend>${title}</legend>${infoBtn(`tc:${title}`, `<p class="small muted">Green is good for the player, red is bad. Ego and Money read the other way: going down is good.</p>${why}`)}<div class="stack">${rows.map(({ p, ds }) => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b></span><span class="small">${ds.map(x => `<span class="${driftGood(x) ? 'up' : 'down'}">${esc(driftShort(x))}</span>`).join(' · ')}</span></div>`).join('')}</div></fieldset>`;
 }
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
@@ -13795,7 +13812,8 @@ function overviewTeam(L, t) {
   const valTag = (sal, worth) => worth - sal >= tagGap(worth) ? '<span class="badge new">Bargain</span>' : sal - worth >= tagGap(worth) ? '<span class="badge down-b">Overpaid</span>' : '<span class="badge">Fair</span>';
   return `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
       <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b>${teamTag(st.tier)}</div>
-      <p class="note small" style="padding:8px 10px 0">${st.W}-${st.L} · ${esc(st.finish)}${st.trend.length > 1 ? ` · <span class="muted">${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</span>` : ''}</p>
+      <p class="note small" style="padding:8px 10px ${st.trend.length > 1 ? 0 : 10}px">${st.W}-${st.L} · ${esc(st.finish)}</p>
+      ${st.trend.length > 1 ? `<p class="note small muted" style="padding:2px 10px 10px">Last ${st.trend.length} seasons: ${st.trend.map(x => `${x.W}-${x.L}`).join(' → ')}</p>` : ''}
     </div>
     <fieldset class="frame"><legend>The Books</legend>
       ${capBarOf(books.committed, deadFor(t.id))}${ownerLine(t)}
@@ -13803,22 +13821,25 @@ function overviewTeam(L, t) {
       <h4 class="ov-h">Options (${books.options.length})</h4><div class="stack">${books.options.map(x => row(x, valTag(x.sal, x.worth), `<br>${x.kind === 'team' ? 'Team' : 'Player'} option $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
       <h4 class="ov-h">Extension Eligible (${books.ext.length})</h4><div class="stack">${books.ext.map(x => row(x, '', `<br>Final year $${x.sal}M · market value $${x.worth}M`)).join('') || '<p class="note small muted">None.</p>'}</div>
     </fieldset>
-    <fieldset class="frame"><legend>Roster Needs</legend><div class="stack">${needs.map(n => `<div class="need-row">${sevDot(n.sev)}<span class="badge need">${esc(n.group === 'style' ? 'Style' : `${n.group[0].toUpperCase()}${n.group.slice(1)} · ${n.kind}`)}</span><span class="small grow">${esc(n.text)}</span></div>`).join('') || '<p class="note small muted">No real holes.</p>'}</div>
+    <fieldset class="frame"><legend>Roster Needs</legend>${infoBtn('needs', '<p class="small"><span class="sev s3" style="display:inline-block"></span> Red: a big need, fix it this summer.</p><p class="small"><span class="sev s2" style="display:inline-block"></span> Gold: a real need.</p><p class="small"><span class="sev s1" style="display:inline-block"></span> Grey: minor, worth watching.</p><p class="small muted">Depth: not enough rotation players at the spot. Starter: no starter-level player. Upside: no young player with starter potential. Age: the group is getting old. Style: a missing skill (spacing, rim pressure, playmaking, rim protection, rebounding).</p>')}<div class="stack">${needs.map(n => `<div class="need-row">${sevDot(n.sev)}<span class="badge need">${esc(n.group === 'style' ? 'Style' : `${n.group[0].toUpperCase()}${n.group.slice(1)} · ${n.kind}`)}</span><span class="small grow">${esc(n.text)}</span></div>`).join('') || '<p class="note small muted">No real holes.</p>'}</div>
 </fieldset>
 `;
 }
 const teamTag = k => `<span class="status s-${k}">${TIER_NAMES[k]}</span>`;
 function overviewRumors(L) {
+  const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
+  // One post per player, the hottest six.
+  const seen = new Set(), posts = rumors.filter(r => !seen.has(r.p.id) && seen.add(r.p.id)).slice(0, 6);
+  return `<fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${posts.map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div></fieldset>
+    ${hotSeatBox(L)}`;
+}
+// Where every team is headed, by tier (in Season in Review's standings).
+function teamDirections(L) {
   const all = L.teams.map(t => ({ t, st: teamStanding(L, t) }));
   const col = k => all.filter(x => x.st.tier === k).sort((a, b) => b.st.pct - a.st.pct);
-  const rumors = rumorMill(L, { level: shownLevel, li: state.leagueIdx, skip: isUserTeam });
-  const heat = n => '🔥'.repeat(Math.max(1, n));
-  const kind = { star: 'Disgruntled?', vet: 'Could be moved' };
-  return `<fieldset class="frame"><legend>Team Directions</legend>
+  return `<fieldset class="frame"><legend>Team Directions</legend>${infoBtn('dirs', '<p class="small"><b>Favorites:</b> contenders projected to win it all.</p><p class="small"><b>Contending:</b> built to win now.</p><p class="small"><b>Competing:</b> a playoff team on the outside of the title picture.</p><p class="small"><b>Developing:</b> young and building up.</p><p class="small"><b>Selling:</b> rebuilding, with veterans on the trade block.</p><p class="small"><b>Rebuilding:</b> starting over.</p>')}
       ${Object.keys(TIER_NAMES).filter(k => col(k).length).map(k => `<h4 class="ov-h">${teamTag(k)}</h4><div class="dir-row">${col(k).map(x => `<button class="dir-team ${isUserTeam(x.t) ? 'mine' : ''}" data-act="nav" data-to="roster" data-arg="${x.t.id}">${logoImg(x.t)}<span class="small">${esc(x.t.shortName)} <span class="muted">${x.st.W}-${x.st.L}</span></span></button>`).join('')}</div>`).join('')}
-    </fieldset>
-    ${hotSeatBox(L)}
-    <fieldset class="frame"><legend>Rumor Mill</legend><div class="stack">${rumors.slice(0, 12).map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div></fieldset>`;
+    </fieldset>`;
 }
 // A rumor as a Hoop Gram post: the wording varies by player so a list of
 // them never reads the same twice.
@@ -13836,7 +13857,7 @@ function rumorPost(r) {
   const vet = [
     `${nm} is ${p.age} on a team heading the other way. Contenders are already calling ${city}.`,
     `Is ${first} part of ${city}'s timeline? At ${p.age}, a move to a contender makes sense for both sides.`,
-    `${city} would listen on ${nm}. A ${p.age}-year-old ${posName(p)} doesn't fit a rebuild.`,
+    `${city} would listen to offers on ${nm}. A ${p.age}-year-old ${['guard', 'guard', 'guard', 'wing', 'wing', 'wing', 'big', 'big'][p.pos] || 'vet'} doesn't fit a rebuild.`,
     `Keep an eye on ${nm}. Rival teams see a ${p.age}-year-old who could swing a playoff series.`,
   ];
   const blowup = [
@@ -13998,7 +14019,8 @@ function ownerLine(t) {
   if (!FA.capSystemOn() || !isUserTeam(t)) return '';
   const C = FA.capLines(league()), st = FA.taxStance(league(), t);
   const fz = FA.frozenPick(league(), t), yrs = apronYears(t.id);
-  return `<p class="note small owner-line">🏛️ ${st === 'pay' ? `Ownership will pay the tax to keep a winner together (up to the 2nd apron, $${C.apron2}M).` : st === 'blowup' ? 'Ownership won\'t pay the tax for a losing team. Shed salary.' : `Ownership wants to stay under the tax line ($${C.tax}M).`}</p>
+  // Staying under the tax is every owner's default; only say something when this one is different.
+  return `${st === 'avoid' ? '' : `<p class="note small owner-line">🏛️ ${st === 'pay' ? `Ownership will pay the tax to keep a winner together (up to the 2nd apron, $${C.apron2}M).` : 'Ownership won\'t pay the tax for a losing team. Shed salary.'}</p>`}
     ${fz || yrs ? `<p class="note small owner-line">🔒 ${fz ? `${esc(pickLabel(fz))} frozen (over the 2nd apron). ` : ''}${yrs ? `Over the 2nd apron ${yrs} of the last 5 seasons${yrs >= 2 ? ': 3 sends a first to the end of the round' : ''}.` : ''}</p>` : ''}`;
 }
 
@@ -14074,8 +14096,9 @@ function capBarOf(pay, dead, compact = false) {
   const tier = C.off ? (free >= 0 ? 'under' : 'over') : total < C.cap ? 'under' : total < C.tax ? 'over' : total < C.apron1 ? 'tax' : total < C.apron2 ? 'apron1' : 'apron2';
   const next = lines.find(([, v]) => v > total);
   const zones = C.off ? '' : `background:linear-gradient(90deg, #2f6b4a 0 ${pct(C.cap)}%, #24507a ${pct(C.cap)}% ${pct(C.tax)}%, #6b5a1e ${pct(C.tax)}% ${pct(C.apron1)}%, #7a4a1e ${pct(C.apron1)}% ${pct(C.apron2)}%, #7a2430 ${pct(C.apron2)}%)`;
-  return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${C.off ? '' : lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}</div>
-    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
+  const floor = C.off ? 0 : salaryFloor(league());
+  return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${C.off ? '' : lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}${floor ? `<i class="cb-floor" style="left:${pct(floor)}%" title="Floor $${floor}M"></i>` : ''}</div>
+    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}${['tax', 'apron1'].includes(tier) ? `<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>` : ''}${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
 }
 
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${saveTag()}`;
@@ -14539,6 +14562,22 @@ function reviewHeadline(r, t) {
   if (r.round) return p >= 0.6 ? `A strong season that ended too soon: ${r.finish.toLowerCase()}.` : `${t.city} snuck into the tournament and went out in ${r.finish.replace('Lost in ', '')}.`;
   return p >= 0.5 ? `A winning record, but no tournament for ${t.city}.` : `A losing season and no tournament. Rebuilding starts now.`;
 }
+// The run behind this season: "7 straight losing seasons, no playoffs since 2021". Null without enough history.
+function historyHeadline(t, r) {
+  const rows = (t.season || []).filter(x => x.yr <= r.yr && x.seasonStats?.GP > 0).sort((a, b) => b.yr - a.yr);
+  if (rows.length < 2) return null;
+  const win = x => (x.seasonStats.W || 0) > (x.seasonStats.L || 0);
+  const run = f => { let n = 0; for (const x of rows) { if (!f(x)) break; n++; } return n; };
+  const lose = run(x => !win(x)), wins = run(win), outs = run(x => !(x.round > 0)), ins = run(x => x.round > 0);
+  const lastIn = rows.find(x => x.round > 0)?.yr;
+  const pl = r.pro ? 'playoffs' : 'tournament';
+  if (r.won) return ins >= 3 ? `Champions, and ${ins} straight trips to the ${pl}.` : null;
+  if (lose >= 2) return `${lose} straight losing seasons${outs >= 2 ? `, no ${pl} ${lastIn ? `since ${lastIn}` : 'in the save\'s history'}` : ''}.`;
+  if (outs >= 3) return `${outs} years without the ${pl}${lastIn ? ` (last trip: ${lastIn})` : ''}.`;
+  if (wins >= 3 && ins >= 3) return `${wins} straight winning seasons and ${ins} straight trips to the ${pl}.`;
+  if (wins >= 3) return `${wins} straight winning seasons.`;
+  return null;
+}
 screens.review = () => {
   const L = league();
   const t = L.teams.find(isUserTeam);
@@ -14552,40 +14591,84 @@ screens.review = () => {
   const tag = n => n.team != null ? ` <span class="muted">(${['1st', '2nd', '3rd'][n.team] || ''} team)</span>` : '';
   const pRow = (p, right) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b> ${lvTag(p)}</span><span class="small" style="text-align:right">${right}</span></div>`;
   // One award per row: the award on top, the winner under it, nothing cut off.
-  const awRow = (name, p) => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(name)}</b><br><span class="small">${esc(playerName(p))} ${lvTag(p)}</span></span></div>`;
+  const awRow = (name, p, num = '') => `<div class="drill-row tap" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(name)}</b><br><span class="small">${esc(playerName(p))} ${lvTag(p)}</span></span>${num ? `<b class="small">${num}</b>` : ''}</div>`;
+  const awardNum = (w, yr) => {
+    const k = [[/scoring|points/i, 'ppg', 'PPG'], [/rebound/i, 'rpg', 'RPG'], [/assist/i, 'apg', 'APG'], [/steal/i, 'spg', 'SPG'], [/block/i, 'bpg', 'BPG']].find(([re]) => re.test(w.name));
+    const l = k && seasonLine(w.p, state.leagueIdx, yr);
+    return l ? `${l[k[1]].toFixed(1)} ${k[2]}` : '';
+  };
   const rk = k => r.ranks?.[k] ? `<span class="rk-of">${ordinal(r.ranks[k])}</span>` : '';
   layout({
     title: 'Season in Review',
     body: `<div class="outlook" ${c1 ? `style="--tc1:${c1};--tc2:${c2 || c1}"` : ''}>
-        <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b><span class="status s-${r.won ? 'favorites' : r.round ? 'contending' : 'rebuilding'}">${r.yr}</span></div>
+        <div class="outlook-top ${c1 ? 'tc' : ''}">${logoImg(t)}<b>${esc(t.city)} ${esc(t.name)}</b></div>
         <p class="note" style="padding:8px 10px 0"><b>${st.W || 0}-${st.L || 0}</b> · ${esc(r.finish)}${r.seed && !r.pro ? ` · No. ${r.seed} overall seed` : ''}</p>
-        <p class="note small" style="padding:4px 10px 10px">${esc(reviewHeadline(r, t))}</p>
+        <p class="note small" style="padding:4px 10px 10px">${esc(historyHeadline(t, r) || reviewHeadline(r, t))}</p>
       </div>
       ${uiTabs('review', [
         ['mine', 'Your Season', `      ${s ? `<fieldset class="frame"><legend>The Season</legend>
         <div class="stat-grid">
-          <div><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
-          <div><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
+          <div class="tap" data-act="teamStats" data-k="ppg"><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div class="tap" data-act="teamStats" data-k="opp"><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div class="tap" data-act="teamStats" data-k="margin"><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
+          <div class="tap" data-act="teamStats" data-k="fg"><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div class="tap" data-act="teamStats" data-k="tp"><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div class="tap" data-act="teamStats" data-k="ft"><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
         </div>
         <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
-      ${r.pro ? traitChangesCard(x => x.src.startsWith('season:'), 'What Last Season Changed') : ''}${r.pro ? retireNote() : ''}${r.pro && alphaClash(t) ? `<p class="note small gold">${esc(alphaClash(t))}</p>` : ''}
+      ${r.pro ? traitChangesCard(x => x.src.startsWith('season:'), 'What Changed Last Season') : ''}${r.pro ? retireNote() : ''}${r.pro && alphaClash(t) ? `<p class="note small gold">${esc(alphaClash(t))}</p>` : ''}
       ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}`],
         ['league', r.pro ? 'League' : 'National', `      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
         ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}
         ${r.finalsMvp ? awRow(r.finalsMvp.name, r.finalsMvp.p) : ''}
         ${r.semis.length ? `<p class="note small" style="margin-top:6px">${r.pro ? 'Conference Finals' : 'Final Four'}: ${r.semis.map(([a, b]) => `<b class="${a === t ? 'gold' : ''}">${esc(a.shortName)}</b> over <b class="${b === t ? 'gold' : ''}">${esc(b.shortName)}</b>`).join(' · ')}</p>` : ''}
-        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => awRow(w.name, w.p)).join('') || '<p class="note small muted">None recorded.</p>'}</div>
+        <h4 class="ov-h">Awards</h4><div class="stack">${r.national.map(w => awRow(w.name, w.p, awardNum(w, r.yr))).join('') || '<p class="note small muted">None recorded.</p>'}</div>
         ${r.allTeams.length ? `<h4 class="ov-h">First Teams</h4><div class="stack">${[...new Set(r.allTeams.map(w => w.name))].map(n => `<p class="note small"><b>${esc(n)}:</b> ${r.allTeams.filter(w => w.name === n).map(w => esc(playerName(w.p))).join(', ')}</p>`).join('')}</div>` : ''}
       </fieldset>`],
-        ['stand', 'Standings', `      <fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
+        ['stand', 'Standings', `      ${confStandings(t, r.yr)}${r.pro ? teamDirections(L) : ''}<fieldset class="frame"><legend>${esc(r.division || 'Division')} Standings</legend>
         <div class="stack">${r.standings.map((x, i) => `<div class="stand-row ${x.t === t ? 'mine' : ''}"><span class="small muted">${i + 1}</span>${logoImg(x.t)}<span class="grow small"><b>${esc(x.t.shortName)}</b></span><span class="small">${x.W}-${x.L}</span><span class="small muted">${x.cW}-${x.cL} conf</span></div>`).join('')}</div>
       </fieldset>`],
       ])}`,
     action: isStep('review') ? { act: 'reviewDone', label: 'Wrap Up the Season' } : null,
   });
 };
+// The conference table for a season, your team boxed.
+function confStandings(t, yr) {
+  const L = league();
+  if ((L.conferences || []).length < 2) return '';
+  const conf = x => (x.division < 3 ? 0 : 1);
+  const rows = L.teams.filter(x => conf(x) === conf(t)).map(x => { const r = (x.season || []).find(s => s.yr === yr)?.seasonStats || {}; return { t: x, W: r.W || 0, L: r.L || 0 }; })
+    .sort((a, b) => b.W / Math.max(1, b.W + b.L) - a.W / Math.max(1, a.W + a.L));
+  return `<fieldset class="frame"><legend>${esc(L.conferences[conf(t)])}</legend>
+    <div class="stack">${rows.map((x, i) => `<div class="stand-row ${x.t === t ? 'mine boxed' : ''} ${i === 5 || i === 9 ? 'cut' : ''}"><span class="small muted">${i + 1}</span>${logoImg(x.t)}<span class="grow small"><b>${esc(x.t.shortName)}</b></span><span class="small">${x.W}-${x.L}</span></div>`).join('')}</div></fieldset>`;
+}
+// Every team's numbers for a season, sortable, back as far as the save goes.
+const TEAM_STAT_COLS = [
+  ['ppg', 'PPG', r => r.PTS / r.GP, false], ['opp', 'Opp', r => r.OPP / r.GP, true], ['margin', 'Margin', r => (r.PTS - r.OPP) / r.GP, false],
+  ['fg', 'FG%', r => (r.FGA ? (r.FGM / r.FGA) * 100 : 0), false], ['tp', '3P%', r => (r.TPA ? (r.TPM / r.TPA) * 100 : 0), false], ['ft', 'FT%', r => (r.FTA ? (r.FTM / r.FTA) * 100 : 0), false],
+];
+screens.teamStats = (args) => {
+  const L = league();
+  const years = [...new Set(L.teams.flatMap(t => (t.season || []).filter(s => s.seasonStats?.GP > 0).map(s => s.yr)))].sort((a, b) => b - a);
+  const yr = years.includes(+args.yr) ? +args.yr : years[0];
+  const col = TEAM_STAT_COLS.find(c => c[0] === args.k) || TEAM_STAT_COLS[0];
+  const rows = L.teams.map(t => ({ t, r: (t.season || []).find(s => s.yr === yr)?.seasonStats })).filter(x => x.r?.GP)
+    .sort((a, b) => (col[3] ? col[2](a.r) - col[2](b.r) : col[2](b.r) - col[2](a.r)));
+  const fmt = (c, v) => (c[0] === 'margin' ? `${v >= 0 ? '+' : ''}${v.toFixed(1)}` : v.toFixed(1));
+  layout({
+    title: 'League Team Stats',
+    body: `<div class="row" style="margin-bottom:8px"><span class="grow note small">Every team, sorted by the column you tap</span><select class="sel-team ts-yr" data-change="teamStatsYr">${years.map(y => `<option value="${y}" ${y === yr ? 'selected' : ''}>${y}</option>`).join('')}</select></div>
+      <div class="ts-table"><div class="ts-row ts-head"><span>#</span><span class="grow">Team</span>${TEAM_STAT_COLS.map(c => `<button class="ts-col ${c === col ? 'on' : ''}" data-act="teamStatsSort" data-k="${c[0]}">${c[1]}</button>`).join('')}</div>
+      ${rows.map((x, i) => `<div class="ts-row ${isUserTeam(x.t) ? 'mine' : ''}"><span class="muted">${i + 1}</span><span class="grow"><b>${esc(x.t.shortName)}</b></span>${TEAM_STAT_COLS.map(c => `<span class="${c === col ? 'on' : ''}">${fmt(c, c[2](x.r))}</span>`).join('')}</div>`).join('')}</div>`,
+  });
+};
+actions.infoPop = d => {
+  const o = overlay(`<div class="info-text">${INFO[d.k] || ''}</div><button class="btn" data-close>Got it</button>`);
+  o.addEventListener('click', e => { if (e.target === o || e.target.closest('[data-close]')) o.remove(); });
+};
+actions.teamStats = d => go('teamStats', { k: d.k });
+actions.teamStatsSort = d => replace('teamStats', { ...(state.stack[state.stack.length - 1].args || {}), k: d.k });
+$app.addEventListener('change', e => {
+  if (e.target.dataset?.change === 'teamStatsYr') replace('teamStats', { ...(state.stack[state.stack.length - 1].args || {}), yr: +e.target.value });
+});
 actions.reviewDone = () => { calFlags().review = true; goHome(); nextUp(); };
 
 // College: Draft Departures.
