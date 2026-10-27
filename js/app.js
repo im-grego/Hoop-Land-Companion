@@ -57,7 +57,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, inchStr, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.217.1';
+const APP_VERSION = '0.217.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5321,6 +5321,8 @@ function mediaMindMorale() {
 // that can win. If he says yes he's back on a one-year minimum, flagged as retiring (this season is his last), the
 // game's retirement news turns into his final-season announcement, and Hoop Gram hears about it. CPU teams try too.
 // The log rides with undo checkpoints: { tried: { pid: kind }, back: [{ pid, tid, kind, cpu }] }.
+// Off: retired players stay retired (no farewell tours or last runs, for you or the CPU).
+const COMEBACKS = false;
 const andList = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a[0] || '');
 const RETURN = { farewell: { icon: '🎤', label: 'Farewell Tour', say: 'a farewell tour' }, lastrun: { icon: '💍', label: 'One Last Run', say: 'one last run at a ring' } };
 const comebackKey = () => `hlc:comeback:${saveId()}:${league().season.currentYear}`;
@@ -5373,7 +5375,7 @@ function unretire(L, r, kind, cpu = false) {
 }
 // CPU teams make their calls once an offseason (a few say yes).
 function cpuComebacks() {
-  if (!state.data || !isComplete() || isCollege() || state.leagueIdx !== 0) return;
+  if (!COMEBACKS || !state.data || !isComplete() || isCollege() || state.leagueIdx !== 0) return;
   const st = comebackStore();
   if (st.cpuDone) return;
   st.cpuDone = true;
@@ -5389,7 +5391,7 @@ function cpuComebacks() {
 }
 actions.comebackPitch = async d => {
   const L = league(), r = retirementsThisYear(L).find(x => x.p.id === +d.id), st = comebackStore();
-  if (!r || !isUserTeam(r.team) || st.tried[r.p.id]) return;
+  if (!COMEBACKS || !r || !isUserTeam(r.team) || st.tried[r.p.id]) return;
   const k = RETURN[d.k];
   if (!(await confirmBox(`Pitch <b>${esc(playerName(r.p))}</b> on ${k.say} with the ${esc(r.team.name)}? One try: if he says no, he stays retired. A yes is a one-year minimum, and this season is his last.`, `${k.icon} Make the Call`))) return;
   checkpoint(`${k.label}: ${playerName(r.p)}`);
@@ -5403,7 +5405,7 @@ actions.comebackPitch = async d => {
 function retirementsBox() {
   if (isCollege()) return '<p class="note small muted">Retirements are for pro leagues.</p>';
   cpuComebacks();
-  const L = league(), st = comebackStore(), open = phaseRank(L.season) < 7 && !calFlags().cuts;
+  const L = league(), st = comebackStore(), open = COMEBACKS && phaseRank(L.season) < 7 && !calFlags().cuts;
   const back = st.back.map(b => ({ b, f: findPlayer(b.pid) })).filter(x => x.f);
   const list = retirementsThisYear(L);
   const finals = [...L.teams.flatMap(t => t.roster.map(p => ({ p, t }))), ...(L.freeAgents || []).map(p => ({ p, t: null }))].filter(x => x.p.season?.retiring && !st.back.some(b => b.pid === x.p.id)).sort((a, b) => shownLevel(b.p) - shownLevel(a.p));
@@ -5417,7 +5419,7 @@ function retirementsBox() {
     ${numbersBox()}
     ${jerseyBox()}
     <fieldset class="frame"><legend>Retired This Offseason</legend>
-      <p class="note small muted">Your former players can be talked into one more season: a farewell tour (loyalty, years with you) or one last run (a competitor on a team that can win). One call each.</p>
+      ${COMEBACKS ? '<p class="note small muted">Your former players can be talked into one more season: a farewell tour (loyalty, years with you) or one last run (a competitor on a team that can win). One call each.</p>' : ''}
       <div class="pod-list">${list.filter(notableRetiree).map(row).join('') || '<p class="note small muted">Nobody notable retired this year.</p>'}</div>
       ${list.filter(r => !notableRetiree(r)).length ? `<p class="note small muted" style="margin-top:6px">Also retired: ${esc(list.filter(r => !notableRetiree(r)).slice(0, 12).map(r => playerName(r.p)).join(', '))}${list.filter(r => !notableRetiree(r)).length > 12 ? ' and more' : ''}.</p>` : ''}
     </fieldset>
@@ -5425,7 +5427,7 @@ function retirementsBox() {
 }
 // Season in Review: a nudge when one of yours just retired.
 function retireNote() {
-  if (isCollege()) return '';
+  if (isCollege() || !COMEBACKS) return '';
   const mine = retirementsThisYear().filter(r => notableRetiree(r) && isUserTeam(r.team) && !comebackStore().tried[r.p.id]);
   return mine.length ? `<p class="note small gold">📰 ${esc(andList(mine.map(r => playerName(r.p))))} retired. League News → Retirements to pitch ${mine.length > 1 ? 'them' : 'him'} on one more season.</p>` : '';
 }
