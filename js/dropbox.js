@@ -65,9 +65,12 @@ async function accessToken() {
 // Dropbox-API-Arg must be ASCII: escape everything else as \uXXXX.
 const headerJson = obj => JSON.stringify(obj).replace(/[\u007f-￿]/g, ch => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`);
 
+// Dropbox refuses some characters in a name (\ : ? * " < > | and control characters) and names ending in a dot or a
+// space ("disallowed name"); each part of the path is cleaned so an upload never fails on the file's name.
+const cleanPart = part => part.replace(/[\\:?*"<>|\u0000-\u001f\u007f]/g, '_').replace(/[. ]+$/, '').trim() || '_';
 export function dropboxPath(name, folder = dropboxConfig().folder) {
-  const dir = `/${(folder || '').replace(/^\/+|\/+$/g, '')}`;
-  return `${dir === '/' ? '' : dir}/${name}`;
+  const parts = [...String(folder || '').split('/'), ...String(name || 'file').split('/')].filter(x => x.trim()).map(cleanPart);
+  return `/${parts.join('/')}`;
 }
 
 // Upload a Blob/File. Returns the saved path (Dropbox may rename on conflict).
