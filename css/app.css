@@ -1105,6 +1105,9 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .dir-team .logo-sm { width: 22px !important; height: 22px !important; }
 .style-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
 .style-chip { padding: 3px 8px; background: var(--btn); border: 2px solid var(--cyan); font-size: 13px; font-weight: 700; }
+/* Trait chips: one row, the labels shrink before they wrap. */
+.style-chips.one-row { flex-wrap: nowrap; gap: 4px; }
+.style-chips.one-row .style-chip { flex: 0 1 auto; min-width: 0; padding: 3px 5px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tend-wrap summary { cursor: pointer; color: var(--cyan); margin-top: 6px; }
 .tend-row { display: grid; grid-template-columns: 110px 1fr 28px; align-items: center; gap: 8px; padding: 2px 0; }
 .tbar2 { position: relative; height: 8px; background: var(--bg-dark); border: 1px solid var(--btn-edge); }
@@ -1422,8 +1425,19 @@ main.panel.bare { margin-top: 10px; }
 .offer-sheet .prod-boxes + .note { margin-top: -4px; }
 .seg3 { display: flex; gap: 6px; flex: 1; min-width: 0; }
 .seg3 .btn { flex: 1; min-width: 0; min-height: 34px; padding: 4px 6px; font-size: 13px; }
-.off-tabs .btn { min-height: 38px; font-size: 14px; }
-.off-body { display: flex; flex-direction: column; gap: 8px; min-height: 150px; }
+.off-body { display: flex; flex-direction: column; gap: 8px; }
+.off-car { border: 2px solid var(--btn-edge); background: var(--btn-shadow); padding: 6px 8px 8px; touch-action: pan-y; }
+.off-car-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.off-car-head b { flex: 1; font-size: 14px; }
+.off-car-head .btn { min-width: 34px; min-height: 30px; padding: 0 8px; font-size: 18px; flex: none; }
+.off-dots { display: flex; gap: 4px; }
+.off-dots i { width: 7px; height: 7px; background: var(--btn-edge); }
+.off-dots i.set { background: var(--gold); }
+.off-dots i.on { outline: 2px solid var(--cyan); }
+.off-car-body { display: flex; flex-direction: column; gap: 8px; min-height: 92px; }
+.off-car-body > .note, .off-car-body .opt-btns { margin: 0; }
+.off-car-body .pitch-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.off-car-body .pitch-btns .btn { min-width: 0; padding: 4px; font-size: 12px; }
 .off-body > .note, .off-body .opt-btns { margin: 0; }
 .off-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .off-step { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 4px; background: var(--btn-shadow); border: 2px solid var(--btn-edge); }

@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.235.0';
+const APP_VERSION = '0.236.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -12631,7 +12631,7 @@ function faPitchOdds(L, team, m, kind) {
 function pitchLine(L, team, m, s) {
   const done = s.fpitch?.[m.p.id];
   if (done) return `<p class="note small ${done.ok ? 'up' : 'down'}">🗣️ Pitched ${esc(FA_PITCHES[done.kind].say)}: ${done.ok ? 'it landed, he leans your way.' : 'it fell flat.'}</p>`;
-  return `<p class="note small">🗣️ Pitch meeting (one try):</p><div class="opt-btns" style="flex-wrap:wrap">${Object.entries(FA_PITCHES).filter(([k]) => k !== 'market').map(([k, v]) => `<button class="btn small" data-k="fpitch" data-v="${k}">${v.label} · ${Math.round(faPitchOdds(L, team, m, k) * 100)}%</button>`).join('')}</div>`;
+  return `<p class="note small muted">Pitch meeting · one try:</p><div class="opt-btns pitch-btns" style="flex-wrap:wrap">${Object.entries(FA_PITCHES).filter(([k]) => k !== 'market').map(([k, v]) => `<button class="btn small" data-k="fpitch" data-v="${k}">${v.label} · ${Math.round(faPitchOdds(L, team, m, k) * 100)}%</button>`).join('')}</div>`;
 }
 // What the city and team mean to him besides the money (state tax, weather, market, stage, roster, picks).
 function destinationLine(L, team, p) {
@@ -12684,22 +12684,22 @@ actions.faOffer = d => {
       : !rival ? (s.stage === 'open' ? 'No other bids yet' : '<span class="up">Only offer</span>')
       : score(draft) >= score(rival) ? `<span class="up">Ahead of ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`
       : `<span class="down">Behind ${esc(L.teams.find(t => t.id === rival.tid).shortName)}</span>`;
-    // Three tabs keep the sheet to one screen: the money, how it's paid, and the sales pitch.
+    // The terms always show; under them one card at a time, swiped or arrowed through: the pitch, how it's paid,
+    // the incentive.
     const hasExtras = isComplete();
     const hasPitch = isComplete() || (ownExpiring && cutPitchOk(m.p, team));
-    const tab = draft.tab === 'extras' && hasExtras ? 'extras' : draft.tab === 'pitch' && hasPitch ? 'pitch' : 'terms';
     const step = (k, label, val) => `<div class="off-step"><span class="small muted">${label}</span><span class="ctl"><button class="btn square" data-k="${k}" data-d="-1">−</button><span class="pts-val">${val}</span><button class="btn square" data-k="${k}" data-d="1">+</button></span></div>`;
-    const extrasOn = (draft.load && draft.load !== 'flat' && draft.yrs >= 2 ? 1 : 0) + (draft.inc ? 1 : 0) + (pitched?.ok ? 1 : 0);
     const seg = (k, opts, cur) => `<div class="seg3">${opts.map(([v, l]) => `<button class="btn small ${cur === v ? 'on focus' : 'off'}" data-k="${k}" data-v="${v}">${l}</button>`).join('')}</div>`;
     const termsHtml = `${quick(team)}
       <div class="off-grid">${step('sal', draft.yrs >= 2 && draft.load && draft.load !== 'flat' ? 'Salary (avg)' : 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
       <div class="off-row"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="off-row"><span class="small muted">No-trade${FA.wantsNtc(L, m.p, m.from) ? ' <span class="gold">★</span>' : ''}</span>${seg('ntc', [[0, 'No'], [1, 'Yes']], draft.ntc ? 1 : 0)}</div>` : ''}
-      ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load && draft.load !== 'flat' && draft.yrs >= 2 ? LOADS[draft.load] : '', draft.inc ? `$${draft.inc.bonus}M bonus (${INCENTIVES[draft.inc.kind].label})` : '', pitched?.ok ? 'pay cut' : ''].filter(Boolean).join(' · ')}</p>` : ''}`;
-    const extrasHtml = `
+`;
+    const loadHtml = `
       ${draft.yrs >= 2 ? `<div class="off-row"><span class="small muted">Paid</span>${seg('load', [['back', 'Back'], ['flat', 'Flat'], ['front', 'Front']], draft.load || 'flat')}</div>
-        ${draft.load && draft.load !== 'flat' ? `<p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M</p>` : ''}` : '<p class="note small muted">A one-year deal is paid flat.</p>'}
-      <div class="off-row"><span class="small muted">Incentive</span><select class="sel-team" data-k="inckind">${[['', 'None'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<option value="${k}" ${(draft.inc?.kind || '') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
+        <p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M</p>` : '<p class="note small muted">A one-year deal is paid flat.</p>'}`;
+    const incHtml = `
+      <div class="off-row"><select class="sel-team" data-k="inckind">${[['', 'None'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<option value="${k}" ${(draft.inc?.kind || '') === k ? 'selected' : ''}>${esc(k ? l : 'No incentive')}</option>`).join('')}</select></div>
       ${draft.inc ? `<div class="off-grid">${step('incbonus', 'Bonus', `$${draft.inc.bonus}M`)}<p class="note small muted" style="align-self:center">${esc(incText(m.p, draft.inc).replace(/^team /, '').replace(/^(\w)/, c => c.toUpperCase()))}: about $${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</p></div>` : ''}
 `;
     const pitchHtml = `
@@ -12709,7 +12709,12 @@ actions.faOffer = d => {
       ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
 `;
     const pitchedNow = !!s.fpitch?.[m.p.id] || !!s.cutPitch?.[m.p.id];
-    const tabs = [['terms', 'Terms'], hasExtras && ['extras', `Structure${extrasOn ? ' <span class="gold">•</span>' : ''}`], hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
+    const cards = [hasPitch && ['🗣️ Pitch', pitchHtml, pitchedNow], hasExtras && ['💵 Payment', loadHtml, draft.yrs >= 2 && draft.load && draft.load !== 'flat'], hasExtras && ['🎯 Incentive', incHtml, !!draft.inc]].filter(Boolean);
+    const ci = Math.max(0, Math.min(cards.length - 1, draft.card || 0));
+    const carousel = cards.length ? `<div class="off-car">
+      <div class="off-car-head"><button class="btn small off" data-k="card" data-d="-1" aria-label="Previous">‹</button><b>${cards[ci][0]}</b>
+        <span class="off-dots">${cards.map((c, i) => `<i class="${i === ci ? 'on' : ''} ${c[2] ? 'set' : ''}"></i>`).join('')}</span><button class="btn small off" data-k="card" data-d="1" aria-label="Next">›</button></div>
+      <div class="off-car-body">${cards[ci][1]}</div></div>` : '';
     box.querySelector('.box').innerHTML = `<div class="offer-sheet">
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
         <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)} · ${M.icon} ${esc(M.name)}</span></p>
@@ -12718,8 +12723,8 @@ actions.faOffer = d => {
       ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}${isLeveled(x.id) ? ` ${x.level}` : ''}</span>`).join(' · ')}</p>` : ''}
       ${hasPitch ? '' : `<p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>`}
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
-      ${tabs.length > 1 ? `<div class="seg3 off-tabs">${tabs.map(([k, l]) => `<button class="btn small ${tab === k ? 'on focus' : 'off'}" data-k="tab" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
-      <div class="off-body">${tab === 'extras' ? extrasHtml : tab === 'pitch' ? pitchHtml : termsHtml}</div>
+      <div class="off-body">${termsHtml}</div>
+      ${carousel}
       <p class="note small">Total <span class="tot">$${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M</span> · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`} · ${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
       <div class="grid2">
@@ -12731,7 +12736,7 @@ actions.faOffer = d => {
     const b = e.target.closest('[data-k]');
     if (!b || b.tagName === 'SELECT') return;
     const k = b.dataset.k;
-    if (k === 'tab') draft.tab = b.dataset.v;
+    if (k === 'card') { const n = box.querySelectorAll('.off-dots i').length || 1; draft.card = ((draft.card || 0) + +b.dataset.d + n) % n; }
     else if (k === 'sal') draft.avg = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(maxAvgFor(L, m.p, draft.tid === m.from?.id, draft.yrs, draft.load), (draft.avg ?? draft.sal) + +b.dataset.d));
     else if (k === 'load') draft.load = b.dataset.v;
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
@@ -12776,6 +12781,17 @@ actions.faOffer = d => {
       s.bids.set(m.p.id, [...rest, { ...draft, cpu: false, pitch: pitched && pitched.tid === draft.tid ? pitched.bonus : 0 }]);
       box.remove(); render(); return;
     }
+    paint();
+  });
+  // Swipe the card left or right.
+  let sx = null;
+  box.addEventListener('touchstart', e => { sx = e.target.closest('.off-car') ? e.touches[0].clientX : null; }, { passive: true });
+  box.addEventListener('touchend', e => {
+    if (sx == null) return;
+    const dx = e.changedTouches[0].clientX - sx, n = box.querySelectorAll('.off-dots i').length;
+    sx = null;
+    if (Math.abs(dx) < 40 || n < 2) return;
+    draft.card = ((draft.card || 0) + (dx < 0 ? 1 : -1) + n) % n;
     paint();
   });
   box.addEventListener('change', e => {
@@ -14130,7 +14146,7 @@ function traitsBox(p, prospect = false) {
   const tags = known.map(t => ({ v: p.traits[t.k] || 0, x: traitTag(t, p.traits[t.k] || 0) })).filter(y => y.x).sort((a, b) => Math.abs(b.v - 10) - Math.abs(a.v - 10)).slice(0, 3).map(y => y.x);
   const moved = prospect ? [] : driftsOf(p);
   return `<fieldset class="frame"><legend>Traits</legend>
-    ${tags.length ? `<div class="style-chips">${tags.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
+    ${tags.length ? `<div class="style-chips one-row">${tags.map(x => `<span class="style-chip" title="${esc(x.label)}">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
     ${moved.length ? `<p class="note small">This offseason: ${moved.map(x => `<span class="${x.d > 0 ? 'up' : 'down'}">${esc(driftText(x))}</span>`).join(' · ')}</p>` : ''}
     <details class="tend-wrap" data-anchor="traits-all" data-keep="traits-all" ${state.keepOpen?.['traits-all'] ? 'open' : ''}><summary class="small">All traits</summary>${TRAIT_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4><div class="stack">${ks.map(k => {
