@@ -183,12 +183,14 @@ export function buildStorylines(league, opts = {}) {
   if (mvp) {
     const n = timesWon(mvp.p, AWARD.MVP);
     const l = lines.get(mvp.p.id);
-    add('mvp', 95, '👑', n >= 3 ? pick([`${playerName(mvp.p)} is chasing history`, `MVP No. ${n + 1}? ${playerName(mvp.p)} isn't slowing down`, `${mvp.p.fn} and the all-time list`], mvp.p.id + yr)
+    // MVP and the title: the only question left is doing it again.
+    const both = mvp.team.id === champTid;
+    add('mvp', 95, '👑', both ? pick([`MVP and champion: can ${playerName(mvp.p)} go back to back?`, `${mvp.p.fn} won it all. Now do it again.`, `Back to back? ${playerName(mvp.p)} has the MVP and the ring`], mvp.p.id + yr) : n >= 3 ? pick([`${playerName(mvp.p)} is chasing history`, `MVP No. ${n + 1}? ${playerName(mvp.p)} isn't slowing down`, `${mvp.p.fn} and the all-time list`], mvp.p.id + yr)
       : n === 2 ? pick([`Two MVPs and hungry: ${playerName(mvp.p)}`, `Can anyone stop ${playerName(mvp.p)}?`, `${mvp.p.fn} wants a third`], mvp.p.id + yr)
       : pick([`${playerName(mvp.p)}: what does the MVP do for an encore?`, `The MVP is back: ${playerName(mvp.p)}`, `${mvp.p.fn} has the crown. Now keep it.`, `Encore season for ${playerName(mvp.p)}`], mvp.p.id + yr),
       `${n > 1 ? `${Word(n)} MVPs and counting` : 'A first MVP'} after ${statLine(l)} a night. ` +
       (n >= 3 ? 'Only the all-time greats have more. ' : '') +
-      (mvp.team.id === champTid ? 'And the ring to go with it.' : `Next step: getting the ${mvp.team.name} a title.`), mvp.p.id);
+      (both ? 'And the ring to go with it. Next step: going back to back.' : `Next step: getting the ${mvp.team.name} a title.`), mvp.p.id);
   }
 
   // Contenders who fell short: trying to get over the hump.

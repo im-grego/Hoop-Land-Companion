@@ -351,6 +351,9 @@ export function jerseyNumber(team, p, want = p.num) {
   if (want >= 0 && !taken.has(want)) return want;
   // #00 (saved as 100) already counts as a low number: no single-digit step for it.
   if (want >= 10 && want !== 100 && !taken.has(want % 10)) return want % 10;
+  // Then a number he wore earlier in his career, most recent first.
+  const past = (p.stats || []).flatMap(st => (st.season || []).map(r => ({ yr: st.yr, num: r.num }))).filter(x => x.num >= 0 && x.num !== want).sort((a, b) => b.yr - a.yr);
+  for (const x of past) if (!taken.has(x.num)) return x.num;
   for (let n = 0; n < 100; n++) if (!taken.has(n)) return n;
   return want;
 }

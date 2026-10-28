@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.228.0';
+const APP_VERSION = '0.229.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -635,6 +635,12 @@ async function loadFile(file) {
       cpuCoachMoves();
       const empty = league().teams.filter(t => isUserTeam(t) && headVacant(t));
       if (empty.length) setTimeout(() => toast('🧑‍💼 No head coach', `${empty.map(t => t.shortName).join(', ')}: hire one in Coaching before training camp.`, 5200, true), 1500);
+    } else if (!isCollege() && isComplete()) {
+      // In season: a coach the game fired gets a replacement right away.
+      const hired = fillCoachVacancies(league());
+      if (hired.length) setTimeout(() => toast('🧑‍💼 Coaching changes', hired.map(x => `${league().teams.find(t => t.id === x.tid)?.shortName}: ${x.in}`).join(' · '), 5200), 1500);
+      const empty = league().teams.filter(t => isUserTeam(t) && headVacant(t));
+      if (empty.length) setTimeout(() => toast('🧑‍💼 No head coach', `${empty.map(t => t.shortName).join(', ')}: hire one in Coaching.`, 5200, true), 2200);
     }
     if (!isCollege()) logClass(league());
     if (planned) setTimeout(() => toast('📅 Your planned class is in', `${league().draftClass.length} prospects. The game\'s own class can be put back in the Draft Class Lab.`), 1200);
@@ -4150,8 +4156,8 @@ function spendCoins(t, n) {
 const coinTag = n => `💵${n}`;
 const tokTag = n => `🎟️${n}`;
 
-// Facilities: the four buildings, three tiers each. Coins buy the next
-// tier; each tier lists exactly what it does in the app.
+// Facilities: the four buildings, three tiers each. As in the game, coins buy any tier outright (the top tier costs
+// its own price, not every tier on the way); each tier lists exactly what it does in the app.
 screens.facilities = () => {
   const t = myTeam();
   if (!t) { back(); return; }
@@ -4162,13 +4168,13 @@ screens.facilities = () => {
         <p class="note"><b class="gold">${coinTag(coins)}</b> coins</p>
         <p class="note small muted">Each upgrade also lifts what the game itself does with the building.</p></fieldset>
       ${FX.FACILITIES.map(f => {
-        const cur = FX.tierIn(t, f.k), cost = FX.upgradeCost(cur);
+        const cur = FX.tierIn(t, f.k);
         return `<fieldset class="frame"><legend>${f.icon} ${f.label}</legend><div class="tree">${f.tiers.map((tier, i) => {
-          const lv = i + 1, have = cur >= lv, next = lv === cur + 1;
-          return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : next ? 'next' : 'locked'}">
+          const lv = i + 1, have = cur >= lv, price = FX.upgradeCost(lv - 1);
+          return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : coins >= price ? 'next' : 'locked'}">
             <b class="tn-name">Tier ${lv} · ${esc(tier.name)}</b>
             <span class="small tn-text">${tier.lines.map(l => `• ${esc(l)}`).join('<br>')}</span>
-            ${have ? '<span class="up tn-cost">✓</span>' : next ? `<button class="btn small ${coins >= cost ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" ${coins >= cost ? '' : 'disabled'}>Upgrade ${coinTag(cost)}</button>` : `<span class="muted small tn-cost">${coinTag(FX.upgradeCost(lv - 1))}</span>`}
+            ${have ? '<span class="up tn-cost">✓</span>' : `<button class="btn small ${coins >= price ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" data-lv="${lv}" ${coins >= price ? '' : 'disabled'}>Buy ${coinTag(price)}</button>`}
           </div>`;
         }).join('')}</div></fieldset>`;
       }).join('')}`,
@@ -4178,17 +4184,17 @@ actions.facUpgrade = async d => {
   const t = myTeam(), f = FX.FACILITIES.find(x => x.k === d.k);
   const fac = t && FX.facilityOf(t, d.k);
   if (!f || !fac) return;
-  const cur = FX.tierIn(t, d.k);
-  if (cur >= FX.MAX_FAC_TIER) return;
-  const cost = FX.upgradeCost(cur);
+  const cur = FX.tierIn(t, d.k), lv = Math.min(FX.MAX_FAC_TIER, +d.lv || cur + 1);
+  if (lv <= cur) return;
+  const cost = FX.upgradeCost(lv - 1);
   if (coinsOf(t) < cost) { toast('Not enough coins', '', 2400, true); return; }
-  if (!(await confirmBox(`Upgrade ${esc(f.label)} to ${esc(f.tiers[cur].name)} for ${coinTag(cost)}?`, 'Upgrade'))) return;
+  if (!(await confirmBox(`Upgrade ${esc(f.label)} to ${esc(f.tiers[lv - 1].name)} for ${coinTag(cost)}?`, 'Upgrade'))) return;
   checkpoint(`Upgrade ${f.label}`);
   spendCoins(t, cost);
-  fac.tier = cur + 1;
+  fac.tier = lv;
   state.dirty = true;
   render();
-  toast(`${f.label} upgraded`, f.tiers[cur].name);
+  toast(`${f.label} upgraded`, f.tiers[lv - 1].name);
 };
 
 screens.coachtree = () => {
@@ -12214,18 +12220,26 @@ function coachChangeMorale(L, team, old, next) {
 // CPU coaching decisions, once per offseason: extend a worthwhile coach in his
 // final year, replace one under heavy pressure when a better (or younger,
 // higher-upside) coach is available, or give him another year when nobody is.
-function cpuCoachMoves() {
-  const L = league();
-  const store = offGet('coachMoves');
-  if (store.done || state.params.cpuCoachChanges === false || !(L.coaches || []).some(c => c.attributes)) return store.list || [];
+// The game fires coaches late in the season (around the play-in) and leaves the chair empty. Whenever a file comes in
+// with a CPU team missing its head coach, the best available coach is hired into it and written to the save.
+function fillCoachVacancies(L) {
   const list = [];
-  // Empty chairs first (the game fires coaches in-season and doesn't always hire): the best available coach takes it.
+  if (state.params.cpuCoachChanges === false || !(L.coaches || []).some(c => c.attributes)) return list;
   for (const t of L.teams.filter(x => !isUserTeam(x) && headVacant(x) && x.roster.length)) {
     const cand = bestCandidate(L, t)?.c;
     if (!cand) continue;
     const r = hireHeadCoach(L, t, cand);
     if (r) { installSignature(t, cand); list.push({ kind: 'hire', tid: t.id, out: 'a vacancy', in: `${cand.fn} ${cand.ln}`, why: 'filled the empty chair' }); }
   }
+  if (list.length) state.dirty = true;
+  return list;
+}
+function cpuCoachMoves() {
+  const L = league();
+  const store = offGet('coachMoves');
+  if (store.done || state.params.cpuCoachChanges === false || !(L.coaches || []).some(c => c.attributes)) return store.list || [];
+  // Empty chairs first (the game fires coaches in-season and doesn't always hire): the best available coach takes it.
+  const list = fillCoachVacancies(L);
   const cpu = L.teams.filter(t => !isUserTeam(t) && headCoachOf(t));
   const order = cpu.map(t => ({ t, p: pressureOn(L, t, headCoachOf(t)).pressure })).sort((x, y) => y.p - x.p);
   let fired = 0;
@@ -12484,11 +12498,11 @@ function faPitchOdds(L, team, m, kind) {
 function pitchLine(L, team, m, s) {
   const done = s.fpitch?.[m.p.id];
   if (done) return `<p class="note small ${done.ok ? 'up' : 'down'}">🗣️ Pitched ${esc(FA_PITCHES[done.kind].say)}: ${done.ok ? 'it landed, he leans your way.' : 'it fell flat.'}</p>`;
-  return `<p class="note small">🗣️ Pitch meeting (one try):</p><div class="opt-btns" style="flex-wrap:wrap">${Object.entries(FA_PITCHES).map(([k, v]) => `<button class="btn small" data-k="fpitch" data-v="${k}">${v.label} · ${Math.round(faPitchOdds(L, team, m, k) * 100)}%</button>`).join('')}</div>`;
+  return `<p class="note small">🗣️ Pitch meeting (one try):</p><div class="opt-btns" style="flex-wrap:wrap">${Object.entries(FA_PITCHES).filter(([k]) => k !== 'market').map(([k, v]) => `<button class="btn small" data-k="fpitch" data-v="${k}">${v.label} · ${Math.round(faPitchOdds(L, team, m, k) * 100)}%</button>`).join('')}</div>`;
 }
 // What the city and team mean to him besides the money (state tax, weather, market, stage, roster, picks).
 function destinationLine(L, team, p) {
-  const parts = destinationParts(L, team, p).filter(x => x.text);
+  const parts = destinationParts(L, team, p).filter(x => x.text).sort((a, b) => Math.abs(b.v || 0) - Math.abs(a.v || 0)).slice(0, 2);
   const tag = x => x.k === 'tax' ? (x.keep > 0.02 ? 'up' : x.keep < -0.02 ? 'down' : 'muted') : x.v > 0 ? 'up' : x.v < 0 ? 'down' : 'muted';
   return `<p class="note small">📍 Destination <b>${destinationGrade(L, team, p)}</b>${parts.length ? ` · ${parts.map(x => `<span class="${tag(x)}">${esc(x.text)}</span>`).join(' · ')}` : ''}</p>`;
 }
@@ -12564,8 +12578,7 @@ ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load &
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${hasExtras ? `<div class="tabs">${[['terms', 'Terms'], ['extras', `Structure${extrasOn ? ` · ${extrasOn}` : ''}`]].map(([k, l]) => `<button class="btn small ${tab === k ? 'on focus' : 'off'}" data-k="tab" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
       ${tab === 'extras' ? extrasHtml : termsHtml}
-      <p class="note small">Total $${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`}</p>
-      <p class="note small">${standing}</p>
+      <p class="note small">Total <span class="tot">$${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M</span> · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`} · ${standing}</p>
       ${isComplete() ? destinationLine(L, team, m.p) : ''}
       ${isComplete() && !ownExpiring && s.stage !== 'done' ? pitchLine(L, team, m, s) : ''}
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
@@ -13941,11 +13954,11 @@ function rangeCard() {
   const at = Math.round(first.lottery ? first.exp : first.slot);
   const lo = Math.max(0, at - 4), hi = Math.min(board.length, at + 4);
   const needs = rosterNeeds(L, t, { level: shownLevel }).filter(n => n.group === 'style');
-  const styleFit = p => needs.filter(n => playStyles(p, 3).some(s => s.k === n.style));
+  const styleFit = p => (scouted(p.id) || workoutDone(p.id) ? needs.filter(n => playStyles(p, 3).some(s => s.k === n.style)) : []);
   return `<fieldset class="frame"><legend>In Your Range · ${first.lottery ? `likely #${first.likely} (avg #${at})` : `#${at}`}</legend>
     <div class="stack">${board.slice(lo, hi).map((p, i) => {
       const fills = fillsFor(t, p), sf = styleFit(p);
-      const st = playStyles(p, 2);
+      const st = scouted(p.id) || workoutDone(p.id) ? playStyles(p, 2) : [];
       return `<button class="prow" data-act="openProspect" data-id="${p.id}"><span class="name">${lo + i + 1}. ${esc(playerName(p))} ${valueChip(p)}</span>
         <span class="right small">${fills.length || sf.length ? '🧩 ' : ''}${esc([...fills.map(n => n.label), ...sf.map(n => n.style === 'shooter' ? 'Spacing' : n.style === 'rim' ? 'Rim pressure' : n.style === 'playmaker' ? 'Playmaking' : n.style === 'protector' ? 'Rim protection' : 'Rebounding')].slice(0, 2).join(', '))}</span>
         <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${st.length ? ` · ${st.map(x => `${x.icon} ${esc(x.label)}`).join(' · ')}` : ''}</span></button>`;
@@ -14000,15 +14013,19 @@ actions.traitAdj = d => {
 // Play style from the save's tendencies (players and prospects).
 function playStyleBox(p) {
   if (!p.tendencies) return '';
-  const lockTend = (league().draftClass || []).includes(p) && !state.params.editProspects;   // prospects stay as scouted
+  const prospect = (league().draftClass || []).includes(p);
+  const lockTend = prospect && !state.params.editProspects;   // prospects stay as scouted
+  // A scout sees how he plays; every tendency number takes a private workout (or the edit setting).
+  const fullRead = !prospect || workoutDone(p.id) || state.params.editProspects;
   const st = playStyles(p, 3), w = wontDo(p);
   const bar = v => `<span class="tbar2"><span class="tb-mid"></span><span class="tb-fill ${v < 0 ? 'neg' : ''}" style="${v >= 0 ? `left:50%;width:${v * 10}%` : `right:50%;width:${-v * 10}%`}"></span></span>`;
   return `<fieldset class="frame"><legend>Play Style</legend>
     ${st.length ? `<div class="style-chips">${st.map(x => `<span class="style-chip">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(styleSentence(p))}${earnedSkills(p).length ? ` ${esc(`He ${earnedSkills(p).map(x => skillSays(x.id)).join('; and ').replace(/^./, c => c.toLowerCase())}.`)}` : ''}</p>
-    <details class="tend-wrap" data-anchor="tend-all" data-keep="tend-all" ${state.keepOpen?.['tend-all'] ? 'open' : ''}><summary class="small">All tendencies</summary>
+    ${!fullRead ? '<p class="note small muted">Bring him in for a private workout to see every tendency.</p>' : ''}
+    ${!fullRead ? '' : `<details class="tend-wrap" data-anchor="tend-all" data-keep="tend-all" ${state.keepOpen?.['tend-all'] ? 'open' : ''}><summary class="small">All tendencies</summary>
       ${TEND_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4>${ks.map(k => `<div class="tend-row tend-edit2"><span class="small">${TEND_LABELS[k]}</span>${bar(p.tendencies[k] || 0)}<span class="small ${p.tendencies[k] > 0 ? 'up' : p.tendencies[k] < 0 ? 'down' : 'muted'}">${p.tendencies[k] > 0 ? '+' : ''}${p.tendencies[k] || 0}</span>${lockTend ? '' : `<span class="trait-ctl"><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="-1" aria-label="Lower ${TEND_LABELS[k]}">−</button><button class="btn tiny" data-act="tendAdj" data-id="${p.id}" data-k="${k}" data-d="1" aria-label="Raise ${TEND_LABELS[k]}">+</button></span>`}</div>`).join('')}`).join('')}
-    </details>
+    </details>`}
   </fieldset>`;
 }
 
@@ -15704,6 +15721,14 @@ actions.cutsFinish = async () => {
       const bo = user ? (buy[x.p.id] ? buyoutOffer(x.p) : null) : (buys.includes(x.p) ? buyoutOffer(x.p) : null);
       if (bo) { bookDead(t, x.p, bo.price, bo.yrs); const bl = offGet('buyouts'); bl[x.p.id] = { tid: t.id, price: bo.price, yrs: bo.yrs }; offSet('buyouts', bl); bought.push(`${playerName(x.p)} ($${bo.price}M × ${bo.yrs}, was $${bo.sal}M)`); }
       else bookDead(t, x.p, c.sal || 0, c.yrs || 0);
+      // Fans notice when a name they know is let go: more for a young player with upside, and a big contract eaten
+      // as dead money stings too.
+      if (user) {
+        const g = fanGain(x.p) + (x.p.age <= 23 && (x.p.pot || 0) >= 8 ? 1 : 0);
+        const dead = (c.yrs || 0) > 1 && (bo ? bo.price * bo.yrs : (c.sal || 0) * (c.yrs || 0)) >= 30;
+        if (g) fanEvent(t, -g, `${bo ? 'bought out' : 'cut'} ${playerName(x.p)}`);
+        else if (dead) fanEvent(t, -1, `ate ${playerName(x.p)}'s contract`);
+      }
       FA.cutPlayer(L, t, x.p);
     }
     n += go.length;
