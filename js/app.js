@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.231.0';
+const APP_VERSION = '0.232.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -11738,6 +11738,12 @@ screens.fa = (args = {}) => {
     title: `Free Agency · Week ${s.day}`,
     body: `
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
+      ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
+        const ml = FA.mleFor(L, t, s.day, s.used);
+        const extra = [ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : ''].filter(Boolean).join(' · ');
+        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBarOf(FA.payroll(t), deadFor(t.id))}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
+      }).join('')}
+      </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${s.stage !== 'open' ? yourOffers(s) : ''}
       <div class="stack">${stageBtn}${s.day >= 2 && isComplete() && s.stage !== 'done' ? '<button class="btn small" data-act="liveTrade">🔁 Trade</button>' : ''}</div>
       ${uiTabs('fa', [
@@ -11748,12 +11754,6 @@ screens.fa = (args = {}) => {
       ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`],
         ['team', 'My Team', `      ${mine.length && !ro ? faRosterBox(s, mine) : ''}
       ${expiringSection(s)}
-      ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
-        const ml = FA.mleFor(L, t, s.day, s.used);
-        const extra = [ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : ''].filter(Boolean).join(' · ');
-        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capRoomLine(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
-      }).join('')}
-      </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
       ${FA.capSystemOn() ? capNote(L) : ''}
       ${ro && mine.length ? faCareerTeamBox(s, mine[0]) : ''}`, expiringSection(s) !== ''],
       ])}`,
