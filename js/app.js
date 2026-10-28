@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.238.3';
+const APP_VERSION = '0.238.4';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -12690,7 +12690,7 @@ actions.faOffer = d => {
       <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'One year: paid flat.'}</p>` : ''}
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="off-row"><span class="small muted">No-trade${FA.wantsNtc(L, m.p, m.from) ? ' <span class="gold">★</span>' : ''}</span>${seg('ntc', [[0, 'No'], [1, 'Yes']], draft.ntc ? 1 : 0)}</div>` : ''}`;
     const extrasHtml = `
-      <div class="off-inc off-gap">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${esc(l)}</button>`).join('')}</div>
+      <div class="off-inc off-gap">${[['', 'None'], ['playoffs', 'Playoffs'], ['title', 'Finals'], ...['games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${esc(l)}</button>`).join('')}</div>
       ${draft.inc ? `<div class="off-grid">${step('incbonus', 'Bonus', `$${draft.inc.bonus}M`)}<p class="note small muted" style="align-self:center">${esc(incText(m.p, draft.inc).replace(/^team /, '').replace(/^(\w)/, c => c.toUpperCase()))}: about $${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</p></div>`
       : '<p class="note small muted">A bonus he earns if he hits the goal. It counts toward his offer by the odds he gets there.</p>'}`;
     // The pitch: all four, one try.
@@ -12703,13 +12703,13 @@ actions.faOffer = d => {
       ${isComplete() ? destinationLine(L, team, m.p) : ''}
       ${pitchPick}
       ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn small" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}`;
-    const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Bonus${draft.inc ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
+    const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Incentive${draft.inc ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
     box.querySelector('.box').innerHTML = `<div class="offer-sheet">
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
         <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)} · ${M.icon} ${esc(M.name)}</span></p>
       ${m.from && isUserTeam(m.from) ? maxLine(L, m.p) : ''}
       ${prodBoxes(m.p)}
-      ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}${isLeveled(x.id) ? ` ${x.level}` : ''}</span>`).join(' · ')}</p>` : ''}
+      ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}</span>`).join(' · ')}</p>` : ''}
       ${hasPitch ? '' : `<p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>`}
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${quickRow}
