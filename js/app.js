@@ -261,6 +261,9 @@ function logoUrl(url) {
   if (!url) return '';
   return url.includes('dropbox.com') ? url.replace(/([?&])dl=0/, '$1raw=1') : url;
 }
+// Player faces cut from the game's roster screens (a face pack), keyed by player id. Nothing shows without one.
+const faceOf = p => (p && state.faces?.get?.(p.id)) || '';
+const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<img class="face ${cls}" src="${u}" alt="">` : ''; };
 // Logos load right away (no lazy loading) into a box of fixed size, so a
 // slow or missing logo never shifts the layout.
 function logoImg(team, cls = 'logo-sm') {
@@ -6116,7 +6119,7 @@ function playerRow(p, d) {
   const award = awardOf(p);
   const detail = [apSummary(d), d.points ? changeSummary(d) : ''].filter(Boolean).join(' · ');
   return `<button class="prow" data-act="openPlayer" data-id="${p.id}">
-    <span class="name">${esc(playerName(p))} ${lvTag(p, 'small')}</span>
+    <span class="name">${faceImg(p)}${esc(playerName(p))} ${lvTag(p, 'small')}</span>
     <span class="right">
       <span class="stars">${potStars(p)}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
@@ -7942,13 +7945,13 @@ screens.player = (args) => {
   layout({
     title: 'Player Profile',
     body: `
-      <div>
+      <div class="${faceOf(p) ? 'pl-head' : ''}">${faceImg(p, 'face-lg')}<div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
         ${quickActions(p, team)}
-      </div>
+      </div></div>
       ${tabsRow}
       ${content}`,
     action: { act: 'back', label: 'Done' },
@@ -11835,7 +11838,7 @@ screens.fa = (args = {}) => {
     const signed = s.signings.find(x => x.p === m.p);
     const rfa = FA.isRestricted(L, m.p);
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="${ro ? 'openPlayer' : 'faOffer'}" data-id="${m.p.id}" ${!ro && (signedIds.has(m.p.id) || s.stage === 'done') ? 'disabled' : ''}>
-      <span class="name">${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
+      <span class="name">${faceImg(m.p)}${esc(playerName(m.p))} <span class="${declining(m.p) ? 'decl-lv' : 'gold'} small" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span>${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
@@ -11913,7 +11916,7 @@ function expiringSection(s) {
     const mineBid = list.find(b => isUserTeam({ id: b.tid }));
     const others = list.filter(b => !isUserTeam({ id: b.tid })).length;
     return `<div class="prow rrow ${mineBid ? 'sel' : ''}">
-      <span class="name">${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
+      <span class="name">${faceImg(m.p)}${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
       <span class="right xbtns"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Offer</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Walk</button></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y · Asks $${m.ask}M × ${askYears(m)}</span>
       ${mineBid || others ? `<span class="meta">${mineBid ? `<span class="up">your offer ${offerText(mineBid)}</span>` : ''}${mineBid && others ? ' · ' : ''}${others ? `<span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>` : ''}
@@ -12706,7 +12709,7 @@ actions.faOffer = d => {
       ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn small" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}`;
     const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Incentive${draft.inc ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
     box.querySelector('.box').innerHTML = `<div class="offer-sheet">
-      <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
+      ${faceImg(m.p, 'face-md')}<p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
         <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)} · ${M.icon} ${esc(M.name)}</span></p>
       ${m.from && isUserTeam(m.from) ? maxLine(L, m.p) : ''}
       ${prodBoxes(m.p)}

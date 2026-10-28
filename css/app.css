@@ -1617,3 +1617,11 @@ fieldset.frame { position: relative; }
 .cg-lv li { display: flex; gap: 6px; }
 .cg-lv li span { color: var(--text); }
 .cap-legend .info-i, .note .info-i { position: static; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font-size: 12px; vertical-align: middle; margin-left: 2px; }
+
+/* Player faces (face pack): pixel art, scaled without blur */
+.face { image-rendering: pixelated; flex: none; object-fit: contain; object-position: bottom; }
+.face-sm { width: 30px; height: 26px; vertical-align: -6px; margin-right: 6px; }
+.face-md { display: block; width: 72px; height: 62px; margin: 0 auto -6px; }
+.face-lg { width: 88px; height: 76px; margin-top: 4px; }
+.pl-head { display: flex; align-items: flex-start; gap: 12px; }
+.pl-head > div { flex: 1; min-width: 0; }
