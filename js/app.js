@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.238.0';
+const APP_VERSION = '0.238.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -12680,19 +12680,17 @@ actions.faOffer = d => {
     const tab = draft.tab === 'extras' && hasExtras ? 'extras' : draft.tab === 'pitch' && hasPitch ? 'pitch' : 'terms';
     const step = (k, label, val) => `<div class="off-step"><span class="small muted">${label}</span><span class="ctl"><button class="btn square" data-k="${k}" data-d="-1">−</button><span class="pts-val">${val}</span><button class="btn square" data-k="${k}" data-d="1">+</button></span></div>`;
     const seg = (k, opts, cur) => `<div class="seg3">${opts.map(([v, l]) => `<button class="btn small ${cur === v ? 'on focus' : 'off'}" data-k="${k}" data-v="${v}">${l}</button>`).join('')}</div>`;
-    // ‹ value › : one choice showing, the arrows step through the rest.
-    const cyc = (k, label, val) => `<div class="off-cyc"><span class="small muted">${label}</span><button class="btn small off" data-k="${k}" data-d="-1" aria-label="Previous">‹</button><span class="off-cyc-val">${val}</span><button class="btn small off" data-k="${k}" data-d="1" aria-label="Next">›</button></div>`;
     const ml = mleOk(team), vm = vetMinOk(team);
     const quickRow = ml || vm ? `<div class="off-quick">${ml ? `<button class="btn small ${draft.sal === ml.sal && draft.yrs === ml.yrs ? 'on focus' : ''}" data-k="mle">📝 ${ml.name} $${ml.sal}M×${ml.yrs}</button>` : ''}${vm ? `<button class="btn small" data-k="vetmin">⚡ ${minLabel} $${minSal}M</button>` : ''}</div>` : '';
     const load = draft.yrs >= 2 ? draft.load || 'flat' : 'flat';
     const termsHtml = `
       <div class="off-grid">${step('sal', load !== 'flat' ? 'Salary (avg)' : 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
-      <div class="off-row"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
-      ${hasExtras ? `${cyc(draft.yrs >= 2 ? 'loadc' : 'noop', 'Loading', { flat: 'Flat', front: 'Front', back: 'Back' }[load])}
+      <div class="off-row off-gap"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
+      ${hasExtras ? `<div class="off-row"><span class="small muted">Loading</span>${draft.yrs >= 2 ? seg('load', [['flat', 'Flat'], ['front', 'Front'], ['back', 'Back']], load) : '<span class="small muted">Flat (one year)</span>'}</div>
       <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'A one-year deal is paid flat.'}</p>` : ''}
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="off-row"><span class="small muted">No-trade${FA.wantsNtc(L, m.p, m.from) ? ' <span class="gold">★</span>' : ''}</span>${seg('ntc', [[0, 'No'], [1, 'Yes']], draft.ntc ? 1 : 0)}</div>` : ''}`;
     const extrasHtml = `
-      <div class="off-inc">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${esc(l)}</button>`).join('')}</div>
+      <div class="off-inc off-gap">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${esc(l)}</button>`).join('')}</div>
       ${draft.inc ? `<div class="off-grid">${step('incbonus', 'Bonus', `$${draft.inc.bonus}M`)}<p class="note small muted" style="align-self:center">${esc(incText(m.p, draft.inc).replace(/^team /, '').replace(/^(\w)/, c => c.toUpperCase()))}: about $${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</p></div>`
       : '<p class="note small muted">A bonus he earns if he hits the goal. It counts toward his offer by the odds he gets there.</p>'}`;
     // The pitch: all four, one try.
@@ -12705,7 +12703,7 @@ actions.faOffer = d => {
       ${isComplete() ? destinationLine(L, team, m.p) : ''}
       ${pitchPick}
       ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn small" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}`;
-    const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Incentives${draft.inc ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
+    const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Bonus${draft.inc ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
     box.querySelector('.box').innerHTML = `<div class="offer-sheet">
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
         <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)} · ${M.icon} ${esc(M.name)}</span></p>
@@ -12729,8 +12727,6 @@ actions.faOffer = d => {
     if (!b || b.tagName === 'SELECT') return;
     const k = b.dataset.k;
     if (k === 'tab') draft.tab = b.dataset.v;
-    else if (k === 'loadc') { const order = ['flat', 'front', 'back'], i = order.indexOf(draft.load || 'flat'); draft.load = order[(i + +b.dataset.d + 3) % 3]; }
-    else if (k === 'noop') return;
     else if (k === 'sal') draft.avg = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(maxAvgFor(L, m.p, draft.tid === m.from?.id, draft.yrs, draft.load), (draft.avg ?? draft.sal) + +b.dataset.d));
     else if (k === 'load') draft.load = b.dataset.v;
     else if (k === 'yrs') draft.yrs = Math.max(1, Math.min(FA.FA_DEFAULTS.birdMaxYears, draft.yrs + +b.dataset.d));
