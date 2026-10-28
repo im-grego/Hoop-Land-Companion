@@ -1436,10 +1436,10 @@ main.panel.bare { margin-top: 10px; }
 .off-body.fixed.spread { justify-content: space-evenly; gap: 0; }
 .off-body.spread .off-gap { margin-top: 0; }
 .off-body > .note, .off-body .opt-btns { margin: 0; }
-.off-total { min-height: 2.6em; }
+.off-total { height: 4.2em; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
 .off-quick { display: flex; gap: 6px; }
 .off-pitch, .off-inc { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-.off-inc { grid-template-columns: repeat(3, 1fr); row-gap: 16px; }
+.off-inc { grid-template-columns: repeat(3, 1fr); row-gap: 26px; }
 .off-gap { margin-top: 10px; }
 .off-pitch .btn, .off-inc .btn { min-width: 0; min-height: 36px; padding: 4px; font-size: 12px; }
 .off-quick .btn { flex: 1; min-width: 0; min-height: 32px; padding: 2px 6px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

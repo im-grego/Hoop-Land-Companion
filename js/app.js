@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.238.2';
+const APP_VERSION = '0.238.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -12681,13 +12681,13 @@ actions.faOffer = d => {
     const step = (k, label, val) => `<div class="off-step"><span class="small muted">${label}</span><span class="ctl"><button class="btn square" data-k="${k}" data-d="-1">−</button><span class="pts-val">${val}</span><button class="btn square" data-k="${k}" data-d="1">+</button></span></div>`;
     const seg = (k, opts, cur) => `<div class="seg3">${opts.map(([v, l]) => `<button class="btn small ${cur === v ? 'on focus' : 'off'}" data-k="${k}" data-v="${v}">${l}</button>`).join('')}</div>`;
     const ml = mleOk(team), vm = vetMinOk(team);
-    const quickRow = ml || vm ? `<div class="off-quick">${ml ? `<button class="btn small ${draft.sal === ml.sal && draft.yrs === ml.yrs ? 'on focus' : ''}" data-k="mle">📝 ${ml.name} $${ml.sal}M×${ml.yrs}</button>` : ''}${vm ? `<button class="btn small" data-k="vetmin">⚡ ${minLabel} $${minSal}M</button>` : ''}</div>` : '';
+    const quickRow = ml || vm ? `<div class="off-quick">${ml ? `<button class="btn small ${draft.sal === ml.sal && draft.yrs === ml.yrs ? 'on focus' : ''}" data-k="mle" title="${esc(ml.name)}">📝 ${ml.name.replace('Non-taxpayer ', '').replace('Taxpayer', 'Tax')} $${ml.sal}M × ${ml.yrs}</button>` : ''}${vm ? `<button class="btn small" data-k="vetmin">⚡ ${minLabel} $${minSal}M</button>` : ''}</div>` : '';
     const load = draft.yrs >= 2 ? draft.load || 'flat' : 'flat';
     const termsHtml = `
       <div class="off-grid">${step('sal', 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
       <div class="off-row off-gap"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
-      ${hasExtras ? `<div class="off-row"><span class="small muted">Loading</span>${draft.yrs >= 2 ? seg('load', [['flat', 'Flat'], ['front', 'Front'], ['back', 'Back']], load) : '<span class="small muted">Flat (one year)</span>'}</div>
-      <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'A one-year deal is paid flat.'}</p>` : ''}
+      ${hasExtras ? `<div class="off-row"><span class="small muted">Loading</span>${seg('load', [['flat', 'Flat'], ['front', 'Front'], ['back', 'Back']], load).replace(/(data-v="(front|back)")/g, draft.yrs >= 2 ? '$1' : '$1 disabled')}</div>
+      <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'One year: paid flat.'}</p>` : ''}
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="off-row"><span class="small muted">No-trade${FA.wantsNtc(L, m.p, m.from) ? ' <span class="gold">★</span>' : ''}</span>${seg('ntc', [[0, 'No'], [1, 'Yes']], draft.ntc ? 1 : 0)}</div>` : ''}`;
     const extrasHtml = `
       <div class="off-inc off-gap">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${esc(l)}</button>`).join('')}</div>
