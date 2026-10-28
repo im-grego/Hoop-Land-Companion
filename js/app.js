@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.229.0';
+const APP_VERSION = '0.230.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -144,7 +144,8 @@ function readinessOf(p) {
   const gap = (100 - (10 - Math.min(10, p.pot || 5)) * 7) - shownLevel(p);
   return p.age >= 22 || gap <= 12 ? READINESS.pro : gap >= 24 && p.age <= 20 ? READINESS.project : READINESS.base;
 }
-const readyChip = p => { const r = readinessOf(p); return `<span class="badge ${r.cls === 'up' ? 'lvl' : r.cls === 'gold' ? 'new' : ''}">${r.icon} ${r.tag}</span>`; };
+// Only the ends get a chip: green for ready now, orange for a project.
+const readyChip = p => { const r = readinessOf(p); return r === READINESS.base ? '' : `<span class="badge ${r.cls === 'up' ? 'new' : 'lvl'}">${r.icon} ${r.tag}</span>`; };
 setReadiness(p => (state.params.readiness === 'age' ? null : readinessOf(p).back));
 function saveParams() {
   try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 13 })); } catch { /* ignore */ }
@@ -9700,7 +9701,7 @@ screens.workouts = (args) => {
     const w = pre.workouts[p.id];
     const more = interviewQs() - w.qs.length;
     const done = w.qs.length >= interviewQs();
-    const head = `<div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span></div>`;
+    const head = `<div class="wk-head"><button class="linkish" data-act="openProspect" data-id="${p.id}">${esc(playerName(p))}</button> <span class="muted small">${esc(posName(p))} · ${p.age}y · ${classYear(p)}</span> <button class="btn small ${onBoard(p.id) ? 'on' : 'off'}" data-act="toggleBoard" data-id="${p.id}">${onBoard(p.id) ? '★ On board' : '＋ Board'}</button></div>`;
     const answers = `<p class="note small">${workoutResult(p)}</p>
       ${w.qs.map(k => `<p class="note small wk-a"><b>${esc(qText(p, k))}</b><br>${answerHtml(workoutAnswer(p, k))}</p>`).join('')}`;
     if (done && p.id !== lastId) {
@@ -9718,7 +9719,6 @@ screens.workouts = (args) => {
   const rank = new Map(boardOrder().map((p, i) => [p.id, i + 1]));
   const me = myTeam();
   const picks = liveOrder().filter(o => isUserTeam(o.owner)).map(o => o.overall);
-  const hidden = p => [...SKILL_ATTRS, ...PHYSICAL].filter(k => !ceilKnown(p, k)).length;
   const fview = args.f || 'board', fpos = args.pos || 'all';
   const FILTERS = [['board', '★ Board'], ['needs', '🧩 Needs'], ['scouted', '🔎 Scouted'], ['all', 'All']];
   let pool = myBoardOrder().filter(p => !pre.workouts[p.id]);
@@ -9730,17 +9730,17 @@ screens.workouts = (args) => {
   const shown = args.all ? pool : pool.slice(0, 30);
   const dots = `<span class="wk-dots">${Array.from({ length: cap }, (_, i) => `<i class="${i < ids.length ? 'used' : ''}"></i>`).join('')}</span>`;
   const inviteRow = p => {
-    const h = hidden(p), r = rank.get(p.id), fit = me && fillsFor(me, p).length;
+    const r = rank.get(p.id), fit = me && fillsFor(me, p).length;
     return `<div class="drill-row wk-row tap" data-act="openProspect" data-id="${p.id}">
       <span class="grow"><b>${onBoard(p.id) ? '<span class="gold">★</span> ' : ''}${esc(playerName(p))}</b> ${valueChip(p)}${fit ? ' <span title="Fills a need">🧩</span>' : ''}${scouted(p.id) ? ' <span title="Scouted in person">🔎</span>' : ''}${state.params.readiness !== 'age' ? ` ${readyChip(p)}` : ''}<br>
-        <span class="small muted">#${r} consensus · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span><br>
-        <span class="small ${h || !revealed(p.id) ? 'gold' : 'muted'}">${revealed(p.id) ? (h ? 'Reveals attributes' : 'Nothing hidden') : 'Reveals potential and attributes'}</span></span>
+        <span class="small muted">#${r} consensus · ${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}</span></span>
       <button class="btn small ${left ? 'focus' : 'off'}" data-act="invite" data-id="${p.id}" ${left ? '' : 'disabled'}>Bring In</button></div>`;
   };
   const pickLine = picks.length ? `<p class="note small">Your pick${picks.length > 1 ? 's' : ''}: ${picks.map(n => `<b>#${n}</b>`).join(' · ')}</p>` : '<p class="note small muted">You don\'t have a pick right now.</p>';
   const inviteHtml = `${pickLine}<p class="note small">${dots} <b>${left} of ${cap}</b> left</p>
     <div class="seg lab-seg">${FILTERS.map(([k, l]) => `<button class="btn small ${k === fview ? 'on focus' : 'off'}" data-act="wkFilter" data-f="${k}">${esc(l)}</button>`).join('')}</div>
     <div class="seg lab-seg">${[['all', 'All'], ['guards', 'Guards'], ['wings', 'Wings'], ['bigs', 'Bigs']].map(([k, l]) => `<button class="btn small ${k === fpos ? 'on focus' : 'off'}" data-act="wkPos" data-p="${k}">${l}</button>`).join('')}</div>
+    <p class="note small">A workout reveals his potential and the ceiling on every rating.</p>
     <div class="stack">${shown.map(inviteRow).join('') || '<p class="note small muted">Nobody here. Try another filter.</p>'}</div>
     ${!args.all && pool.length > 30 ? `<button class="btn small" data-act="workoutAll" style="margin-top:8px">Show all ${pool.length}</button>` : ''}`;
   const live = order.filter(p => (pre.workouts[p.id].qs.length || 0) < interviewQs());
@@ -9750,6 +9750,10 @@ screens.workouts = (args) => {
       ${uiTabs('workouts', [
         ['invite', `Invite · ${left}`, inviteHtml],
         ['gym', 'Interview', inGym ? `<div class="stack">${inGym}</div>` : '<p class="note small muted">Nobody yet. Bring someone in from Invite.</p>', live.length > 0],
+        ['board', `Board · ${myBoard().length}`, `<p class="note small muted">Move prospects up or down after what you heard.</p>${draftWarRoom().html}${(() => {
+          const off = order.filter(p => !onBoard(p.id));
+          return off.length ? `<fieldset class="frame"><legend>Interviewed, not on your board</legend><div class="list">${off.map(p => `<div class="board-row">${prospectRow(p)}<div class="mv2"><button class="mvbtn" data-act="toggleBoard" data-id="${p.id}" aria-label="Add to your board">+</button></div></div>`).join('')}</div></fieldset>` : '';
+        })()}`],
       ], live.length ? 'gym' : 'invite')}`,
     action: isStep('workouts') ? { act: 'preAdvance', label: left <= 0 && !live.length ? '✅ Advance to the Draft' : 'Advance to the Draft', k: 'workouts' } : null,
   });
