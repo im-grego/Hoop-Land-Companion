@@ -258,6 +258,9 @@ export function runSurvey(L, li = 0, salt = 1) {
   const valueRank = new Map([...rk].sort((a, b) => ((b.p.pot || 6) * 4 + levelOf(b.p)) - ((a.p.pot || 6) * 4 + levelOf(a.p))).map((r, i) => [r.p.id, i + 1]));
   out.push(ask('steal', 'Offseason', 'Which rookie was the biggest steal in the draft?', rk.filter(r => r.pick > 5).map(r => R(r, r.pick - valueRank.get(r.p.id)))));
 
+  // Last season's finish against this roster's strength: the bigger the gap, the harder to call.
+  const winRank = new Map([...teams].sort((a, b) => pct(b) - pct(a)).map((t, i) => [t.id, i]));
+  const strRank = new Map([...teams].sort((a, b) => now.get(b.id) - now.get(a.id)).map((t, i) => [t.id, i]));
   out.push(ask('unpredictable', 'Other', 'Which team\'s level of success is the toughest to predict?',
     teams.map(t => T(t, Math.abs(winRank.get(t.id) - strRank.get(t.id)) * 0.4 + arrivals(t).length * 0.8 +
       t.roster.filter(p => { const h = injuryHistory(p, yr); return h && h.games >= 20; }).length * 1.2 + t.roster.filter(p => p.age >= 33 && levelOf(p) >= 75).length))));
