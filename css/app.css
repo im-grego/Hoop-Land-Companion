@@ -1521,7 +1521,10 @@ main.panel.bare { margin-top: 10px; }
 .od-item { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 4px; background: var(--btn); border: 2px solid var(--btn-edge); min-width: 0; }
 .od-item .small { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .od-item.mine { border-color: var(--gold); }
-.od-item.past { opacity: 0.6; }
+.od-item.tc:not(.pending) { background: linear-gradient(180deg, var(--tc1), color-mix(in srgb, var(--tc1) 40%, #0b2f6b)); border-color: var(--tc2); text-shadow: 0 2px 0 #0009; }
+.od-item.tc.mine:not(.pending) { box-shadow: 0 0 0 2px var(--gold); }
+.od-item .od-tm, .od-item.pending .od-pl { display: none; }
+.od-item.pending .od-tm { display: inline; }
 .od-no { font-weight: 800; color: var(--gold); font-size: 13px; }
 .draft-intro { text-align: center; padding: 28px 12px; animation: introIn 0.6s ease-out both; }
 .di-year { margin: 0; letter-spacing: 2px; text-transform: uppercase; color: var(--cyan); }

@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.230.0';
+const APP_VERSION = '0.231.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -386,9 +386,30 @@ function skillHint(id) {
 // ---------------------------------------------------------------------------
 // Layout + routing
 
+// Team logos come from Dropbox, which doesn't let browsers cache them for long: a redraw that built every logo anew
+// fetched them all again, and on busy screens (the draft redraws after every pick) they flickered, then went blank
+// once Dropbox started turning the requests away. A redraw now moves the logos already on screen into their new spots.
+function keepLogos(draw) {
+  const pool = new Map();
+  for (const img of $app.querySelectorAll('img.logo-sm')) {
+    if (!img.complete || !img.naturalWidth) continue;
+    const k = img.getAttribute('src');
+    (pool.get(k) || pool.set(k, []).get(k)).push(img);
+  }
+  draw();
+  if (!pool.size) return;
+  for (const img of $app.querySelectorAll('img.logo-sm')) {
+    const old = pool.get(img.getAttribute('src'))?.pop();
+    if (!old) continue;
+    old.className = img.className;
+    old.removeAttribute('style'); if (img.getAttribute('style')) old.setAttribute('style', img.getAttribute('style'));
+    img.replaceWith(old);
+  }
+}
+
 function layout({ title, left = '', right = '', body, action = null, actionLeft = null, bare = false }) {
   const t = esc(title);
-  $app.innerHTML = `
+  keepLogos(() => { $app.innerHTML = `
     ${bare ? `<h1 class="sr-only">${t}</h1>` : `<div class="header">
       ${state.stack.length > 1 ? `<button class="btn back" data-act="back" aria-label="Back">${BACK_ARROW}</button>` : ''}
       ${left}
@@ -398,7 +419,7 @@ function layout({ title, left = '', right = '', body, action = null, actionLeft 
       ${right || careerChips()}
     </div>`}
     <main class="panel ${bare ? 'bare' : ''}">${body}</main>
-    ${action ? `<div class="bottom ${actionLeft ? 'two' : ''}">${actionLeft ? `<button class="btn action alt" data-act="${actionLeft.act}" data-id="${actionLeft.id}">${esc(actionLeft.label)}</button>` : ''}<button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}${action.n != null ? ` data-n="${action.n}"` : ''}${action.to ? ` data-to="${esc(action.to)}"` : ''}>${esc(action.label)}</button></div>` : ''}`;
+    ${action ? `<div class="bottom ${actionLeft ? 'two' : ''}">${actionLeft ? `<button class="btn action alt" data-act="${actionLeft.act}" data-id="${actionLeft.id}">${esc(actionLeft.label)}</button>` : ''}<button class="btn action" data-act="${action.act}"${action.k ? ` data-k="${esc(action.k)}"` : ''}${action.n != null ? ` data-n="${action.n}"` : ''}${action.to ? ` data-to="${esc(action.to)}"` : ''}>${esc(action.label)}</button></div>` : ''}`; });
 }
 
 const BACK_ARROW = `<svg width="40" height="28" viewBox="0 0 10 7" shape-rendering="crispEdges" aria-hidden="true">
@@ -8692,7 +8713,7 @@ async function revealPicks(overalls) {
   const order = liveOrder();
   state.skipReveal = false;
   const wait = ms => state.skipReveal ? Promise.resolve() : new Promise(r => { const t0 = Date.now(); const tick = () => (state.skipReveal || Date.now() - t0 >= ms ? r() : setTimeout(tick, 50)); tick(); });
-  for (const ov of overalls) $app.querySelector(`.lot-row[data-ov="${ov}"]`)?.classList.add('pending');
+  for (const ov of overalls) $app.querySelectorAll(`.lot-row[data-ov="${ov}"], .od-item[data-ov="${ov}"]`).forEach(x => x.classList.add('pending'));
   state.revealing = true;
   try {
     for (const ov of overalls) {
@@ -8707,7 +8728,7 @@ async function revealPicks(overalls) {
       if (!card.isConnected) break;
       card.classList.add('named');
       card.querySelector('.pick-in').outerHTML = `<span class="pick-name">${esc(playerName(p))}</span><span class="small">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)}${p.wt ? ` · ${p.wt} lb` : ''}</span>`;
-      $app.querySelector(`.lot-row[data-ov="${ov}"]`)?.classList.remove('pending');
+      $app.querySelectorAll(`.lot-row[data-ov="${ov}"], .od-item[data-ov="${ov}"]`).forEach(x => x.classList.remove('pending'));
       await wait(ov <= 14 ? 1900 : 1300);
     }
   } finally {
@@ -10768,7 +10789,8 @@ function draftLive() {
     const near = [order[idx - 1], ...order.slice(idx + 1, idx + 4)].filter(Boolean);
     return `<div class="on-deck">${near.map(q => {
       const sel = live.sel[q.overall], p = sel ? byId.get(sel.pid) : null;
-      return `<div class="od-item ${isUserTeam(q.owner) ? 'mine' : ''} ${p ? 'past' : ''}"><span class="od-no">#${q.overall}</span>${logoImg(q.owner)}<span class="small">${p ? esc(p.ln || playerName(p)) : esc(q.owner.shortName)}</span></div>`;
+      const tint = p ? teamTint(teamById(sel.to) || q.owner) : '';
+      return `<div class="od-item ${isUserTeam(q.owner) ? 'mine' : ''} ${p ? 'past' : ''} ${tint ? 'tc' : ''}" data-ov="${q.overall}" ${tint ? `style="${tint}"` : ''}><span class="od-no">#${q.overall}</span>${logoImg(q.owner)}<span class="small">${p ? `<span class="od-pl">${esc(p.ln || playerName(p))}</span><span class="od-tm">${esc(q.owner.shortName)}</span>` : esc(q.owner.shortName)}</span></div>`;
     }).join('')}</div>`;
   })();
   // A welcome card the first time the draft room opens.
