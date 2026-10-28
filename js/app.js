@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.238.4';
+const APP_VERSION = '0.239.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -11795,6 +11795,7 @@ function capNote(L) {
   const C = FA.capLines(L), yr = FA.seasonStart(L);
   const row = k => { const c = FA.capLines(L, k); return `<div class="small" style="display:flex;justify-content:space-between;gap:8px"><b>${yr + k}-${String(yr + k + 1).slice(2)}</b><span class="muted">Cap $${c.cap}M · Tax $${c.tax}M · 1st apron $${c.apron1}M · 2nd apron $${c.apron2}M</span></div>`; };
   return `<details class="frame"><summary class="note small"><b>Salary cap $${C.cap}M</b> <span class="muted">· projections</span></summary>
+    <p class="note small" style="margin-top:6px">What each salary level allows ${infoBtn('cap-levels', capGuide(null, null))}</p>
     <div class="stack" style="margin-top:6px">${[0, 1, 2, 3, 4].map(row).join('')}</div>
     <p class="note small muted" style="margin-top:6px">Tax line, then the 1st apron (can't use the room exception or take back salary in trades) and the 2nd apron (no combining salaries, no trading frozen picks). Past 2030 the cap keeps growing about 5% a year.</p></details>`;
 }
@@ -14270,6 +14271,33 @@ function taxMood(L, t) {
   if (st !== 'pay') for (const p of roster.filter(p => tr(p, 'money') >= 15 && p.contract?.yrs === 1 && !extPending(p) && shownLevel(p) >= 75)) add(p, -3, 'doubts the team will pay him next summer');
   return out.filter(x => x.n);
 }
+// The salary levels in plain words: what each one lets a team do and what it takes away, the team's own level marked.
+function capGuide(tier, total) {
+  const L = league(), C = FA.capLines(L), ex = FA.exceptions(L), floor = salaryFloor(L);
+  const lv = [
+    { k: 'under', name: 'Under the cap', range: `below $${C.cap}M`,
+      yes: ['Sign any free agent, as long as his salary fits in your space', 'Take on more salary in a trade, as long as you finish under the cap', `Space too small to matter? The Room MLE: one player up to $${ex.rmle}M for 2 years`, 'Re-sign your own players for whatever they\'re worth'],
+      no: [`Spend at least the floor ($${floor}M). Whatever you're short at the end of the summer is paid out to your players anyway`] },
+    { k: 'over', name: 'Over the cap', range: `$${C.cap}M to $${C.tax}M`,
+      yes: ['Re-sign your own players for any amount (Bird rights)', `The full MLE: one player up to $${ex.mle}M for 3 years, from week 2`, 'Minimum deals to fill the roster', 'In a trade, take back up to 125% of the salary you send, plus $1M'],
+      no: ['No more signing other teams\' free agents with cap space', 'Using the full MLE caps you hard at the 1st apron for the rest of the season'] },
+    { k: 'tax', name: 'Taxpayer', range: `$${C.tax}M to $${C.apron1}M`,
+      yes: ['Everything you could do over the cap: Bird rights, the full MLE, minimums, 125% trades'],
+      no: ['Luxury tax on every dollar over the tax line: $1.50 for each $1 of the first $5M, then $1.75, $2.50, $3.25 and up for each $5M after', 'The owner notices the bill'] },
+    { k: 'apron1', name: '1st apron', range: `$${C.apron1}M to $${C.apron2}M`,
+      yes: ['Re-sign your own players (Bird rights)', `The smaller Taxpayer MLE: one player up to $${ex.tmle}M for 2 years`, 'Minimum deals'],
+      no: ['In a trade you can\'t take back more salary than you send', 'No full MLE', 'Can\'t take in a player through a sign-and-trade', 'Still paying the tax, and more of it'] },
+    { k: 'apron2', name: '2nd apron', range: `$${C.apron2}M and up`,
+      yes: ['Keep the team you have; trades that cut salary'],
+      no: ['This is the hard ceiling: no signing or trade can take you past it', 'No MLE of any kind', 'Your first-round pick furthest out is frozen: it can\'t be traded', 'Can\'t send your own free agent out in a sign-and-trade', 'Over it in 3 of 5 seasons: that year\'s first-round pick drops to the end of the round', 'The biggest tax bill in the league'] },
+  ];
+  const at = lv.findIndex(x => x.k === tier), next = lv[at + 1];
+  return `<p class="note small"><b>Your payroll decides what you're allowed to do.</b> Each level up adds limits. Payroll here includes dead money.</p>
+    ${total != null ? `<p class="note small">You're at <b>$${total}M</b>: <b class="gold">${esc(lv[at]?.name || '')}</b>${next ? `, $${[C.cap, C.tax, C.apron1, C.apron2][at] - total}M below the ${esc(next.name.toLowerCase())}` : ''}.</p>` : ''}
+    <div class="cap-guide">${lv.map((x, i) => `<div class="cg-lv ${i === at ? 'here' : ''}"><p class="cg-h"><b>${esc(x.name)}</b> <span class="small muted">${x.range}</span>${i === at ? ' <span class="badge you">You</span>' : ''}</p>
+      <ul class="small">${x.yes.map(t => `<li class="up">✓ <span>${esc(t)}</span></li>`).join('')}${x.no.map(t => `<li class="down">✕ <span>${esc(t)}</span></li>`).join('')}</ul></div>`).join('')}</div>`;
+}
+const capInfo = (tier, total) => infoBtn(`cap-${tier}-${total}`, capGuide(tier, total));
 // Cap bar: payroll, dead money (red) and room, with ticks at the cap, the
 // tax line and both aprons; the tier and any tax bill underneath.
 function capBarOf(pay, dead, compact = false) {
@@ -14283,7 +14311,7 @@ function capBarOf(pay, dead, compact = false) {
   const zones = C.off ? '' : `background:linear-gradient(90deg, #2f6b4a 0 ${pct(C.cap)}%, #24507a ${pct(C.cap)}% ${pct(C.tax)}%, #6b5a1e ${pct(C.tax)}% ${pct(C.apron1)}%, #7a4a1e ${pct(C.apron1)}% ${pct(C.apron2)}%, #7a2430 ${pct(C.apron2)}%)`;
   const floor = C.off ? 0 : salaryFloor(league());
   return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${C.off ? '' : lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}${floor ? `<i class="cb-floor" style="left:${pct(floor)}%" title="Floor $${floor}M"></i>` : ''}</div>
-    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}${['tax', 'apron1'].includes(tier) ? `<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>` : ''}${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}</div>`;
+    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}${['tax', 'apron1'].includes(tier) ? `<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>` : ''}${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}${C.off ? '' : capInfo(tier, total)}</div>`;
 }
 
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${saveTag()}`;
@@ -14850,6 +14878,7 @@ screens.teamStats = (args) => {
 };
 actions.infoPop = d => {
   const o = overlay(`<div class="info-text">${INFO[d.k] || ''}</div><button class="btn" data-close>Got it</button>`);
+  o.querySelector('.cg-lv.here')?.scrollIntoView({ block: 'center' });   // the salary guide opens on your level
   o.addEventListener('click', e => { if (e.target === o || e.target.closest('[data-close]')) o.remove(); });
 };
 actions.teamStats = d => go('teamStats', { k: d.k });

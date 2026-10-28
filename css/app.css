@@ -1607,3 +1607,13 @@ fieldset.frame { position: relative; }
 .qo-explain { margin-top: 8px; padding: 8px 10px; background: var(--btn-shadow); border-left: 3px solid var(--cyan); }
 .qo-explain p { margin: 0 0 6px; }
 .up-btn { border-color: var(--up); margin-bottom: 8px; width: 100%; }
+
+/* Salary level guide (the ⓘ on a cap bar) */
+.cap-guide { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; text-align: left; }
+.cg-lv { padding: 6px 8px; border: 2px solid var(--btn-edge); }
+.cg-lv.here { border-color: var(--gold); background: var(--btn-shadow); }
+.cg-h { margin: 0 0 2px; }
+.cg-lv ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cg-lv li { display: flex; gap: 6px; }
+.cg-lv li span { color: var(--text); }
+.cap-legend .info-i, .note .info-i { position: static; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font-size: 12px; vertical-align: middle; margin-left: 2px; }
