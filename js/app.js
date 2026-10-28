@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.239.0';
+const APP_VERSION = '0.240.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); }   // once an offseason each (the G League once a season)
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); taxSettle(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -4169,8 +4169,8 @@ function coachCard() {
 
 // Effects of the extra tree nodes (Complete rules, pros only).
 const fxNow = () => CO.effects(treeStore(), myCoach(), isComplete() && !isCollege());
-// Coins: the game's own currency (each team's frontOffice.coins). Here they
-// only buy facility upgrades.
+// Coins: the game's own currency (each team's frontOffice.coins). They buy facility upgrades, and your teams pay
+// the luxury tax with them (see taxSettle).
 const coinsOf = t => t?.frontOffice?.coins ?? 0;
 function spendCoins(t, n) {
   if (!t?.frontOffice || coinsOf(t) < n) return false;
@@ -4181,8 +4181,8 @@ function spendCoins(t, n) {
 const coinTag = n => `💵${n}`;
 const tokTag = n => `🎟️${n}`;
 
-// Facilities: the four buildings, three tiers each. As in the game, coins buy any tier outright (the top tier costs
-// its own price, not every tier on the way); each tier lists exactly what it does in the app.
+// Facilities: the four buildings, three tiers each, bought in order (a tier needs the one below it); each tier lists
+// exactly what it does in the app.
 screens.facilities = () => {
   const t = myTeam();
   if (!t) { back(); return; }
@@ -4195,11 +4195,11 @@ screens.facilities = () => {
       ${FX.FACILITIES.map(f => {
         const cur = FX.tierIn(t, f.k);
         return `<fieldset class="frame"><legend>${f.icon} ${f.label}</legend><div class="tree">${f.tiers.map((tier, i) => {
-          const lv = i + 1, have = cur >= lv, price = FX.upgradeCost(lv - 1);
-          return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : coins >= price ? 'next' : 'locked'}">
+          const lv = i + 1, have = cur >= lv, price = FX.upgradeCost(lv - 1), nextUp = lv === cur + 1;
+          return `${i ? '<div class="tree-link"><span></span></div>' : ''}<div class="tree-node one ${have ? 'have' : nextUp ? 'next' : 'locked'}">
             <b class="tn-name">Tier ${lv} · ${esc(tier.name)}</b>
             <span class="small tn-text">${tier.lines.map(l => `• ${esc(l)}`).join('<br>')}</span>
-            ${have ? '<span class="up tn-cost">✓</span>' : `<button class="btn small ${coins >= price ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" data-lv="${lv}" ${coins >= price ? '' : 'disabled'}>Buy ${coinTag(price)}</button>`}
+            ${have ? '<span class="up tn-cost">✓</span>' : nextUp ? `<button class="btn small ${coins >= price ? 'focus' : ''}" data-act="facUpgrade" data-k="${f.k}" ${coins >= price ? '' : 'disabled'}>Buy ${coinTag(price)}</button>` : `<span class="muted small tn-cost">🔒 ${coinTag(price)}</span>`}
           </div>`;
         }).join('')}</div></fieldset>`;
       }).join('')}`,
@@ -4209,8 +4209,8 @@ actions.facUpgrade = async d => {
   const t = myTeam(), f = FX.FACILITIES.find(x => x.k === d.k);
   const fac = t && FX.facilityOf(t, d.k);
   if (!f || !fac) return;
-  const cur = FX.tierIn(t, d.k), lv = Math.min(FX.MAX_FAC_TIER, +d.lv || cur + 1);
-  if (lv <= cur) return;
+  const cur = FX.tierIn(t, d.k), lv = cur + 1;   // one tier at a time
+  if (lv > FX.MAX_FAC_TIER) return;
   const cost = FX.upgradeCost(lv - 1);
   if (coinsOf(t) < cost) { toast('Not enough coins', '', 2400, true); return; }
   if (!(await confirmBox(`Upgrade ${esc(f.label)} to ${esc(f.tiers[lv - 1].name)} for ${coinTag(cost)}?`, 'Upgrade'))) return;
@@ -11848,7 +11848,7 @@ screens.fa = (args = {}) => {
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const ml = FA.mleFor(L, t, s.day, s.used);
-        const extra = [ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : ''].filter(Boolean).join(' · ');
+        const extra = [ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : '', taxOwed(t) ? `<span class="down">${coinTag(taxOwed(t))} tax still owed</span>` : ''].filter(Boolean).join(' · ');
         return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBarOf(FA.payroll(t), deadFor(t.id))}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
@@ -14193,6 +14193,31 @@ function syncDead() {
   FA.setDeadMoney(Object.fromEntries(league().teams.map(t => [t.id, deadFor(t.id)])));
 }
 // Cap bar: payroll, dead money (red) and room under the cap.
+// The luxury tax, paid in coins: when the offseason opens (before contracts roll over in free agency), each of your
+// teams over last season's tax line pays 💵1 per $1M of tax. Short on coins, it pays what it has and the rest is owed,
+// added to next season's bill.
+const taxKey = () => `hlc:tax:${saveTag()}`;
+function taxStore() { try { return JSON.parse(localStorage.getItem(taxKey())) || {}; } catch { return {}; } }
+function taxSave(v) { try { localStorage.setItem(taxKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+const taxOwed = t => taxStore().owed?.[t.id] || 0;
+function taxSettle() {
+  const L = league(), r = phaseRank(L.season);
+  if (isCollege() || !isComplete() || !FA.capSystemOn() || r < 1 || r > 3) return;
+  const st = taxStore(), yr = lastSeasonYear();
+  if (st.paid?.[yr]) return;
+  const C = FA.capLines(L), done = (st.paid ||= {})[yr] = {};
+  st.owed ||= {};
+  for (const t of L.teams.filter(isUserTeam)) {
+    const over = FA.teamCommitted(t) - C.tax, bill = (over > 0 ? taxOn(over) : 0) + (st.owed[t.id] || 0);
+    if (!bill) continue;
+    const pay = Math.min(bill, Math.max(0, coinsOf(t)));
+    if (pay) spendCoins(t, pay);
+    st.owed[t.id] = bill - pay;
+    done[t.id] = { bill, pay };
+    toast(`💵 ${t.shortName} paid the luxury tax`, `${coinTag(pay)} for $${bill}M of tax${bill > pay ? ` · ${coinTag(bill - pay)} still owed` : ''}`, 4200, bill > pay);
+  }
+  taxSave(st);
+}
 // The tax on an amount over the line (the same brackets as FA.taxBill).
 function taxOn(over) {
   let left = over, rate = 1.5, bill = 0, step = 0;
@@ -14283,7 +14308,7 @@ function capGuide(tier, total) {
       no: ['No more signing other teams\' free agents with cap space', 'Using the full MLE caps you hard at the 1st apron for the rest of the season'] },
     { k: 'tax', name: 'Taxpayer', range: `$${C.tax}M to $${C.apron1}M`,
       yes: ['Everything you could do over the cap: Bird rights, the full MLE, minimums, 125% trades'],
-      no: ['Luxury tax on every dollar over the tax line: $1.50 for each $1 of the first $5M, then $1.75, $2.50, $3.25 and up for each $5M after', 'The owner notices the bill'] },
+      no: ['Luxury tax on every dollar over the tax line: $1.50 for each $1 of the first $5M, then $1.75, $2.50, $3.25 and up for each $5M after', 'You pay it from your coins when the season ends: 💵1 for every $1M of tax', 'The owner notices the bill'] },
     { k: 'apron1', name: '1st apron', range: `$${C.apron1}M to $${C.apron2}M`,
       yes: ['Re-sign your own players (Bird rights)', `The smaller Taxpayer MLE: one player up to $${ex.tmle}M for 2 years`, 'Minimum deals'],
       no: ['In a trade you can\'t take back more salary than you send', 'No full MLE', 'Can\'t take in a player through a sign-and-trade', 'Still paying the tax, and more of it'] },
@@ -14311,7 +14336,7 @@ function capBarOf(pay, dead, compact = false) {
   const zones = C.off ? '' : `background:linear-gradient(90deg, #2f6b4a 0 ${pct(C.cap)}%, #24507a ${pct(C.cap)}% ${pct(C.tax)}%, #6b5a1e ${pct(C.tax)}% ${pct(C.apron1)}%, #7a4a1e ${pct(C.apron1)}% ${pct(C.apron2)}%, #7a2430 ${pct(C.apron2)}%)`;
   const floor = C.off ? 0 : salaryFloor(league());
   return `<div class="cap-bar" style="${zones}"><span class="cb-pay" style="width:${pct(pay)}%"></span><span class="cb-dead" style="width:${pct(dead)}%"></span>${C.off ? '' : lines.map(([l, v]) => `<i class="cb-tick" style="left:${pct(v)}%" title="${l} $${v}M"></i>`).join('')}${floor ? `<i class="cb-floor" style="left:${pct(floor)}%" title="Floor $${floor}M"></i>` : ''}</div>
-    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}${['tax', 'apron1'].includes(tier) ? `<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>` : ''}${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}${C.off ? '' : capInfo(tier, total)}</div>`;
+    <div class="cap-legend small">${compact ? '' : `<span>Payroll $${pay}M</span>`}${dead ? `<span class="down">Dead $${dead}M</span>` : ''}${['tax', 'apron1'].includes(tier) ? `<span class="tier-tag t-${tier}">${FA.TIER_NAMES[tier]}</span>` : ''}${!C.off && total > C.tax ? `<span class="down">Tax bill $${taxOn(total - C.tax)}M (${coinTag(taxOn(total - C.tax))})</span>` : ''}${free >= 0 ? `<span class="up">$${free}M space</span>` : C.off ? `<span class="down">$${-free}M over the cap</span>` : next ? `<span class="muted">$${next[1] - total}M to the ${next[0] === 'Tax' ? 'tax' : next[0] === '1st' ? '1st apron' : next[0] === '2nd' ? '2nd apron' : 'cap'}</span>` : '<span class="down">Over the 2nd apron</span>'}${C.off ? '' : capInfo(tier, total)}</div>`;
 }
 
 const extLedgerKey = () => `hlc:extLedger:${league().shortName}:${saveTag()}`;
