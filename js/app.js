@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.241.0';
+const APP_VERSION = '0.242.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -464,7 +464,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); taxSettle(); }   // once an offseason each (the G League once a season)
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -1729,7 +1729,7 @@ function stepActions(key) {
       // One button a week: it opens free agency or starts the week as needed and goes straight to the market.
       return `<button class="btn big focus" data-act="faWeek">✍️ ${s.phase === 5 ? 'Open Free Agency' : `Week ${day} Market`}</button>`;
     }
-    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
+    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}${shiftOpen() ? `<button class="btn" data-act="nav" data-to="coaching" style="margin-bottom:8px">🔁 Position Changes${(() => { const n = league().teams.filter(isUserTeam).reduce((a, t) => a + shiftIdeas(league(), t).slice(0, 3).length, 0); return n ? ` · ${n} suggested` : ''; })()}</button>` : ''}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn focus" data-act="nav" data-to="survey">📋 GM Survey</button></div>
       <button class="btn small off" data-act="mediaDone" style="margin-top:8px">✅ Wrap Up</button>`;
     case 'cuts': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Camp Deals</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>
@@ -6062,6 +6062,10 @@ function shownLevel(p) {
   return levelOf({ pot: p.pot, attributes: Object.fromEntries(ATTRS.map(k => [k, [regressed(p, k), p.attributes[k][1]]])) });
 }
 // "Lv 84" for lists: red while declining.
+// Level for the second line of a row: red past his regression age, white once he's at his ceiling (no upgrades left), gold otherwise.
+const ceilRoom = p => SKILL_ATTRS.reduce((s, k) => s + Math.max(0, (p.attributes[k]?.[1] || 0) - (p.attributes[k]?.[0] || 0)), 0);
+const lvRow = p => declining(p) ? `<span class="down" title="Past his regression age">Lv ${shownLevel(p)}</span>`
+  : ceilRoom(p) <= 0 ? `<span class="lv-max" title="At his ceiling: no upgrades left">Lv ${levelOf(p)}</span>` : `<span class="gold">Lv ${levelOf(p)}</span>`;
 const lvTag = (p, cls = 'gold small') => declining(p) ? `<span class="${cls.replace('gold', '')} down">Lv ${shownLevel(p)}</span>` : `<span class="${cls}">Lv ${levelOf(p)}</span>`;
 
 screens.report = (args) => {
@@ -6126,7 +6130,7 @@ function playerRow(p, d) {
       <span class="stars">${potStars(p)}</span><br>
       ${award ? `<span class="up">+${award}${state.params.bumpMode === 'train' ? '' : ' pts'}</span>` : '<span class="muted">—</span>'}
     </span>
-    <span class="meta">${lvTag(p, 'gold')} · ${p.age}y · ${esc(pos)} · ${heightStr(p.ht)} · ${p.wt} lb</span>
+    <span class="meta">${lvRow(p)} · ${esc(pos)} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb</span>
     ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
     ${glBumpLine(p) ? `<span class="chg">${glBumpLine(p)}</span>` : ''}
   </button>`;
@@ -7281,6 +7285,7 @@ screens.coaching = () => {
     body: `${coachCard()}
       ${best.length ? `<fieldset class="frame"><legend>On the Market</legend><div class="stack">${best.map(({ c, g }) => `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}"><span class="coach-top"><b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${esc(coachArch(c))} · ${esc(g.tier)}</span></span><span class="small muted">📒 ${esc(signatureOf(c))}</span></button>`).join('')}</div>
         <button class="btn small" data-act="nav" data-to="coaches" style="margin-top:6px">🧑‍🏫 Every Coach</button></fieldset>` : ''}
+      ${posShiftBox()}
       ${isCollege() ? '' : hotSeatBox(L)}
       ${coachChangesBox()}`,
   });
@@ -7303,6 +7308,120 @@ function coachMarketCard() {
   return `<fieldset class="frame"><legend>Coaches Available</legend><p class="note small">${top.map(({ c, g }) => `<button class="linkish" data-act="nav" data-to="coach" data-arg="${c.id}">${esc(`${c.fn} ${c.ln}`)}</button> <span class="muted">(${esc(g.tier)})</span>`).join(' · ')}</p>
     <button class="btn small" data-act="nav" data-to="coaching">🧑‍🏫 Coaching</button></fieldset>`;
 }
+
+// ---- Position changes: before training camp a player can move one spot bigger or smaller (PG … C), bulking up or
+// slimming down about 7 lb. Suggestions weigh his size against the position, his skills, a logjam in the rotation and
+// what the roster needs. A few CPU players shift each summer too, and the rumor mill picks it up from camp.
+const POS_HT = [75.2, 75.6, 76.3, 78.0, 78.8, 79.9, 80.8, 81.8, 83.5], POS_WT = [194, 194, 202, 207, 212, 218, 234, 238, 250];
+const SHIFT_LB = 7, SHIFT_MAX = 3;
+const shiftStore = () => (calFlags().posShifts ||= {});
+// Open from the end of the season until training camp runs.
+const shiftOpen = (L = league()) => !isCollege() && !CAR.isCareer(L) && phaseRank(L.season) >= 1 && !state.auto[state.leagueIdx] && !calFlags().dev;
+const A_ = (p, k) => p.attributes?.[k]?.[0] || 0;
+// How well a move one spot bigger (d = 1) or smaller (d = -1) fits him, with the reasons.
+function shiftCase(L, t, p, d) {
+  const to = p.pos + d;
+  if (to < 0 || to > 8 || p.age > 31 || p.status !== FA.STATUS_SIGNED) return null;
+  const why = [];
+  let score = 0;
+  // Size: taller than his position usually is points bigger, shorter points smaller.
+  const size = Math.max(-3, Math.min(3, (p.ht - POS_HT[p.pos]) * d));
+  score += size;
+  if (size >= 1) why.push(`${heightStr(p.ht)} is ${d > 0 ? 'big' : 'small'} for a ${POSITIONS[p.pos]}`);
+  // Skills: rebounding, finishing inside, shot blocking and strength against handle, passing and speed.
+  const big = ['INS', 'ORE', 'DRE', 'BLK', 'STR'].reduce((a, k) => a + A_(p, k), 0) / 5, small = ['DRB', 'PAS', 'SPD'].reduce((a, k) => a + A_(p, k), 0) / 3;
+  const skill = Math.max(-3, Math.min(3, (big - small) * d / 2));
+  score += skill;
+  if (skill >= 1) why.push(d > 0 ? 'rebounds and finishes inside like a bigger player' : 'handles and passes like a smaller player');
+  // A logjam: more of his group in the rotation than of the one he'd move into.
+  const g = x => (x <= 2 ? 'guards' : x <= 5 ? 'wings' : 'bigs');
+  if (g(to) !== g(p.pos)) {
+    const rot = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 10);
+    const here = rot.filter(x => g(x.pos) === g(p.pos)).length, there = rot.filter(x => g(x.pos) === g(to)).length;
+    if (here - there >= 2) { score += Math.min(2, (here - there) / 2); why.push(`${here} ${g(p.pos)} in the rotation, ${there} ${g(to)}`); }
+    const need = rosterNeeds(L, t, { level: shownLevel, li: state.leagueIdx }).filter(n => n.group === g(to) && (n.kind === 'Depth' || n.kind === 'Starter'));
+    if (need.length) { score += Math.max(...need.map(n => n.sev)) * 0.6; why.push(`the team needs ${g(to)}`); }
+  }
+  return { p, t, d, to, score, why };
+}
+function shiftIdeas(L, t) {
+  const done = shiftStore();
+  return FA.signedRoster(t).filter(p => !done[p.id]).flatMap(p => [shiftCase(L, t, p, 1), shiftCase(L, t, p, -1)]).filter(x => x && x.score >= 2.5 && x.why.length)
+    .sort((a, b) => b.score - a.score).filter((x, i, a) => a.findIndex(y => y.p === x.p) === i);
+}
+function applyShift(p, t, d, cpu = false) {
+  const st = shiftStore();
+  if (st[p.id]) return;
+  st[p.id] = { from: p.pos, to: p.pos + d, wt0: p.wt, tid: t.id, cpu };
+  p.pos += d;
+  p.wt = Math.max(150, p.wt + d * SHIFT_LB);
+  st[p.id].wt1 = p.wt;
+  state.dirty = true;
+}
+// A few CPU players shift each summer: the strongest cases, one a team, four at most.
+function cpuShifts() {
+  const L = league();
+  if (!shiftOpen(L) || phaseRank(L.season) < 4 || calFlags().cpuShifted || Object.values(shiftStore()).some(r => r.cpu)) return;
+  calFlags().cpuShifted = true;
+  // Role players still finding their spot (under Lv 80, 28 or younger); stars stay where they are.
+  const all = L.teams.filter(t => !isUserTeam(t)).map(t => shiftIdeas(L, t).find(x => shownLevel(x.p) < 80 && x.p.age <= 28)).filter(x => x && x.score >= 3.5).sort((a, b) => b.score - a.score).slice(0, 4);
+  for (const x of all) applyShift(x.p, x.t, x.d, true);
+}
+// What camp is saying about a shift.
+function shiftRumor(r) {
+  const L = league(), p = findPlayer(r.pid)?.p, t = L.teams.find(x => x.id === r.tid);
+  if (!p || !t) return '';
+  const nm = playerName(p), up = r.to > r.from, seed = (p.id * 31 + r.tid * 7 + r.to) >>> 0, pick = a => a[seed % a.length];
+  const line = up ? pick([`${t.name} practices have ${nm} working on the block with the bigs.`, `Early ${t.name} depth chart lists ${nm} at ${POSITIONS[r.to]}, but he's played ${POSITIONS[r.from]} his whole career.`, `${nm} showed up to camp at ${r.wt1} lb, up from ${r.wt0}: ${t.city} wants him at ${POSITIONS[r.to]}.`])
+    : pick([`${t.name} practices have ${nm} bringing the ball up.`, `Early ${t.name} depth chart lists ${nm} at ${POSITIONS[r.to]}, a spot smaller than he's played.`, `${nm} slimmed down to ${r.wt1} lb this summer to play more ${POSITIONS[r.to]}.`]);
+  return `<p class="note small" style="margin:0">🏀 ${esc(line)}</p>`;
+}
+function posShiftBox() {
+  const L = league();
+  if (isCollege() || CAR.isCareer(L)) return '';
+  const st = shiftStore(), mine = L.teams.filter(isUserTeam), open = shiftOpen(L);
+  const cpu = Object.entries(st).filter(([, r]) => r.cpu).map(([pid, r]) => ({ pid: +pid, ...r }));
+  if (!open && !Object.keys(st).length) return '';
+  const row = (p, right, sub) => `<div class="drill-row"><span class="grow tap" data-act="openPlayer" data-id="${p.id}"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${sub}</span></span>${right}</div>`;
+  const teamBox = t => {
+    const used = Object.values(st).filter(r => r.tid === t.id && !r.cpu).length;
+    const moved = FA.signedRoster(t).filter(p => st[p.id] && !st[p.id].cpu);
+    const ideas = open && used < SHIFT_MAX ? shiftIdeas(L, t).slice(0, 3) : [];
+    const pick = state.shiftPick && FA.signedRoster(t).find(p => p.id === state.shiftPick) || null;
+    return `<div class="stack">
+      ${moved.map(p => row(p, open ? `<button class="btn small off" data-act="posUndo" data-id="${p.id}">↩ Undo</button>` : '', `${POSITIONS[st[p.id].from]} → <b>${POSITIONS[st[p.id].to]}</b> · ${st[p.id].wt0} → ${st[p.id].wt1} lb`)).join('')}
+      ${ideas.length ? `<h4 class="ov-h">Suggested</h4>${ideas.map(x => row(x.p, `<button class="btn small focus" data-act="posShift" data-id="${x.p.id}" data-d="${x.d}">${POSITIONS[x.p.pos]} → ${POSITIONS[x.to]}</button>`, `${esc(x.why.join(' · '))} · ${x.d > 0 ? 'bulks up' : 'slims down'} ${SHIFT_LB} lb`)).join('')}` : ''}
+      ${open && used < SHIFT_MAX ? `<div class="off-row"><select class="sel-team" data-change="posPick"><option value="">Move anyone…</option>${FA.signedRoster(t).filter(p => !st[p.id]).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => `<option value="${p.id}" ${pick === p ? 'selected' : ''}>${esc(playerName(p))} · ${POSITIONS[p.pos]}</option>`).join('')}</select></div>
+        ${pick ? `<div class="grid2">${[-1, 1].map(d => pick.pos + d < 0 || pick.pos + d > 8 ? '<span></span>' : `<button class="btn small" data-act="posShift" data-id="${pick.id}" data-d="${d}">${d < 0 ? '◀ Smaller' : 'Bigger ▶'}: ${POSITIONS[pick.pos + d]} (${d > 0 ? '+' : '−'}${SHIFT_LB} lb)</button>`).join('')}</div>` : ''}` : ''}
+      ${!moved.length && !ideas.length && !(open && used < SHIFT_MAX) ? '<p class="note small muted">No changes.</p>' : ''}
+    </div>`;
+  };
+  return `<fieldset class="frame"><legend>🔁 Position Changes</legend>
+    <p class="note small">${open ? `Before training camp, move a player one spot bigger or smaller. Going bigger he bulks up ${SHIFT_LB} lb; going smaller he slims down. Up to ${SHIFT_MAX} a team.` : 'This summer\'s moves.'}</p>
+    ${mine.map(t => `${mine.length > 1 ? `<h4 class="ov-h">${esc(t.shortName)}</h4>` : ''}${teamBox(t)}`).join('')}
+    ${cpu.length ? `<h4 class="ov-h">Around the League</h4><div class="stack">${cpu.map(shiftRumor).join('')}</div>` : ''}
+  </fieldset>`;
+}
+actions.posShift = d => {
+  const e = findPlayer(+d.id);
+  if (!e?.team || !isUserTeam(e.team) || !shiftOpen()) return;
+  if (Object.values(shiftStore()).filter(r => r.tid === e.team.id && !r.cpu).length >= SHIFT_MAX) { toast(`Up to ${SHIFT_MAX} position changes a team`); return; }
+  checkpoint(`Move ${playerName(e.p)}`);
+  const from = POSITIONS[e.p.pos];
+  applyShift(e.p, e.team, +d.d);
+  state.shiftPick = null;
+  render();
+  toast(`🔁 ${playerName(e.p)}: ${from} → ${POSITIONS[e.p.pos]}`, `${+d.d > 0 ? 'Bulking up' : 'Slimming down'} to ${e.p.wt} lb`);
+};
+actions.posUndo = d => {
+  const st = shiftStore(), r = st[+d.id], e = findPlayer(+d.id);
+  if (!r || r.cpu || !e || !shiftOpen()) return;
+  e.p.pos = r.from; e.p.wt = r.wt0;
+  delete st[+d.id];
+  state.dirty = true;
+  render();
+};
+$app.addEventListener('change', e => { if (e.target.dataset?.change === 'posPick') { state.shiftPick = +e.target.value || null; render(); } });
 
 // ---- League News: rumors, transactions, coaching moves, CPU trades and (at Opening Night) the report card, as tabs.
 const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['gram', 'Hoop Gram'], ['retire', 'Retirements'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
@@ -7495,7 +7614,7 @@ screens.rumors = () => {
   list.sort((x, y) => y.heat - x.heat || y.level - x.level);
   layout({
     title: 'League News',
-    body: `${newsTabs('rumors')}<p class="note small muted">Whispers about who could be on the move. Some of it comes true, some doesn't.</p>
+    body: `${newsTabs('rumors')}${(() => { const cpu = Object.entries(shiftStore()).filter(([, r]) => r.cpu).map(([pid, r]) => ({ pid: +pid, ...r })); return cpu.length ? `<fieldset class="frame"><legend>🏀 From Camp</legend><div class="stack">${cpu.map(shiftRumor).join('')}</div></fieldset>` : ''; })()}<p class="note small muted">Whispers about who could be on the move. Some of it comes true, some doesn't.</p>
       <div class="stack">${list.slice(0, 30).map(rumorPost).join('') || '<p class="note small muted">Quiet around the league.</p>'}</div>`,
   });
 };
@@ -11256,7 +11375,7 @@ function liveAssets(team) {
     const ct = contractText(p);
     const lock = tradeLock(p);
     const locked = pending(p) || !!lock;
-    out.push({ key: `p:${p.id}`, locked, label: `${faceImg(p)}${esc(playerName(p))}${pending(p) ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : lock ? ` <span class="badge lock">🔒 ${esc(lock)}</span>` : contractBadge(p)}${p.contract?.noTrd ? ' <span class="badge new" title="No-trade clause: he has to agree">NTC</span>' : ''}${medBadge(p)}<br><span class="muted small">${lvTag(p, 'gold')} · ${p.age}y · ${esc(posName(p))}${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
+    out.push({ key: `p:${p.id}`, locked, label: `${faceImg(p)}${esc(playerName(p))}${pending(p) ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : lock ? ` <span class="badge lock">🔒 ${esc(lock)}</span>` : contractBadge(p)}${p.contract?.noTrd ? ' <span class="badge new" title="No-trade clause: he has to agree">NTC</span>' : ''}${medBadge(p)}<br><span class="muted small">${lvRow(p)} · ${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
   }
   return out;
 }
@@ -11842,7 +11961,7 @@ screens.fa = (args = {}) => {
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="${ro ? 'openPlayer' : 'faOffer'}" data-id="${m.p.id}" ${!ro && (signedIds.has(m.p.id) || s.stage === 'done') ? 'disabled' : ''}>
       <span class="name">${faceImg(m.p)}${esc(playerName(m.p))}${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
-      <span class="meta"><span class="${declining(m.p) ? 'decl-lv' : 'gold'}" ${declining(m.p) ? 'title="Past his regression age"' : ''}>Lv ${shownLevel(m.p)}</span> · ${m.p.age}y · ${esc(posName(m.p))}${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
+      <span class="meta">${lvRow(m.p)} · ${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
       : list.length ? `<span class="chg">${list.length} team${list.length > 1 ? 's' : ''} interested · best ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
     </button>`;
