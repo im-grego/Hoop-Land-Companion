@@ -264,7 +264,8 @@ function logoUrl(url) {
 // Player faces cut from the game's roster screens (a face pack), keyed by player id. Nothing shows without one.
 const faceOf = p => (p && state.faces?.get?.(p.id)) || '';
 // Every face is the same cut (centred on the face), so heads of any width line up.
-const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<img class="face ${cls}" src="${u}" alt="">` : ''; };
+// Once any faces are loaded, a player without one keeps an empty slot of the same size so names line up.
+const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<img class="face ${cls}" src="${u}" alt="">` : state.faces?.size && cls === 'face-sm' ? `<span class="face ${cls} face-none"></span>` : ''; };
 // Logos load right away (no lazy loading) into a box of fixed size, so a
 // slow or missing logo never shifts the layout.
 function logoImg(team, cls = 'logo-sm') {

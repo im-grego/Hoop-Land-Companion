@@ -1618,7 +1618,8 @@ fieldset.frame { position: relative; }
 .cg-lv li span { color: var(--text); }
 .cap-legend .info-i, .note .info-i { position: static; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font-size: 12px; vertical-align: middle; margin-left: 2px; }
 
-/* Player faces (face pack): pixel art, scaled without blur; every cut is 94×52, centred on the face */
-.face { image-rendering: pixelated; flex: none; aspect-ratio: 94 / 52; }
+/* Player faces (face pack): pixel art, scaled without blur; every cut is 102×52, centred on the face */
+.face { image-rendering: pixelated; flex: none; aspect-ratio: 102 / 52; }
 .face-sm { height: 22px; vertical-align: -5px; margin-right: 3px; }
+.face-none { display: inline-block; }
 .face-md { display: block; height: 52px; margin: 0 auto 2px; }
