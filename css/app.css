@@ -1415,6 +1415,7 @@ main.panel.bare { margin-top: 10px; }
 .exp-deals .xbtns { flex-direction: row; align-items: center; }
 .exp-deals .prow .name { white-space: normal; }
 .exp-deals .xbtns .btn { min-width: 0; min-height: 28px; padding: 2px 8px; font-size: 12px; }
+.exp-deals .xbtns.xstack { flex-direction: column; align-items: stretch; grid-row: span 3; align-self: center; }
 .bottom.two { justify-content: space-between; }
 .bottom .action.alt { min-width: 130px; font-size: 18px; background: var(--btn); }
 .tx-block { background: var(--btn); border: 3px solid var(--btn-edge); padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; }

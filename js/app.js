@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.232.0';
+const APP_VERSION = '0.233.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -11806,7 +11806,7 @@ function expiringSection(s) {
     const others = list.filter(b => !isUserTeam({ id: b.tid })).length;
     return `<div class="prow rrow ${mineBid ? 'sel' : ''}">
       <span class="name">${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
-      <span class="right xbtns"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Make Offer</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Let Walk</button></span>
+      <span class="right xbtns xstack"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Make Offer</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Let Walk</button></span>
       <span class="meta">${esc(posName(m.p))} · ${m.p.age}y · Asks $${m.ask}M × ${askYears(m)}</span>
       ${mineBid || others ? `<span class="meta">${mineBid ? `<span class="up">your offer ${offerText(mineBid)}</span>` : ''}${mineBid && others ? ' · ' : ''}${others ? `<span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>` : ''}
     </div>`;
