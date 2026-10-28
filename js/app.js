@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.238.1';
+const APP_VERSION = '0.238.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -12684,7 +12684,7 @@ actions.faOffer = d => {
     const quickRow = ml || vm ? `<div class="off-quick">${ml ? `<button class="btn small ${draft.sal === ml.sal && draft.yrs === ml.yrs ? 'on focus' : ''}" data-k="mle">📝 ${ml.name} $${ml.sal}M×${ml.yrs}</button>` : ''}${vm ? `<button class="btn small" data-k="vetmin">⚡ ${minLabel} $${minSal}M</button>` : ''}</div>` : '';
     const load = draft.yrs >= 2 ? draft.load || 'flat' : 'flat';
     const termsHtml = `
-      <div class="off-grid">${step('sal', load !== 'flat' ? 'Salary (avg)' : 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
+      <div class="off-grid">${step('sal', 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
       <div class="off-row off-gap"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
       ${hasExtras ? `<div class="off-row"><span class="small muted">Loading</span>${draft.yrs >= 2 ? seg('load', [['flat', 'Flat'], ['front', 'Front'], ['back', 'Back']], load) : '<span class="small muted">Flat (one year)</span>'}</div>
       <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'A one-year deal is paid flat.'}</p>` : ''}
@@ -12714,7 +12714,7 @@ actions.faOffer = d => {
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
       ${quickRow}
       ${tabs.length > 1 ? `<div class="seg3 off-tabs">${tabs.map(([k, l]) => `<button class="btn small ${tab === k ? 'on focus' : 'off'}" data-k="tab" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
-      <div class="off-body ${tabs.length > 1 ? 'fixed' : ''}">${tab === 'extras' ? extrasHtml : tab === 'pitch' ? pitchHtml : termsHtml}</div>
+      <div class="off-body ${tabs.length > 1 ? 'fixed' : ''} ${tab === 'pitch' ? '' : 'spread'}">${tab === 'extras' ? extrasHtml : tab === 'pitch' ? pitchHtml : termsHtml}</div>
       <p class="note small off-total">Total <span class="tot">$${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M</span> · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`} · ${standing}</p>
       ${sntOk(m, s) ? `<button class="btn" data-k="snt">🔁 Sign-and-Trade · ${sntSuitors(m, s).length} team${sntSuitors(m, s).length > 1 ? 's' : ''} interested</button>` : ''}
       <div class="grid2">
