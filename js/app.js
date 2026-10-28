@@ -7950,8 +7950,12 @@ screens.player = (args) => {
         <div class="${faceOf(p) ? 'pl-head' : ''}">${faceImg(p, 'face-lg')}<div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
-        <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
-        </div></div>
+        ${(() => {
+          // With a face, the stars stay beside it (its bottom lines up with them) and the archetype drops to the line below.
+          const extra = [archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean);
+          return faceOf(p) ? `<p class="note small pl-meta"><span class="stars">${potStars(p)}</span></p></div></div>${extra.length ? `<p class="note small pl-meta">${extra.join(' · ')}</p>` : ''}`
+            : `<p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${extra.map(x => ` ${x}`).join(' ·')}</p></div></div>`;
+        })()}
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
         ${quickActions(p, team)}
       </div>
