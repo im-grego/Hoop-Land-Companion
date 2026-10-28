@@ -380,7 +380,13 @@ export function buildStorylines(league, opts = {}) {
   // Top 10, at most two per kind (moves and contenders can take three).
   const cap = { move: 3, hump: 3 };
   const count = {};
+  // One story per team: its biggest one. The team is the player's, or the one named in the headline.
+  const teamOfP = new Map(roster.map(({ p, team }) => [p.id, team.id]));
+  const named = str => league.teams.find(t => (t.name && str.includes(t.name)) || (t.city && str.includes(t.city)))?.id;
+  const seenT = new Set();
   return stories.sort((a, b) => b.score - a.score).filter(s => {
+    const tid = (s.pid != null && teamOfP.get(s.pid)) ?? named(`${s.title} ${s.text}`);
+    if (tid != null && s.kind !== 'awards') { if (seenT.has(tid)) return false; seenT.add(tid); }
     count[s.kind] = (count[s.kind] || 0) + 1;
     return count[s.kind] <= (cap[s.kind] || 2);
   }).slice(0, 10).map(s => ({ ...s, title: resolve(s.title), text: resolve(s.text) }));

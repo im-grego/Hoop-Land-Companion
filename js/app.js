@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.226.0';
+const APP_VERSION = '0.227.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1695,7 +1695,7 @@ function stepActions(key) {
       // One button a week: it opens free agency or starts the week as needed and goes straight to the market.
       return `<button class="btn big focus" data-act="faWeek">✍️ ${s.phase === 5 ? 'Open Free Agency' : `Week ${day} Market`}</button>`;
     }
-    case 'dev': return `<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
+    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn focus" data-act="nav" data-to="survey">📋 GM Survey</button></div>
       <button class="btn small off" data-act="mediaDone" style="margin-top:8px">✅ Wrap Up</button>`;
     case 'cuts': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Camp Deals</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>
@@ -1975,7 +1975,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade', 'mock'], options: ['options', 'extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
   meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
-  dev: ['meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
+  dev: ['staff', 'meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review', 'teamStats', 'player'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
 const ALWAYS = ['nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
@@ -3909,7 +3909,7 @@ actions.runAuto = async () => {
   applyBump(state.params.seed);
   o.remove();
   render();
-  if (state.tendMoved) toast(`🎛️ ${state.tendMoved} players' play styles shifted`, 'Tendencies follow ratings and age.', 3200);
+  if (state.tendMoved) toast(`🎛️ ${state.tendMoved} players' tendencies adjusted`, 'Their ratings changed, so how they play shifted to match.', 3200);
 };
 
 actions.reroll = async () => {
@@ -4104,11 +4104,10 @@ function coachCard() {
   if (!t) return '';
   earnCoachPoints();
   const c = myCoach(), yr = league().season.currentYear, e = treeStore().earned[yr];
-  const r = k => (c?.attributes?.[k]?.[0] != null ? c.attributes[k][0] / 2 : '—');   // the game shows half the saved rating
-  return `<fieldset class="frame"><legend>Coaching Staff</legend><div class="stack">
-    <p class="note"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b> <span class="muted small">Development ${r('development')} · Motivation ${r('motivation')} · Leadership ${r('leadership')}</span></p>
-    <p class="note small">${e ? `This offseason: <span class="up">+${e.pts}</span> (${esc(e.why.join(', '))})` : ''} · <b class="gold">${tokTag(coachPoints())}</b> to spend</p>
-    <p class="note small muted">${CO.BRANCHES.filter(b => b.tiers.length).map(b => `${b.icon} ${b.label} ${tierNow(b.k)}/${CO.MAX_TIER}`).join(' · ')}</p>
+  return `<fieldset class="frame"><legend>Coaching Staff</legend>${infoBtn('tokens', '<p class="small"><b>🎟️ Franchise Tokens</b> buy upgrades in the Coaching Tree. You earn them every season: one for the job, more for a winning record, making the playoffs, a deep run and a title.</p><p class="small">Each branch (Development, Motivation, Leadership, System) has a set of upgrades; the numbers show how many you own out of the total. A head coach with high ratings unlocks the first tiers of his branch for free.</p><p class="small muted">Coins (💵) are different: they buy arena facility upgrades.</p>')}<div class="stack">
+    <button class="drill-row tap" data-act="nav" data-to="coaches"><span class="grow"><b>${c ? esc(`${c.fn} ${c.ln}`) : 'Head coach'}</b><br><span class="muted small">Head coach · tap for his profile</span></span><span class="small">›</span></button>
+    <p class="note small"><b class="gold">${tokTag(coachPoints())}</b> Franchise Tokens to spend${e ? ` · <span class="up">+${e.pts}</span> this offseason (${esc(e.why.join(', '))})` : ''}</p>
+    <p class="note small muted">${CO.BRANCHES.map(b => { const ns = CO.NODES[b.k] || []; return ns.length ? `${b.icon} ${b.label} ${ns.filter(n => CO.nodeOwned(treeStore(), c, n, b.k)).length}/${ns.length}` : ''; }).filter(Boolean).join(' · ')}</p>
     <p class="note small" style="margin:4px 0 0"><b class="gold">Staff</b></p>
     <div class="grid2"><button class="btn" data-act="nav" data-to="coaches">🧑‍🏫 Coach Profiles</button><button class="btn" data-act="nav" data-to="coachtree">🌳 Coaching Tree</button></div>
     <p class="note small" style="margin:4px 0 0"><b class="gold">Strategy</b></p>
@@ -4897,12 +4896,16 @@ screens.offseason = (args = {}) => {
       ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
         <p class="note small">Health, potential and size changes for your players.</p>
         <button class="btn" data-act="nav" data-to="trainer" ${auto && strengthStore().results ? '' : 'disabled'}>🩺 Meet with the Trainer</button></div></fieldset>`}`],
-        ['staff', 'Staff', `${coachCard()}`],
-      ])}
-      <button class="btn big ${auto ? 'focus' : ''}" data-act="calDevBack" ${auto ? '' : 'disabled'}>✅ Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}</button>`,
+      ])}`,
+    // Step through: progression first, then the players; wrap up only from the last tab.
+    action: !auto ? null : (state.uiTab?.camp || 'prog') === 'prog' ? { act: 'campNext', label: isCollege() ? 'Advance to Players' : 'Advance to Mentorship' }
+      : { act: 'calDevBack', label: `Wrap Up ${isCollege() ? 'Summer Development' : 'Training Camp'}` },
   });
 };
 
+actions.campNext = () => { (state.uiTab ||= {}).camp = 'players'; render(); window.scrollTo(0, 0); };
+// Staff and scheme, set before camp opens.
+screens.staff = () => layout({ title: 'Staff & Scheme', body: coachCard(), action: { act: 'back', label: 'Done' } });
 // The team meeting, simulated for the whole league with one formula: every head coach talks to his group and
 // each player's tendencies and makeup shift. Yours runs on your coaching tree; the rest on their coach's own ratings.
 function simMeetings() {
@@ -4943,26 +4946,11 @@ function influenceBox(auto) {
   const L = league();
   if (!calFlags().meetingAll) {
     return `<fieldset class="frame"><legend>Influence</legend><div class="stack">
-      <p class="note small">After the off-season program, every head coach talks to his group and each player's game and makeup shift a little, with his new ratings in play. All 30 teams run the same meeting; yours uses your coaching tree.</p>
+      <p class="note small">Your head coach meets with the team. Each player's tendencies and traits shift a little toward his system and his new ratings. Every team holds one.</p>
       <button class="btn ${auto ? 'focus' : 'off'}" data-act="runMeetings" ${auto ? '' : 'disabled'}>🗣️ Run Team Meeting</button></div></fieldset>`;
   }
-  const A = calFlags().meetingAll, rows = A.rows, sum = k => rows.reduce((s, r) => s + r[k], 0);
-  const mine = rows.filter(r => isUserTeam(L.teams.find(t => t.id === r.tid)));
-  const my = k => mine.reduce((s, r) => s + r[k], 0);
-  const max = Math.max(1, ...rows.map(r => r.n));
-  const name = id => L.teams.find(t => t.id === id)?.shortName || '?';
-  return `<fieldset class="frame"><legend>Influence</legend><div class="stack">
-    <dl class="info tight">
-      <dt>Players influenced</dt><dd class="up">${sum('n')}</dd>
-      <dt>Tendencies</dt><dd><span class="up">▲ ${sum('tUp')}</span> · <span class="down">▼ ${sum('tDn')}</span></dd>
-      <dt>Traits</dt><dd><span class="up">▲ ${sum('rUp')}</span> · <span class="down">▼ ${sum('rDn')}</span></dd>
-      <dt>Your team</dt><dd class="up">${my('n')} players · ${my('moves')} moves</dd>
-      <dt>Your tendencies</dt><dd><span class="up">▲ ${my('tUp')}</span> · <span class="down">▼ ${my('tDn')}</span></dd>
-      <dt>Your traits</dt><dd><span class="up">▲ ${my('rUp')}</span> · <span class="down">▼ ${my('rDn')}</span></dd>
-    </dl>
-    <p class="note small muted">Players influenced, by team</p>
-    <div class="infl-chart">${[...rows].sort((x, y) => y.n - x.n).map(r => `<div class="infl-row ${mine.includes(r) ? 'mine' : ''}"><span class="small">${esc(name(r.tid))}</span><span class="infl-bar"><i style="width:${r.n / max * 100}%"></i></span><span class="small">${r.n}</span></div>`).join('')}</div>
-  </div></fieldset>${meetingResultsBox()}`;
+  // The results are the summary: who on your team moved, and how.
+  return meetingResultsBox();
 }
 actions.runMeetings = () => { if (calFlags().meetingAll) return; simMeetings(); toast('The meeting breaks up', `${calFlags().meetingList.length} of your players shifted`); render(); };
 // Your draft picks sign first: first-rounders take their scale deal,
@@ -5016,7 +5004,7 @@ actions.devBegin = async () => {
     o.remove();
   }
   go('offseason');
-  if (state.tendMoved) toast(`🎛️ ${state.tendMoved} players' play styles shifted`, 'Tendencies follow ratings and age.', 3200);
+  if (state.tendMoved) toast(`🎛️ ${state.tendMoved} players' tendencies adjusted`, 'Their ratings changed, so how they play shifted to match.', 3200);
 };
 actions.calDevBack = () => {
   if (isCollege()) { calFlags().summer = true; state.undo = null; goHome(); nextUp(); return; }
@@ -5645,7 +5633,7 @@ function numbersBox() {
   </fieldset>`;
 }
 const numberPosts = () => { const L = league(), yr = L.season.currentYear;
-  return L.teams.flatMap(t => (t.retiredNumbers || []).filter(r => r.yr === yr).map(r => { const p = [...(L.retirees || []), ...(L.hallOfFame || [])].find(x => x.id === r.pid) || findPlayer(r.pid)?.p; return p ? { team: t, score: 20, tag: '🏟️ Rafters', pid: p.id, handle: '@HoopGramNBA', likes: 12000 + (p.id * 53) % 6000, text: `The ${t.name} will raise ${playerName(p)}'s #${numText(r.num)} to the rafters. Nobody wears it again.` } : null; })).filter(Boolean).slice(0, 3); };
+  return L.teams.flatMap(t => (t.retiredNumbers || []).filter(r => r.yr === yr).map(r => { const p = [...(L.retirees || []), ...(L.hallOfFame || [])].find(x => x.id === r.pid) || findPlayer(r.pid)?.p; return p ? { team: t, score: 20, tag: '🏟️ Rafters', pid: p.id, handle: '@HoopGramNBA', likes: 12000 + (p.id * 53) % 6000, text: [`The ${t.name} will raise ${playerName(p)}'s #${numText(r.num)} to the rafters. Nobody wears it again.`, `#${numText(r.num)} is going up in ${t.city || t.name}. ${playerName(p)} gets his banner this season.`, `Officially retired: ${playerName(p)}'s #${numText(r.num)}. ${t.city || t.name} will never hand it out again.`, `Book your seats for banner night: ${playerName(p)}'s #${numText(r.num)} is headed to the rafters.`, `${playerName(p)} wore #${numText(r.num)} like nobody else. The ${t.name} are making sure nobody else ever will.`][(p.id + t.id) % 5] } : null; })).filter(Boolean).slice(0, 3); };
 
 
 // ---- Wearing a legend's number
@@ -5830,7 +5818,9 @@ function dramaPosts() {
   const req = new Set((offGet('req').list || []).map(r => r.pid));
   for (const t of L.teams) for (const p of FA.signedRoster(t)) {
     const mo = p.season?.morale ?? 60;
-    if (shownLevel(p) < 72 || !(mo < 40 || req.has(p.id) || (p.season?.onTradeBlock === 1 && mo < 55))) continue;
+    // Only names that make headlines: Lv 75+ with All-Star potential, or anyone who actually asked out.
+    if (!req.has(p.id) && (shownLevel(p) < 75 || (p.pot || 0) < 8)) continue;
+    if (!(mo < 40 || req.has(p.id) || (p.season?.onTradeBlock === 1 && mo < 55))) continue;
     const r = k => mulberry32((saveSalt() ^ Math.imul(p.id + k, 2654435761) ^ yr) >>> 0)();
     if (r(3) > 0.55 && !req.has(p.id)) continue;   // not everyone goes public
     const n = playerName(p), city = t.city || t.name, other = L.teams[Math.floor(r(9) * L.teams.length)];
@@ -7185,7 +7175,6 @@ function quickActions(p, team) {
   if (isCollege() || !state.data || !team) return '';
   const me = myTeam(), mine = isUserTeam(team), b = [];
   if (screenAllowed('liveTrade') && me && p.status === FA.STATUS_SIGNED) b.push(`<button class="btn small" data-act="quickTrade" data-id="${p.id}">🔁 ${mine ? 'Trade him' : 'Trade for him'}</button>`);
-  if (mine && p.season) b.push(`<button class="btn small ${p.season.onTradeBlock === 1 ? 'on focus' : 'off'}" data-act="quickBlock" data-id="${p.id}">📌 ${p.season.onTradeBlock === 1 ? 'On the block' : p.season.onTradeBlock === 2 ? 'Untouchable' : 'Shop him'}</button>`);
   if (mine && screenAllowed('extensions') && extEligible(league(), team).includes(p)) b.push(`<button class="btn small" data-act="nav" data-to="extensions">✍️ Extend</button>`);
   if (mine && screenAllowed('cuts')) b.push(`<button class="btn small" data-act="nav" data-to="cuts">✂️ Cuts</button>`);
   return b.length ? `<div class="opt-btns" style="flex-wrap:wrap;margin-top:6px">${b.join('')}</div>` : '';
@@ -7644,6 +7633,12 @@ function newsBox(p) {
     const sent = [...withP, ...(fromA ? deal.pa : deal.pb)];
     lines.push(`Traded from ${nameOf(from)} to ${nameOf(to)}${sent.length ? ` along with ${sent.join(', ')}` : ''}, for ${back.length ? back.join(', ') : 'nothing in return'}.`);
   }
+  // A rookie: where he went in the draft, and who traded for his rights.
+  const dr = p.history?.draft;
+  if (dr?.rd > 0 && dr.pk > 0 && p.yrs != null && p.yrs <= 1 && (dr.yr >= L.season.currentYear - 2)) {
+    const by = dr.tid != null ? nameOf(dr.tid) : null;
+    lines.unshift(`Selected ${ordinal(dr.pk)} overall in the ${dr.yr} draft${by ? ` by ${by}` : ''}${dr.tid != null && p.tid != null && p.tid !== dr.tid && p.tid >= 0 ? `, then his rights went to ${nameOf(p.tid)}` : ''}.`);
+  }
   const sn = offGet('signNews')[p.id], c = p.contract || {};
   if (sn && sn.tid === p.tid && c.sal && c.yrs && !/^Extended/.test(sn.why || '')) {
     const terms = `$${c.sal}M × ${c.yrs}${c.opt === 2 ? ' · PO' : c.opt === 1 ? ' · TO' : ''}`;
@@ -7789,11 +7784,11 @@ screens.player = (args) => {
   const content = tab === 'attributes' ? `${trainer}${ratings}${skills}${apCard}`
     : tab === 'traits' ? (personality + playStyleBox(p) || '<p class="note muted">No traits on file for this player.</p>')
     : tab === 'stats' ? statsTab(p, args)
-    : `<fieldset class="frame"><legend>Scouting Report</legend>
+    : `${newsBox(p)}<fieldset class="frame"><legend>Scouting Report</legend>
         <p class="note small scout-p">${profileReport(p, team)}</p>
         ${playerTags(p) ? `<div class="pl-tags">${playerTags(p)}</div>` : ''}
       </fieldset>
-      ${newsBox(p)}${rankBox(p, mpg)}
+      ${rankBox(p, mpg)}
       ${awardsBox(p)}`;
   layout({
     title: 'Player Profile',
@@ -12064,10 +12059,8 @@ function meetingResultsBox() {
   if (!list) return '';
   const L = league(), find = id => L.teams.flatMap(t => t.roster).find(p => p.id === id);
   const rows = list.map(x => ({ x, p: find(x.pid) })).filter(r => r.p);
-  const moves = rows.reduce((s, r) => s + r.x.moves, 0);
-  return `<fieldset class="frame"><legend>🗣️ Team Meeting</legend><div class="stack">
-    <p class="note">${rows.length ? `<b>${rows.length}</b> player${rows.length > 1 ? 's' : ''} shifted · ${moves} moves in all, biggest first.` : 'Nobody moved this time.'}</p>
-    ${calFlags().meetingLeague ? `<p class="note small muted">Around the league, the other coaches' meetings moved ${calFlags().meetingLeague.moved} players.</p>` : ''}
+  return `<fieldset class="frame"><legend>🗣️ Team Meeting Results</legend><div class="stack">
+    <p class="note">${rows.length ? `<b>${rows.length}</b> player${rows.length > 1 ? 's' : ''} shifted.` : 'Nobody moved this time.'}</p>
     ${rows.map(({ x, p }) => `<div class="pq"><p class="note small" style="margin:0"><b>${esc(playerName(p))}</b> <span class="gold">Lv ${shownLevel(p)}</span></p>
       <p class="note small pq-fx">${[...x.tend.map(([k, d]) => `<span class="${d > 0 ? 'up' : 'down'}">${esc(TEND_LABELS[k] || k)} ${sgn(d)}</span>`),
         ...x.traits.map(([k, d]) => `<span class="${(GOOD_TRAIT_DOWN.has(k) ? -d : d) > 0 ? 'up' : 'down'}">${esc(traitName(k))} ${sgn(d)}</span>`)].join(' · ')}</p></div>`).join('')}
@@ -13372,6 +13365,8 @@ function seasonDrift() {
       if (up) drift(p, 'season:ego+', EGO_KEY, up[0], up[1], false);
       // A big ego around leaders, or under a coach who commands the room, comes down a notch.
       if (egoVal(p) >= 13 && (leaders.filter(x => x !== p).length >= 2 || steady)) drift(p, 'season:ego-', EGO_KEY, -1, leaders.filter(x => x !== p).length >= 2 ? 'the leaders around him keep him grounded' : `${coach.ln} keeps him grounded`, false);
+      // Age humbles everyone: once the decline sets in, the ego comes down with it.
+      else if (egoVal(p) >= 11 && declining(p) && !up) drift(p, 'season:ego-', EGO_KEY, p.age >= 36 ? -2 : -1, 'the years humble him', false);
     }
   }
   saveDrift(); saveTraitStore();
@@ -13537,23 +13532,27 @@ function presserEffects(L, t, ans) {
     const P = find(q.pid);
     if (q.key === 'contract' && P) {
       // A mercenary hears words, a money chaser wants the number; an alpha takes a cold answer personally.
-      if (a === 'commit') { if (tr(P, 'loyalty') <= 5) out.push(mood(P, 3, 'a mercenary hears words')); else if (tr(P, 'money') >= 16) out.push(mood(P, 4, 'he wants the number, not the words'), loyal(P, 1)); else out.push(mood(P, 8), loyal(P, 1)); }
-      if (a === 'focus' && q.ctx.kind === 'final') out.push(alpha(P) ? mood(P, -5, 'an alpha wants to be wanted') : mood(P, -2));
-      if (a === 'market') out.push(alpha(P) ? mood(P, -14, 'he takes it personally') : humble(P) ? mood(P, -5, 'humble about it') : mood(P, -10), loyal(P, -2));
+      // Commit lifts him but it's a promise; the season focus keeps the room on winning; the market costs him and
+      // frees you (no promise), and the room sees nobody is untouchable.
+      if (a === 'commit') { if (tr(P, 'loyalty') <= 5) out.push(mood(P, 3, 'a mercenary hears words')); else if (tr(P, 'money') >= 16) out.push(mood(P, 4, 'he wants the number, not the words'), loyal(P, 1)); else out.push(mood(P, 8), loyal(P, 1)); out.push({ good: false, text: 'A promise: extend him or he remembers', apply: () => {} }); }
+      if (a === 'focus') out.push(alpha(P) ? mood(P, -5, 'an alpha wants to be wanted') : mood(P, -2), everyone(2, 'Competitors\' morale +2 (the focus is winning)', p => p !== P && tr(p, 'winning') >= 14));
+      if (a === 'market') out.push(alpha(P) ? mood(P, -14, 'he takes it personally') : humble(P) ? mood(P, -5, 'humble about it') : mood(P, -10), loyal(P, -2), trait(P, EGO_KEY, -1, 'nobody is untouchable'), { text: 'No promise on the record', apply: () => {} });
     }
     if (q.key === 'lockerroom') {
       const c = headCoachOf(t), hot = c ? t.roster.filter(p => isStarPlayer(p) && playerCoachFit(p, t, c).clash) : [];
       for (const p of hot) out.push(mood(p, a === 'fine' ? -3 : a === 'handled' ? 2 : 4));
     }
     if (q.key === 'goal') {
-      if (a === 'title' && P) out.push(mood(P, 3));
-      if (a === 'develop') out.push({ text: 'Young players\' morale +2', apply: () => t.roster.filter(p => p.age <= 24).forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 2); }) });
+      if (a === 'title') { if (P) out.push(mood(P, 3)); out.push(everyone(2, 'Competitors\' morale +2', p => tr(p, 'winning') >= 15), everyone(-1, 'Young players −1 (less room to grow)', p => p.age <= 23)); }
+      if (a === 'playoffs') out.push(everyone(1, 'Everyone\'s morale +1'));
+      if (a === 'develop') out.push(everyone(3, 'Young players\' morale +3', p => p.age <= 24), everyone(-2, 'Veterans\' morale −2', p => p.age >= 29));
     }
     if (q.key === 'expect' && P) {
       const arr = q.ctx.kind === 'arrival';
       if (a === 'star') { out.push(alpha(P) ? mood(P, 7, 'loves the spotlight') : humble(P) ? mood(P, 2, 'would rather not be singled out') : mood(P, 5)); const old = presserStar(L, t); if (arr && old && old !== P) out.push(alpha(old) ? mood(old, -6, `an alpha watching ${P.fn} get the spotlight`) : mood(old, -2)); }
-      if (a === 'fit') out.push(mood(P, 2));
-      if (a === 'time') out.push(mood(P, arr ? -3 : 3));
+      const cur = presserStar(L, t), core = FA.signedRoster(t).filter(x => x !== P && x !== cur && roleRank(t, x) <= 5);
+      if (a === 'fit') { out.push(mood(P, 2)); if (arr && cur && cur !== P) out.push(mood(cur, 3, 'still his team')); }
+      if (a === 'time') { out.push(mood(P, arr ? -3 : 3)); if (core.length) out.push(everyone(1, 'Other starters\' morale +1', x => core.includes(x))); if (arr && cur && cur !== P) out.push(mood(cur, 2)); }
     }
     if (q.key === 'battle') {
       const A = find(q.pid), B = find(q.pid2);
@@ -13581,6 +13580,11 @@ function presserEffects(L, t, ans) {
       if (a === 'pecking') out.push(mood(P, 6), mood(B, ego(B) >= 17 ? -10 : -6, ego(B) >= 17 ? 'won\'t play second fiddle quietly' : ''), trait(B, EGO_KEY, -1, 'told it isn\'t his team'));
       if (a === 'winning') for (const x of [P, B]) out.push(tr(x, 'winning') >= 15 ? mood(x, 3, 'a competitor') : mood(x, -2, 'wanted an answer'));
     }
+    if (q.key === 'leader' && P) {
+      const B = find(q.pid2); if (!B) continue;
+      if (a === 'both') out.push(mood(P, -1), mood(B, -1), trait(P, 'lockerRoom', 1, 'sharing the room'), trait(B, 'lockerRoom', 1, 'sharing the room'));
+      else { const [w, l] = a === 'b' ? [B, P] : [P, B]; out.push(mood(w, 5), trait(w, 'lockerRoom', 1, 'named the leader'), mood(l, -4), trait(l, EGO_KEY, 1, 'passed over as leader')); }
+    }
     if (q.key === 'injury' && P) {
       if (a === 'ready') out.push(mood(P, 4), ...(tr(P, 'durability') <= 8 ? [trait(P, 'durability', -1, 'rushed back from injury')] : []));
       if (a === 'ease') out.push(mood(P, 1));
@@ -13588,7 +13592,8 @@ function presserEffects(L, t, ans) {
     }
     if (q.key === 'vet' && P) {
       if (a === 'more') out.push(mood(P, 5));
-      if (a === 'year') out.push(mood(P, 1));
+      if (a === 'more') out.push(everyone(-1, 'Young players −1 (his minutes stay)', p => p.age <= 23));
+      if (a === 'year') out.push(mood(P, 2), everyone(1, 'Young players +1', p => p.age <= 23));
       if (a === 'mentor') {
         const fits = ego(P) <= 8 || tr(P, 'lockerRoom') >= 14;
         out.push(fits ? mood(P, 3, 'embraces the role') : mood(P, -5, 'still sees himself as a starter'), everyone(2, 'Young players\' morale +2', p => p.age <= 24));
@@ -13597,14 +13602,15 @@ function presserEffects(L, t, ans) {
     }
     if (q.key === 'rookie' && P) {
       if (a === 'start') out.push(mood(P, 5), trait(P, EGO_KEY, 1, 'handed the keys as a rookie'));
-      if (a === 'earn') out.push(mood(P, 1), ...(tr(P, 'motor') <= 10 ? [trait(P, 'motor', 1, 'told to earn it')] : []));
-      if (a === 'patience') out.push(ego(P) >= 13 ? mood(P, -4, 'expected more') : mood(P, 2));
+      if (a === 'start') out.push(everyone(-2, 'Veterans\' morale −2 (a rookie jumps them)', p => p !== P && p.age >= 27 && roleRank(t, p) <= 7));
+      if (a === 'earn') out.push(mood(P, 1), ...(tr(P, 'motor') <= 10 ? [trait(P, 'motor', 1, 'told to earn it')] : []), everyone(1, 'Veterans\' morale +1', p => p !== P && p.age >= 27));
+      if (a === 'patience') out.push(ego(P) >= 13 ? mood(P, -4, 'expected more') : mood(P, 2), everyone(2, 'Veterans\' morale +2 (their minutes are safe)', p => p !== P && p.age >= 27), trait(P, EGO_KEY, -1, 'kept grounded'));
     }
     if (q.key === 'moves') {
       const star = presserStar(L, t);
       if (a === 'better') { out.push(everyone(3, 'Competitors\' morale +3', p => tr(p, 'winning') >= 15), everyone(-1, 'Everyone else −1', p => tr(p, 'winning') < 15)); continue; }
-      if (a === 'believe') out.push({ text: 'Everyone\'s morale +3', apply: () => t.roster.forEach(p => { if (p.season) p.season.morale = Math.min(100, (p.season.morale ?? 60) + 3); }) });
-      if (a === 'notdone' && star) out.push(mood(star, 4));
+      if (a === 'believe') { out.push(everyone(2, 'Everyone\'s morale +2')); if (star && ['unsupported', 'passive'].includes(q.ctx.mood)) out.push(mood(star, -4, 'he needed help')); }
+      if (a === 'notdone') { if (star) out.push(mood(star, 8, 'help is coming')); out.push(everyone(-1, 'Bench morale −1 (their spots aren\'t safe)', p => p !== star && roleRank(t, p) > 8)); }
       if (a === 'longterm') {
         // The long game is good news for the young (a young star most of all)
         // and a letdown for veterans, a veteran star hardest.
@@ -13622,7 +13628,7 @@ function presserEffects(L, t, ans) {
 const EVASIVE = { contract: 'focus', lockerroom: 'fine', alphas: 'winning', battle: 'open', moves: 'believe' };
 function presserFollowup(L, t, qs, ans) {
   const q = qs.find(x => ans[x.key] && EVASIVE[x.key] === ans[x.key] && (x.key !== 'moves' || ['unsupported', 'passive'].includes(x.ctx?.mood)));
-  if (!q || qs.some(x => !ans[x.key])) return null;
+  if (!q) return null;
   const P = t.roster.find(p => p.id === q.pid), nm = p => (p ? playerName(p) : 'him');
   const d = {
     contract: [`So is an extension off the table for ${nm(P)}?`, 'We\'d love to keep him', 'I said what I said'],
@@ -13638,7 +13644,10 @@ function fullQs(L, t, ans) {
   const fz = presserStore().frozen?.[t.id];
   if (fz) return fz;
   const qs = presserQuestions(L, t, state.leagueIdx), fu = presserFollowup(L, t, qs, ans || {});
-  return fu ? [...qs, fu] : qs;
+  if (!fu) return qs;
+  // Asked right after the answer that earned it.
+  const i = qs.findIndex(x => x.key === fu.ctx.ref);
+  return [...qs.slice(0, i + 1), fu, ...qs.slice(i + 1)];
 }
 const presserStar = (L, t) => { const q = presserQs(L, t).find(x => x.key === 'moves'); return q?.pid ? t.roster.find(p => p.id === q.pid) : null; };
 function applyPresser() {
@@ -13721,19 +13730,13 @@ function leagueGramCard() {
 }
 
 screens.storylines = () => {
-  const { stories, players, podium } = currentStorylines();
+  const { stories, players } = currentStorylines();
   const L = league();
   layout({
     title: 'Media Day',
     body: `
       ${mediaTabs('storylines')}
       ${presserCard()}
-      ${mediaMindCard()}
-      ${podium.length ? `<h2 class="team-title">From the Podium</h2><ol class="stories">${podium.map(s => `
-        <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
-          <span class="story-n">${s.icon}</span>
-          <div><b>${esc(s.title)}</b><p class="note small">${esc(s.text)}</p></div>
-        </li>`).join('')}</ol>` : ''}
       <h2 class="team-title">Season Preview</h2>
       ${stories.length ? `<ol class="stories">${stories.map((s, i) => `
         <li class="story${players.has(s.pid) ? ' tap' : ''}"${players.has(s.pid) ? ` data-act="openPlayer" data-id="${s.pid}"` : ''}>
@@ -15291,7 +15294,7 @@ screens.cuts = () => {
     const picked = ranked.filter(x => sel[x.p.id]).length;
     const mood = (calFlags().taxMood || {})[t.id] || [];
     if (done) return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>${capBar(t)}<p class="note small up">✓ Roster is set.</p>
-      ${(() => { const mv = (calFlags().moraleLog || []).filter(x => x.tid === t.id && Math.abs(x.to - x.from) >= 3).sort((a, b) => Math.abs(b.to - b.from) - Math.abs(a.to - a.from)).slice(0, 8); return mv.length ? `<p class="note small" style="margin-top:6px"><b>Morale moves</b></p>${mv.map(x => { const pl = playerById(x.pid); return pl ? `<p class="note small">${esc(playerName(pl))} ${moraleFace(x.from)} → ${moraleFace(x.to)} <span class="${x.to > x.from ? 'up' : 'down'}">${x.to > x.from ? '+' : ''}${x.to - x.from}</span> <span class="muted">· ${esc(x.why)}</span></p>` : ''; }).join('')}` : ''; })()}
+      ${(() => { const mv = (calFlags().moraleLog || []).slice(calFlags().moraleCutFrom || 0).filter(x => x.tid === t.id && Math.abs(x.to - x.from) >= 3).sort((a, b) => Math.abs(b.to - b.from) - Math.abs(a.to - a.from)).slice(0, 8); return mv.length ? `<p class="note small" style="margin-top:6px"><b>Morale moves</b></p>${mv.map(x => { const pl = playerById(x.pid); return pl ? `<p class="note small">${esc(playerName(pl))} ${moraleFace(x.from)} → ${moraleFace(x.to)} <span class="${x.to > x.from ? 'up' : 'down'}">${x.to > x.from ? '+' : ''}${x.to - x.from}</span> <span class="muted">· ${esc(x.why)}</span></p>` : ''; }).join('')}` : ''; })()}
       ${mood.length ? `<p class="note small" style="margin-top:6px"><b>Locker room</b></p>${mood.map(x => `<p class="note small"><span class="${x.n > 0 ? 'up' : 'down'}">${esc(x.name)} morale ${x.n > 0 ? '+' : ''}${x.n}</span> <span class="muted">· ${esc(x.why)}</span></p>`).join('')}` : ''}</fieldset>`;
     return `<fieldset class="frame"><legend>${esc(t.shortName)} · ${n}/${O.seasonMax}</legend>
       ${capBar(t)}
@@ -15308,9 +15311,9 @@ screens.cuts = () => {
         ['mine', 'Your Cuts', `      ${requestCard()}
       ${myCards}
       ${done ? waiverBox() : ''}`, mine.some(t => cutsShort(t, sel) > 0)],
-        ['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
-        : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`],
-      ], CAR.isCareer(league()) ? 'league' : undefined)}`,
+        ...(done ? [['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
+        : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`]] : []),
+      ], CAR.isCareer(league()) && done ? 'league' : undefined)}`,
     action: done ? null : { act: 'cutsFinish', label: mine.some(t => cutsShort(t, sel) > 0) ? 'Pick your cuts first' : 'Make the Cuts' },
   });
 };
@@ -15410,7 +15413,7 @@ function requestsState() {
   // Unhappy ones, or any whose ego just swelled (an All-Star season, a big deal) and who's started to believe it.
   for (const t of L.teams) {
     const roster = FA.signedRoster(t);
-    for (const p of roster.filter(x => isAlpha(x) && canAskOut(x) && !FA.isLifer(L, x, t) && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
+    for (const p of roster.filter(x => isAlpha(x) && !declining(x) && x.age <= 33 && canAskOut(x) && !FA.isLifer(L, x, t) && x.season?.onTradeBlock !== 2 && !tradeLock(x) && !list.some(r => r.pid === x.id))) {
       const rival = roster.filter(x => x !== p && shownLevel(x) >= shownLevel(p)).sort((a, b) => shownLevel(b) - shownLevel(a))[0];
       const morale = p.season?.morale ?? 60, ev = egoVal(p), fresh = driftsOf(p).some(x => x.k === EGO_KEY && x.d > 0);
       // A fresh swell (All-NBA, a new deal) is enough on its own, happy or not; otherwise only an unhappy one asks.
@@ -15617,6 +15620,7 @@ function depthSwaps(L) {
 }
 actions.cutToggle = d => { if (calFlags().cuts) return; const sel = cutSel(); sel[+d.id] = !sel[+d.id]; render(); };
 actions.cutsFinish = async () => {
+  calFlags().moraleCutFrom = (calFlags().moraleLog || []).length;   // the recap shows only what the cuts change
   if (!isCollege()) requestsState();   // trade requests are decided here even when the step is simmed from home
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const mine = L.teams.filter(isUserTeam);
@@ -15804,7 +15808,6 @@ screens.export = () => {
         <button class="btn" data-act="downloadLeague">🌐 Download League File</button></fieldset>`}
       ${inArtifact() ? '' : dropboxFrame()}`],
         ['prep', 'Prep', prep, !!warn],
-        ['report', 'Report Card', reportCard()],
       ], warn && isStep('export') ? 'prep' : 'file'); })()}`,
   });
 };

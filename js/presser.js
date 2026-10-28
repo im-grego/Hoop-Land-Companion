@@ -184,6 +184,11 @@ export function presserQuestions(league, team, li = 0) {
   if (al.length >= 2) extra.push({ key: 'alphas', pid: al[0].id, pid2: al[1].id,
     q: pickV([`Can ${playerName(al[0])} and ${playerName(al[1])} share the ball?`, `Two alphas in one locker room: ${playerName(al[0])} and ${playerName(al[1])}. Whose team is it?`, `There's talk ${al[1].fn} wants a bigger role next to ${al[0].fn}. How do you balance them?`], team.id, yr0, 'alphas'),
     options: [{ v: 'share', label: 'They\'ll figure it out together' }, { v: 'pecking', label: `It's ${al[0].fn}'s team` }, { v: 'winning', label: 'Winning fixes everything' }], ctx: {} });
+  // Two driven, strong-willed players and no clear alpha pair: who leads this team?
+  const ld = al.length >= 2 ? [] : signed.filter(p => egoVal(p) >= 12 && tr(p, 'motor') >= 13 && levelOf(p) >= 70).sort((a, b) => levelOf(b) - levelOf(a));
+  if (ld.length >= 2) extra.push({ key: 'leader', pid: ld[0].id, pid2: ld[1].id,
+    q: pickV([`Who leads this team: ${playerName(ld[0])} or ${playerName(ld[1])}?`, `${ld[0].fn} and ${ld[1].fn} both want the room. Whose voice is it?`, `Who's the leader in that locker room?`], team.id, yr0, 'leader'),
+    options: [{ v: 'a', label: playerName(ld[0]) }, { v: 'b', label: playerName(ld[1]) }, { v: 'both', label: 'They lead together' }], ctx: {} });
   const hurt = signed.filter(p => lastInj(p, lyr) >= 35 && levelOf(p) >= 72).sort((a, b) => levelOf(b) - levelOf(a))[0];
   if (hurt) extra.push({ key: 'injury', pid: hurt.id,
     q: pickV([`${playerName(hurt)} missed ${lastInj(hurt, lyr)} games last year. How is he doing?`, `Is ${playerName(hurt)} ready for opening night?`, `What's the plan with ${playerName(hurt)} coming off the injury?`], team.id, yr0, 'injury'),
@@ -471,6 +476,10 @@ export function playerReplies(league, team, q, a) {
     if (a === 'pecking') { say(P, 'It\'s always been my team.'); say(B, by(B, [[p => ego(p) >= 17, 'Nobody told me.']], 'If that\'s what wins, fine.')); }
     if (a === 'share') for (const x of [P, B]) say(x, by(x, [[p => tr(p, 'winning') >= 15, 'Ball moves, we win.']], 'We\'ll see how that works.'));
     if (a === 'winning') for (const x of [P, B]) if (tr(x, 'winning') >= 15) say(x, 'That\'s all I care about.');
+  }
+  if (q.key === 'leader' && P && B) {
+    if (a === 'both') for (const x of [P, B]) say(x, by(x, [[p => ego(p) >= 15, 'Together? Somebody has to take it.']], 'We push each other.'));
+    else { const [w, l] = a === 'b' ? [B, P] : [P, B]; say(w, 'I\'ll carry that.'); say(l, by(l, [[p => ego(p) >= 15, 'We\'ll see who the guys follow.']], 'Fine by me. I\'ll lead my way.')); }
   }
   if (q.key === 'injury') say(P, {
     ready: by(P, [[p => tr(p, 'motor') >= 15, 'I\'ve been ready for weeks.'], [p => tr(p, 'durability') <= 6, 'I feel good. For now.']], 'Ready to go.'),

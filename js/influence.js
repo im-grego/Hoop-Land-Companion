@@ -77,7 +77,8 @@ export function runMeeting(p, coach, { base = 2, lim = 3, rng = Math.random, ten
   // Personality: leadership moves the standard-setting traits, motivation the drive ones. A strong coach lifts them;
   // a weak one can let them slip.
   if (p.traits) {
-    for (const k of [...LEAD_TRAITS, ...MOTIV_TRAITS]) {
+    // Durability is the body, not the message: a meeting doesn't move it.
+    for (const k of [...LEAD_TRAITS, ...MOTIV_TRAITS].filter(x => x !== 'durability')) {
       const v = p.traits[k];
       if (!(v > 0)) continue;
       const rating = traitSide(k) === 'leadership' ? lead : motiv, goal = GOAL[k] || 1;
