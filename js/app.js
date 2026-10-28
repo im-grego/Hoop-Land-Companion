@@ -263,7 +263,8 @@ function logoUrl(url) {
 }
 // Player faces cut from the game's roster screens (a face pack), keyed by player id. Nothing shows without one.
 const faceOf = p => (p && state.faces?.get?.(p.id)) || '';
-const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<img class="face ${cls}" src="${u}" alt="">` : ''; };
+// Every face sits in the same light-blue box, so heads of any width line up.
+const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<span class="face-box ${cls}"><img class="face" src="${u}" alt=""></span>` : ''; };
 // Logos load right away (no lazy loading) into a box of fixed size, so a
 // slow or missing logo never shifts the layout.
 function logoImg(team, cls = 'logo-sm') {
@@ -7945,13 +7946,15 @@ screens.player = (args) => {
   layout({
     title: 'Player Profile',
     body: `
-      <div class="${faceOf(p) ? 'pl-head' : ''}">${faceImg(p, 'face-lg')}<div>
+      <div>
+        <div class="${faceOf(p) ? 'pl-head' : ''}">${faceImg(p, 'face-lg')}<div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
         <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
+        </div></div>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
         ${quickActions(p, team)}
-      </div></div>
+      </div>
       ${tabsRow}
       ${content}`,
     action: { act: 'back', label: 'Done' },
