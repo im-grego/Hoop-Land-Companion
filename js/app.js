@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.237.0';
+const APP_VERSION = '0.237.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -14120,8 +14120,8 @@ function rangeCard() {
 // Personality traits (1–20, kept in the save's unused trait fields).
 // Prospects show what scouts can see (durability, motor) until a private
 // workout; the rest read "?". Tap − / + to adjust.
-// The All traits list in two groups, like the tendencies.
-const TRAIT_GROUPS = [['Personality', ['loyalty', 'money', 'winning', 'lockerRoom', 'playoffRiser']], ['On the Court', ['motor', 'roadWarrior', 'durability']]];
+// The All traits list in two groups, like the tendencies. Personality ends with the two that run both ways (money, ego).
+const TRAIT_GROUPS = [['Personality', ['lockerRoom', 'loyalty', 'winning', 'money', 'playoffRiser']], ['On the Court', ['motor', 'roadWarrior', 'durability']]];
 function traitsBox(p, prospect = false) {
   if (!p.traits || !traitsSet(p)) return '';
   // Prospects: durability and motor show; coachability once a scout has seen him; ego once he's asked about the
