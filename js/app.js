@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.237.1';
+const APP_VERSION = '0.238.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -12684,31 +12684,28 @@ actions.faOffer = d => {
     const cyc = (k, label, val) => `<div class="off-cyc"><span class="small muted">${label}</span><button class="btn small off" data-k="${k}" data-d="-1" aria-label="Previous">‹</button><span class="off-cyc-val">${val}</span><button class="btn small off" data-k="${k}" data-d="1" aria-label="Next">›</button></div>`;
     const ml = mleOk(team), vm = vetMinOk(team);
     const quickRow = ml || vm ? `<div class="off-quick">${ml ? `<button class="btn small ${draft.sal === ml.sal && draft.yrs === ml.yrs ? 'on focus' : ''}" data-k="mle">📝 ${ml.name} $${ml.sal}M×${ml.yrs}</button>` : ''}${vm ? `<button class="btn small" data-k="vetmin">⚡ ${minLabel} $${minSal}M</button>` : ''}</div>` : '';
-    const termsHtml = `${quickRow}
-      <div class="off-grid">${step('sal', draft.yrs >= 2 && draft.load && draft.load !== 'flat' ? 'Salary (avg)' : 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
-      <div class="off-row"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
-      ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="off-row"><span class="small muted">No-trade${FA.wantsNtc(L, m.p, m.from) ? ' <span class="gold">★</span>' : ''}</span>${seg('ntc', [[0, 'No'], [1, 'Yes']], draft.ntc ? 1 : 0)}</div>` : ''}`;
     const load = draft.yrs >= 2 ? draft.load || 'flat' : 'flat';
+    const termsHtml = `
+      <div class="off-grid">${step('sal', load !== 'flat' ? 'Salary (avg)' : 'Salary', `$${draft.avg}M`)}${step('yrs', 'Years', draft.yrs)}</div>
+      <div class="off-row"><span class="small muted">Option</span>${seg('opt', [[0, 'None'], [2, 'Player'], [1, 'Team']], draft.opt)}</div>
+      ${hasExtras ? `${cyc(draft.yrs >= 2 ? 'loadc' : 'noop', 'Loading', { flat: 'Flat', front: 'Front', back: 'Back' }[load])}
+      <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'A one-year deal is paid flat.'}</p>` : ''}
+      ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="off-row"><span class="small muted">No-trade${FA.wantsNtc(L, m.p, m.from) ? ' <span class="gold">★</span>' : ''}</span>${seg('ntc', [[0, 'No'], [1, 'Yes']], draft.ntc ? 1 : 0)}</div>` : ''}`;
     const extrasHtml = `
-      ${cyc(draft.yrs >= 2 ? 'loadc' : 'noop', 'Loading', { flat: 'Flat', front: 'Front', back: 'Back' }[load])}
-      <p class="note small muted">${draft.yrs >= 2 ? `${loadSchedule(draft.avg, draft.yrs, load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M` : 'A one-year deal is paid flat.'}</p>
-      <div class="off-row"><span class="small muted">Incentive</span><select class="sel-team" data-k="inckind">${[['', 'None'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<option value="${k}" ${(draft.inc?.kind || '') === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
-      ${draft.inc ? `<div class="off-grid">${step('incbonus', 'Bonus', `$${draft.inc.bonus}M`)}<p class="note small muted" style="align-self:center">${esc(incText(m.p, draft.inc).replace(/^team /, '').replace(/^(\w)/, c => c.toUpperCase()))}: about $${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</p></div>` : ''}`;
-    // The pitch: one option showing at a time, ‹ › to look at the others, tap it to make it (one try).
-    const pitchKeys = Object.keys(FA_PITCHES).filter(k => k !== 'market');
-    const pk = pitchKeys[((draft.pi || 0) % pitchKeys.length + pitchKeys.length) % pitchKeys.length];
+      <div class="off-inc">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${esc(l)}</button>`).join('')}</div>
+      ${draft.inc ? `<div class="off-grid">${step('incbonus', 'Bonus', `$${draft.inc.bonus}M`)}<p class="note small muted" style="align-self:center">${esc(incText(m.p, draft.inc).replace(/^team /, '').replace(/^(\w)/, c => c.toUpperCase()))}: about $${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</p></div>`
+      : '<p class="note small muted">A bonus he earns if he hits the goal. It counts toward his offer by the odds he gets there.</p>'}`;
+    // The pitch: all four, one try.
     const fp = s.fpitch?.[m.p.id];
     const pitchPick = !isComplete() || ownExpiring || s.stage === 'done' ? ''
       : fp ? `<p class="note small ${fp.ok ? 'up' : 'down'}">🗣️ Pitched ${esc(FA_PITCHES[fp.kind].say)}: ${fp.ok ? 'it landed, he leans your way.' : 'it fell flat.'}</p>`
-      : `<div class="off-cyc"><button class="btn small off" data-k="pitchc" data-d="-1" aria-label="Previous pitch">‹</button><button class="btn small focus off-cyc-val" data-k="fpitch" data-v="${pk}">${FA_PITCHES[pk].label} · ${Math.round(faPitchOdds(L, team, m, pk) * 100)}%</button><button class="btn small off" data-k="pitchc" data-d="1" aria-label="Next pitch">›</button></div>
-        <p class="note small muted center">Pitch meeting · one try · tap the pitch to make it</p>`;
+      : `<p class="note small muted">Pitch meeting · one try:</p><div class="off-pitch">${Object.keys(FA_PITCHES).filter(k => k !== 'market').map(k => `<button class="btn small" data-k="fpitch" data-v="${k}">${FA_PITCHES[k].label} · ${Math.round(faPitchOdds(L, team, m, k) * 100)}%</button>`).join('')}</div>`;
     const pitchHtml = `
       <p class="note small">${M.icon} <b>${esc(M.name)}</b>: ${esc(M.text)}.</p>
       ${isComplete() ? destinationLine(L, team, m.p) : ''}
       ${pitchPick}
       ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn small" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}`;
-    const extrasOn = (load !== 'flat' ? 1 : 0) + (draft.inc ? 1 : 0);
-    const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Structure${extrasOn ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
+    const tabs = [hasPitch && ['pitch', `Pitch${pitchedNow ? ' <span class="gold">•</span>' : ''}`], ['terms', 'Terms'], hasExtras && ['extras', `Incentives${draft.inc ? ' <span class="gold">•</span>' : ''}`]].filter(Boolean);
     box.querySelector('.box').innerHTML = `<div class="offer-sheet">
       <p class="note"><b>${esc(playerName(m.p))}</b> <span class="${declining(m.p) ? 'decl-lv' : 'gold'}">Lv ${shownLevel(m.p)}</span>${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}<br>
         <span class="small muted">${esc(posName(m.p))} · ${m.p.age}y · asks $${m.ask}M × ${askYears(m)} · ${M.icon} ${esc(M.name)}</span></p>
@@ -12717,6 +12714,7 @@ actions.faOffer = d => {
       ${m.p.age >= 33 && activeSkills(m.p).length ? `<p class="note small">${activeSkills(m.p).map(x => `<span class="sk-name sk-${SKILL_GROUP[skillCategory(x.id)] || ''}">${esc(skillName(x.id))}${isLeveled(x.id) ? ` ${x.level}` : ''}</span>`).join(' · ')}</p>` : ''}
       ${hasPitch ? '' : `<p class="note small">${M.icon} ${esc(M.name)}: ${esc(M.text)}.</p>`}
       ${mine.length > 1 ? `<select class="sel-team" data-k="tid">${mine.map(t => `<option value="${t.id}" ${t.id === draft.tid ? 'selected' : ''}>${esc(t.shortName)}</option>`).join('')}</select>` : ''}
+      ${quickRow}
       ${tabs.length > 1 ? `<div class="seg3 off-tabs">${tabs.map(([k, l]) => `<button class="btn small ${tab === k ? 'on focus' : 'off'}" data-k="tab" data-v="${k}">${l}</button>`).join('')}</div>` : ''}
       <div class="off-body ${tabs.length > 1 ? 'fixed' : ''}">${tab === 'extras' ? extrasHtml : tab === 'pitch' ? pitchHtml : termsHtml}</div>
       <p class="note small off-total">Total <span class="tot">$${loadSchedule(draft.avg, draft.yrs, draft.load).reduce((x, y) => x + y, 0)}M</span> · ${err ? `<span class="down">${esc(err)}</span>` : `uses ${{ space: 'cap space', bird: 'Bird rights', mle: 'the MLE', min: 'the minimum', vetMin: 'the vet minimum' }[kind]}`} · ${standing}</p>
@@ -12731,7 +12729,6 @@ actions.faOffer = d => {
     if (!b || b.tagName === 'SELECT') return;
     const k = b.dataset.k;
     if (k === 'tab') draft.tab = b.dataset.v;
-    else if (k === 'pitchc') draft.pi = (draft.pi || 0) + +b.dataset.d;
     else if (k === 'loadc') { const order = ['flat', 'front', 'back'], i = order.indexOf(draft.load || 'flat'); draft.load = order[(i + +b.dataset.d + 3) % 3]; }
     else if (k === 'noop') return;
     else if (k === 'sal') draft.avg = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(maxAvgFor(L, m.p, draft.tid === m.from?.id, draft.yrs, draft.load), (draft.avg ?? draft.sal) + +b.dataset.d));
@@ -12782,13 +12779,6 @@ actions.faOffer = d => {
   });
   box.addEventListener('change', e => {
     if (e.target.dataset.k === 'tid') { draft.tid = +e.target.value; paint(); }
-    if (e.target.dataset.k === 'inckind') {
-      const v = e.target.value, tm = L.teams.find(t => t.id === draft.tid);
-      draft.inc = v ? { kind: v, bonus: draft.inc?.bonus || 2, target: incTarget(m.p, v) } : null;
-      draft.incEv = draft.inc ? incWorth(m.p, tm, draft.inc) : 0;
-      if (!draft.inc) delete draft.inc;
-      paint();
-    }
   });
   paint();
 };
