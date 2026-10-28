@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.225.0';
+const APP_VERSION = '0.226.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -1305,7 +1305,7 @@ const CALENDAR = [
     done: () => preDone('workouts') },
   { key: 'draft', date: 'Jun 23', title: 'NBA Draft', blurb: 'Two rounds, live, with draft-day trades.',
     done: () => phaseRank(league().season) >= 3 },
-  { key: 'options', date: 'Jun 29', title: 'Contracts', blurb: 'Options and qualifying offers come due, then the extension window: lock up players heading into their final year, including the options you just picked up.',
+  { key: 'options', date: 'Jun 29', title: 'Contracts', blurb: 'Options and qualifying offers are due. Then the extension window opens.',
     done: () => (!!optStore().done && !!extStore().done) || phaseRank(league().season) >= 4 },
   { key: 'camp', date: 'Jul 3', title: 'Summer League', blurb: 'Rookies pick their numbers, then the young cores head to Las Vegas.',
     done: () => calFlags().camp || phaseRank(league().season) >= 4 },
@@ -5187,7 +5187,7 @@ function numbersSection(ready) {
   let body;
   if (!ready) body = '<p class="note muted">Run the age adjustment first.</p>';
   else {
-    body = `${locked ? '' : '<p class="note">Before they head to Vegas, your rookies pick their numbers. Gold marks the number they wore in college; teammates\' numbers and retired jerseys are off the wall.</p>'}
+    body = `${locked ? '' : '<p class="note">Your rookies pick their numbers, the way they do right after the draft. Gold is the number he wore in college; teammates\' numbers and retired jerseys are taken.</p>'}
       <div class="stack">${mine.map(r => {
         const col = collegeNumber(r.p);
         const open = !locked && state.numPick === r.p.id;
@@ -5235,7 +5235,7 @@ function tourSection(ready) {
   let body;
   if (!t) {
     body = ready
-      ? `<p class="note">Every team's rookies and young core head to Las Vegas. Reach the championship and your young players earn XP; win it all for even more.</p>
+      ? `<p class="note">Every team's young core heads to Las Vegas. If your team reaches the championship, your young players earn XP. Win it all for even more.</p>
         <button class="btn big focus" data-act="runTour">🏀 Sim Summer League</button>`
       : `<p class="note muted">${myRookies().length ? 'Lock in your rookies\' numbers first.' : 'Run the age adjustment first.'}</p>`;
   } else {
@@ -11700,17 +11700,16 @@ screens.fa = (args = {}) => {
       <div class="tabs fa-tabs fa-tabs6">${views.map(([k, l]) => `<button class="btn ${k === view ? 'on focus' : 'off'}" data-act="faView" data-v="${k}">${l}</button>`).join('')}</div>
       <div class="list">${rows.map(row).join('')}</div>
       ${total > rows.length ? `<button class="btn small" data-act="faAll">Show all ${total}</button>` : ''}`],
-        ['team', 'My Team', `      ${expiringSection(s)}
-      ${FA.capSystemOn() ? capNote(L) : ''}
+        ['team', 'My Team', `      ${mine.length && !ro ? faRosterBox(s, mine) : ''}
+      ${expiringSection(s)}
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
-        const space = FA.capSpace(L, t);
-        const tools = space > 0 ? `<span class="up">$${space}M cap space</span>` : `<span class="down">$${-space}M over the cap</span>`;
         const ml = FA.mleFor(L, t, s.day, s.used);
         const extra = [ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : ''].filter(Boolean).join(' · ');
-        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBar(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
+        return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capRoomLine(t)}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
-      ${mine.length && !ro ? faRosterBox(s, mine) : ''}${ro && mine.length ? faCareerTeamBox(s, mine[0]) : ''}`, expiringSection(s) !== ''],
+      ${FA.capSystemOn() ? capNote(L) : ''}
+      ${ro && mine.length ? faCareerTeamBox(s, mine[0]) : ''}`, expiringSection(s) !== ''],
       ])}`,
   });
 };
@@ -12384,9 +12383,10 @@ function advanceLoads() {
 // bonus the next offseason. He values it at the chance he hits it, shaded by
 // what he cares about (money-minded players discount it hard).
 const INCENTIVES = {
-  playoffs: { label: 'Playoffs', text: 'team reaches the conference finals' },
-  title: { label: 'Title', text: 'team wins the title' },
-  allnba: { label: 'All-NBA', text: 'makes All-NBA' },
+  playoffs: { label: '2nd Round', text: 'team reaches the second round' },
+  title: { label: 'Finals', text: 'team makes the Finals' },
+  allstar: { label: 'All-Star', text: 'makes the All-Star team' },
+  allnba: { label: 'All-NBA', text: 'makes All-NBA' },   // older deals only
   prod: { label: 'Scoring', text: null },
   games: { label: 'Durability', text: 'plays 65+ games' },
 };
@@ -12401,8 +12401,9 @@ const incTarget = (p, kind) => {
 const incText = (p, inc) => inc.kind === 'prod' ? `averages ${inc.target ?? incTarget(p, 'prod')}+ points` : INCENTIVES[inc.kind].text;
 function incOdds(p, team, kind) {
   const st = teamStatus(league(), team), lv = shownLevel(p);
-  if (kind === 'playoffs') return st === 'contending' ? 0.5 : st === 'developing' ? 0.15 : 0.04;
-  if (kind === 'title') return st === 'contending' ? 0.12 : 0.01;
+  if (kind === 'playoffs') return st === 'contending' ? 0.65 : st === 'developing' ? 0.25 : 0.07;
+  if (kind === 'title') return st === 'contending' ? 0.25 : 0.02;
+  if (kind === 'allstar') return lv >= 88 ? 0.7 : lv >= 84 ? 0.4 : lv >= 80 ? 0.15 : lv >= 76 ? 0.05 : 0.01;
   if (kind === 'allnba') return lv >= 92 ? 0.45 : lv >= 88 ? 0.25 : lv >= 84 ? 0.08 : 0.01;
   if (kind === 'prod') return 0.45;
   if (kind === 'games') return Math.max(0.15, 0.6 - (traitsSet(p) && tr(p, 'durability') <= 6 ? 0.3 : 0) - (p.age >= 33 ? 0.1 : 0));
@@ -12436,8 +12437,9 @@ function settleIncentives() {
     const l = seasonLine(p, state.leagueIdx, yr);
     const row = (L.teams.find(t => t.id === r.tid) || team).season?.find(x => x.yr === yr);
     const won = id => (p.awards || []).some(a => a.id === id && a.yearsWon?.includes(yr));
-    const ok = r.kind === 'playoffs' ? (row?.round || 0) >= 3 : r.kind === 'title' ? won(0) || (row?.round === 4 && row?.seriesWins === 4)
-      : r.kind === 'allnba' ? won(13) : r.kind === 'prod' ? !!l && l.ppg >= r.target : !!l && l.gp >= 65;
+    const allStarId = (L.awards || []).findIndex(a => /^all-star$/i.test(a?.name || ''));
+    const ok = r.kind === 'playoffs' ? (row?.round || 0) >= 2 : r.kind === 'title' ? won(0) || (row?.round || 0) >= 4
+      : r.kind === 'allstar' ? allStarId >= 0 && won(allStarId) : r.kind === 'allnba' ? won(13) : r.kind === 'prod' ? !!l && l.ppg >= r.target : !!l && l.gp >= 65;
     r.hit = !!ok;
     if (ok && p.contract) {
       p.contract.sal += r.bonus;
@@ -12533,10 +12535,10 @@ actions.faOffer = d => {
       ${draft.tid === m.from?.id && FA.ntcEligible(L, m.p, m.from) ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!draft.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${FA.wantsNtc(L, m.p, m.from) ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
 ${extrasOn && hasExtras ? `<p class="note small muted">Includes: ${[draft.load && draft.load !== 'flat' && draft.yrs >= 2 ? LOADS[draft.load] : '', draft.inc ? `$${draft.inc.bonus}M bonus (${INCENTIVES[draft.inc.kind].label})` : '', pitched?.ok ? 'pay cut' : ''].filter(Boolean).join(' · ')}</p>` : ''}`;
     const extrasHtml = `
-      ${isComplete() && draft.yrs >= 2 ? `<div class="tabs">${['back', 'flat', 'front'].map(k => `<button class="btn small ${(draft.load || 'flat') === k ? 'on focus' : 'off'}" data-k="load" data-v="${k}">${LOADS[k].replace('-loaded', '')}</button>`).join('')}</div>
+      ${isComplete() && draft.yrs >= 2 ? `<p class="note small muted" style="margin:6px 0 4px">Select how the contract will be paid:</p><div class="tabs">${['back', 'flat', 'front'].map(k => `<button class="btn small ${(draft.load || 'flat') === k ? 'on focus' : 'off'}" data-k="load" data-v="${k}">${LOADS[k].replace('-loaded', '')}</button>`).join('')}</div>
         ${draft.load && draft.load !== 'flat' ? `<p class="note small muted">${loadSchedule(draft.avg, draft.yrs, draft.load).map(v => `$${v}M`).join(' → ')} · cap hit $${draft.sal}M</p>` : ''}` : ''}
       ${ownExpiring && cutPitchOk(m.p, team) ? ((s.cutPitch || {})[m.p.id] ? ((s.cutPitch[m.p.id].ok) ? `<p class="note small up">🏆 He'll count a ${Math.round(s.cutPitch[m.p.id].pct * 100)}% discount as worth it to keep this team a contender.</p>` : '<p class="note small muted">He heard the pay-cut pitch and passed.</p>') : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
-      ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allnba'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
+      ${isComplete() ? `<div class="tabs fa-tabs fa-tabs6">${[['', 'No Incentive'], ...['playoffs', 'title', 'games', 'prod', 'allstar'].map(k => [k, INCENTIVES[k].label])].map(([k, l]) => `<button class="btn small ${(draft.inc?.kind || '') === k ? 'on focus' : 'off'}" data-k="inckind" data-v="${k}">${l}</button>`).join('')}</div>
         ${draft.inc ? `<div class="pts-row"><span class="grow">Bonus</span><button class="btn square" data-k="incbonus" data-d="-1">−</button><span class="pts-val">$${draft.inc.bonus}M</span><button class="btn square" data-k="incbonus" data-d="1">+</button></div>
         <p class="note small muted">${esc(incText(m.p, draft.inc).replace(/^team /, '').replace(/^(\w)/, c => c.toUpperCase()))} · ~$${draft.incEv}M to him (${Math.round(incOdds(m.p, team, draft.inc.kind) * 100)}%)</p>` : ''}` : ''}
 `;
@@ -13044,7 +13046,7 @@ screens.options = () => {
   const pendLabel = [pendTeam.length ? `${pendTeam.length} team option${pendTeam.length > 1 ? 's' : ''}` : '', pendQO.length ? `${pendQO.length} qualifying offer${pendQO.length > 1 ? 's' : ''} (QOs tab)` : ''].filter(Boolean).join(' and ');
   layout({
     title: 'Options Deadline',
-    body: `${state.reopened?.n ? `<p class="note small muted">The game had already decided ${state.reopened.n} option${state.reopened.n === 1 ? '' : 's'}; they're open again here.${state.reopened.est.size ? ' Salaries marked est. are estimates (the game clears a declined deal).' : ''}</p>` : ''}<p class="note small">Options and qualifying offers are due. Accept a team option to keep his last year at the same salary, or decline it to let him go. Picked-up options can be extended right after, in the extension window.</p>
+    body: `<p class="note small">Accept a team option to keep his last year at the same salary, or decline it to let him go. Picked-up options can be extended right after, in the extension window.</p>
       ${careerTeamNow() ? viewOnlyNote() : ''}${uiTabs('options', [
         ['team', 'Team', `      <fieldset class="frame"><legend>Your Team Options</legend><div class="stack">${myTeamOpts.map(x => { const deal = st.deals?.[x.p.id], neg = st.neg?.[x.p.id]; return `<div class="drill-row wrap">${head(x)}
         <span class="opt-btns full">${btn('optTeam', x.p.id, 'ex', x.c.choice === 'ex', 'Accept')}${btn('optTeam', x.p.id, 'dec', x.c.choice === 'dec', 'Decline')}</span>
@@ -13053,12 +13055,12 @@ screens.options = () => {
         <b class="small ${x.c.choice === 'out' ? 'down' : 'up'}">${esc(x.c.why)}</b>
         ${x.c.reason && !done ? (x.c.pitch ? (x.c.pitch.ok ? '' : `<p class="note small down full">He heard you out on ${esc(PITCHES[x.c.pitch.kind].promise)}. He's testing the market.</p>`)
           : `<div class="full"><p class="note small muted">Make him a promise to stay (one try):</p><span class="opt-btns">${Object.entries(PITCHES).map(([k, v]) => `<button class="btn small" data-act="optPitch" data-id="${x.p.id}" data-v="${k}">${esc(v.label)} · ${Math.round(pitchOdds(x.p, x.team, k, x.c.reason) * 100)}%</button>`).join('')}</span></div>`) : ''}</div>`).join('') || '<p class="note muted small">No player options this year.</p>'}</div>
-        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">The player decides. Most opt in; they test free agency when their option is well under market or they\'re unhappy. Promises are remembered next season.</p>' : ''}</fieldset>`],
+        ${myPlayerOpts.length ? '<p class="note muted small" style="margin-top:6px">Players typically test free agency when their option is well under market value or they\'re unhappy. Offseason promises are remembered next season.</p>' : ''}</fieldset>`],
         ['qo', 'QOs', `      <fieldset class="frame"><legend>Qualifying Offers</legend><div class="stack">${myQO.map(x => `<div class="drill-row"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · QO $${qoAmount(x.p)}M · worth ~$${marketValue(x.p)}M</span></span>
-        <span class="opt-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Make Offer')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Let Walk')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
-        ${myQO.length ? '<p class="note muted small" style="margin-top:6px">Make Offer: he\'s restricted. Other teams\' offer sheets run at least 2 years and you can match any of them; if nobody signs him, he takes the one-year QO and is unrestricted next summer. Let Walk: he\'s unrestricted.</p>' : ''}</fieldset>`, !done && myQO.some(x => st.qo[x.p.id] == null)],
-        ['league', 'League', `      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>`],
-      ], CAR.isCareer(league()) ? 'league' : undefined)}
+        <span class="opt-btns stack-btns">${btn('optQO', x.p.id, '1', st.qo[x.p.id] === true, 'Offer QO')}${btn('optQO', x.p.id, '0', st.qo[x.p.id] === false, 'Let Walk')}</span></div>`).join('') || '<p class="note muted small">No restricted free agents this year.</p>'}</div>
+        ${myQO.length ? `<div class="qo-explain small"><p><b>Offer QO:</b> he becomes a <b>restricted</b> free agent. You get to match any offer another team makes him, so he stays if you want him.</p><p>If no team makes an offer, he can sign the one-year qualifying offer (the amount shown) and becomes unrestricted next summer.</p><p><b>Let Walk:</b> he's an unrestricted free agent now, free to sign anywhere.</p></div>` : ''}</fieldset>`, !done && myQO.some(x => st.qo[x.p.id] == null)],
+        ...(done ? [['league', 'League', `      <fieldset class="frame"><legend>Around the League</legend><p class="note muted small">Declined options, opt-outs and new deals. Tap a player to scout him.</p><div class="stack">${around.slice(0, 20).map(x => `<div class="drill-row tap" data-act="openPlayer" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)}<br><span class="small muted">${esc(x.team.shortName)} · ${x.p.age}y · $${x.c.sal}M ${x.c.kind} option</span></span><span class="small ${x.c.choice === 'out' ? 'gold' : x.c.choice === 'deal' ? 'up' : 'down'}" style="max-width:48%;text-align:right">${esc(x.c.why)}</span></div>`).join('') || '<p class="note muted small">Every option around the league was picked up.</p>'}</div></fieldset>`]] : []),
+      ], CAR.isCareer(league()) || done ? 'league' : undefined)}
       ${done ? '<p class="note up">✓ Decisions are in. Free agents are set for July.</p>' : ''}`,
     action: done ? { act: 'nav', label: 'On to Extensions', to: 'extensions' } : { act: 'optFinish', label: pending ? `Decide ${pendLabel}` : 'Finalize Decisions' },
   });
@@ -13155,7 +13157,7 @@ actions.optFinish = async (d = {}) => {
     toast(openTeam.length ? 'Team options still open' : 'Qualifying offers still open', `${(openTeam.length ? openTeam : openQO).map(x => playerName(x.p)).join(', ')}: ${openTeam.length ? 'Accept or Decline' : 'Make Offer or Let Walk'}.`);
     return;
   }
-  if (!d.auto && !(await confirmBox('Finalize every option and qualifying offer? Picked-up options are written to the save.', 'Finalize'))) return;
+  if (!d.auto && !(await confirmBox('Finalize options and qualifying offers?', 'Finalize'))) return;
   checkpoint('Options deadline');
   const yr = L.season.currentYear;
   let exercised = 0, out = 0;
@@ -14299,7 +14301,7 @@ function extAnswer(p, team, offer) {
   if (offer.sal >= need) return { ok: true, text: 'Deal.' };
   const yrs = Math.min(Math.max(offer.yrs, a.yrs[0]), a.yrs[1]);
   return { ok: false, counter: { sal: Math.max(need, Math.round(a.sal * (a.mood === 'market' ? 1.2 : 0.95))), yrs },
-    text: a.mood === 'market' ? 'His camp wants to see what free agency brings. It would take an overpay.' : offer.sal < need * 0.8 ? 'Not close. His agent walked out of the room.' : 'Close, but not there yet.' };
+    text: a.mood === 'market' ? 'His camp wants to see what free agency brings. It would take an overpay.' : offer.sal < need * 0.8 ? 'Not close. His agent walked out of the room.' : 'Close, but not there yet. His agent counters.' };
 }
 function signExtension(L, t, p, deal, cpu = false) {
   moraleEvent(p, `ext:${L.season.currentYear}`, 8, 'extension');
@@ -14350,7 +14352,7 @@ screens.extensions = () => {
     const proj = a.proj !== lv ? ` <span class="small ${a.proj > lv ? 'up' : 'down'}">→ ${a.proj}</span>` : '';
     const over = talk?.tries >= 3;
     const status = talk?.signed ? `<span class="up">✍️ $${talk.signed.sal}M × ${talk.signed.yrs}${optTag(talk.signed.opt)}</span> ${total(talk.signed)}`
-      : over ? '<span class="down">Talks broke off</span>'
+      : over ? '<span class="down">Not interested</span>'
       : talk?.last ? `<span class="down">${esc(talk.last.text)}</span>` : '';
     const grudge = FA.hasGrudge(p, t);
     return `<button class="prow" data-act="extOpen" data-id="${p.id}" ${talk?.signed || over || done || grudge ? 'disabled' : ''}>
@@ -14362,9 +14364,9 @@ screens.extensions = () => {
   };
   const log = st.log;
   layout({
-    title: 'Contracts · Extensions',
-    body: `<p class="note small">Players heading into the last year of their deal, including any option you just picked up.</p>
-      ${mine.map(t => `<fieldset class="frame"><legend>${esc(t.shortName)}</legend><div class="list">${extEligible(L, t).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => row(t, p)).join('')
+    title: 'Extension Eligible',
+    body: `<p class="note small">Three offers each. He counters, and you can take it or walk away.</p>
+      ${mine.map(t => `<fieldset class="frame">${mine.length > 1 ? `<legend>${esc(t.shortName)}</legend>` : ''}<div class="list">${extEligible(L, t).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => row(t, p)).join('')
         || (Object.values(st.talks).some(x => x.signed) ? '' : '<p class="note small muted">Nobody heading into a final year.</p>')}
         ${t.roster.filter(p => st.talks[p.id]?.signed && !extEligible(L, t).includes(p)).map(p => `<div class="prow"><span class="name">${esc(playerName(p))} ${lvTag(p)}</span><span class="meta up">✍️ $${st.talks[p.id].signed.sal}M × ${st.talks[p.id].signed.yrs}${optTag(st.talks[p.id].signed.opt)} ${total(st.talks[p.id].signed)}</span></div>`).join('')}</div></fieldset>`).join('')}
       ${done && log ? `<fieldset class="frame"><legend>Around the League</legend><div class="stack">${(log.list || []).map(x => `<p class="note small"><b>${esc(x.name)}</b> (${esc(x.team)}) · $${x.sal}M × ${x.yrs}${optTag(x.opt)} ${total(x)}</p>`).join('') || '<p class="note small muted">Nobody else extended.</p>'}</div></fieldset>` : ''}`,
@@ -14391,14 +14393,17 @@ actions.extOpen = d => {
       <div class="tabs">${[[0, 'No Option'], [FA.OPT_PLAYER, 'Player'], [FA.OPT_TEAM, 'Team']].map(([v, l]) => `<button class="btn ${talk.opt === v ? 'on focus' : 'off'}" data-k="opt" data-v="${v}">${l}</button>`).join('')}</div>
       ${a.ntcOk ? `<div class="tabs">${[[0, 'No NTC'], [1, 'No-trade clause']].map(([v, l]) => `<button class="btn ${!!talk.ntc === !!v ? 'on focus' : 'off'}" data-k="ntc" data-v="${v}">${l}</button>`).join('')}</div>${a.ntc ? '<p class="note small">He wants a no-trade clause.</p>' : ''}` : ''}
       <p class="note small">Total <span class="tot">$${talk.sal * talk.yrs}M</span> · ${3 - talk.tries} offer${3 - talk.tries === 1 ? '' : 's'} left${talk.last ? `<br><span class="down">${esc(talk.last.text)}</span>` : ''}</p>
+      ${talk.last?.counter && !talk.last.ok && talk.tries < 3 ? `<button class="btn up-btn" data-k="counter">Take his counter: $${talk.last.counter.sal}M × ${talk.last.counter.yrs} <span class="tot">($${talk.last.counter.sal * talk.last.counter.yrs}M)</span></button>` : ''}
       ${a.holdout ? '<p class="note small">He\'s unhappy and wants to reset the market at his position. Pay it, shop him, or sign him high and send him out.</p><div class="grid2"><button class="btn" data-k="shop">🔁 Shop Him</button><button class="btn" data-k="snt">🤝 Sign-and-Trade</button></div>' : ''}
       ${!a.holdout && cutPitchOk(p, t) ? (talk.cut ? `<p class="note small up">🏆 He'll take ${Math.round(talk.cut * 100)}% less to keep this team a contender.</p>` : talk.cutTried ? '<p class="note small muted">He heard the pay-cut pitch and passed.</p>' : '<button class="btn" data-k="cut">🏆 Pitch a Pay Cut to Win</button>') : ''}
-      <div class="grid2"><button class="btn off" data-k="close">Cancel</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
+      <div class="grid2"><button class="btn off" data-k="close">${talk.tries ? 'Walk Away' : 'Cancel'}</button><button class="btn focus" data-k="submit">Make Offer</button></div>`;
   };
   box.addEventListener('click', e => {
     const b = e.target.closest('[data-k]');
     if (!b) return;
-    const k = b.dataset.k;
+    let k = b.dataset.k;
+    // Taking his counter is an offer at his number.
+    if (k === 'counter' && talk.last?.counter) { talk.sal = talk.last.counter.sal; talk.yrs = talk.last.counter.yrs; k = 'submit'; }
     if (k === 'sal') talk.sal = Math.max(FA.FA_DEFAULTS.minSalary, Math.min(FA.maxSalary(L, p, true, p.contract?.yrs || 1), talk.sal + +b.dataset.d));
     else if (k === 'yrs') talk.yrs = Math.max(1, Math.min(5, talk.yrs + +b.dataset.d));
     else if (k === 'opt') talk.opt = +b.dataset.v;

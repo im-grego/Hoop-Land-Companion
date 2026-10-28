@@ -140,7 +140,7 @@ function teamTier(L, team, status, pct, round) {
 // from the app (regression-aware level, fair salary).
 export function teamBooks(L, team, { level = levelOf, worth, qoEligible }) {
   const roster = team.roster;
-  const expiring = roster.filter(p => p.status === 4).map(p => ({ p, level: level(p), worth: worth(p), rfa: qoEligible(L, p) }))
+  const expiring = roster.filter(p => p.status === 4 && !((p.contract?.ext?.yrs || 0) > 0)).map(p => ({ p, level: level(p), worth: worth(p), rfa: qoEligible(L, p) }))
     .sort((a, b) => b.level - a.level);
   const options = roster.filter(p => p.contract && (p.contract.yrs || 0) <= 1 && (p.contract.opt === 1 || p.contract.opt === 2) && p.status !== 4)
     .map(p => ({ p, kind: p.contract.opt === 1 ? 'team' : 'player', sal: p.contract.sal, worth: worth(p), level: level(p) })).sort((a, b) => b.level - a.level);

@@ -610,7 +610,8 @@ export const minFor = (p, o = FA_DEFAULTS) => COMPLETE
   : isVet(p, o) ? o.vetMin : o.minSalary;
 export const minYears = () => 2;
 export const minOk = p => p.status === STATUS_EXPIRING || p.status === STATUS_FREE;
-export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && ((p.yrs ?? 99) <= 3 || isRookieScale(p));
+// A player who already signed his extension isn't a free agent at all.
+export const qoEligible = (league, p) => p.status === STATUS_EXPIRING && !((p.contract?.ext?.yrs || 0) > 0) && ((p.yrs ?? 99) <= 3 || isRookieScale(p));
 export function isRestricted(league, p) {
   return qoEligible(league, p) && QO.get(p.id) !== false;
 }

@@ -1201,7 +1201,7 @@ html, body, button, a, input, select, label { touch-action: pan-x pan-y; }
 .recap-row .grow > br { display: none; }
 .recap-row .grow > .small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .overlay .box { max-height: calc(100dvh - 40px); overflow-y: auto; }
-.tot { color: #9fb6dc; font-weight: 600; opacity: .85; }
+.tot { color: var(--up); font-weight: 700; }
 .fa-tabs.fa-tabs6 { grid-template-columns: repeat(3, 1fr); }
 .team-stack { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: none; min-width: 44px; text-align: center; }
 .team-stack img { width: 28px; height: 28px; object-fit: contain; }
@@ -1559,3 +1559,7 @@ fieldset.frame { position: relative; }
 .ts-col.on { color: var(--gold); text-decoration: underline; }
 .ts-yr { width: auto; min-width: 110px; }
 .cap-bar .cb-floor { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed #fff; opacity: .7; }
+.stack-btns { display: flex; flex-direction: column; gap: 6px; }
+.qo-explain { margin-top: 8px; padding: 8px 10px; background: var(--btn-shadow); border-left: 3px solid var(--cyan); }
+.qo-explain p { margin: 0 0 6px; }
+.up-btn { border-color: var(--up); margin-bottom: 8px; width: 100%; }
