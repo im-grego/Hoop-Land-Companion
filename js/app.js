@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.233.2';
+const APP_VERSION = '0.233.3';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -15348,7 +15348,10 @@ actions.buyoutToggle = d => { const b = (state.buyoutSel ||= {}); b[+d.id] = !b[
 const cutSel = () => (state.cutSel ||= {});
 // CPU teams only cut players in the last year of their deal; you can cut
 // anyone, and years left become dead money.
-const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || (p.contract?.yrs || 0) <= 1 && !extPending(p) && !FA.isLifer(league(), p, t)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) })).sort((a, b) => a.score - b.score);
+// CPU teams weigh every deal: cutting one with years left costs the dead money of the years after this one, so a
+// $2M bench piece on a two-year deal goes before a starter on an expiring $20M (they used to look at expiring deals only).
+const cutCost = p => ((p.contract?.yrs || 0) > 1 ? (p.contract.sal || 0) * (p.contract.yrs - 1) * 0.6 : 0);
+const cutRank = t => FA.signedRoster(t).filter(p => isUserTeam(t) || !extPending(p) && !FA.isLifer(league(), p, t)).map(p => ({ p, score: FA.cutScore(p, shownLevel(p), league().season.currentYear) + (isUserTeam(t) ? 0 : cutCost(p)) })).sort((a, b) => a.score - b.score);
 screens.cuts = () => {
   const L = league(), O = FA.FA_DEFAULTS, sel = cutSel();
   const done = !!calFlags().cuts;
