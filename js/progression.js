@@ -35,14 +35,14 @@ export const DEFAULT_PARAMS = {
   // spend CPU points into ratings now (raising ceilings as needed).
   spendCpuPoints: false,
   // Longevity: chance to push regressionAge back a year (scaled by minutes).
-  regFirstYearChance: 30, // % for players in their first regression year
-  regLaterChance: 10,     // % for players further into regression
+  regFirstYearChance: 18, // % for players in their first regression year (decline should usually start on time)
+  regLaterChance: 6,      // % for players further into regression
   // Earned longevity: the game itself adds +1 regressionAge to players 30+
   // (season age) who play 100% of games at 62.5%+ of minutes (30 of 48).
   // The app lowers that bar; players the game already rewarded are skipped.
   naturalMinAge: 30,
-  naturalGamesPct: 90,
-  naturalMinutesPct: 60,
+  naturalGamesPct: 95,
+  naturalMinutesPct: 65,
   gameNaturalGamesPct: 100,
   gameNaturalMinutesPct: 62.5,
   gameMinutes: 48,

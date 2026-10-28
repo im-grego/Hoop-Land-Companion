@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.227.0';
+const APP_VERSION = '0.228.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -104,6 +104,7 @@ function loadParams() {
       if (saved.version < 8) delete saved.structuralParts; // v8 added Ankle, Back
       if (saved.version < 9) for (const k of ['mentorMinAge', 'menteeMaxAge', 'mentorPosRange']) delete saved[k]; // v9 mentorship rules
       if (saved.version < 10) for (const k of ['regDownProdZ', 'regDownProdChance']) delete saved[k]; // v10 trainer tuning
+      if (saved.version < 13) for (const k of ['regFirstYearChance', 'regLaterChance', 'naturalGamesPct', 'naturalMinutesPct']) delete saved[k]; // v13: decline starts more often
       if (saved.version < 11) for (const k of ['potUpChance', 'prodPotUpPerZ', 'prodPotDownZ', 'prodPotDownChance', 'potDownChance', 'rookieR1Mult', 'rookieR2Mult', 'rookieUndraftedMult']) delete saved[k]; // v11 potential balance
       return { ...structuredClone(DEFAULT_PARAMS), ...saved };
     }
@@ -146,7 +147,7 @@ function readinessOf(p) {
 const readyChip = p => { const r = readinessOf(p); return `<span class="badge ${r.cls === 'up' ? 'lvl' : r.cls === 'gold' ? 'new' : ''}">${r.icon} ${r.tag}</span>`; };
 setReadiness(p => (state.params.readiness === 'age' ? null : readinessOf(p).back));
 function saveParams() {
-  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 12 })); } catch { /* ignore */ }
+  try { localStorage.setItem('hlc:params', JSON.stringify({ ...state.params, version: 13 })); } catch { /* ignore */ }
 }
 function teamsKey() { return `hlc:teams:${saveTag()}:${state.leagueIdx}`; }
 function saveUserTeams() {
@@ -1978,7 +1979,7 @@ const STEP_SCREENS = {
   dev: ['staff', 'meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review', 'teamStats', 'player'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['fanLog', 'nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -2961,11 +2962,26 @@ function ledgerRewind(lens) { if (state.ledger && lens) for (const k of Object.k
 function careerChips() {
   if (!state.data) return '';
   const L = league();
-  if (!CAR.isCareer(L)) return '';
+  if (!CAR.isCareer(L)) {
+    // Franchise mode: your coins (facility upgrades) and fans (what moved them).
+    const t = myTeam();
+    if (!t?.frontOffice || isCollege() || !isComplete()) return '';
+    return `<div class="career-chips"><button class="btn tiny coin-chip" data-act="nav" data-to="facilities" aria-label="Coins">💵 ${coinsOf(t)}</button><button class="btn tiny coin-chip" data-act="nav" data-to="fanLog" aria-label="Fans">📣 ${t.frontOffice.fans ?? 50}</button></div>`;
+  }
   const on = state.stack[state.stack.length - 1]?.name === 'ledger';
   const chip = k => { const net = ledgerNet(k); return `<button class="btn tiny coin-chip" data-act="nav"${on ? ' data-replace="1"' : ''} data-to="ledger" data-arg="${k}" aria-label="${LEDGER[k].label}">${LEDGER[k].icon} ${ledgerGet(k).toLocaleString()}${net ? ` <span class="${net > 0 ? 'up' : 'down'}">${net > 0 ? '+' : ''}${net.toLocaleString()}</span>` : ''}</button>`; };
   return `<div class="career-chips">${chip('coins')}${chip('fans')}</div>`;
 }
+screens.fanLog = () => {
+  const t = myTeam(), log = fanLog().filter(x => x.tid === t?.id).reverse();
+  layout({
+    title: 'Fans',
+    body: `<fieldset class="frame"><legend>📣 ${esc(t?.shortName || '')} Fans · ${t?.frontOffice?.fans ?? 50}</legend>
+      <p class="note small muted">Fan support (0 to 100) fills the arena in the game. Big signings, trades for stars, draft-night steals and well-liked hires lift it; losing stars and reaches cost you.</p>
+      ${log.length ? `<div class="stack">${log.map(x => `<p class="note small" style="margin:0"><span class="${x.d > 0 ? 'up' : 'down'}">${x.d > 0 ? '+' : ''}${x.d}</span> · ${esc(x.why || 'the crowd noticed')} <span class="muted">(${x.yr})</span></p>`).join('')}</div>` : '<p class="note small muted">Nothing has moved the fans yet.</p>'}
+    </fieldset>`,
+  });
+};
 screens.ledger = (args = {}) => {
   const k = LEDGER[args.arg] ? args.arg : 'coins', D = LEDGER[k], log = state.ledger?.[k] || [], net = ledgerNet(k), from = ledgerIn(k);
   const verb = k === 'coins' ? (net >= 0 ? 'earned' : 'spent') : (net >= 0 ? 'gained' : 'lost');
@@ -4308,12 +4324,12 @@ actions.resetTend = d => {
 // Game plan: set the head coach's scheme settings (the Scheme tier opens
 // each group). The coach's own settings are kept to reset to.
 screens.gameplan = () => {
-  const c = myCoach(), sch = tierNow('scheme');
+  const c = myCoach(), sch = 3;   // all of it is adjustable in the game itself, so nothing is locked here
   if (!c?.tendencies) { layout({ title: 'Game Plan', body: '<p class="note">No head coach on your staff.</p>' }); return; }
   const own = treeStore().planOrig?.[c.id] || c.tendencies;
   layout({
     title: 'Game Plan',
-    body: `<p class="note small">${esc(`${c.fn} ${c.ln}`)}'s settings, used by the game when it sims. Scheme tier ${sch} of 3: ${['nothing open yet', 'offense open', 'offense and defense open', 'everything open'][sch]}.</p>
+    body: `<p class="note small">${esc(`${c.fn} ${c.ln}`)}'s settings, used by the game when it sims.</p>
       ${CO.PLAN.map(g => `<fieldset class="frame ${sch >= g.tier ? '' : 'plan-locked'}"><legend>${g.group}${sch >= g.tier ? '' : ` · 🔒 Scheme ${g.tier}`}</legend><div class="stack">${g.keys.map(([k, label, max]) => {
         const v = c.tendencies[k] ?? 0;
         return `<div class="plan-row"><span class="small">${label}${v !== (own[k] ?? 0) ? ' <span class="up">•</span>' : ''}</span><div class="plan-opts">${Array.from({ length: max + 1 }, (_, i) => `<button class="btn tiny ${i === v ? 'on focus' : 'off'}" data-act="setPlan" data-k="${k}" data-v="${i}" ${sch >= g.tier ? '' : 'disabled'}>${esc(CO.planOption(k, i))}</button>`).join('')}</div></div>`;
@@ -4325,7 +4341,7 @@ actions.setPlan = d => {
   const c = myCoach(), tree = treeStore();
   if (!c?.tendencies) return;
   const g = CO.PLAN.find(x => x.keys.some(([k]) => k === d.k));
-  if (!g || tierNow('scheme') < g.tier) return;
+  if (!g) return;
   (tree.planOrig ||= {})[c.id] ||= { ...c.tendencies };
   c.tendencies[d.k] = +d.v;
   saveTree();
@@ -4371,44 +4387,39 @@ screens.playbook = () => {
   syncScoringOptions();
   const t = myTeam();
   if (!t) { layout({ title: 'Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
-  const sch = tierNow('scheme'), books = loadBooks();
-  const so = (t.scoringOptions || []);
-  const rosterIds = new Set(t.roster.map(p => p.id));
-  const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
+  const books = loadBooks(), sug = suggestStyle(t);
   const inst = (act, i, on) => `<button class="btn small ${on ? 'off' : 'focus'}" data-act="${act}" data-i="${i}" ${on ? 'disabled' : ''}>${on ? '✓ Installed' : '📥 Use This Playbook'}</button>`;
   layout({
     title: 'Playbook',
     body: `${proposalBox()}<fieldset class="frame"><legend>${esc(t.shortName)} Playbook</legend><div class="stack">
+        <button class="btn focus" data-act="nav" data-to="playbookEdit">✏️ Make Your Own</button>
         ${hasPlays(t) ? '' : '<p class="note small muted">No quick plays set for this team in this file.</p>'}
-        ${PRESETS.map((p, i) => `${i === 0 || PRESETS[i - 1].group !== p.group ? `<p class="note small" style="margin:6px 0 0"><b class="gold">${esc(p.group)}</b></p>` : ''}<div class="pb-book"><b>${esc(p.name)}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
+        ${PRESETS.map((p, i) => `${i === 0 || PRESETS[i - 1].group !== p.group ? `<p class="note small" style="margin:6px 0 0"><b class="gold">${esc(p.group)}</b></p>` : ''}<div class="pb-book"><b>${esc(p.name)}${p.name === sug ? ' <span class="badge new">Suggested</span>' : ''}</b><span class="small muted">${esc(p.blurb)}</span>${inst('installPreset', i, samePlays(t.quickPlays, presetPlays(p)))}</div>`).join('')}
         ${books.map((b, i) => `<div class="pb-book"><b>${esc(b.name)}</b><span class="small muted">Your own playbook.</span>
           <div class="grid2">${inst('installPlaybook', i, samePlays(t.quickPlays, b.quickPlays))}<button class="btn small off" data-act="deletePlaybook" data-i="${i}">🗑 Delete</button></div></div>`).join('')}
-        <button class="btn" data-act="nav" data-to="playbookEdit" ${sch >= 1 ? '' : 'disabled'}>✏️ Make Your Own${sch >= 1 ? '' : ' · 🔒 Scheme 1'}</button>
-        <button class="btn off" data-act="nav" data-to="teamBooks">👥 Team Playbooks</button>
+        <button class="btn off" data-act="nav" data-to="teamBooks" style="margin-top:8px">👥 Team Playbooks</button>
       </div></fieldset>`,
   });
 };
 screens.scoring = () => {
   const t = myTeam();
   if (!t) { layout({ title: 'Scoring Options', body: '<p class="note">Pick your team first.</p>' }); return; }
-  const sch = tierNow('scheme');
+  const sch = 3;   // open to everyone: the game lets you set these too
   const so = (t.scoringOptions || []);
   const rosterIds = new Set(t.roster.map(p => p.id));
   const opt = (sel, p) => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${esc(playerName(p))} · ${esc(posName(p))} · Lv ${shownLevel(p)}</option>`;
   layout({
     title: 'Scoring Options',
     body: `<fieldset class="frame"><legend>${esc(t.shortName)} Scoring Options</legend><div class="stack">
-        <p class="note small muted">Up to three players your offense runs through. Usage moves in 5% steps and the rest goes to your other starters. Every option runs the playbook, never auto play calling.</p>
+        <p class="note small muted">Who your offense runs through. Usage moves in 5% steps; the rest goes to your other starters. Focus stays on Auto.</p>
         ${so.map((o, i) => `<div class="so-row ${sch >= 2 ? '' : 'plan-locked'}">
           <b class="small gold">${['1st', '2nd', '3rd'][i]} Option</b>
           <select class="sel-team" data-change="soPlayer" data-i="${i}" ${sch >= 2 ? '' : 'disabled'}>${rosterIds.has(o.pid) ? '' : '<option selected>Player no longer on the roster</option>'}${t.roster.map(p => opt(o.pid, p)).join('')}</select>
           <div class="so-ctl"><span class="small muted so-lab">Usage</span><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="-5" ${sch >= 2 && o.usageRate > 0 ? '' : 'disabled'}>−</button><b>${o.usageRate ? `${o.usageRate}%` : 'Auto'}</b><button class="btn tiny" data-act="soAdj" data-i="${i}" data-k="usageRate" data-d="5" ${sch >= 2 && o.usageRate < MAX_USAGE && soTotal(so) < MAX_TOTAL ? '' : 'disabled'}>+</button>
-            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div>
-          <span class="small muted so-lab">Focus</span><div class="so-focus">${FOCUS.map((l, f) => `<button class="btn small ${o.focus === f ? 'on focus' : 'off'}" data-act="soFocus" data-i="${i}" data-v="${f}" ${sch >= 2 ? '' : 'disabled'}>${l}</button>`).join('')}</div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
+            <button class="btn tiny off" data-act="soRemove" data-i="${i}" ${sch >= 2 ? '' : 'disabled'} aria-label="Remove">✕</button></div></div>`).join('') || '<p class="note small muted">No scoring options set.</p>'}
         ${so.length ? `<p class="note small">${so.some(o => !o.usageRate) ? 'Auto usage is set by the game.' : `${soTotal(so)}% on your options · ${Math.max(0, 100 - soTotal(so))}% spread across the other starters.`}</p>` : ''}
         ${so.length < 3 && t.roster.length ? `<button class="btn small" data-act="soAdd" ${sch >= 2 ? '' : 'disabled'}>+ Add a scoring option${sch >= 2 ? '' : ' · 🔒 Scheme 2'}</button>` : ''}
         <button class="btn" data-act="soAssist">🧑‍🏫 Use the Assistant Coach's Picks</button>
-        ${sch >= 2 ? '' : '<p class="note small muted">Choosing players, usage and focus yourself opens with Scheme 2. The assistant\'s picks are always open.</p>'}
       </div></fieldset>
       <fieldset class="frame"><legend>Around the League</legend><div class="stack">
         <p class="note small muted">CPU teams stay on Auto: three players picked by their situation, usage and focus left to the game. Every team runs its playbook either way.</p>
@@ -4421,7 +4432,7 @@ screens.scoring = () => {
 screens.playbookEdit = () => {
   const t = myTeam();
   if (!t) { layout({ title: 'Your Playbook', body: '<p class="note">Pick your team first.</p>' }); return; }
-  const sch = tierNow('scheme');
+  const sch = 3;
   layout({
     title: 'Your Playbook',
     body: `<fieldset class="frame"><legend>${esc(t.shortName)} Quick Plays</legend>
@@ -4458,7 +4469,7 @@ screens.coaches = () => {
   };
   layout({
     title: 'Coaches',
-    body: `<div class="opts">${Object.entries(COACH_SORTS).map(([k, l]) => `<button class="btn small ${sort === k ? 'on focus' : 'off'}" data-act="coachSort" data-k="${k}">${l}</button>`).join('')}</div>
+    body: `
       ${coachChangesBox()}
       ${schemeLogBox(null, 8) ? `<fieldset class="frame"><legend>Scheme Shifts</legend>${schemeLogBox(null, 8)}</fieldset>` : ''}
       <div class="stack">${rows.map(row).join('')}</div>
@@ -4577,33 +4588,36 @@ screens.coach = args => {
   const { staff, pool } = allCoaches();
   const hit = [...staff, ...pool].find(x => x.c.id === +args.arg);
   if (!hit) { layout({ title: 'Coach', body: '<p class="note">Coach not found.</p>' }); return; }
-  const { c, t } = hit, car = careerOf(c), sec = securityOf(c, car), g = coachGrade(c, staff.map(x => x.c));
+  const { c, t } = hit, car = careerOf(c), sec = securityOf(c, car, t?.id ?? null);
   const stars = potentialStars(c);
   const star = '★'.repeat(Math.floor(stars)) + (stars % 1 ? '½' : '');
   const att = [['development', 'Development'], ['motivation', 'Motivation'], ['leadership', 'Leadership']];
-  const lastRows = car.rows.slice(-6).reverse();
+  const allRows = [...car.rows].reverse();
+  // How he coaches, in a sentence, from what he's strongest at.
+  const STYLE = { Leadership: 'leads by example and holds the whole room to his standard', Motivation: 'gets the most out of his players and keeps them bought in', Development: 'works tirelessly with young players to bring out their best' };
+  const pri = STYLE[strengthName(c.pri)], sec2 = STYLE[strengthName(c.sec)];
+  const blurb = pri ? `${c.fn} ${pri}${sec2 && sec2 !== pri ? `, and ${sec2}` : ''}.` : '';
+  const sug = t ? suggestStyle(t) : null;
   layout({
     title: `${c.fn} ${c.ln}`,
     body: `${uiTabs('coach', [
         ['pro', 'Profile', `<fieldset class="frame"><legend>${t ? esc(`${t.city} ${t.name}`) : 'Available'}</legend><div class="stack">
         <p class="note"><b>${esc(coachArch(c))}</b> · <span class="gold">${star}</span> potential · ${c.age}y${c.yrs ? ` · ${c.yrs} yrs experience` : ''}</p>
-        <p class="note small">${strengthName(c.pri) ? `<b>${esc(strengthName(c.pri))}</b> primary` : ''}${strengthName(c.sec) ? ` · <b>${esc(strengthName(c.sec))}</b> secondary` : ''}</p>
-        <p class="note"><b>${esc(g.tier)}</b> · ${esc(g.growth)}</p>
-        <p class="note small muted">${esc(g.line)}</p>
-        <p class="note">${esc(philosophyOf(c))}</p>
+        ${blurb ? `<p class="note">${esc(blurb)}</p>` : ''}
+        <p class="note small">${esc(philosophyOf(c))}</p>
+        <details class="tend-wrap"><summary class="small">Scheme</summary>${schemeOf(c).map(g => `<h4 class="ov-h">${esc(g.group)}</h4>${g.items.map(([l, v]) => `<div class="tend-row"><span class="small">${esc(l)}</span><b class="small">${esc(v)}</b></div>`).join('')}`).join('')}</details>
 </div></fieldset>
       <fieldset class="frame"><legend>Career</legend><div class="stack">
         ${car.seasons ? `<p class="note">${car.W}-${car.L} (${car.pct.toFixed(3).slice(1)}) career${car.poW + car.poL ? `, playoffs ${car.poW}-${car.poL}` : ''}</p>` : '<p class="note small muted">No games coached yet.</p>'}
         ${car.titles ? `<p class="note"><span class="gold">🏆 ${car.titles}× champion</span> <span class="muted small">${car.titleYears.join(', ')}</span></p>` : ''}
-        ${lastRows.map(r => `<div class="small" style="display:flex;justify-content:space-between"><span>${r.yr}${r.tid != null ? ` · ${esc(league().teams.find(x => x.id === r.tid)?.shortName || '')}` : ''}</span><span>${r.W}-${r.L}${r.po ? ` · playoffs ${r.po.W}-${r.po.L}` : ''}</span></div>`).join('')}
+        ${allRows.length ? `<details class="tend-wrap"><summary class="small">Season by season (${allRows.length})</summary>${allRows.map(r => `<div class="small" style="display:flex;justify-content:space-between"><span>${r.yr}${r.tid != null ? ` · ${esc(league().teams.find(x => x.id === r.tid)?.shortName || '')}` : ''}</span><span>${r.W}-${r.L}${r.po ? ` · playoffs ${r.po.W}-${r.po.L}` : ''}</span></div>`).join('')}</details>` : ''}
       </div></fieldset>`],
         ['sys', 'System', `      ${(() => { const nm = signatureOf(c), pr = PRESETS.find(x => x.name === nm), cur = t ? styleOf(t) : null; return `<fieldset class="frame"><legend>Playbook</legend><div class="stack"><p class="note"><b>${esc(nm)}</b> <span class="muted small">his signature book, from his philosophy</span></p>${pr ? `<p class="note small muted">${esc(pr.blurb)}</p>` : ''}<p class="note small">${t ? (cur === nm ? `${esc(t.shortName)} run it now.` : `${esc(t.shortName)} run ${cur === 'Custom' ? 'a custom book' : cur === 'None' ? 'no set book' : `<b>${esc(cur)}</b>`} right now.`) : 'He installs it on arrival. Your players and the roster pull it from there, season by season.'}</p></div></fieldset>`; })()}
       ${t && schemeLogBox(t.id) ? `<fieldset class="frame"><legend>System History</legend>${schemeLogBox(t.id)}</fieldset>` : ''}
-      <fieldset class="frame"><legend>Scheme</legend><div class="stack">${schemeOf(c).map(g => `<p class="note small" style="margin:0"><b class="gold">${g.group}</b></p>${g.items.map(([l, v]) => `<div class="small" style="display:flex;justify-content:space-between"><span>${l}</span><b>${esc(v)}</b></div>`).join('')}`).join('')}</div></fieldset>
-      <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
-`],
-        ['fit', 'Fit', `      ${fitBox(hit)}
+      ${sug ? `<p class="note small">Best fit for this roster: <b>${esc(sug)}</b> <span class="badge new">Suggested</span></p>` : ''}
+      ${fitBox(hit)}
       ${starsBox(hit)}
+      <fieldset class="frame"><legend>Attributes</legend><div class="stack">${att.map(([k, l]) => `<div class="small co-att"><span>${l}</span>${bar(shownRating(c, k), 10, 'a-' + k)}<b>${shownRating(c, k)}</b><span class="muted">/ ${shownCeiling(c, k)}</span></div>`).join('')}</div></fieldset>
 `],
         ['job', 'Contract', `${hireBox(hit, staff)}${extBox(hit)}      <fieldset class="frame"><legend>Job Security</legend><div class="stack">
         <p class="note"><span class="badge ${secCls(sec.tag)}">${sec.tag}</span> ${esc(sec.why)}</p>
@@ -4710,7 +4724,7 @@ actions.deletePlaybook = async d => {
   render();
 };
 const soTotal = so => so.reduce((s, o) => s + (o.usageRate || 0), 0);
-const soEdit = fn => { const t = myTeam(); if (!t || tierNow('scheme') < 2) return; fn(t.scoringOptions ||= []); for (const o of t.scoringOptions) o.playSelection = 1; state.dirty = true; render(); };
+const soEdit = fn => { const t = myTeam(); if (!t) return; fn(t.scoringOptions ||= []); for (const o of t.scoringOptions) { o.playSelection = 1; o.focus = 0; } state.dirty = true; render(); };
 actions.soAdj = d => soEdit(so => { const o = so[+d.i]; if (!o) return; const room = MAX_TOTAL - (soTotal(so) - o.usageRate); if (d.k === 'usageRate') { const v = o.usageRate + +d.d; o.usageRate = v < MIN_USAGE ? 0 : Math.min(MAX_USAGE, room, v); } else o[d.k] = Math.max(MIN_USAGE, Math.min(MAX_USAGE, room, o[d.k] + +d.d)); });
 actions.soFocus = d => soEdit(so => { const o = so[+d.i]; if (o) o.focus = +d.v; });
 actions.soRemove = d => soEdit(so => { so.splice(+d.i, 1); });
@@ -4723,7 +4737,7 @@ actions.soAdd = () => soEdit(so => {
 actions.soAssist = () => {
   const t = myTeam();
   if (!t) return;
-  t.scoringOptions = autoOptions(t, league());
+  t.scoringOptions = autoOptions(t, league()).map(o => ({ ...o, focus: 0 }));
   state.dirty = true;
   toast('Assistant coach\'s picks set', t.scoringOptions.map(o => { const p = t.roster.find(x => x.id === o.pid); return p ? (o.usageRate ? `${p.ln} ${o.usageRate}%` : p.ln) : ''; }).join(' · '));
   render();
@@ -4767,7 +4781,7 @@ function syncScoringOptions(final = false) {
 $app.addEventListener('change', e => {
   if (e.target.dataset.change !== 'pbSlot') return;
   const t = myTeam(), d = e.target.dataset, id = +e.target.value;
-  if (!t || tierNow('scheme') < 1 || !(id >= 0 && id <= MAX_PLAY)) return;
+  if (!t || !(id >= 0 && id <= MAX_PLAY)) return;
   const qp = t.quickPlays ||= { positions: [] };
   for (let i = 0; i < 5; i++) qp.positions[i] ||= { plays: playsFor(i + 1).slice(0, 4) };
   qp.positions[+d.pos].plays[+d.slot] = id;
@@ -5702,7 +5716,7 @@ function settleJersey(a) {
     if (stint && !stint.GP && stint.tid === a.team.id) stint.num = a.num;
     moraleEvent(a.p, 'jersey', 6, `wearing ${a.legend.ln}'s #${numText(a.num)}`);
     drift(a.p, 'jersey', EGO_KEY, 1, `wearing ${a.legend.ln}'s #${numText(a.num)}`);
-    fanEvent(a.team, 1);
+    fanEvent(a.team, 1, `${playerName(a.p)} wears ${a.legend.ln}'s #${numText(a.num)}`);
   } else moraleEvent(a.p, 'jersey', egoVal(a.p) >= 13 ? -5 : -3, `told no on #${numText(a.num)}`);
   saveJersey();
   state.dirty = true;
@@ -10885,8 +10899,13 @@ actions.liveChoose = () => {
     if (b.dataset.id) {
       const p = prospectById(+b.dataset.id);
       if (!(await confirmBox(`Draft <b>${esc(playerName(p))}</b> at #${o.overall}?`, 'Draft'))) return;
+      const cons = boardRank(p);
       makeSelection(live, order, idx, p.id);
       state.pickReveal = [o.overall];
+      // The fans read the pick against the consensus board: a slide is a steal, a jump is a reach. They aren't always right.
+      if (cons - o.overall <= -6 && o.overall <= 30) fanEvent(o.owner, o.overall <= 10 ? 3 : 2, `${playerName(p)} fell to #${o.overall}`);
+      else if (cons - o.overall >= 10 && o.overall <= 30) fanEvent(o.owner, o.overall <= 10 ? -3 : -2, `reached for ${playerName(p)} at #${o.overall}`);
+      else if (o.overall <= 3 && (p.pot || 0) >= 9) fanEvent(o.owner, 2, `${playerName(p)} at #${o.overall}`);
     }
     box.remove();
     render();
@@ -12188,7 +12207,7 @@ function coachChangeMorale(L, team, old, next) {
     sum += moraleEvent(p, `coach:${team.id}:${next.id}`, d, d > 0 ? `believes in ${next.ln}` : `misses ${old.ln}`) || 0; n++;
   }
   const fans = fanSwing(r);
-  fanEvent(team, fans);
+  fanEvent(team, fans, fans > 0 ? `hired ${next.fn} ${next.ln}` : `the ${next.ln} hire`);
   return { ...r, avg: n ? Math.round(sum / n) : 0, fans };
 }
 
@@ -13400,17 +13419,23 @@ function moraleEvent(p, kind, n, why) {
 const roleRank = (team, p) => 1 + FA.signedRoster(team).filter(x => x !== p && shownLevel(x) > shownLevel(p)).length;
 // Fans follow stars: a team that lands one gains, the team that lets one go
 // loses some. Crowds in the game track the fan number (0-100).
-function fanEvent(team, delta) {
+// Your teams keep a log of why the fans moved: { tid, yr, d, why }.
+const fanLogKey = () => `hlc:fanlog:${saveTag()}`;
+const fanLog = () => { try { return JSON.parse(localStorage.getItem(fanLogKey())) || []; } catch { return []; } };
+function fanEvent(team, delta, why = '') {
   const fo = team?.frontOffice;
   if (!fo || !isComplete() || isCollege() || !delta) return;
   const was = fo.fans ?? 50;
   fo.fans = Math.max(0, Math.min(100, Math.round(was + delta)));
-  if (fo.fans !== was && isUserTeam(team)) toast(`📣 ${team.shortName} fans ${fo.fans > was ? '+' : ''}${fo.fans - was}`, 'The crowd noticed.', 2600);
+  if (fo.fans === was || !isUserTeam(team)) return;
+  const d = fo.fans - was;
+  try { localStorage.setItem(fanLogKey(), JSON.stringify([...fanLog(), { tid: team.id, yr: league().season.currentYear, d, why }].slice(-200))); } catch { /* ignore */ }
+  toast(`📣 ${team.shortName} fans ${d > 0 ? '+' : ''}${d}`, why || 'The crowd noticed.', 2600);
 }
 const fanGain = p => { const lv = shownLevel(p); const g = lv >= 92 ? 6 : lv >= 88 ? 4 : lv >= 84 ? 3 : lv >= 80 ? 2 : lv >= 76 ? 1 : 0; return g && p.age <= 24 && p.pot >= 9 ? g + 1 : g; };
 function tradeMorale(L, p, to, from) {
-  fanEvent(to, fanGain(p));
-  if (from) fanEvent(from, -Math.round(fanGain(p) * 0.6));
+  fanEvent(to, fanGain(p), `traded for ${playerName(p)}`);
+  if (from) fanEvent(from, -Math.round(fanGain(p) * 0.6), `traded away ${playerName(p)}`);
   let n = 7;
   const l = seasonLine(p, state.leagueIdx, lastSeasonYear());
   if (roleRank(to, p) <= 5 && (!l || l.mpg < 24)) n += 5;
@@ -13419,8 +13444,9 @@ function tradeMorale(L, p, to, from) {
 }
 function contractMorale(p, team, old) {
   const moved = old && old.id !== team.id;
-  if (moved) { fanEvent(team, fanGain(p)); fanEvent(old, -Math.round(fanGain(p) * 0.6)); }
-  else if (!old) fanEvent(team, Math.ceil(fanGain(p) / 2));
+  if (moved) { fanEvent(team, fanGain(p), `signed ${playerName(p)}`); fanEvent(old, -Math.round(fanGain(p) * 0.6), `lost ${playerName(p)} in free agency`); }
+  else if (!old) fanEvent(team, Math.ceil(fanGain(p) / 2), `signed ${playerName(p)}`);
+  else if (fanGain(p) >= 3) fanEvent(team, 1, `kept ${playerName(p)}`);
   moraleEvent(p, `deal:${team.id}`, 8 + (moved ? 4 : 0), moved ? `signed with ${team.shortName}` : 'new contract');
 }
 // Final cuts: a player who's now a projected starter after sitting last year

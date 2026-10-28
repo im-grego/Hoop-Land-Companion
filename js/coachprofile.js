@@ -38,17 +38,29 @@ export function careerOf(c) {
   };
 }
 
-// Job security from the deal and the last full season. A coach on a long deal
-// or a winner is safe; a short deal after a losing year is the hot seat.
-export function securityOf(c, car = careerOf(c)) {
+// His run with the team he coaches now: the unbroken stretch of seasons there up to the last one.
+export function tenureOf(car, tid) {
+  const rows = [];
+  for (let i = car.rows.length - 1; i >= 0 && car.rows[i].tid === tid; i--) rows.unshift(car.rows[i]);
+  const W = rows.reduce((a, r) => a + r.W, 0), L = rows.reduce((a, r) => a + r.L, 0);
+  return { rows, seasons: rows.length, W, L, pct: W + L ? W / (W + L) : 0, trips: rows.filter(r => r.po).length, losing: rows.filter(r => r.W < r.L).length, deep: rows.filter(r => r.round >= 3).length };
+}
+// Job security from his record with this team and the deal: years of losing and no playoffs heat the seat; a winner
+// or a deep run makes it safe, whatever the contract says.
+export function securityOf(c, car = careerOf(c), tid = null) {
   const yrs = (c.contract?.yrs ?? 0) + (c.contract?.ext?.yrs ?? 0), last = car.last, lastPct = last ? last.W / (last.W + last.L) : null;
+  const ten = tid != null ? tenureOf(car, tid) : null;
+  const run = ten?.seasons ? `${ten.seasons} season${ten.seasons > 1 ? 's' : ''} here, ${ten.W}-${ten.L}${ten.trips ? `, ${ten.trips} playoff trip${ten.trips > 1 ? 's' : ''}` : ', no playoffs'}` : '';
   let tag, why;
-  if (!yrs) { tag = 'Unsigned'; why = 'No contract.'; }
+  if (ten?.seasons >= 2 && ten.pct < 0.42 && !ten.trips) { tag = 'Hot Seat'; why = `${run}. ${ten.losing} losing season${ten.losing > 1 ? 's' : ''}.`; }
+  else if (ten?.seasons && (ten.deep || ten.pct >= 0.6)) { tag = 'Secure'; why = `${run}${ten.deep ? `, ${ten.deep} deep run${ten.deep > 1 ? 's' : ''}` : ''}.`; }
+  else if (!yrs) { tag = 'Unsigned'; why = 'No contract.'; }
   else if (lastPct != null && lastPct < 0.4 && yrs <= 2) { tag = 'Hot Seat'; why = `A ${last.W}-${last.L} season with ${yrs === 1 ? 'one year' : 'two years'} left.`; }
   else if (yrs === 1) { tag = 'Final Year'; why = 'The last year of the deal.'; }
   else if (yrs >= 3 || (lastPct != null && lastPct >= 0.6)) { tag = 'Secure'; why = yrs >= 3 ? `${yrs} years left on the deal.` : `A ${last.W}-${last.L} season keeps him safe.`; }
   else { tag = 'Stable'; why = `${yrs} years left.`; }
-  return { tag, why, yrs, sal: c.contract?.sal ?? 0 };
+  if (run && !why.startsWith(run)) why = `${run}. ${why}`;
+  return { tag, why, yrs, sal: c.contract?.sal ?? 0, tenure: ten };
 }
 
 // A few sentences on how he coaches, built from archetype, scheme and strengths.

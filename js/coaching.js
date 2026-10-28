@@ -15,7 +15,7 @@ export const BRANCHES = [
   { k: 'culture', label: 'Motivation', icon: '🤝', rating: 'motivation',
     tiers: ['+1 Locker Room and Loyalty (up to 14) · +10% recruiting pull', '+2 (up to 16) · +20% recruiting pull', '+3 (up to 18) · +30% recruiting pull'] },
   { k: 'scheme', label: 'Leadership', icon: '🧠', rating: 'leadership',
-    tiers: ['2 influence per player · game plan: offense', '3 influence per player · game plan: defense', '4 influence per player; a tendency can move 3 · game plan: rotation'] },
+    tiers: ['2 influence per player', '3 influence per player', '4 influence per player; a tendency can move 3'] },
   // No coach rating opens this one: every node is bought with tokens (Complete rules).
   { k: 'system', label: 'System', icon: '🧩', rating: null, tiers: [] },
 ];

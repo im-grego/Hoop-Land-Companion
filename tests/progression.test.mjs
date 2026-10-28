@@ -46,7 +46,8 @@ function run(spend, params = P) {
     const earned = earnsNaturalLongevity(p, lastSeasonMpg(p, 0), entries[0], P);
     const z = entries[0].production.get(p.id) ?? null;
     if (earned) { assert.equal(d.regDelta, 1, 'earned longevity is guaranteed'); earnedN++; }
-    if (d.regDelta > 0) assert.ok(p.age >= snap.regressionAge - 1 && p.age <= snap.regressionAge, 'delay only at the regression age or the year before');
+    // A delay comes at the regression age or the year before; a player already declining can pause it with a strong season.
+    if (d.regDelta > 0) assert.ok(p.age >= snap.regressionAge - 1 && (p.age <= snap.regressionAge || (z != null && z >= 0.5)), 'delay only at the regression age or the year before, or a strong season while declining');
     if (d.regDelta < 0) {
       assert.ok(p.age >= snap.regressionAge - P.regDownWindow, 'only near regression');
       assert.ok(p.age < snap.regressionAge, 'never once already regressing');
