@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.233.3';
+const APP_VERSION = '0.234.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); }   // once an offseason each
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -1960,9 +1960,10 @@ function calendarCard() {
   const s = league().season;
   if (phaseRank(s) === 0 && !isCollege()) {
     if (seasonUnplayed()) return setupCard();
-    if (CL3.atAllStarBreak(league())) return deadlineCard();
+    if (CL3.atAllStarBreak(league())) return deadlineCard() + glCard();
     if (PO.atPlayoffStart(league())) return playoffCard();
-    if (ciWindow()) return checkinCard();
+    if (ciWindow()) return checkinCard() + glCard();
+    if (glCard()) return glCard();
     return `<fieldset class="frame"><legend>Offseason</legend><p class="note">This save is at ${esc(phaseName(s))}. Advance once in Hoop Land after the season ends (to the Pre-Lottery phase), export that save and load it here to run the offseason.</p></fieldset>`;
   }
   const cur = currentStep();
@@ -2007,7 +2008,7 @@ const STEP_SCREENS = {
   dev: ['staff', 'meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
   review: ['review', 'teamStats', 'player'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['fanLog', 'nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['gleague', 'fanLog', 'nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -3906,13 +3907,15 @@ function applyBump(seed) {
       const pot = (coachT ? CO.potMult(coachT) * (u && a <= 21 ? f.labPot : 1) : 1) * (a <= 21 ? F.youngPot : 1);
       const held = campHoldouts(e.team).includes(e.p);   // skipped camp: about half the work
       if (held) moraleEvent(e.p, 'holdout', -4, 'holding out of camp');
-      return { ...(dev !== 1 || held ? { devMult: dev * (held ? 0.5 : 1) } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
+      const gl = u ? glSeason(lastSeasonYear())[e.p.id] : null, glPts = gl ? gl.xp ?? glXp(e.p, gl, lastSeasonYear()) : 0;
+      return { ...(glPts ? { glPts } : {}), ...(dev !== 1 || held ? { devMult: dev * (held ? 0.5 : 1) } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
         potLossMult: F.potLossMult, longCutMult: F.longCutMult, nagMult: F.nagMult, structStd: F.structStd };
     })() }));
   applyCulture();
   mentorRubOff();
   const awards = runProgression(entries, { ...state.params, seed }, state.profiles[li]);
   state.potWhy = new Map(awards.why);
+  { const all = glStore(), recs = all[lastSeasonYear()]; if (recs) { for (const [pid, r] of Object.entries(recs)) r.bumped = awards.gl.get(+pid) || 0; glSave(all); } }
   // A potential bump brings new ratings room with it, adding up to the new potential.
   if (state.params.dynamicCeilings !== false) for (const e of entries) potBumpCeilings(e.p, snapOf(e.p).pot);
   // Play styles follow the new ratings and ages (young players move most).
@@ -6097,6 +6100,7 @@ function reportRow(p, d) {
     <span class="stars-line">${potStars(p)}</span>
     <span class="meta">${esc(posName(p))} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb · ${p.yrs ? `${p.yrs} yr${p.yrs > 1 ? 's' : ''} exp` : 'Rookie'}</span>
     ${ups || d.potDelta || d.regDelta ? `<span class="chg">${ups}${longevityBadges(p, d)}</span>` : ''}
+    ${glBumpLine(p) ? `<span class="chg">${glBumpLine(p)}</span>` : ''}
   </div>`;
 }
 
@@ -6119,6 +6123,7 @@ function playerRow(p, d) {
     </span>
     <span class="meta">${esc(pos)} · ${p.age}y · ${heightStr(p.ht)} · ${p.wt} lb</span>
     ${d.changed ? `<span class="chg">${esc(detail)} ${skillBadges(d)}${longevityBadges(p, d)}</span>` : ''}
+    ${glBumpLine(p) ? `<span class="chg">${glBumpLine(p)}</span>` : ''}
   </button>`;
 }
 
@@ -6306,7 +6311,7 @@ screens.deadline = () => {
       ${me?.team ? `<fieldset class="frame"><legend>Your Team</legend><p class="note small">${esc(me.team.shortName)} are ${dlRole(me.team) === 'buyer' ? 'buyers' : dlRole(me.team) === 'seller' ? 'sellers' : 'on the bubble'} at ${dlPct(me.team).w}-${dlPct(me.team).l}.${d.done ? (d.deals.some(x => x.includes(me.team.shortName)) ? ' They made a move.' : ' They stood pat.') : ''}</p></fieldset>` : ''}
       <fieldset class="frame"><legend>Deadline Day</legend>${d.done ? `<div class="stack">${d.deals.map(x => `<p class="note small">${esc(x)}</p>`).join('') || '<p class="note small muted">A quiet deadline: nobody pulled the trigger.</p>'}</div>`
         : `<p class="note small">Make your moves first. When you're done, the rest of the league makes theirs.</p><button class="btn big focus" data-act="dlRun">⏰ Run deadline day</button>`}</fieldset>
-      ${buyoutBox()}${mine.map(t => ownerReviewBox(t) + midExtBox(t)).join('')}${mvpLadderBox()}`,
+      ${buyoutBox()}${mine.map(t => ownerReviewBox(t) + midExtBox(t)).join('')}${mine.filter(t => Object.values(glSeason(L.season.currentYear)).some(r => r.tid === t.id)).map(glTeamBox).join('')}${mvpLadderBox()}`,
   });
 };
 // ---------------------------------------------------------------------------
@@ -6478,6 +6483,104 @@ function playoffRotations() {
   poSave(s);
   return n;
 }
+// ---------------------------------------------------------------------------
+// G League: a team sends up to three young players (24 or under) who aren't in the rotation down during the first half
+// of the season. At the All-Star break each earns development points for his time there (more for the youngest and
+// the ones with real upside, less if he was getting NBA minutes anyway); the offseason bump adds them, listed as
+// "1 year in the G League". Hoop Land has no G League of its own: keep him out of the rotation in the game.
+const GL_MAX = 3, GL_AGE = 24, GL_MPG = 15;
+const glKey = () => `hlc:gleague:${saveTag()}`;
+function glStore() { try { return JSON.parse(localStorage.getItem(glKey())) || {}; } catch { return {}; } }
+function glSave(v) { try { localStorage.setItem(glKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+const glSeason = y => glStore()[y] || {};
+const glAsw = (L = league()) => L.season.allStarWeekend || 0;
+// Sending players down: the regular season, up to the All-Star break.
+const glOpen = (L = league()) => !isCollege() && !CAR.isCareer(L) && L.season.phase === 9 && (!glAsw(L) || L.season.currentDay < glAsw(L));
+const inGL = p => league().season.phase === 9 && !!glSeason(league().season.currentYear)[p.id];
+const glNbaMpg = (p, y) => seasonLine(p, state.leagueIdx, y)?.mpg || 0;
+const glWhyNot = (p, t, y = league().season.currentYear) => p.age > GL_AGE ? `only players ${GL_AGE} and under` : p.status !== FA.STATUS_SIGNED ? 'not under contract'
+  : glNbaMpg(p, y) >= GL_MPG ? `he's in the rotation (${glNbaMpg(p, y).toFixed(1)} minutes)` : Object.values(glSeason(y)).filter(r => r.tid === t.id).length >= GL_MAX ? `${GL_MAX} already down` : '';
+// Development points for a season down there.
+function glXp(p, rec, y) {
+  const base = p.age <= 20 ? 3 : p.age <= 22 ? 2 : 1, up = (p.pot || 0) >= 8 ? 1 : 0;
+  const late = glAsw() && rec.day > glAsw() * 0.6 ? 0.5 : 1;   // sent down late: half a stint
+  const nba = glNbaMpg(p, y), share = nba >= GL_MPG ? 0 : nba >= 10 ? 0.5 : 1;
+  return Math.round((base + up) * late * share);
+}
+// His G League numbers, made up but steady: better players put up more.
+function glLine(p, rec, y) {
+  const r = mulberry32((p.id * 7919 + y) >>> 0), lv = shownLevel(p), big = p.pos >= 5;
+  const gp = Math.max(6, Math.min(28, Math.round(((glAsw() || 50) - (rec.day || 0)) / 2.2)));
+  const ppg = Math.max(5, Math.min(30, 7 + (lv - 55) * 0.55 + (r() - 0.5) * 6));
+  return { gp, ppg: +ppg.toFixed(1), rpg: +((big ? 7 : 3.5) + r() * 3).toFixed(1), apg: +((p.pos <= 1 ? 4.5 : 1.5) + r() * 2.5).toFixed(1) };
+}
+// At the All-Star break: everyone down there gets his points (once).
+function glSettle() {
+  const L = league();
+  if (isCollege() || L.season.phase !== 9 || !glAsw(L) || L.season.currentDay < glAsw(L)) return;
+  const all = glStore(), y = L.season.currentYear, recs = all[y];
+  if (!recs || Object.values(recs).every(r => r.xp != null)) return;
+  for (const [pid, rec] of Object.entries(recs)) {
+    if (rec.xp != null) continue;
+    const p = findPlayer(+pid)?.p;
+    if (!p) { delete recs[pid]; continue; }
+    rec.xp = glXp(p, rec, y);
+    rec.line = glLine(p, rec, y);
+  }
+  glSave(all);
+}
+actions.glSend = d => {
+  const e = findPlayer(+d.id), L = league();
+  if (!e?.team || !isUserTeam(e.team) || !glOpen(L)) return;
+  const why = glWhyNot(e.p, e.team);
+  if (why) { toast(`Can't send him down: ${why}`); return; }
+  const all = glStore(), y = L.season.currentYear;
+  (all[y] ||= {})[e.p.id] = { tid: e.team.id, day: L.season.currentDay || 0 };
+  glSave(all);
+  render();
+  toast(`🏀 ${playerName(e.p)} sent to the G League`, 'Keep him out of the rotation in Hoop Land.');
+};
+actions.glRecall = d => {
+  const all = glStore(), y = league().season.currentYear;
+  if (!all[y]?.[+d.id] || !glOpen()) return;
+  delete all[y][+d.id];
+  glSave(all);
+  render();
+};
+const glRow = (p, right) => `<div class="drill-row"><span class="grow tap" style="min-width:0" data-act="openPlayer" data-id="${p.id}"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · ${glNbaMpg(p, league().season.currentYear).toFixed(1)} NBA min a night</span></span>${right}</div>`;
+// One team's G League: who's down there and who could go.
+function glTeamBox(t) {
+  const L = league(), y = L.season.currentYear, recs = glSeason(y), open = glOpen(L);
+  const down = Object.entries(recs).filter(([, r]) => r.tid === t.id).map(([pid, r]) => ({ p: findPlayer(+pid)?.p, r })).filter(x => x.p);
+  const cand = open ? FA.signedRoster(t).filter(p => !recs[p.id] && p.age <= GL_AGE && glNbaMpg(p, y) < GL_MPG).sort((a, b) => (b.pot || 0) - (a.pot || 0) || a.age - b.age).slice(0, 8) : [];
+  const full = down.length >= GL_MAX;
+  return `<fieldset class="frame"><legend>${esc(t.shortName)} · G League ${down.length}/${GL_MAX}</legend>
+    ${down.length ? `<div class="stack">${down.map(({ p, r }) => glRow(p, r.xp != null
+      ? `<span class="small up" style="text-align:right">+${r.xp} dev pts<br><span class="muted">${r.line.ppg}/${r.line.rpg}/${r.line.apg} · ${r.line.gp}g</span></span>`
+      : open ? `<button class="btn small off" data-act="glRecall" data-id="${p.id}">↩ Recall</button>` : '')).join('')}</div>` : '<p class="note small muted">Nobody down there.</p>'}
+    ${cand.length ? `<h4 class="ov-h">Could use the reps</h4><div class="stack">${cand.map(p => glRow(p, `<button class="btn small ${full ? 'off' : 'focus'}" data-act="glSend" data-id="${p.id}" ${full ? 'disabled' : ''}>🏀 Send down</button>`)).join('')}</div>` : ''}
+  </fieldset>`;
+}
+screens.gleague = () => {
+  const L = league(), mine = L.teams.filter(isUserTeam), settled = glAsw(L) && L.season.currentDay >= glAsw(L) && L.season.phase === 9;
+  layout({
+    title: 'G League',
+    body: `<p class="note small">${glOpen(L) ? `Send up to ${GL_MAX} young players (${GL_AGE} and under, under ${GL_MPG} minutes a night) down until the All-Star break${glAsw(L) ? ` (day ${glAsw(L)}; today is day ${L.season.currentDay})` : ''}. They earn development points there, added to their offseason progression. Keep them out of the rotation in Hoop Land.`
+      : settled ? 'The All-Star break: here is what your players earned down there. It\'s added to their progression this offseason.' : 'Players go down during the regular season, before the All-Star break.'}</p>
+      ${mine.map(glTeamBox).join('') || '<p class="note">Select your teams first.</p>'}`,
+  });
+};
+// Home: the G League card during the season.
+function glCard() {
+  const L = league(), mine = L.teams.filter(isUserTeam);
+  if (!mine.length || CAR.isCareer(L) || !(glOpen(L) || (L.season.phase === 9 && Object.keys(glSeason(L.season.currentYear)).length))) return '';
+  const n = Object.values(glSeason(L.season.currentYear)).filter(r => mine.some(t => t.id === r.tid)).length;
+  return `<fieldset class="frame"><legend>🏀 G League</legend><p class="note small">${n ? `${n} player${n > 1 ? 's' : ''} down there.` : 'Young players buried on the bench can get their reps in the G League.'}${glOpen(L) ? '' : ' Their points came in at the All-Star break.'}</p>
+    <button class="btn" data-act="nav" data-to="gleague">🏀 G League</button></fieldset>`;
+}
+// The offseason bump: last season's G League points, and the line on each player's progression.
+const glBumpLine = p => { const L = league(); if (L.season.phase === 9) return ''; const r = glSeason(lastSeasonYear())[p.id]; return r?.bumped ? `<span class="badge new">🏀 1 year in the G League +${r.bumped}</span>` : ''; };
+
 // ---------------------------------------------------------------------------
 // Season check-ins: the two long stretches between the big stops. Early season (two weeks in, up to the All-Star
 // break) and the stretch run (after the deadline, up to the playoffs): where each of your teams stands against what
@@ -7219,6 +7322,7 @@ function quickActions(p, team) {
   if (screenAllowed('liveTrade') && me && p.status === FA.STATUS_SIGNED) b.push(`<button class="btn small" data-act="quickTrade" data-id="${p.id}">🔁 ${mine ? 'Trade him' : 'Trade for him'}</button>`);
   if (mine && screenAllowed('extensions') && extEligible(league(), team).includes(p)) b.push(`<button class="btn small" data-act="nav" data-to="extensions">✍️ Extend</button>`);
   if (mine && screenAllowed('cuts')) b.push(`<button class="btn small" data-act="nav" data-to="cuts">✂️ Cuts</button>`);
+  if (mine && glOpen() && (inGL(p) || !glWhyNot(p, team))) b.push(inGL(p) ? `<button class="btn small off" data-act="glRecall" data-id="${p.id}">↩ Recall from the G League</button>` : `<button class="btn small" data-act="glSend" data-id="${p.id}">🏀 Send to the G League</button>`);
   return b.length ? `<div class="opt-btns" style="flex-wrap:wrap;margin-top:6px">${b.join('')}</div>` : '';
 }
 actions.quickTrade = d => {
@@ -7709,6 +7813,7 @@ function playerTags(p) {
   if (c.noTrd) add('No-Trade');
   if (c.ext?.yrs > 0) add(c.sal && c.yrs ? 'Extended' : `Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');   // the contract badge already spells it out
   else if (p.status === FA.STATUS_SIGNED && c.yrs === 1 && c.canExt !== false && !(c.opt > 0)) add('Extension Eligible', 'new');   // the game flags nearly everyone: the app's rule (final year, no option) decides
+  if (inGL(p)) add('🏀 G League', 'lvl');
   if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
   if (isComplete() && p.tid != null && frictionFor(p)?.clash) add('Clashing With Coach', 'down-b');
   if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');

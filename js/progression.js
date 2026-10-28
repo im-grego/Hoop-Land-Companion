@@ -491,6 +491,7 @@ export function runProgression(entries, params, profiles) {
   const rng = mulberry32(params.seed);
   const awards = new Map();
   awards.why = new Map();  // pid -> why potential dropped
+  awards.gl = new Map();   // pid -> G League points added
   // Sort by id so results don't depend on roster order.
   const sorted = [...entries].sort((a, b) => a.p.id - b.p.id);
   for (const e of sorted) {
@@ -502,6 +503,8 @@ export function runProgression(entries, params, profiles) {
     if (risk?.cls === 'nagging') pts = Math.round(pts * (1 - (1 - params.naggingPointsMult) * (e.nagMult ?? 1)));
     // The coaching tree's Player Development branch (your teams only).
     if (e.devMult) pts = Math.round(pts * e.devMult);
+    // A season in the G League (your teams): its points on top.
+    if (e.glPts) { pts += e.glPts; awards.gl.set(e.p.id, e.glPts); }
     awards.set(e.p.id, params.bumpMode === 'train' ? trainPoints(e.p, pts, params, rng) : awardPoints(e.p, pts, params, rng));
     const mult = minutesMult(mpg, params);
     // Seriously injured players are less likely to delay regression, risk
