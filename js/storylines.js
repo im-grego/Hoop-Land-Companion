@@ -92,7 +92,8 @@ function playoffRun(team, yr) {
   const row = (team.season || []).find(s => s.yr === yr);
   return row ? { round: row.round || 0, wins: row.seriesWins || 0, W: row.seasonStats?.W || 0, L: row.seasonStats?.L || 0 } : { round: 0, wins: 0, W: 0, L: 0 };
 }
-const wonTitle = (team, yr) => { const r = playoffRun(team, yr); return r.round === 4 && r.wins === 4; };
+// Titles from a league file's history keep the Finals round but not the series wins; the team's championship list has them.
+const wonTitle = (team, yr) => { const r = playoffRun(team, yr); return (r.round === 4 && r.wins === 4) || !!team.championships?.yearsWon?.includes(yr); };
 
 // Who knocked a team out (from that year's bracket), and in how many games.
 function eliminatedBy(league, tid, yr) {

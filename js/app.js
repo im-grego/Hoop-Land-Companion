@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.233.1';
+const APP_VERSION = '0.233.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -7678,8 +7678,10 @@ function newsBox(p) {
   // A rookie: where he went in the draft, and who traded for his rights.
   const dr = p.history?.draft;
   if (dr?.rd > 0 && dr.pk > 0 && p.yrs != null && p.yrs <= 1 && (dr.yr >= L.season.currentYear - 2)) {
-    const by = dr.tid != null ? nameOf(dr.tid) : null;
-    lines.unshift(`Selected ${ordinal(dr.pk)} overall in the ${dr.yr} draft${by ? ` by ${by}` : ''}${dr.tid != null && p.tid != null && p.tid !== dr.tid && p.tid >= 0 ? `, then his rights went to ${nameOf(p.tid)}` : ''}.`);
+    // A league file can leave the drafting team blank (0): then just the pick.
+    const known = L.teams.some(t => t.id === dr.tid);
+    const by = known ? nameOf(dr.tid) : null;
+    lines.unshift(`Selected ${ordinal(dr.pk)} overall in the ${dr.yr} draft${by ? ` by ${by}` : ''}${known && p.tid != null && p.tid !== dr.tid && p.tid >= 0 ? `, then his rights went to ${nameOf(p.tid)}` : ''}.`);
   }
   const sn = offGet('signNews')[p.id], c = p.contract || {};
   if (sn && sn.tid === p.tid && c.sal && c.yrs && !/^Extended/.test(sn.why || '')) {
@@ -7706,7 +7708,7 @@ function playerTags(p) {
   else if (c.yrs === 1 && c.sal && !extPending(p) && !t.some(x => /Final Year/.test(x))) add('Final Year', 'lvl');   // once: the value tag may already say it
   if (c.noTrd) add('No-Trade');
   if (c.ext?.yrs > 0) add(c.sal && c.yrs ? 'Extended' : `Extension · $${c.ext.sal}M × ${c.ext.yrs}`, 'new');   // the contract badge already spells it out
-  else if (c.canExt) add('Extension Eligible', 'new');
+  else if (p.status === FA.STATUS_SIGNED && c.yrs === 1 && c.canExt !== false && !(c.opt > 0)) add('Extension Eligible', 'new');   // the game flags nearly everyone: the app's rule (final year, no option) decides
   if (p.season?.onTradeBlock === 1) add('On the Block', 'lvl');
   if (isComplete() && p.tid != null && frictionFor(p)?.clash) add('Clashing With Coach', 'down-b');
   if (p.season?.onTradeBlock === 2) add('Untouchable', 'you');
