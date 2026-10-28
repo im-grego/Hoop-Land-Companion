@@ -1618,15 +1618,7 @@ fieldset.frame { position: relative; }
 .cg-lv li span { color: var(--text); }
 .cap-legend .info-i, .note .info-i { position: static; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font-size: 12px; vertical-align: middle; margin-left: 2px; }
 
-/* Player faces (face pack): every face is the same 94×52 cut, centred on the face (head top to shoulder cut), so the box fits it exactly.
-   No fill, just a border in the same blue as the position/height/weight line. */
-.face-box { display: inline-block; flex: none; aspect-ratio: 94 / 52; border: 2px solid var(--dim); box-sizing: content-box; line-height: 0; }
-.face-box .face { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
-.face-sm { height: 24px; vertical-align: -6px; margin-right: 6px; }
+/* Player faces (face pack): pixel art, scaled without blur; every cut is 94×52, centred on the face */
+.face { image-rendering: pixelated; flex: none; aspect-ratio: 94 / 52; }
+.face-sm { height: 22px; vertical-align: -5px; margin-right: 3px; }
 .face-md { display: block; height: 52px; margin: 0 auto 2px; }
-.face-lg { height: 58px; }
-.pl-head { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 4px; }
-.pl-head .pl-name { margin-top: 0; }
-.pl-head .note:not(.pl-meta) { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
-.pl-head > div { flex: 1; min-width: 0; }
-.pl-head .pl-meta { margin-bottom: 0; }

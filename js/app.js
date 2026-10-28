@@ -263,8 +263,8 @@ function logoUrl(url) {
 }
 // Player faces cut from the game's roster screens (a face pack), keyed by player id. Nothing shows without one.
 const faceOf = p => (p && state.faces?.get?.(p.id)) || '';
-// Every face sits in the same light-blue box, so heads of any width line up.
-const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<span class="face-box ${cls}"><img class="face" src="${u}" alt=""></span>` : ''; };
+// Every face is the same cut (centred on the face), so heads of any width line up.
+const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<img class="face ${cls}" src="${u}" alt="">` : ''; };
 // Logos load right away (no lazy loading) into a box of fixed size, so a
 // slow or missing logo never shifts the layout.
 function logoImg(team, cls = 'logo-sm') {
@@ -7947,15 +7947,9 @@ screens.player = (args) => {
     title: 'Player Profile',
     body: `
       <div>
-        <div class="${faceOf(p) ? 'pl-head' : ''}">${faceImg(p, 'face-lg')}<div>
         <h2 class="team-title pl-name">${esc(playerName(p))} ${lvTag(p, 'gold')}</h2>
         <p class="note">${esc(team ? team.shortName : 'Free Agent')} · ${esc(pos)} · ${p.age} · ${heightStr(p.ht)}, ${p.wt} lb${p.season && p.season.morale !== undefined && isComplete() && !isCollege() ? ` · ${moraleTag(p)}` : ''}</p>
-        ${(() => {
-          // With a face, the stars stay beside it (its bottom lines up with them) and the archetype drops to the line below.
-          const extra = [archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean);
-          return faceOf(p) ? `<p class="note small pl-meta"><span class="stars">${potStars(p)}</span></p></div></div>${extra.length ? `<p class="note small pl-meta">${extra.join(' · ')}</p>` : ''}`
-            : `<p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${extra.map(x => ` ${x}`).join(' ·')}</p></div></div>`;
-        })()}
+        <p class="note small pl-meta"><span class="stars">${potStars(p)}</span>${[archName(p) && `<b class="arch">${esc(archName(p))}</b>`, isAllAmerican(p) && '<span class="gold">⭐ All-American</span>'].filter(Boolean).map(x => ` ${x}`).join(' ·')}</p>
         ${identityChips(p) ? `<div class="style-chips pl-chips">${identityChips(p)}</div>` : ''}
         ${quickActions(p, team)}
       </div>
@@ -11261,7 +11255,7 @@ function liveAssets(team) {
     const ct = contractText(p);
     const lock = tradeLock(p);
     const locked = pending(p) || !!lock;
-    out.push({ key: `p:${p.id}`, locked, label: `${esc(playerName(p))} ${lvTag(p)}${pending(p) ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : lock ? ` <span class="badge lock">🔒 ${esc(lock)}</span>` : contractBadge(p)}${p.contract?.noTrd ? ' <span class="badge new" title="No-trade clause: he has to agree">NTC</span>' : ''}${medBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
+    out.push({ key: `p:${p.id}`, locked, label: `${faceImg(p)}${esc(playerName(p))} ${lvTag(p)}${pending(p) ? ' <span class="badge lock" title="Contract is up: can\'t be traded">🔒 Pending FA</span>' : lock ? ` <span class="badge lock">🔒 ${esc(lock)}</span>` : contractBadge(p)}${p.contract?.noTrd ? ' <span class="badge new" title="No-trade clause: he has to agree">NTC</span>' : ''}${medBadge(p)}<br><span class="muted small">${esc(posName(p))} · ${p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''}${ct && !locked ? ` · ${ct}` : ''}</span>`, value: playerValue(p, state.leagueIdx, ly), player: p, html: true });
   }
   return out;
 }
