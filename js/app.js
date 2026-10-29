@@ -6428,8 +6428,86 @@ function ownerReviewBox(t) {
   const say = { A: 'The owner is thrilled. Whatever you\'re doing, keep doing it.', B: 'The owner is pleased: ahead of where we thought.', C: 'Right about where the owner expected.', D: 'The owner expected more. The coach is feeling it.', F: 'The owner is furious. Someone has to answer for this.' }[r.grade];
   return `<fieldset class="frame"><legend>Owner's Review${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>
     <p class="note small">Grade <b class="${'AB'.includes(r.grade) ? 'up' : 'CD'.includes(r.grade) ? 'gold' : 'down'}">${r.grade}</b> · ${r.w}-${r.l} for a ${esc(r.tier)} team (expected about ${Math.round(r.want * 82)} wins over 82). ${esc(say)}</p>
-    ${done ? `<p class="note small">${esc(done)}</p>` : 'AB'.includes(r.grade) ? `<button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="bonus">🎁 Collect the owner's bonus (+${r.grade === 'A' ? 100 : 50} coins)</button>`
+    ${ownerGoalLine(t)}${done ? `<p class="note small">${esc(done)}</p>` : 'AB'.includes(r.grade) ? `<button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="bonus">🎁 Collect the owner's bonus (+${r.grade === 'A' ? 100 : 50} coins)</button>`
       : 'DF'.includes(r.grade) && c ? `<div class="grid2"><button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="back">🤝 Back ${esc(c.ln)}</button><button class="btn small off" data-act="ownerAct" data-t="${t.id}" data-v="fire">🔥 Fire ${esc(c.ln)}</button></div>` : ''}</fieldset>`;
+}
+// The owner's goal for a season: picked at the Owner Meeting (Season in Review), judged when that season is done.
+// Met pays Franchise Tokens (and coins); missed costs the owner's trust.
+const ownerGoalKey = () => `hlc:owner:${saveTag()}`;
+function ownerGoals() {
+  const c = (state.ownerGoals ||= {}), k = ownerGoalKey();
+  if (!c[k]) { let v = {}; try { v = JSON.parse(localStorage.getItem(k)) || {}; } catch { v = {}; } c[k] = { goals: {}, done: {}, trust: {}, ...v }; }
+  return c[k];
+}
+const saveOwnerGoals = () => { try { localStorage.setItem(ownerGoalKey(), JSON.stringify(ownerGoals())); } catch { /* ignore */ } };
+const ownerTrust = t => ownerGoals().trust[t.id] ?? 50;
+const OWNER_GOALS = {
+  title: { label: 'Win the title', test: r => r.title },
+  cf: { label: 'Reach the conference finals', test: r => r.series >= 2 },
+  series: { label: 'Win a playoff series', test: r => r.series >= 1 },
+  playoffs: { label: 'Make the playoffs', test: r => r.playoffs },
+  wins: { label: 'Win {n} games', test: (r, g) => r.W >= g.target },
+  youth: { label: 'Play the kids: someone 23 or younger averages 25+ minutes', test: r => r.youth },
+  tax: { label: 'Finish under the luxury tax', test: r => r.underTax },
+};
+// Two choices a season, set by where the team is: the ambitious one pays more.
+function ownerChoices(t) {
+  const L = league(), tier = teamStatus(L, t), gm = L.season.totalGames || 82;
+  const pick = (kind, pts, coins, target) => ({ kind, pts, coins, target, label: OWNER_GOALS[kind].label.replace('{n}', target) });
+  const C = FA.capSystemOn() ? FA.capLines(L) : null;
+  const safe = tier === 'contending' ? pick('cf', 2, 60) : tier === 'developing' ? pick('playoffs', 2, 50)
+    : C && FA.teamCommitted(t) > C.tax ? pick('tax', 2, 50) : pick('youth', 2, 50);
+  const bold = tier === 'contending' ? pick('title', 4, 150) : tier === 'developing' ? pick('series', 3, 100) : pick('wins', 3, 100, Math.round(gm * 0.45));
+  return [bold, safe];
+}
+function ownerResult(t, yr) {
+  const row = (t.season || []).find(x => x.yr === yr), st = row?.seasonStats || {};
+  const C = FA.capSystemOn() ? FA.capLines(league()) : null;
+  return {
+    W: st.W || 0, playoffs: (row?.playoffStats?.GP || 0) > 0, series: row?.seriesWins || 0, title: (row?.finalsStats?.W || 0) >= 4,
+    youth: t.roster.some(p => p.age - 1 <= 23 && (seasonLine(p, state.leagueIdx, yr)?.mpg || 0) >= 25 && seasonLine(p, state.leagueIdx, yr).tid === t.id),
+    underTax: !C || FA.teamCommitted(t) <= C.tax,
+  };
+}
+// Judge last season's goal once: tokens and coins for meeting it, trust either way.
+function ownerSettle(t) {
+  const o = ownerGoals(), yr = lastSeasonYear(), g = o.goals[yr]?.[t.id];
+  if (!g || o.done[`${yr}:${t.id}`]) return;
+  const met = !!OWNER_GOALS[g.kind]?.test(ownerResult(t, yr), g);
+  o.done[`${yr}:${t.id}`] = met ? 'met' : 'missed';
+  const bold = g.pts >= 3;
+  o.trust[t.id] = Math.max(0, Math.min(100, ownerTrust(t) + (met ? (bold ? 15 : 10) : (bold ? -5 : -15))));
+  if (met) {
+    const tree = treeStore(); tree.earned[`owner:${yr}:${t.id}`] = { pts: g.pts, why: [`Owner goal met: ${g.label}`] }; saveTree();
+    if (isComplete() && t.frontOffice) { t.frontOffice.coins = coinsOf(t) + g.coins; state.dirty = true; }
+  }
+  saveOwnerGoals();
+}
+function ownerMeetingBox(t) {
+  if (isCollege()) return '';
+  ownerSettle(t);
+  const o = ownerGoals(), yr = lastSeasonYear(), last = o.goals[yr]?.[t.id], res = o.done[`${yr}:${t.id}`];
+  const next = o.goals[yr + 1]?.[t.id], open = phaseRank(league().season) >= 1 && !next;
+  const trust = ownerTrust(t);
+  const mood = trust >= 75 ? 'The owner trusts you completely.' : trust >= 50 ? 'The owner is on board.' : trust >= 30 ? 'The owner is starting to wonder.' : 'You\'re on the hot seat.';
+  const reward = g => `${tokTag(g.pts)}${isComplete() ? ` + ${coinTag(g.coins)}` : ''}`;
+  return `<fieldset class="frame"><legend>Owner Meeting${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>${infoBtn('ownergoal', '<p class="small"><b>The owner\'s goal</b>: each offseason you pick one of two goals for the coming season, set by where the team is. The ambitious one pays more Franchise Tokens (and coins).</p><p class="small">Meet it and you collect at next year\'s meeting. Miss it and the owner\'s trust drops (a missed safe goal costs more trust than a missed ambitious one).</p>')}<div class="stack">
+    ${last ? `<p class="note small">${yr} goal: <b>${esc(last.label)}</b> · ${res === 'met' ? `<span class="up">Met, +${reward(last)}</span>` : '<span class="down">Missed</span>'}</p>` : ''}
+    <p class="note small">Owner trust <b class="${trust >= 50 ? 'up' : trust >= 30 ? 'gold' : 'down'}">${trust}</b>/100 · ${esc(mood)}</p>
+    ${next ? `<p class="note small">${yr + 1} goal: <b class="gold">${esc(next.label)}</b> · pays ${reward(next)}</p>`
+      : open ? `<p class="note small muted">Pick the goal for ${yr + 1}:</p>${ownerChoices(t).map((g, i) => `<button class="btn ${i ? '' : 'focus'}" data-act="ownerGoal" data-t="${t.id}" data-i="${i}">${i ? '🛡️' : '🔥'} ${esc(g.label)} · ${reward(g)}</button>`).join('')}` : ''}
+  </div></fieldset>`;
+}
+actions.ownerGoal = d => {
+  const t = league().teams.find(x => x.id === +d.t), o = ownerGoals(), yr = lastSeasonYear() + 1;
+  if (!t || o.goals[yr]?.[t.id]) return;
+  (o.goals[yr] ||= {})[t.id] = ownerChoices(t)[+d.i];
+  saveOwnerGoals(); toast('🤝 Goal set', o.goals[yr][t.id].label); render();
+};
+// This season's goal, for the midseason review.
+function ownerGoalLine(t) {
+  const g = ownerGoals().goals[league().season.currentYear]?.[t.id];
+  return g ? `<p class="note small">Season goal: <b class="gold">${esc(g.label)}</b></p>` : '';
 }
 actions.ownerAct = async d => {
   const L = league(), t = L.teams.find(x => x.id === +d.t), r = ownerReview(t), s = dlState(); if (!r || (s.owner || {})[t.id]) return;
@@ -15027,7 +15105,7 @@ screens.review = () => {
         <p class="note small" style="padding:4px 10px 10px">${esc(historyHeadline(t, r) || reviewHeadline(r, t))}</p>
       </div>
       ${uiTabs('review', [
-        ['mine', 'Your Season', `      ${s ? `<fieldset class="frame"><legend>The Season</legend>
+        ['mine', 'Your Season', `      ${L.teams.filter(isUserTeam).map(ownerMeetingBox).join('')}${s ? `<fieldset class="frame"><legend>The Season</legend>
         <div class="stat-grid">
           <div class="tap" data-act="teamStats" data-k="ppg"><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div class="tap" data-act="teamStats" data-k="opp"><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div class="tap" data-act="teamStats" data-k="margin"><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
           <div class="tap" data-act="teamStats" data-k="fg"><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div class="tap" data-act="teamStats" data-k="tp"><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div class="tap" data-act="teamStats" data-k="ft"><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
