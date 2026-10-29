@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.242.0';
+const APP_VERSION = '0.242.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -7314,14 +7314,21 @@ function coachMarketCard() {
 // what the roster needs. A few CPU players shift each summer too, and the rumor mill picks it up from camp.
 const POS_HT = [75.2, 75.6, 76.3, 78.0, 78.8, 79.9, 80.8, 81.8, 83.5], POS_WT = [194, 194, 202, 207, 212, 218, 234, 238, 250];
 const SHIFT_LB = 7, SHIFT_MAX = 3;
+// A move always takes him somewhere he hasn't played: from a single position (PG, SG, SF, PF, C) one spot into the combo
+// that adds a new one (SF → F); from a combo (G, GF, F, FC) on to the next combo, since the spot beside it is one he
+// already covers (GF → G, not GF → SG).
+const COMBO = new Set([1, 3, 5, 7]);
+const shiftTo = (pos, d) => { const to = pos + d * (COMBO.has(pos) ? 2 : 1); return to >= 0 && to <= 8 ? to : null; };
+// The positions a spot covers: a combo is both of its neighbours.
+const covers = pos => (COMBO.has(pos) ? [pos - 1, pos, pos + 1] : [pos]);
 const shiftStore = () => (calFlags().posShifts ||= {});
 // Open from the end of the season until training camp runs.
 const shiftOpen = (L = league()) => !isCollege() && !CAR.isCareer(L) && phaseRank(L.season) >= 1 && !state.auto[state.leagueIdx] && !calFlags().dev;
 const A_ = (p, k) => p.attributes?.[k]?.[0] || 0;
 // How well a move one spot bigger (d = 1) or smaller (d = -1) fits him, with the reasons.
 function shiftCase(L, t, p, d) {
-  const to = p.pos + d;
-  if (to < 0 || to > 8 || p.age > 31 || p.status !== FA.STATUS_SIGNED) return null;
+  const to = shiftTo(p.pos, d);
+  if (to == null || p.age > 31 || p.status !== FA.STATUS_SIGNED) return null;
   const why = [];
   let score = 0;
   // Size: taller than his position usually is points bigger, shorter points smaller.
@@ -7352,8 +7359,10 @@ function shiftIdeas(L, t) {
 function applyShift(p, t, d, cpu = false) {
   const st = shiftStore();
   if (st[p.id]) return;
-  st[p.id] = { from: p.pos, to: p.pos + d, wt0: p.wt, tid: t.id, cpu };
-  p.pos += d;
+  const to = shiftTo(p.pos, d);
+  if (to == null) return;
+  st[p.id] = { from: p.pos, to, wt0: p.wt, tid: t.id, cpu };
+  p.pos = to;
   p.wt = Math.max(150, p.wt + d * SHIFT_LB);
   st[p.id].wt1 = p.wt;
   state.dirty = true;
@@ -7371,9 +7380,13 @@ function cpuShifts() {
 function shiftRumor(r) {
   const L = league(), p = findPlayer(r.pid)?.p, t = L.teams.find(x => x.id === r.tid);
   if (!p || !t) return '';
+  if (covers(r.from).includes(r.to)) return '';   // a spot he already played isn't news
   const nm = playerName(p), up = r.to > r.from, seed = (p.id * 31 + r.tid * 7 + r.to) >>> 0, pick = a => a[seed % a.length];
-  const line = up ? pick([`${t.name} practices have ${nm} working on the block with the bigs.`, `Early ${t.name} depth chart lists ${nm} at ${POSITIONS[r.to]}, but he's played ${POSITIONS[r.from]} his whole career.`, `${nm} showed up to camp at ${r.wt1} lb, up from ${r.wt0}: ${t.city} wants him at ${POSITIONS[r.to]}.`])
-    : pick([`${t.name} practices have ${nm} bringing the ball up.`, `Early ${t.name} depth chart lists ${nm} at ${POSITIONS[r.to]}, a spot smaller than he's played.`, `${nm} slimmed down to ${r.wt1} lb this summer to play more ${POSITIONS[r.to]}.`]);
+  // What practice looks like depends on where he's headed: the block for a big, the perimeter for a wing, the ball for a guard.
+  const drill = up ? (r.to >= 6 ? 'working on the block with the bigs' : 'guarding bigger wings and crashing the glass')
+    : (r.to <= 2 ? 'bringing the ball up' : 'spending more time on the perimeter');
+  const line = pick([`${t.name} practices have ${nm} ${drill}.`, `Early ${t.name} depth chart lists ${nm} at ${POSITIONS[r.to]}, but he's played ${POSITIONS[r.from]} his whole career.`,
+    up ? `${nm} showed up to camp at ${r.wt1} lb, up from ${r.wt0}: ${t.city || `the ${t.name}`} want${t.city ? 's' : ''} him at ${POSITIONS[r.to]}.` : `${nm} slimmed down to ${r.wt1} lb this summer to play more ${POSITIONS[r.to]}.`]);
   return `<p class="note small" style="margin:0">🏀 ${esc(line)}</p>`;
 }
 function posShiftBox() {
@@ -7392,7 +7405,7 @@ function posShiftBox() {
       ${moved.map(p => row(p, open ? `<button class="btn small off" data-act="posUndo" data-id="${p.id}">↩ Undo</button>` : '', `${POSITIONS[st[p.id].from]} → <b>${POSITIONS[st[p.id].to]}</b> · ${st[p.id].wt0} → ${st[p.id].wt1} lb`)).join('')}
       ${ideas.length ? `<h4 class="ov-h">Suggested</h4>${ideas.map(x => row(x.p, `<button class="btn small focus" data-act="posShift" data-id="${x.p.id}" data-d="${x.d}">${POSITIONS[x.p.pos]} → ${POSITIONS[x.to]}</button>`, `${esc(x.why.join(' · '))} · ${x.d > 0 ? 'bulks up' : 'slims down'} ${SHIFT_LB} lb`)).join('')}` : ''}
       ${open && used < SHIFT_MAX ? `<div class="off-row"><select class="sel-team" data-change="posPick"><option value="">Move anyone…</option>${FA.signedRoster(t).filter(p => !st[p.id]).sort((a, b) => shownLevel(b) - shownLevel(a)).map(p => `<option value="${p.id}" ${pick === p ? 'selected' : ''}>${esc(playerName(p))} · ${POSITIONS[p.pos]}</option>`).join('')}</select></div>
-        ${pick ? `<div class="grid2">${[-1, 1].map(d => pick.pos + d < 0 || pick.pos + d > 8 ? '<span></span>' : `<button class="btn small" data-act="posShift" data-id="${pick.id}" data-d="${d}">${d < 0 ? '◀ Smaller' : 'Bigger ▶'}: ${POSITIONS[pick.pos + d]} (${d > 0 ? '+' : '−'}${SHIFT_LB} lb)</button>`).join('')}</div>` : ''}` : ''}
+        ${pick ? `<div class="grid2">${[-1, 1].map(d => shiftTo(pick.pos, d) == null ? '<span></span>' : `<button class="btn small" data-act="posShift" data-id="${pick.id}" data-d="${d}">${d < 0 ? '◀ Smaller' : 'Bigger ▶'}: ${POSITIONS[shiftTo(pick.pos, d)]} (${d > 0 ? '+' : '−'}${SHIFT_LB} lb)</button>`).join('')}</div>` : ''}` : ''}
       ${!moved.length && !ideas.length && !(open && used < SHIFT_MAX) ? '<p class="note small muted">No changes.</p>' : ''}
     </div>`;
   };
