@@ -15594,8 +15594,18 @@ function buyoutOffer(p) {
   const price = Math.max(1, Math.round(sal * (1 - forfeit)));
   return { forfeit, price, yrs, sal, saved: (sal - price) * yrs, total: price * yrs, full: sal * yrs };
 }
+// The stretch provision: a cut player's dead money (his salary, or the buyout price) spread over twice the years left
+// plus one. Same total, a smaller hit each year for longer.
+const stretchOf = (sal, yrs) => ({ sal: Math.ceil(sal * yrs / (2 * yrs + 1)), yrs: 2 * yrs + 1 });
+// What a cut leaves on the books each year: buyout or not, stretched or not.
+function cutDead(p, buy, str) {
+  const c = p.contract || {}, bo = buy[p.id] ? buyoutOffer(p) : null;
+  const base = bo ? { sal: bo.price, yrs: bo.yrs } : { sal: c.sal || 0, yrs: c.yrs || 0 };
+  return str[p.id] && base.yrs > 1 ? stretchOf(base.sal, base.yrs) : base;
+}
+actions.stretchToggle = d => { const b = (state.stretchSel ||= {}); b[+d.id] = !b[+d.id]; render(); };
 // Dead money after a set of cuts: what's on the books now plus each cut (full salary, or the buyout price).
-const deadAfter = (t, list, buy) => deadFor(t.id) + list.reduce((s, p) => { const c = p.contract || {}; if ((c.yrs || 0) <= 1) return s; const bo = buy[p.id] ? buyoutOffer(p) : null; return s + (bo ? bo.price : c.sal || 0); }, 0);
+const deadAfter = (t, list, buy, str = state.stretchSel || {}) => deadFor(t.id) + list.reduce((s, p) => ((p.contract?.yrs || 0) <= 1 ? s : s + cutDead(p, buy, str).sal), 0);
 function addRealDeadNow() {
   const L = league(), led = deadLedger();
   let added = 0;
@@ -15674,7 +15684,11 @@ screens.cuts = () => {
       ${capBar(t)}
       <p class="note small">${need ? `Cut <b>${need}</b> (${picked} picked).` : `Roster fits${picked ? `; ${picked} picked to cut anyway` : ''}.`} Cutting a player with years left leaves his salary on your books as dead money each year until the deal runs out. A clearly overpaid player may take a buyout instead: he forfeits part of it, and only what he's still paid stays on the cap.${(() => { const go = ranked.filter(x => sel[x.p.id]).map(x => x.p); if (!go.some(p => (p.contract?.yrs || 0) > 1)) return ''; const now = deadFor(t.id), after = deadAfter(t, go, state.buyoutSel || {}); return ` <b>Dead money: $${now}M a year now, $${after}M a year after these cuts.</b>`; })()}</p>
       <div class="stack">${ranked.map((x, i) => `<div class="drill-row tap ${sel[x.p.id] ? 'r1' : ''}" data-act="cutToggle" data-id="${x.p.id}"><span class="grow"><b>${esc(playerName(x.p))}</b> ${lvTag(x.p)} ${potStars(x.p)}<br>
-        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? (() => { const bo = buyoutOffer(x.p); return bo && (state.buyoutSel || {})[x.p.id] && sel[x.p.id] ? ` · <span class="up">buyout $${bo.price}M × ${bo.yrs} dead</span>` : ` · <span class="down">$${x.p.contract.sal}M a year dead for ${x.p.contract.yrs} yrs if cut</span>`; })() : ''}</span>${(() => { const bo = sel[x.p.id] ? buyoutOffer(x.p) : null; return bo ? `<br><button class="btn tiny ${(state.buyoutSel || {})[x.p.id] ? 'on focus' : 'off'}" data-act="buyoutToggle" data-id="${x.p.id}">🤝 Buyout $${bo.price}M × ${bo.yrs} · he forfeits ${Math.round(bo.forfeit * 100)}% (saves $${bo.saved}M)</button>` : ''; })()}</span>
+        <span class="small muted">${esc(posName(x.p))} · ${x.p.age}y · $${x.p.contract?.sal || 0}M × ${x.p.contract?.yrs || 0}${(x.p.contract?.yrs || 0) > 1 ? (() => { const dd = cutDead(x.p, state.buyoutSel || {}, state.stretchSel || {}), chose = sel[x.p.id] && ((state.buyoutSel || {})[x.p.id] || (state.stretchSel || {})[x.p.id]); return chose ? ` · <span class="up">$${dd.sal}M a year dead for ${dd.yrs} yrs</span>` : ` · <span class="down">$${x.p.contract.sal}M a year dead for ${x.p.contract.yrs} yrs if cut</span>`; })() : ''}</span>${(() => {
+          if (!sel[x.p.id] || (x.p.contract?.yrs || 0) <= 1) return '';
+          const bo = buyoutOffer(x.p), base = (state.buyoutSel || {})[x.p.id] && bo ? { sal: bo.price, yrs: bo.yrs } : { sal: x.p.contract.sal, yrs: x.p.contract.yrs }, st = stretchOf(base.sal, base.yrs);
+          return `<br>${bo ? `<button class="btn tiny ${(state.buyoutSel || {})[x.p.id] ? 'on focus' : 'off'}" data-act="buyoutToggle" data-id="${x.p.id}">🤝 Buyout $${bo.price}M × ${bo.yrs} · he forfeits ${Math.round(bo.forfeit * 100)}% (saves $${bo.saved}M)</button> ` : ''}<button class="btn tiny ${(state.stretchSel || {})[x.p.id] ? 'on focus' : 'off'}" data-act="stretchToggle" data-id="${x.p.id}">📏 Stretch: $${st.sal}M × ${st.yrs}</button>`;
+        })()}</span>
         <b class="small ${sel[x.p.id] ? 'down' : 'muted'}">${sel[x.p.id] ? '✂️ Cut' : 'Keep'}</b></div>`).join('')}</div></fieldset>`;
   }).join('');
   const log = calFlags().cutLog;
@@ -16050,8 +16064,10 @@ actions.cutsFinish = async () => {
     for (const x of go) {
       const c = x.p.contract || {};
       const bo = user ? (buy[x.p.id] ? buyoutOffer(x.p) : null) : (buys.includes(x.p) ? buyoutOffer(x.p) : null);
-      if (bo) { bookDead(t, x.p, bo.price, bo.yrs); const bl = offGet('buyouts'); bl[x.p.id] = { tid: t.id, price: bo.price, yrs: bo.yrs }; offSet('buyouts', bl); bought.push(`${playerName(x.p)} ($${bo.price}M × ${bo.yrs}, was $${bo.sal}M)`); }
-      else bookDead(t, x.p, c.sal || 0, c.yrs || 0);
+      const stretched = user && (state.stretchSel || {})[x.p.id] && (bo ? bo.yrs : c.yrs || 0) > 1;
+      const dd = stretched ? stretchOf(bo ? bo.price : c.sal || 0, bo ? bo.yrs : c.yrs || 0) : null;
+      if (bo) { bookDead(t, x.p, dd ? dd.sal : bo.price, dd ? dd.yrs : bo.yrs); const bl = offGet('buyouts'); bl[x.p.id] = { tid: t.id, price: bo.price, yrs: bo.yrs }; offSet('buyouts', bl); bought.push(`${playerName(x.p)} ($${bo.price}M × ${bo.yrs}, was $${bo.sal}M${dd ? `; stretched to $${dd.sal}M × ${dd.yrs}` : ''})`); }
+      else bookDead(t, x.p, dd ? dd.sal : c.sal || 0, dd ? dd.yrs : c.yrs || 0);
       // Fans notice when a name they know is let go: more for a young player with upside, and a big contract eaten
       // as dead money stings too.
       if (user) {
@@ -16067,7 +16083,7 @@ actions.cutsFinish = async () => {
     list.push({ team: t.shortName, names: go.filter(x => !bought.some(b => b.startsWith(playerName(x.p)))).map(x => playerName(x.p)), bought });
   }
   saveDead(ledger);
-  state.buyoutSel = {};
+  state.buyoutSel = {}; state.stretchSel = {};
   // CPU teams short of a full roster pick up the best cut and unsigned players (one-year minimums, never into the next tax bracket).
   const waiver = [];
   for (const t of L.teams.filter(x => !isUserTeam(x)).sort(() => Math.random() - 0.5)) {
