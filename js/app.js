@@ -462,7 +462,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
-  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); }
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
@@ -12142,7 +12142,7 @@ function capNote(L) {
   return `<details class="frame"><summary class="note small"><b>Salary cap $${C.cap}M</b> <span class="muted">· projections</span></summary>
     <p class="note small" style="margin-top:6px">What each salary level allows ${infoBtn('cap-levels', capGuide(null, null))}</p>
     <div class="stack" style="margin-top:6px">${[0, 1, 2, 3, 4].map(row).join('')}</div>
-    <p class="note small muted" style="margin-top:6px">Tax line, then the 1st apron (can't use the room exception or take back salary in trades) and the 2nd apron (no combining salaries, no trading frozen picks). Past 2030 the cap keeps growing about 5% a year.</p></details>`;
+    <p class="note small muted" style="margin-top:6px">Tax line, then the 1st apron (can't use the room exception or take back salary in trades) and the 2nd apron (no combining salaries, no trading frozen picks). Past 2030 the cap keeps growing about 5% a year.</p>${isComplete() ? '<p class="note small muted" style="margin-top:6px">Cap holds: each of your own free agents holds his asking price against your cap space until he re-signs or you renounce him (you lose his Bird rights).</p>' : ''}</details>`;
 }
 screens.fa = (args = {}) => {
   const L = league();
@@ -12193,7 +12193,8 @@ screens.fa = (args = {}) => {
       <p class="note small">${esc(FA_DAY_RULES[s.day])}</p>
       ${mine.length ? `<fieldset class="frame"><legend>Your Books</legend><div class="stack">${mine.map(t => {
         const ml = FA.mleFor(L, t, s.day, s.used);
-        const extra = [ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : '', taxOwed(t) ? `<span class="down">${coinTag(taxOwed(t))} tax still owed</span>` : ''].filter(Boolean).join(' · ');
+        const holds = FA.capHolds(L, t).reduce((a, p) => a + FA.capHold(L, p), 0);
+        const extra = [holds ? `<span class="gold">Cap holds $${holds}M · ${FA.capSpace(L, t) >= 0 ? `$${FA.capSpace(L, t)}M space after holds` : 'no space after holds'}</span>` : '', ml ? `<span class="gold">${ml.name} available · $${ml.sal}M</span>` : s.used.mle.has(t.id) ? '<span class="muted">MLE used</span>' : '', s.used.hard?.has(t.id) ? '<span class="down">Hard-capped at the 1st apron</span>' : '', taxOwed(t) ? `<span class="down">${coinTag(taxOwed(t))} tax still owed</span>` : ''].filter(Boolean).join(' · ');
         return `<div class="books-row"><span class="team-stack">${logoImg(t)}<b>${esc(t.shortName)}</b></span><span class="grow">${capBarOf(FA.payroll(t), deadFor(t.id))}${extra ? `<span class="small">${extra}</span>` : ''}</span><span class="small muted" title="Up to ${O.rosterMax} until final cuts">${FA.signedRoster(t).length}/${O.seasonMax}${FA.signedRoster(t).length > O.seasonMax ? ' <span class="gold">+</span>' : ''}</span></div>`;
       }).join('')}
       </div></fieldset>` : '<p class="note muted small">Select your teams to make offers.</p>'}
@@ -12259,8 +12260,8 @@ function expiringSection(s) {
     const others = list.filter(b => !isUserTeam({ id: b.tid })).length;
     return `<div class="prow rrow ${mineBid ? 'sel' : ''}">
       <span class="name">${faceImg(m.p)}${esc(playerName(m.p))} ${lvTag(m.p)}${FA.isRestricted(L, m.p) ? ' <span class="badge new">RFA</span>' : ''}</span>
-      <span class="right xbtns"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Offer</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Walk</button></span>
-      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y · Asks $${m.ask}M × ${askYears(m)}</span>
+      <span class="right xbtns"><button class="btn small focus" data-act="faOffer" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Offer</button><button class="btn small off" data-act="faWalk" data-id="${m.p.id}" ${locked ? 'disabled' : ''}>Renounce</button></span>
+      <span class="meta">${esc(posName(m.p))} · ${m.p.age}y · Asks $${m.ask}M × ${askYears(m)}${FA.capHolds(L, m.from).includes(m.p) ? ` · <span class="gold">cap hold $${FA.capHold(L, m.p)}M</span>` : ''}</span>
       ${mineBid || others ? `<span class="meta">${mineBid ? `<span class="up">your offer ${offerText(mineBid)}</span>` : ''}${mineBid && others ? ' · ' : ''}${others ? `<span class="gold">${others} other team${others > 1 ? 's' : ''}</span>` : ''}</span>` : ''}
     </div>`;
   }).join('')}</div>`;
@@ -12270,7 +12271,7 @@ actions.faWalk = async d => {
   const L = league(), s = faState();
   const m = s.market.find(x => x.p.id === +d.id);
   if (!m || !m.from) return;
-  if (!(await confirmBox(`Let <b>${esc(playerName(m.p))}</b> walk? He leaves ${esc(m.from.shortName)} for the open market.`, 'Let Walk'))) return;
+  if (!(await confirmBox(`Renounce <b>${esc(playerName(m.p))}</b>? He leaves ${esc(m.from.shortName)} for the open market and you lose his Bird rights${FA.capHolds(L, m.from).includes(m.p) ? `, freeing his $${FA.capHold(L, m.p)}M cap hold` : ''}.`, 'Renounce'))) return;
   checkpoint(`Let ${playerName(m.p)} walk`);
   const rec = FA.releasePlayer(L, m.from, m.p);
   (s.walked ||= []).push(rec);

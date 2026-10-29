@@ -199,7 +199,15 @@ export function taxBill(league, team, repeater = false) {
   return Math.round(bill);
 }
 
-export const capSpace = (league, team) => capLines(league).cap - payroll(team) - deadMoney(team);
+export const capSpace = (league, team) => capLines(league).cap - payroll(team) - deadMoney(team) - holdTotal(league, team);
+// Cap holds (Complete rules, your teams): each of your own free agents keeps a hold on your cap space until he
+// re-signs or you renounce him (let him walk, losing his Bird rights). The hold is what he's asking on the market
+// (the save keeps no old salary), up to his max. It counts against cap space only, not the tax or the aprons.
+let HOLD_TEAMS = new Set();
+export const setHoldTeams = ids => { HOLD_TEAMS = new Set(ids); };
+export const capHold = (league, p) => Math.min(maxSalary(league, p, true), baseAsk(league, p));
+export const capHolds = (league, team) => (CAP_ON && COMPLETE && HOLD_TEAMS.has(team.id) ? team.roster.filter(p => p.status === STATUS_EXPIRING && p.tid === team.id) : []);
+const holdTotal = (league, team) => capHolds(league, team).reduce((a, p) => a + capHold(league, p), 0);
 
 // Max salary by years in the league (the save's maxContract, % of the cap:
 // 0–6 years, 7–9, 10+). Re-signing or extending with his own team, a star
