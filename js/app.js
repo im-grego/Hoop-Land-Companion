@@ -1729,7 +1729,7 @@ function stepActions(key) {
       // One button a week: it opens free agency or starts the week as needed and goes straight to the market.
       return `<button class="btn big focus" data-act="faWeek">✍️ ${s.phase === 5 ? 'Open Free Agency' : `Week ${day} Market`}</button>`;
     }
-    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}${shiftOpen() ? `<button class="btn" data-act="nav" data-to="coaching" style="margin-bottom:8px">🔁 Position Changes${(() => { const n = league().teams.filter(isUserTeam).reduce((a, t) => a + shiftIdeas(league(), t).slice(0, 3).length, 0); return n ? ` · ${n} suggested` : ''; })()}</button>` : ''}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
+    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}${shiftOpen() && league().teams.filter(isUserTeam).some(t => medCases(t).some(x => !medStore()[x.p.id])) ? `<button class="btn" data-act="nav" data-to="coaching" style="margin-bottom:8px">🩺 Medical Decisions · ${league().teams.filter(isUserTeam).reduce((a, t) => a + medCases(t).filter(x => !medStore()[x.p.id]).length, 0)} to make</button>` : ''}${shiftOpen() ? `<button class="btn" data-act="nav" data-to="coaching" style="margin-bottom:8px">🔁 Position Changes${(() => { const n = league().teams.filter(isUserTeam).reduce((a, t) => a + shiftIdeas(league(), t).slice(0, 3).length, 0); return n ? ` · ${n} suggested` : ''; })()}</button>` : ''}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn focus" data-act="nav" data-to="survey">📋 GM Survey</button></div>
       <button class="btn small off" data-act="mediaDone" style="margin-top:8px">✅ Wrap Up</button>`;
     case 'cuts': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Camp Deals</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>
@@ -3913,7 +3913,7 @@ function applyBump(seed) {
       const held = campHoldouts(e.team).includes(e.p);   // skipped camp: about half the work
       if (held) moraleEvent(e.p, 'holdout', -4, 'holding out of camp');
       const gl = u ? glSeason(lastSeasonYear())[e.p.id] : null, glPts = gl ? gl.xp ?? glXp(e.p, gl, lastSeasonYear()) : 0;
-      return { ...(glPts ? { glPts } : {}), ...(dev !== 1 || held ? { devMult: dev * (held ? 0.5 : 1) } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
+      return { ...(u && medStore()[e.p.id] === 'surgery' ? { injuryYear: null } : {}), ...(glPts ? { glPts } : {}), ...(dev !== 1 || held ? { devMult: dev * (held ? 0.5 : 1) } : {}), ...(pot !== 1 ? { potMult: pot } : {}), longMult: u ? f.longMult : 1, skillMult: (u ? f.skillMult : 1) * F.skillMult,
         potLossMult: F.potLossMult, longCutMult: F.longCutMult, nagMult: F.nagMult, structStd: F.structStd };
     })() }));
   applyCulture();
@@ -7285,6 +7285,7 @@ screens.coaching = () => {
     body: `${coachCard()}
       ${best.length ? `<fieldset class="frame"><legend>On the Market</legend><div class="stack">${best.map(({ c, g }) => `<button class="pb-book coach-row" data-act="nav" data-to="coach" data-arg="${c.id}"><span class="coach-top"><b>${esc(`${c.fn} ${c.ln}`)}</b><span class="muted small">${esc(coachArch(c))} · ${esc(g.tier)}</span></span><span class="small muted">📒 ${esc(signatureOf(c))}</span></button>`).join('')}</div>
         <button class="btn small" data-act="nav" data-to="coaches" style="margin-top:6px">🧑‍🏫 Every Coach</button></fieldset>` : ''}
+      ${medBox()}
       ${posShiftBox()}
       ${isCollege() ? '' : hotSeatBox(L)}
       ${coachChangesBox()}`,
@@ -7435,6 +7436,48 @@ actions.posUndo = d => {
   render();
 };
 $app.addEventListener('change', e => { if (e.target.dataset?.change === 'posPick') { state.shiftPick = +e.target.value || null; render(); } });
+
+// ---- Medical decisions: before training camp, each of your players hurt last season gets surgery or rehab.
+// Surgery clears what the injury would cost him in camp (the potential risk, the lost work, the shorter career) but he
+// starts the season out; rehab has him ready for opening night with the risk as it stands.
+const medStore = () => (calFlags().med ||= {});
+function medCases(t) {
+  const yr = lastSeasonYear();
+  return FA.signedRoster(t).map(p => ({ p, r: injuryRisk(p, yr, state.params) })).filter(x => x.r && (x.r.chance > 0 || x.r.cls !== 'standard'))
+    .sort((a, b) => b.r.chance - a.r.chance);
+}
+// Games he misses after surgery: longer for a structural injury.
+const surgeryGames = (p, r) => (r.cls === 'structural' ? 18 : r.cls === 'nagging' ? 10 : 5) + ((p.id * 13) % 6);
+function medBox() {
+  const L = league();
+  if (isCollege() || CAR.isCareer(L)) return '';
+  const st = medStore(), open = shiftOpen(L);
+  const rows = L.teams.filter(isUserTeam).flatMap(t => medCases(t).map(x => ({ ...x, t })));
+  if (!rows.length || (!open && !Object.keys(st).length)) return '';
+  return `<fieldset class="frame"><legend>🩺 Medical Decisions</legend>
+    <p class="note small">${open ? 'Before training camp: surgery clears what last season\'s injury would cost him in camp (the potential risk, the lost work, the shorter career), but he starts the season on the injured list. Rehab has him ready for opening night, with the risk as it stands.' : 'This summer\'s calls.'}</p>
+    <div class="stack">${rows.map(({ p, r }) => {
+      const pick = st[p.id], g = surgeryGames(p, r);
+      return `<div class="drill-row"><span class="grow tap" data-act="openPlayer" data-id="${p.id}"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(injuryName(r.worst))} · ${r.cls} · missed ${r.games} games${r.chance ? ` · <span class="down">${Math.round(r.chance)}% to lose potential</span>` : ''}</span></span>
+        ${open ? `<span class="xbtns"><button class="btn small ${pick === 'surgery' ? 'on focus' : 'off'}" data-act="medPick" data-id="${p.id}" data-v="surgery">🔪 Surgery · out ${g}</button><button class="btn small ${pick === 'rehab' ? 'on focus' : 'off'}" data-act="medPick" data-id="${p.id}" data-v="rehab">🏃 Rehab</button></span>`
+          : `<span class="small ${pick === 'surgery' ? 'gold' : 'muted'}">${pick === 'surgery' ? `Surgery · out ${g}` : 'Rehab'}</span>`}</div>`;
+    }).join('')}</div></fieldset>`;
+}
+actions.medPick = d => {
+  const e = findPlayer(+d.id);
+  if (!e?.team || !isUserTeam(e.team) || !shiftOpen()) return;
+  const st = medStore(), r = injuryRisk(e.p, lastSeasonYear(), state.params);
+  if (!r) return;
+  // Surgery puts him on the injured list for the start of the season (the game counts it down); rehab takes it off.
+  if (e.p.season) {
+    if (d.v === 'surgery') e.p.season.injury = { ...(e.p.season.injury || {}), core: r.worst.core || 0, upperBody: r.worst.upperBody || 0, lowerBody: r.worst.lowerBody || 0, minorSeverity: r.worst.minorSeverity || 0, majorSeverity: r.worst.majorSeverity || 0, yr: league().season.currentYear, gamesOut: surgeryGames(e.p, r) };
+    else if (st[e.p.id] === 'surgery' && e.p.season.injury) e.p.season.injury.gamesOut = 0;
+  }
+  st[e.p.id] = d.v;
+  state.dirty = true;
+  render();
+  toast(d.v === 'surgery' ? `🔪 ${playerName(e.p)} has surgery` : `🏃 ${playerName(e.p)} rehabs`, d.v === 'surgery' ? `Out the first ${surgeryGames(e.p, r)} games; no injury cost in camp.` : 'Ready for opening night.');
+};
 
 // ---- League News: rumors, transactions, coaching moves, CPU trades and (at Opening Night) the report card, as tabs.
 const NEWS_TABS = [['rumors', 'Rumors'], ['transactions', 'Moves'], ['gram', 'Hoop Gram'], ['retire', 'Retirements'], ['coachnews', 'Coaches'], ['cputrades', 'CPU Trades'], ['report', 'Report Card']];
