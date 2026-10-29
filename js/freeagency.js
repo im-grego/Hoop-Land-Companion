@@ -143,16 +143,23 @@ export function capTier(league, team, extra = 0) {
 // { team, players } (players sent out). Over the cap a team can take back
 // up to 125% of what it sends (+$1M); at the 1st apron no more than it
 // sends; nobody ends over the 2nd apron. Returns null or the reason.
-export function tradeCheckTeam(league, team, out, inn) {
+export function tradeCheckTeam(league, team, out, inn, opt = {}) {
   if (!CAP_ON || inn <= out) return null;
   const C = capLines(league);
-  const after = teamCommitted(team) - out + inn;
+  const after = (opt.pay ?? teamCommitted(team)) - out + inn;
   if (after > C.apron2) return `${team.shortName} would go over the 2nd apron ($${C.apron2}M)`;
   if (after <= C.cap) return null;
+  if (!opt.noTpe && tpeFor(team, inn - out) && after < C.apron1) return null;   // a traded player exception absorbs the difference
   if (after >= C.apron1) return `${team.shortName} is at the 1st apron: can't take back more salary than it sends ($${inn}M in, $${out}M out)`;
   if (inn > Math.floor(out * 1.25) + 1) return `${team.shortName} is over the cap: can take back up to $${Math.floor(out * 1.25) + 1}M for $${out}M out`;
   return null;
 }
+// Traded player exceptions (your teams, set by the app): { tid -> [{ id, amt }] }. The smallest one big enough
+// to absorb the extra salary is the one a trade uses.
+let TPE = new Map();
+export function setTpes(map) { TPE = new Map(Object.entries(map || {}).map(([k, v]) => [+k, v])); }
+export const tpeFor = (team, need) => (TPE.get(team.id) || []).filter(x => x.amt >= need).sort((a, b) => a.amt - b.amt)[0] || null;
+export const tradeSalOf = list => tradeSal(list);
 const tradeSal = list => (list || []).reduce((a, p) => a + (p.status === STATUS_SIGNED || p.status === STATUS_DRAFTED ? p.contract?.sal || 0 : 0), 0);
 export function tradeCheck(league, A, B) {
   return tradeCheckTeam(league, A.team, tradeSal(A.players), tradeSal(B.players)) || tradeCheckTeam(league, B.team, tradeSal(B.players), tradeSal(A.players));

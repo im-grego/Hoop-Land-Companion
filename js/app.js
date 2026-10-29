@@ -462,7 +462,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
-  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); }
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); syncTpes(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
@@ -11109,7 +11109,49 @@ setTradeHook((kind, rec) => {
     offSet('deals', { list: deals });
     if (kind === 'do') syncScoringOptions();
   } catch { /* the ledger is a convenience */ }
+  tpeHook(kind, rec);
 });
+// Traded player exceptions (Complete rules, your teams): over the cap, sending out more salary than comes back
+// leaves an exception for the difference, good for a year: a later trade can take on that much salary with nothing
+// going out (as long as it stays under the 1st apron). Taking on salary that only fits with an exception uses that much of it.
+const tpeKey = () => `hlc:tpe:${saveTag()}`;
+function tpeList() { try { return JSON.parse(localStorage.getItem(tpeKey())) || []; } catch { return []; } }
+function tpeSave(v) { try { localStorage.setItem(tpeKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+// Live: made this season, or last season and the calendar hasn't come back around to the day it was made.
+const tpeLeft = x => x.amt - Object.values(x.spent || {}).reduce((a, v) => a + v, 0);
+const tpeLive = x => { const s = league().season, y = s.currentYear; return y === x.yr || (y === x.yr + 1 && (s.phase ?? 0) < x.phase); };
+function syncTpes() {
+  if (!state.data) return;
+  const on = isComplete() && !isCollege() && FA.capSystemOn(), m = {};
+  if (on) for (const x of tpeList().filter(x => tpeLeft(x) > 0 && tpeLive(x))) (m[x.tid] ||= []).push({ ...x, amt: tpeLeft(x) });
+  FA.setTpes(m);
+}
+function tpeHook(kind, rec) {
+  if (!isComplete() || isCollege() || !FA.capSystemOn()) return;
+  const L = league(), C = FA.capLines(L);
+  let list = tpeList();
+  if (kind === 'undo') { list = list.filter(x => x.rec !== rec.tpeTag); for (const x of list) delete x.spent?.[rec.tpeTag]; tpeSave(list); syncTpes(); return; }
+  rec.tpeTag = `${Date.now()}:${Math.random().toString(36).slice(2, 6)}`;
+  for (const t of [rec.A, rec.B].filter(isUserTeam)) {
+    const out = FA.tradeSalOf(rec.moved.filter(m => m.from === t).map(m => m.p)), inn = FA.tradeSalOf(rec.moved.filter(m => m.to === t).map(m => m.p));
+    const pay = FA.teamCommitted(t), before = pay - inn + out;
+    if (inn > out && FA.tradeCheckTeam(L, t, out, inn, { pay: before, noTpe: true })) {
+      const x = FA.tpeFor(t, inn - out), row = x && list.find(y => y.id === x.id);
+      if (row) (row.spent ||= {})[rec.tpeTag] = inn - out;
+    } else if (out > inn && pay > C.cap) {
+      const who = rec.moved.filter(m => m.from === t).sort((a, b) => (b.p.contract?.sal || 0) - (a.p.contract?.sal || 0))[0]?.p;
+      list.push({ id: rec.tpeTag + t.id, rec: rec.tpeTag, tid: t.id, amt: out - inn, yr: L.season.currentYear, phase: L.season.phase ?? 0, who: who ? playerName(who) : '' });
+    }
+  }
+  tpeSave(list.filter(tpeLive));
+  syncTpes();
+}
+// Your open exceptions, under the cap bar.
+function tpeLine(t) {
+  if (!isUserTeam(t)) return '';
+  const xs = tpeList().filter(x => x.tid === t.id && tpeLeft(x) > 0 && tpeLive(x));
+  return xs.length ? `<p class="note small gold">🎟️ Trade exception${xs.length > 1 ? 's' : ''}: ${xs.map(x => `$${tpeLeft(x)}M${x.who ? ` (${esc(x.who)})` : ''}`).join(' · ')} ${infoBtn('tpe', '<p class="small"><b>Traded player exception</b>: when you\'re over the cap and send out more salary than you take back, you keep the difference as an exception for a year.</p><p class="small">A later trade can take on up to that much salary with nothing going out, as long as you stay under the 1st apron. Whatever a trade uses comes off it; the rest stays until it expires.</p>')}</p>` : '';
+}
 function lockSigning(p, why) {
   // The signing is remembered for the player's News box in any mode; only the trade lock is a Complete rule.
   { const n = offGet('signNews'); n[p.id] = { tid: p.tid, why }; offSet('signNews', n); }
@@ -14570,7 +14612,7 @@ function taxOn(over) {
   while (left > 0) { const c = Math.min(5, left); bill += c * rate; left -= c; step++; rate = step === 1 ? 1.75 : step === 2 ? 2.5 : step === 3 ? 3.25 : rate + 0.5; }
   return Math.round(bill);
 }
-const capBar = t => capBarOf(FA.payroll(t), deadFor(t.id)) + ownerLine(t);
+const capBar = t => capBarOf(FA.payroll(t), deadFor(t.id)) + ownerLine(t) + tpeLine(t);
 // What ownership will put up with, from the team's status and record.
 function ownerLine(t) {
   if (!FA.capSystemOn() || !isUserTeam(t)) return '';
