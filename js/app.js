@@ -15905,7 +15905,7 @@ screens.cuts = () => {
     body: `${careerTeamNow() ? viewOnlyNote() : ''}${myTeam() && alphaClash(myTeam()) ? `<p class="note small gold">${esc(alphaClash(myTeam()))}</p>` : ''}<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${uiTabs('cuts', [
         ['mine', 'Your Cuts', `      ${requestCard()}
-      ${myCards}
+      ${mine.map(campBox).join('')}${myCards}
       ${done ? waiverBox() : ''}`, mine.some(t => cutsShort(t, sel) > 0)],
         ...(done ? [['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`]] : []),
@@ -15936,6 +15936,57 @@ actions.waiverSign = d => {
   render();
   toast(`✍️ ${playerName(p)} signs with ${t.shortName}`, `$${lateMin(p)}M × ${lateYears(p)}`);
 };
+// Camp battles and the preseason: before the cuts, the closest fights on the roster (the last starting spot, the
+// last roster spot) play out over three preseason games. Winners get a lift; the bubble loser comes up as the cut.
+function campBattles(t) {
+  const O = FA.FA_DEFAULTS, out = [];
+  const top = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a));
+  if (top.length >= 6 && shownLevel(top[4]) - shownLevel(top[5]) <= 4) out.push({ kind: 'start', a: top[4].id, b: top[5].id });
+  const ranked = cutRank(t), need = Math.max(0, FA.signedRoster(t).length - O.seasonMax);
+  if (need && ranked[need]) { const a = ranked[need].p, b = ranked[need - 1].p; if (!out.some(x => [x.a, x.b].includes(a.id) || [x.a, x.b].includes(b.id))) out.push({ kind: 'spot', a: a.id, b: b.id }); }
+  return out;
+}
+const campStore = () => (calFlags().camp ||= {});
+function campPlay(t) {
+  const L = league(), st = campStore();
+  if (st[t.id]) return;
+  const rnd = mulberry32((saveSalt() ^ Math.imul(t.id + 31, 2654435761) ^ L.season.currentYear) >>> 0);
+  const str = x => { const v = FA.signedRoster(x).map(shownLevel).sort((a, b) => b - a).slice(0, 8); return v.reduce((a, y) => a + y, 0) / (v.length || 1); };
+  const foes = L.teams.filter(x => x !== t).sort(() => rnd() - 0.5).slice(0, 3);
+  const games = foes.map(o => {
+    const pWin = 1 / (1 + Math.exp(-(str(t) - str(o)) / 2.5)), win = rnd() < pWin;
+    const lose = 96 + Math.floor(rnd() * 18), margin = 2 + Math.floor(rnd() * 14);
+    return { opp: o.shortName, us: win ? lose + margin : lose, them: win ? lose : lose + margin };
+  });
+  const battles = campBattles(t).map(x => {
+    const a = playerById(x.a), b = playerById(x.b);
+    const edge = shownLevel(a) - shownLevel(b) + (a.age <= 24 ? 1.5 : 0) - (b.age <= 24 ? 1.5 : 0);
+    const aWins = rnd() < 1 / (1 + Math.exp(-edge / 3));
+    const line = (p, won) => ({ ppg: +(Math.max(2, (shownLevel(p) - 58) / 2.2 + rnd() * 5 + (won ? 3 : 0))).toFixed(1) });
+    const w = aWins ? a : b, l = aWins ? b : a;
+    moraleEvent(w, `camp:${L.season.currentYear}`, 4, x.kind === 'start' ? 'won the starting job in camp' : 'made the team in camp');
+    if (x.kind === 'start' && !isHumble(l)) moraleEvent(l, `camp:${L.season.currentYear}`, -3, 'lost the camp battle for a starting job');
+    if (x.kind === 'spot') { const sel = cutSel(); sel[l.id] = true; delete sel[w.id]; }
+    return { ...x, win: w.id, lose: l.id, wl: line(w, true), ll: line(l, false) };
+  });
+  st[t.id] = { games, battles };
+  state.dirty = true;
+}
+function campBox(t) {
+  if (isCollege() || calFlags().cuts) return '';
+  const st = campStore()[t.id], battles = st ? st.battles : campBattles(t);
+  const nm = id => esc(playerName(playerById(id)) || '?');
+  const label = { start: 'Last starting spot', spot: 'Last roster spot' };
+  if (!st) return `<fieldset class="frame"><legend>Camp Battles${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend><div class="stack">
+    ${battles.map(x => { const a = playerById(x.a), b = playerById(x.b); return `<p class="note small"><b>${label[x.kind]}</b>: ${nm(x.a)} ${lvTag(a)} vs ${nm(x.b)} ${lvTag(b)}</p>`; }).join('') || '<p class="note small muted">No close fights on this roster.</p>'}
+    <button class="btn focus" data-act="campPlay" data-t="${t.id}">🏀 Play the Preseason (3 games)</button></div></fieldset>`;
+  const w = st.games.filter(g => g.us > g.them).length;
+  return `<fieldset class="frame"><legend>Preseason · ${w}-${st.games.length - w}</legend><div class="stack">
+    <p class="note small">${st.games.map(g => `<span class="${g.us > g.them ? 'up' : 'down'}">${g.us > g.them ? 'W' : 'L'} ${g.us}-${g.them}</span> vs ${esc(g.opp)}`).join(' · ')}</p>
+    ${st.battles.map(x => `<p class="note small"><b>${label[x.kind]}</b>: <span class="up">${nm(x.win)}</span> (${x.wl.ppg} ppg) beat out ${nm(x.lose)} (${x.ll.ppg} ppg)${x.kind === 'start' ? '. Set him in your lineup in the game.' : ', now picked to cut.'}</p>`).join('')}
+  </div></fieldset>`;
+}
+actions.campPlay = d => { const t = league().teams.find(x => x.id === +d.t); if (t) { campPlay(t); render(); } };
 // Cuts still to pick (only as many as there are cuttable players).
 const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
 actions.goHomeCuts = () => goHome();
