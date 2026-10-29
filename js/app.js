@@ -15948,7 +15948,7 @@ screens.cuts = () => {
     body: `${careerTeamNow() ? viewOnlyNote() : ''}${myTeam() && alphaClash(myTeam()) ? `<p class="note small gold">${esc(alphaClash(myTeam()))}</p>` : ''}<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${uiTabs('cuts', [
         ['mine', 'Your Cuts', `      ${requestCard()}
-      ${mine.map(campBox).join('')}${myCards}
+      ${mine.map(t => campBox(t) + stashBox(t)).join('')}${myCards}
       ${done ? waiverBox() : ''}`, mine.some(t => cutsShort(t, sel) > 0)],
         ...(done ? [['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`]] : []),
@@ -16030,6 +16030,80 @@ function campBox(t) {
   </div></fieldset>`;
 }
 actions.campPlay = d => { const t = league().teams.find(x => x.id === +d.t); if (t) { campPlay(t); render(); } };
+// Draft-and-stash: before the cuts, a rookie you just drafted can play overseas instead. He leaves the roster and
+// the books (the app keeps him), grows each year away, and comes over at the cuts of a later offseason on a minimum
+// deal, or you let his rights go and he joins free agency.
+const stashKey = () => `hlc:stash:${saveTag()}`;
+function stashList() { try { return JSON.parse(localStorage.getItem(stashKey())) || []; } catch { return []; } }
+function stashSave(v) { try { localStorage.setItem(stashKey(), JSON.stringify(v)); } catch { toast('Couldn\'t save the stash', 'Browser storage is full', 3000, true); } }
+const STASH_MAX = 2;
+function stashBox(t) {
+  if (isCollege() || calFlags().cuts) return '';
+  const L = league(), yr = L.season.currentYear, rk = rookieIds();
+  const away = stashList().filter(x => x.tid === t.id);
+  const can = away.filter(x => x.yr === yr).length < STASH_MAX;
+  const rookies = can ? FA.signedRoster(t).filter(p => rk.has(p.id)).sort((a, b) => shownLevel(a) - shownLevel(b)) : [];
+  if (!away.length && !rookies.length) return '';
+  const lv = x => Math.round(levelOf(x.player));
+  return `<fieldset class="frame"><legend>Draft-and-Stash${L.teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>${infoBtn('stash', '<p class="small"><b>Draft-and-stash</b>: send a rookie you just drafted overseas. He comes off your roster and your books; the app holds his rights.</p><p class="small">He develops each year away. At the cuts of a later offseason you can bring him over on a minimum deal, or let his rights go (he becomes a free agent).</p><p class="small muted">Up to ' + STASH_MAX + ' a summer.</p>')}<div class="stack">
+    ${away.map(x => { const n = yr - x.yr; return `<div class="drill-row wrap"><span class="grow"><b>${esc(playerName(x.player))}</b> <span class="gold">Lv ${lv(x)}</span><br><span class="small muted">${esc(posName(x.player))} · stashed ${x.yr}${n ? ` · ${n} year${n > 1 ? 's' : ''} away` : ' · this summer'}</span></span>
+      ${n ? `<span class="opt-btns full"><button class="btn small focus" data-act="stashBring" data-id="${x.player.id}">✈️ Bring him over</button><button class="btn small off" data-act="stashDrop" data-id="${x.player.id}">Let his rights go</button></span>` : `<span class="opt-btns full"><button class="btn small off" data-act="stashUndo" data-id="${x.player.id}">↺ Keep him here</button></span>`}</div>`; }).join('')}
+    ${rookies.map(p => `<div class="drill-row"><span class="grow"><b class="tap" data-act="openPlayer" data-id="${p.id}">${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(posName(p))} · ${p.age}y · $${p.contract?.sal || 0}M × ${p.contract?.yrs || 0}</span></span><button class="btn small" data-act="stashSend" data-id="${p.id}">🌍 Stash</button></div>`).join('')}
+  </div></fieldset>`;
+}
+actions.stashSend = async d => {
+  const L = league(), t = L.teams.find(x => isUserTeam(x) && x.roster.some(p => p.id === +d.id)), p = t?.roster.find(x => x.id === +d.id);
+  if (!p || !(await confirmBox(`Stash <b>${esc(playerName(p))}</b> overseas? He leaves your roster and your books. Bring him over at the cuts of a later summer.`, 'Stash'))) return;
+  const yr = L.season.currentYear, copy = JSON.parse(JSON.stringify(p));   // as he was, for an undo this summer
+  FA.releasePlayer(L, t, p);
+  L.freeAgents.splice(L.freeAgents.indexOf(p), 1);
+  stashSave([...stashList(), { tid: t.id, yr, player: copy }]);
+  delete cutSel()[p.id];
+  state.dirty = true; render();
+  toast(`🌍 ${playerName(p)} stashed overseas`, 'Off the roster and the books');
+};
+// Put a stashed player back into the league as a free agent (his rights let go, or undone the same summer).
+function stashOut(id) {
+  const list = stashList(), x = list.find(y => y.player.id === +id);
+  if (!x) return null;
+  const L = league(), p = x.player, n = L.season.currentYear - x.yr;
+  p.age += n;
+  p.status = FA.STATUS_FREE; p.tid = 0; p.linePos = -1;
+  L.freeAgents.push(p);
+  stashSave(list.filter(y => y !== x));
+  // Each year away: a season of growth overseas (points spent for him).
+  for (let i = 0; i < n; i++) {
+    const aw = runProgression([{ p, team: null, leagueIdx: state.leagueIdx, spend: true, glPts: 6 }], { ...state.params, seed: (saveSalt() ^ Math.imul(p.id + i, 2654435761)) >>> 0 }, state.profiles[state.leagueIdx]);
+    void aw;
+  }
+  state.dirty = true;
+  return { x, p, n };
+}
+// Changed your mind the same summer: he's back on the roster just as he was.
+actions.stashUndo = d => {
+  const L = league(), list = stashList(), x = list.find(y => y.player.id === +d.id && y.yr === L.season.currentYear), t = x && L.teams.find(y => y.id === x.tid);
+  if (!t) return;
+  t.roster.push(x.player);
+  stashSave(list.filter(y => y !== x));
+  state.dirty = true; render();
+};
+actions.stashBring = d => {
+  const L = league(), x = stashList().find(y => y.player.id === +d.id), t = x && L.teams.find(y => y.id === x.tid);
+  if (!t) return;
+  if (FA.signedRoster(t).length >= FA.FA_DEFAULTS.rosterMax) { toast('No open roster spot', '', 2400, true); return; }
+  const r = stashOut(d.id), sal = FA.minFor(r.p);
+  FA.signPlayer(L, r.p, t, { sal, yrs: 2, opt: 0 }, L.season.currentDay || 3);
+  lockSigning(r.p, 'Came over from overseas');
+  render();
+  toast(`✈️ ${playerName(r.p)} comes over`, `Lv ${shownLevel(r.p)} after ${r.n} year${r.n > 1 ? 's' : ''} away · $${sal}M × 2`);
+};
+actions.stashDrop = async d => {
+  const x = stashList().find(y => y.player.id === +d.id);
+  if (!x || !(await confirmBox(`Let <b>${esc(playerName(x.player))}</b>'s rights go? He becomes a free agent.`, 'Let Go'))) return;
+  const r = stashOut(d.id);
+  render();
+  toast(`${playerName(r.p)} is a free agent`);
+};
 // Cuts still to pick (only as many as there are cuttable players).
 const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
 actions.goHomeCuts = () => goHome();
