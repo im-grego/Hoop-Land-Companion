@@ -6504,6 +6504,93 @@ actions.ownerGoal = d => {
   (o.goals[yr] ||= {})[t.id] = ownerChoices(t)[+d.i];
   saveOwnerGoals(); toast('🤝 Goal set', o.goals[yr][t.id].label); render();
 };
+// Exit interviews: your key players say what's on their mind once the season ends. A promise lifts him now and is
+// judged at next year's interviews: kept pays off, broken costs a lot of morale and can turn into a trade request.
+const exitKey = () => `hlc:exit:${saveTag()}`;
+function exitStore() {
+  const c = (state.exitTalks ||= {}), k = exitKey();
+  if (!c[k]) { let v = {}; try { v = JSON.parse(localStorage.getItem(k)) || {}; } catch { v = {}; } c[k] = { talks: {}, judged: {}, ...v }; }
+  return c[k];
+}
+const saveExit = () => { try { localStorage.setItem(exitKey(), JSON.stringify(exitStore())); } catch { /* ignore */ } };
+const EXIT_TOPICS = {
+  role: { ask: 'thinks he earned a bigger role', promise: 'More minutes', honest: 'Earn it in camp', kept: 'got the bigger role you promised', broke: 'never got the role you promised' },
+  win: { ask: 'wants to know if this team is trying to win now', promise: 'We\'ll make the playoffs', honest: 'We\'re building', kept: 'made the playoffs like you said', broke: 'sat out the playoffs after you promised a run' },
+  deal: { ask: 'is heading into the last year of his deal and wants to know where he stands', promise: 'We\'ll extend you', honest: 'Let\'s see how the year goes', kept: 'got the extension you promised', broke: 'never got the extension you promised' },
+  grow: { ask: 'wants a plan to take the next step', promise: 'You\'ll start', honest: 'Keep working', kept: 'got the starting job you promised', broke: 'never got the starting job you promised' },
+};
+// What a player brings up: the first concern that fits him.
+function exitTopic(p, t, yr) {
+  const l = seasonLine(p, state.leagueIdx, yr), row = (t.season || []).find(x => x.yr === yr);
+  const rank = roleRank(t, p);
+  if (p.contract?.yrs === 1 && shownLevel(p) >= 75 && !FA.isRookieScale(p)) return 'deal';
+  if (p.age >= 29 && !(row?.playoffStats?.GP > 0)) return 'win';
+  if (l && l.mpg < 26 && rank <= 6) return 'role';
+  if (p.age <= 24 && (!l || l.starts < l.gp / 2)) return 'grow';
+  return null;
+}
+function exitCases(t) {
+  const yr = lastSeasonYear();
+  return FA.signedRoster(t).filter(p => p.status === FA.STATUS_SIGNED).sort((a, b) => shownLevel(b) - shownLevel(a)).slice(0, 6)
+    .map(p => ({ p, topic: exitTopic(p, t, yr) })).filter(x => x.topic).slice(0, 4);
+}
+// Was it kept? Judged on the season after the promise (yr + 1).
+function exitKept(p, x, yr) {
+  const l = seasonLine(p, state.leagueIdx, yr + 1), t = league().teams.find(y => y.id === x.tid), row = (t?.season || []).find(r => r.yr === yr + 1);
+  if (x.topic === 'role') return !!l && l.mpg >= Math.max((x.mpg || 0) + 4, 26);
+  if (x.topic === 'win') return (row?.playoffStats?.GP || 0) > 0;
+  if (x.topic === 'deal') return (p.contract?.yrs || 0) >= 2;
+  return !!l && l.starts >= l.gp / 2;
+}
+// A request from a broken promise joins this summer's list (or waits for it to be drawn).
+function addRequest(r) {
+  const st = offGet('req');
+  if (st.list) { if (!st.list.some(x => x.pid === r.pid)) st.list.push(r); }
+  else if (!(st.pre ||= []).some(x => x.pid === r.pid)) st.pre.push(r);
+  offSet('req', st);
+}
+function exitSettle(t) {
+  const o = exitStore(), yr = lastSeasonYear() - 1, talks = o.talks[yr] || {};
+  for (const [pid, x] of Object.entries(talks)) {
+    const key = `${yr}:${pid}`;
+    if (x.tid !== t.id || x.ans !== 'promise' || o.judged[key]) continue;
+    const p = t.roster.find(q => q.id === +pid);
+    if (!p) { o.judged[key] = 'gone'; continue; }
+    const ok = exitKept(p, x, yr);
+    o.judged[key] = ok ? 'kept' : 'broke';
+    moraleEvent(p, `exitjudge:${yr}`, ok ? 6 : -12, ok ? 'a promise kept' : 'a broken promise');
+    if (!ok && canAskOut(p) && !FA.isLifer(league(), p, t) && tr(p, 'loyalty') < 15) addRequest({ pid: p.id, tid: t.id, why: `you broke your promise: he ${EXIT_TOPICS[x.topic].broke}`, status: 'open' });
+  }
+  saveExit();
+}
+function exitInterviewBox(t) {
+  if (isCollege() || !isComplete()) return '';
+  exitSettle(t);
+  const o = exitStore(), yr = lastSeasonYear(), talks = o.talks[yr] || {}, prev = o.talks[yr - 1] || {};
+  const judged = Object.entries(prev).filter(([pid, x]) => x.tid === t.id && x.ans === 'promise' && ['kept', 'broke'].includes(o.judged[`${yr - 1}:${pid}`]));
+  const open = phaseRank(league().season) >= 1;
+  const cases = open ? exitCases(t) : [];
+  if (!cases.length && !judged.length) return '';
+  const row = ({ p, topic }) => {
+    const T = EXIT_TOPICS[topic], said = talks[p.id];
+    return `<div class="drill-row wrap"><span class="grow"><b class="tap" data-act="openPlayer" data-id="${p.id}">${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small muted">${esc(T.ask)} · ${moraleTag(p)}</span></span>
+      ${said ? `<p class="note small full ${said.ans === 'promise' ? 'gold' : 'muted'}">${said.ans === 'promise' ? `🤝 You promised: ${esc(T.promise)}. He'll hold you to it.` : `You told him: ${esc(T.honest)}.`}</p>`
+        : `<span class="opt-btns full"><button class="btn small" data-act="exitAnswer" data-id="${p.id}" data-t="${t.id}" data-topic="${topic}" data-v="promise">🤝 ${esc(T.promise)}</button><button class="btn small off" data-act="exitAnswer" data-id="${p.id}" data-t="${t.id}" data-topic="${topic}" data-v="honest">${esc(T.honest)}</button></span>`}</div>`;
+  };
+  return `<fieldset class="frame"><legend>Exit Interviews${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>${infoBtn('exitint', '<p class="small"><b>Exit interviews</b>: your key players tell you what they want before the summer starts.</p><p class="small">A promise lifts his morale now and is judged at next year\'s interviews. Kept, he\'s happier still. Broken, his morale drops hard and he can ask for a trade.</p><p class="small">The honest answer costs a little morale now (less for a humble player) and nothing later.</p>')}<div class="stack">
+    ${judged.map(([pid, x]) => { const p = t.roster.find(q => q.id === +pid); const ok = o.judged[`${yr - 1}:${pid}`] === 'kept'; return p ? `<p class="note small ${ok ? 'up' : 'down'}">${ok ? '✅' : '💔'} <b>${esc(playerName(p))}</b> ${esc(ok ? EXIT_TOPICS[x.topic].kept : EXIT_TOPICS[x.topic].broke)}.</p>` : ''; }).join('')}
+    ${cases.map(row).join('')}
+  </div></fieldset>`;
+}
+actions.exitAnswer = d => {
+  const o = exitStore(), yr = lastSeasonYear(), L = league(), t = L.teams.find(x => x.id === +d.t), p = t?.roster.find(x => x.id === +d.id);
+  if (!p || o.talks[yr]?.[p.id]) return;
+  (o.talks[yr] ||= {})[p.id] = { tid: t.id, topic: d.topic, ans: d.v, mpg: seasonLine(p, state.leagueIdx, yr)?.mpg || 0 };
+  saveExit();
+  if (d.v === 'promise') moraleEvent(p, `exit:${yr}`, 4, 'a promise at his exit interview');
+  else if (!isHumble(p)) moraleEvent(p, `exit:${yr}`, -3, 'an honest exit interview');
+  render();
+};
 // This season's goal, for the midseason review.
 function ownerGoalLine(t) {
   const g = ownerGoals().goals[league().season.currentYear]?.[t.id];
@@ -15105,7 +15192,7 @@ screens.review = () => {
         <p class="note small" style="padding:4px 10px 10px">${esc(historyHeadline(t, r) || reviewHeadline(r, t))}</p>
       </div>
       ${uiTabs('review', [
-        ['mine', 'Your Season', `      ${L.teams.filter(isUserTeam).map(ownerMeetingBox).join('')}${s ? `<fieldset class="frame"><legend>The Season</legend>
+        ['mine', 'Your Season', `      ${L.teams.filter(isUserTeam).map(x => ownerMeetingBox(x) + exitInterviewBox(x)).join('')}${s ? `<fieldset class="frame"><legend>The Season</legend>
         <div class="stat-grid">
           <div class="tap" data-act="teamStats" data-k="ppg"><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div class="tap" data-act="teamStats" data-k="opp"><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div class="tap" data-act="teamStats" data-k="margin"><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
           <div class="tap" data-act="teamStats" data-k="fg"><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div class="tap" data-act="teamStats" data-k="tp"><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div class="tap" data-act="teamStats" data-k="ft"><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
@@ -15946,6 +16033,7 @@ function requestsState() {
       list.push({ pid: p.id, tid: t.id, why: `his game doesn't fit ${c ? c.ln + "'s" : 'the'} system`, status: isUserTeam(t) ? 'open' : 'cpu' });
     }
   }
+  for (const r of st.pre || []) if (!list.some(x => x.pid === r.pid)) list.push(r);   // broken promises from the exit interviews
   st.list = list;
   offSet('req', st);
   state.dirty = true;
