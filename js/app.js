@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.250.0';
+const APP_VERSION = '0.251.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -325,7 +325,7 @@ function toast(msg, detail = '', ms = detail ? 4000 : 2400, warning = false) {
 
 // ⓘ in a box's corner: the explanation opens on tap instead of taking up room on the page.
 const INFO = {};
-const infoBtn = (key, text) => { INFO[key] = text; return `<button class="info-i" data-act="infoPop" data-k="${esc(key)}" aria-label="What this means">ⓘ</button>`; };
+const infoBtn = (key, text) => { INFO[key] = text; return `<button class="info-i" data-act="infoPop" data-k="${esc(key)}" aria-label="What this means">?</button>`; };
 function overlay(html) {
   const o = document.createElement('div');
   o.className = 'overlay';
@@ -2142,7 +2142,7 @@ screens.main = () => {
               <input type="file" id="fileInput"></label>
           </div>
         </fieldset>
-        <p class="center muted small">Version ${APP_VERSION}</p>`,
+        <div class="ver-badge">Version ${APP_VERSION}</div>`,
     });
     return;
   }
@@ -2180,7 +2180,7 @@ screens.main = () => {
         <label class="btn left"><span class="ico">📂</span> Load<input type="file" id="fileInput"></label>
         <button class="btn left" data-act="nav" data-to="export"><span class="ico">💾</span> Export</button>
       </div>
-      <p class="center muted small">Version ${APP_VERSION}</p>`,
+      <div class="ver-badge">Version ${APP_VERSION}</div>`,
   });
 };
 
@@ -15290,7 +15290,8 @@ screens.teamStats = (args) => {
   });
 };
 actions.infoPop = d => {
-  const o = overlay(`<div class="info-text">${INFO[d.k] || ''}</div><button class="btn" data-close>Got it</button>`);
+  const o = overlay(`<div class="info-head">Info</div><div class="info-text">${INFO[d.k] || ''}</div><button class="btn" data-close>Got it</button>`);
+  o.querySelector('.box')?.classList.add('info-box');
   o.querySelector('.cg-lv.here')?.scrollIntoView({ block: 'center' });   // the salary guide opens on your level
   o.addEventListener('click', e => { if (e.target === o || e.target.closest('[data-close]')) o.remove(); });
 };

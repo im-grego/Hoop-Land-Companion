@@ -1585,7 +1585,9 @@ main.panel.bare { margin-top: 10px; }
 .offer-btns { display: flex; flex-direction: column; gap: 6px; }
 /* ⓘ in a frame's corner */
 fieldset.frame { position: relative; }
-.info-i { position: absolute; top: -14px; right: 8px; width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--cyan); background: var(--panel); color: var(--cyan); font-weight: 800; font-size: 14px; line-height: 1; cursor: pointer; padding: 0; }
+/* The info button: a small square game button sitting on the frame's top edge, like the legend. */
+.info-i { position: absolute; top: -19px; right: 10px; width: 30px; height: 30px; border-radius: 2px; border: 3px solid var(--btn-edge); background: var(--btn); box-shadow: 0 3px 0 var(--btn-shadow), 0 0 0 4px var(--panel); color: var(--text); font-family: var(--font); font-weight: 800; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 0 1px; display: inline-flex; align-items: center; justify-content: center; }
+.info-i:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--btn-shadow), 0 0 0 4px var(--panel); }
 .info-text { max-height: 60vh; overflow: auto; margin-bottom: 12px; text-align: left; }
 .info-text p { margin: 0 0 8px; }
 /* Standings: your team boxed, playoff and play-in lines */
@@ -1616,7 +1618,7 @@ fieldset.frame { position: relative; }
 .cg-lv ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .cg-lv li { display: flex; gap: 6px; }
 .cg-lv li span { color: var(--text); }
-.cap-legend .info-i, .note .info-i { position: static; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font-size: 12px; vertical-align: middle; margin-left: 2px; }
+.cap-legend .info-i, .note .info-i { position: static; width: 22px; height: 22px; border-width: 2px; font-size: 13px; vertical-align: middle; margin-left: 4px; box-shadow: 0 2px 0 var(--btn-shadow); }
 
 /* Player faces (face pack): pixel art, scaled without blur; every cut is 90×52, anchored on the right of the face like the game, room on the left for big hair */
 .face { image-rendering: pixelated; flex: none; aspect-ratio: 90 / 52; }
@@ -1624,3 +1626,11 @@ fieldset.frame { position: relative; }
 .face-none { display: inline-block; }
 .face-md { display: block; height: 52px; margin: 0 auto 2px; }
 .lv-max { color: #fff; }
+
+/* Two-up buttons read like the game's Exhibition / Customize: icon on the left, label next to it on one line. */
+.grid2 > .btn:not(.small):not(.tiny) { justify-content: flex-start; text-align: left; padding-left: 14px; padding-right: 8px; min-width: 0; line-height: 1.15; }
+/* The version, boxed bottom-right like the game's main menu. */
+.ver-badge { align-self: flex-end; margin-left: auto; width: fit-content; background: var(--btn); border: 4px solid var(--btn-edge); box-shadow: 0 4px 0 var(--btn-shadow); padding: 8px 14px; font-size: 15px; font-weight: 700; }
+/* Info popups: a marquee title bar over the text, the panel framed like the rest of the app. */
+.overlay .box.info-box { border-color: var(--panel-edge); padding-top: 0; overflow: hidden; }
+.info-head { margin: 0 -18px 4px; padding: 10px 14px; background: var(--marquee); border-bottom: 4px solid var(--panel-edge); font-family: var(--pixel); font-size: 18px; letter-spacing: 3px; text-transform: uppercase; text-align: left; }
