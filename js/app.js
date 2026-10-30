@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.251.0';
+const APP_VERSION = '0.252.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -464,7 +464,7 @@ let lastView = '';
 function render() {
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); syncTpes(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
-  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
+  if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); if (state.retFixed !== saveTag()) { state.retFixed = saveTag(); fixRetiredNumbers(); } glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
   const top = state.stack[state.stack.length - 1];
   const view = `${state.stack.length}:${top.name}:${top.args?.tab ?? ''}:${top.name === 'fa' ? '' : top.args?.view ?? ''}:${top.args?.id ?? ''}`;
@@ -5615,13 +5615,60 @@ function comebackPosts() {
 const AWARD_YEARS = (p, id) => (p.awards || []).filter(a => a.id === id && (a.league == null || a.league === 0)).flatMap(a => a.yearsWon || []);
 // The number a player wore for a team: the real one where it changed between teams (the save keeps only his current
 // number on old seasons), else the one he wore most there in the seasons the save recorded, else his number now.
+// The number a team remembers him in: the one he wore for the most games there (this league's history beats real life). When another number comes close
+// (within a quarter of the games) and he won a title there in it, the title number wins.
+const NUM_CLOSE = 0.75;
 function teamNumber(p, team) {
   const real = JERSEYS[`${p.fn} ${p.ln}`]?.[team.shortName];
-  if (real != null) return real;
-  const nums = new Map();
-  for (const st of p.stats || []) if (st.league === 0) for (const r of st.season || []) if (r.GP > 0 && r.tid === team.id && r.num >= 0) nums.set(r.num, (nums.get(r.num) || 0) + r.GP);
-  return [...nums].sort((a, b) => b[1] - a[1])[0]?.[0] ?? p.num;
+  const champ = new Set(AWARD_YEARS(p, 0)), nums = new Map();
+  for (const st of p.stats || []) if (st.league === 0) for (const r of st.season || []) if (r.GP > 0 && r.tid === team.id && r.num >= 0) {
+    const x = nums.get(r.num) || { num: r.num, gp: 0, titles: 0, first: st.yr };
+    x.gp += r.GP; if (champ.has(st.yr)) x.titles++; x.first = Math.min(x.first, st.yr);
+    nums.set(r.num, x);
+  }
+  const all = [...nums.values()].sort((a, b) => b.gp - a.gp || a.first - b.first);
+  if (!all.length) return real ?? p.num;   // no games on file there: his real-life number, if we know it
+  const close = all.filter(x => x.gp >= all[0].gp * NUM_CLOSE);
+  const won = close.filter(x => x.titles).sort((a, b) => b.titles - a.titles || b.gp - a.gp);
+  return (won[0] || all[0]).num;
 }
+// The game hangs the number a player wears the day he retires (Durant's #18 at Golden State, after three seasons in
+// #7). Once an offseason the app checks the numbers raised since 2023 against his history there and fixes any that
+// differ (when the right number is free), the game's news story too. Each fix can be undone.
+const retFixKey = () => `hlc:retnum:${saveTag()}`;
+function retFixStore() { try { return JSON.parse(localStorage.getItem(retFixKey())) || { done: {}, undone: {} }; } catch { return { done: {}, undone: {} }; } }
+function retFixSave(v) { try { localStorage.setItem(retFixKey(), JSON.stringify(v)); } catch { /* ignore */ } }
+const retNews = (L, t, pid) => (L.season.news || []).filter(n => n.type === 25 && n.tid === t.id && n.pid === pid);
+function fixRetiredNumbers() {
+  const L = league(), st = retFixStore(), byId = new Map();
+  for (const p of [...L.teams.flatMap(t => t.roster), ...(L.retirees || []), ...(L.hallOfFame || []), ...(L.freeAgents || [])]) if (p?.id != null && p.stats) byId.set(p.id, p);
+  const fixed = [];
+  for (const t of L.teams) for (const r of t.retiredNumbers || []) {
+    const k = `${t.id}:${r.pid}`, p = byId.get(r.pid);
+    if (r.yr < 2023 || !p || st.done[k] || st.undone[k]) continue;
+    const want = teamNumber(p, t);
+    if (want == null || want === r.num || (t.retiredNumbers || []).some(x => x !== r && x.num === want)) continue;
+    st.done[k] = { from: r.num, to: want, name: playerName(p), team: t.shortName };
+    r.num = want;
+    for (const n of retNews(L, t, r.pid)) if (n.data?.retiredNumber) n.data.retiredNumber.num = want;
+    fixed.push(st.done[k]);
+  }
+  if (!fixed.length) return;
+  retFixSave(st); state.dirty = true;
+  toast('🎽 Retired numbers fixed', fixed.map(x => `${x.name}: #${numText(x.to)} at ${x.team}, not #${numText(x.from)}`).join(' · '), 5000);
+}
+function retFixBox() {
+  const st = retFixStore(), rows = Object.entries(st.done);
+  if (!rows.length) return '';
+  return `<fieldset class="frame"><legend>Retired Numbers Fixed</legend>${infoBtn('retfix', '<p class="small">The game retires the number a player wears the day he retires. The app swaps in the one he wore for the most games with that team, or, when two are close, the one he won a title in.</p>')}<div class="stack">
+    ${rows.map(([k, x]) => `<div class="drill-row"><span class="grow small"><b>${esc(x.name)}</b> · ${esc(x.team)}: #${numText(x.to)} <span class="muted">(was #${numText(x.from)})</span></span><button class="btn tiny off" data-act="retFixUndo" data-k="${k}">↺ Undo</button></div>`).join('')}</div></fieldset>`;
+}
+actions.retFixUndo = d => {
+  const L = league(), st = retFixStore(), x = st.done[d.k]; if (!x) return;
+  const [tid, pid] = d.k.split(':').map(Number), t = L.teams.find(y => y.id === tid), r = (t?.retiredNumbers || []).find(y => y.pid === pid);
+  if (r && !(t.retiredNumbers || []).some(y => y !== r && y.num === x.from)) { r.num = x.from; for (const n of retNews(L, t, pid)) if (n.data?.retiredNumber) n.data.retiredNumber.num = x.from; }
+  delete st.done[d.k]; st.undone[d.k] = true; retFixSave(st); state.dirty = true; render();
+};
 function iconCase(p, team) {
   const yrs = new Set(), nums = new Map(), tidByYr = new Map();
   let gp = 0, pts = 0;
@@ -7651,7 +7698,7 @@ actions.newsTab = d => (d.t === 'rumors' || d.t === 'transactions' ? replace(d.t
 screens.news = (args = {}) => {
   const tab = args.tab || 'coachnews';
   let body = '';
-  if (tab === 'retire') body = retirementsBox();
+  if (tab === 'retire') body = retFixBox() + retirementsBox();
   else if (tab === 'gram') body = leagueGramCard().replace('<h2 class="team-title">Trending on Hoop Gram</h2>', '') || '<p class="note small muted">Quiet on Hoop Gram so far.</p>';
   else if (tab === 'coachnews') body = (hotSeatBox(league()) + coachChangesBox()) || '<p class="note small muted">No coaching news yet. CPU teams make their moves once free agency opens.</p>';
   else if (tab === 'cputrades') { const log = offGet('cpuTrades'); const list = Array.isArray(log) ? log : []; body = list.length ? `<div class="stack">${list.map(x => `<p class="note small" style="margin:0">🔁 ${esc(x)}</p>`).join('')}${(calFlags().dumpLog || []).map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : (calFlags().dumpLog || []).length ? `<div class="stack">${calFlags().dumpLog.map(x => `<p class="note small" style="margin:0">💸 ${esc(x)}</p>`).join('')}</div>` : '<p class="note small muted">No CPU trades yet.</p>'; }
