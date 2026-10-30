@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.252.0';
+const APP_VERSION = '0.252.1';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -5615,11 +5615,13 @@ function comebackPosts() {
 const AWARD_YEARS = (p, id) => (p.awards || []).filter(a => a.id === id && (a.league == null || a.league === 0)).flatMap(a => a.yearsWon || []);
 // The number a player wore for a team: the real one where it changed between teams (the save keeps only his current
 // number on old seasons), else the one he wore most there in the seasons the save recorded, else his number now.
-// The number a team remembers him in: the one he wore for the most games there (this league's history beats real life). When another number comes close
+// The number a team remembers him in: his real-life number there when we know it; otherwise the one he wore for the
+// most games there. When another number comes close
 // (within a quarter of the games) and he won a title there in it, the title number wins.
 const NUM_CLOSE = 0.75;
 function teamNumber(p, team) {
   const real = JERSEYS[`${p.fn} ${p.ln}`]?.[team.shortName];
+  if (real != null) return real;   // a real player's real number with that team always wins
   const champ = new Set(AWARD_YEARS(p, 0)), nums = new Map();
   for (const st of p.stats || []) if (st.league === 0) for (const r of st.season || []) if (r.GP > 0 && r.tid === team.id && r.num >= 0) {
     const x = nums.get(r.num) || { num: r.num, gp: 0, titles: 0, first: st.yr };
@@ -5627,7 +5629,7 @@ function teamNumber(p, team) {
     nums.set(r.num, x);
   }
   const all = [...nums.values()].sort((a, b) => b.gp - a.gp || a.first - b.first);
-  if (!all.length) return real ?? p.num;   // no games on file there: his real-life number, if we know it
+  if (!all.length) return p.num;
   const close = all.filter(x => x.gp >= all[0].gp * NUM_CLOSE);
   const won = close.filter(x => x.titles).sort((a, b) => b.titles - a.titles || b.gp - a.gp);
   return (won[0] || all[0]).num;
@@ -5660,7 +5662,7 @@ function fixRetiredNumbers() {
 function retFixBox() {
   const st = retFixStore(), rows = Object.entries(st.done);
   if (!rows.length) return '';
-  return `<fieldset class="frame"><legend>Retired Numbers Fixed</legend>${infoBtn('retfix', '<p class="small">The game retires the number a player wears the day he retires. The app swaps in the one he wore for the most games with that team, or, when two are close, the one he won a title in.</p>')}<div class="stack">
+  return `<fieldset class="frame"><legend>Retired Numbers Fixed</legend>${infoBtn('retfix', '<p class="small">The game retires the number a player wears the day he retires. The app swaps in his real-life number with that team when there is one; otherwise the one he wore for the most games there, or, when two are close, the one he won a title in.</p>')}<div class="stack">
     ${rows.map(([k, x]) => `<div class="drill-row"><span class="grow small"><b>${esc(x.name)}</b> · ${esc(x.team)}: #${numText(x.to)} <span class="muted">(was #${numText(x.from)})</span></span><button class="btn tiny off" data-act="retFixUndo" data-k="${k}">↺ Undo</button></div>`).join('')}</div></fieldset>`;
 }
 actions.retFixUndo = d => {
