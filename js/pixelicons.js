@@ -4,6 +4,19 @@
 // menus, the rest drawn to match (12×12); the CSS draws it as a mask in the text color, so it follows the button (dim when off, white when on).
 // Emoji without an icon here stay as they are.
 const G = {
+  angry: ['...######...', '..#......#..', '.#.#....#.#.', '#...#..#...#', '#..##..##..#', '#..........#', '#..........#', '#...####...#', '#..#....#..#', '.#........#.', '..#......#..', '...######...'],
+  ice: ['............', '.##########.', '.#........#.', '.#.##.....#.', '.#.#......#.', '.#........#.', '.#........#.', '.#........#.', '.#........#.', '.##########.', '............', '............'],
+  scale: ['.....##.....', '############', '.#...##...#.', '.#...##...#.', '#.#..##..#.#', '#.#..##..#.#', '####.##.####', '.....##.....', '.....##.....', '...######...', '..########..', '............'],
+  robot: ['.....##.....', '.....##.....', '.##########.', '.#........#.', '.#.##..##.#.', '.#.##..##.#.', '.#........#.', '.#..####..#.', '.##########.', '...#....#...', '..###..###..', '............'],
+  bell: ['.....##.....', '....####....', '...######...', '..########..', '..########..', '..########..', '..########..', '.##########.', '############', '............', '.....##.....', '............'],
+  camera: ['............', '...####.....', '############', '#..........#', '#...####...#', '#..#....#..#', '#..#....#..#', '#..#....#..#', '#...####...#', '#..........#', '############', '............'],
+  flask: ['...######...', '....#..#....', '....#..#....', '....#..#....', '...#....#...', '..#......#..', '.#........#.', '#.########.#', '############', '############', '.##########.', '............'],
+  pin: ['...######...', '..########..', '.###....###.', '.###....###.', '.###....###.', '..########..', '...######...', '....####....', '.....##.....', '.....##.....', '.....##.....', '............'],
+  sprout: ['............', '.###....###.', '#####..#####', '######.####.', '.#####.###..', '..####.##...', '......##....', '......##....', '......##....', '......##....', '..########..', '.##########.'],
+  ring: ['....####....', '...#.##.#...', '....####....', '...######...', '..##....##..', '.##......##.', '.#........#.', '.#........#.', '.##......##.', '..##....##..', '...######...', '............'],
+  ticket: ['...######...', '..#......#..', '.#...##...#.', '#....##....#', '#.########.#', '#..######..#', '#...####...#', '#..##..##..#', '#.##....##.#', '.#........#.', '..#......#..', '...######...'],
+  warn: ['.....##.....', '....####....', '....#..#....', '...##..##...', '...#.##.#...', '..##.##.##..', '..#..##..#..', '.##..##..##.', '.#........#.', '##...##...##', '#..........#', '############'],
+  flag: ['#.##########', '#.###..##..#', '#.###..##..#', '#.#..##..###', '#.#..##..###', '#.###..##..#', '#.###..##..#', '#.#..##..###', '#.##########', '#...........', '#...........', '#...........'],
   muscle: ['..................########..', '..................#......#..', '................##........##', '................#..........#', '................#..........#', '................##........##', '..................#......#..', '..................#......#..', '......######......#......#..', '......#....#......#......#..', '....##......##....#......#..', '....#........#....#......#..', '..##..........##..#......#..', '..#............#..#......#..', '##..............##........##', '#..........................#', '#..........................#', '#.........................##', '#........................#..', '#.......................##..', '#......................#....', '#...................####....', '#..................#........', '####################........'],
   deal: ['########....', '#......#....', '#.####.#....', '#......#....', '#.####.#..##', '#......#.###', '#.##...####.', '#..#.#####..', '#..##.###...', '#.....##....', '########....', '............'],
   palm: ['.###....###.', '#####..#####', '#...####...#', '...##..##...', '..##....##..', '.....##.....', '.....##.....', '......##....', '......##....', '......##....', '....######..', '..##########'],
@@ -101,6 +114,7 @@ const MAP = {
   '👕': 'shirt', '🎽': 'jersey', '🏅': 'award', '🎖': 'award', '🎧': 'headset', '📥': 'import', '🏢': 'office',
   '🚫': 'no', '🛡': 'shield', '💙': 'heart', '👑': 'crown', '🙂': 'smile',
   '🌴': 'palm',
+  '⚠': 'warn', '🚨': 'warn', '⚔': 'dagger', '🔪': 'dagger', '🎟': 'ticket', '🌟': 'star', '💫': 'star', '🎉': 'star', '💯': 'star', '💎': 'star', '🪄': 'star', '🙏': 'smile', '📈': 'chart', '📉': 'chart', '📏': 'chart', '📐': 'chart', '🏁': 'flag', '🏳': 'flag', '🤐': 'meh', '❤': 'heart', '💔': 'heart', '💍': 'ring', '🌱': 'sprout', '🐣': 'sprout', '👶': 'sprout', '📍': 'pin', '📌': 'pin', '🏃': 'person', '🧘': 'person', '🧑‍💼': 'person', '👨‍🍳': 'person', '👋': 'thumb', '🙌': 'thumb', '🍽': 'gift', '🍩': 'gift', '🍳': 'gift', '🥤': 'gift', '🍔': 'gift', '🥗': 'gift', '🧈': 'gift', '🎛': 'sliders', '🕹': 'sliders', '🎮': 'sliders', '🧪': 'flask', '🧬': 'flask', '🫡': 'smile', '😂': 'smile', '😄': 'smile', '🕶': 'smile', '📸': 'camera', '🎬': 'camera', '🎞': 'camera', '🔔': 'bell', '📱': 'phone', '🐐': 'crown', '🔱': 'crown', '❌': 'close', '👟': 'jersey', '🧦': 'shirt', '🧊': 'ice', '😤': 'angry', '😡': 'angry', '😒': 'meh', '🙄': 'meh', '😞': 'meh', '🤔': 'meh', '😬': 'meh', '🙉': 'meh', '🤫': 'meh', '🤖': 'robot', '⚖': 'scale', '🧹': 'trash', '🪑': 'office', '🛋': 'house', '🏡': 'house', '🧠': 'books', '🛠': 'hammer', '🏗': 'hammer', '🥇': 'award', '🥈': 'award', '🌎': 'globe', '🗺': 'globe', '🧭': 'globe', '🤲': 'deal', '🫂': 'deal', '🔗': 'deal', '✋': 'no', '🛑': 'no', '🙅': 'no', '🔍': 'search', '🔭': 'search', '☁': 'import', '🦈': 'dagger', '🐍': 'skull', '🚀': 'bolt', '💥': 'bolt', '💼': 'office', '🗂': 'folder', '🛫': 'plane', '🦅': 'plane', '🚗': 'plane', '🏙': 'arena', '🌆': 'arena', '⛰': 'arena', '🥱': 'zzz', '🛌': 'zzz', '💤': 'zzz', '🔓': 'lock', '🎨': 'pen', '🔄': 'undo', '🏝': 'palm', '👨‍👦': 'team', '🪞': 'eye', '👉': 'play', '🎰': 'dice', '🧩': 'office',
   '➕': 'plus', '＋': 'plus', '✕': 'close', '×': 'close', '◀': 'left', '🎱': 'gameball',
 };
 // One SVG per icon (a rect per run of filled pixels), as CSS masks.
@@ -135,20 +149,21 @@ export function pixelize(root) {
     t.parentNode.insertBefore(i, t);
   }
 }
-// Trait areas (chips, the trait bars, the lists of trait changes): every mapped emoji in their text, not just a leading
-// one, so a trait reads the same everywhere.
+// Every mapped emoji in the page's text becomes its icon (dropdown options, form fields and scripts can't hold one,
+// so they keep the emoji).
 const ANY = /(\p{Extended_Pictographic}\uFE0F?(?:\u200D\p{Extended_Pictographic}\uFE0F?)*)/u;
-export function pixelizeTraits(root) {
-  if (!root?.querySelectorAll) return;
-  const SEL = '.style-chip, .trait-row, .trait-txt';
-  const els = root.matches?.(SEL) ? [root, ...root.querySelectorAll(SEL)] : root.querySelectorAll(SEL);
-  for (const el of els) {
-    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), texts = [];
+const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'OPTION', 'SELECT', 'INPUT', 'TITLE']);
+export function pixelizeText(root) {
+  if (!root || root.nodeType !== 1 || SKIP.has(root.tagName)) return;
+  // A button's leading emoji first, as its own icon beside the label (pixelize); then everything else in the text.
+  pixelize(root.closest?.('.btn') || root);
+  for (const el of [root]) {
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => (SKIP.has(n.parentNode?.tagName) || n.parentNode?.closest?.('select') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) }), texts = [];
     for (let n = walk.nextNode(); n; n = walk.nextNode()) if (ANY.test(n.nodeValue)) texts.push(n);
     for (const t of texts) {
       const parts = t.nodeValue.split(ANY);
       if (!parts.some((x, i) => i % 2 && MAP[x.replace(/\uFE0F/g, '')])) continue;
-      const frag = document.createDocumentFragment();
+      const frag = document.createElement('span');
       parts.forEach((x, i) => {
         const name = i % 2 ? MAP[x.replace(/\uFE0F/g, '')] : null;
         if (name) { const ic = document.createElement('i'); ic.className = `px px-${name}`; ic.setAttribute('aria-hidden', 'true'); frag.appendChild(ic); }

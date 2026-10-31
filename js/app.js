@@ -46,7 +46,7 @@ import * as CL from './careerlife.js';
 import * as TK from './talks.js';
 import * as CL2 from './careerlife2.js';
 import * as LU from './lineups.js';
-import { pixelIconCss, pixelize, pixelizeTraits } from './pixelicons.js';
+import { pixelIconCss, pixelize, pixelizeText } from './pixelicons.js';
 import { cutFaces, matchFaces } from './faceimport.js';
 import * as CL3 from './careerlife3.js';
 import * as PO from './playoffs.js';
@@ -60,7 +60,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.260.2';
+const APP_VERSION = '0.261.0';
 const $app = document.getElementById('app');
 // Pixel icons: the emoji that starts a button becomes a white pixel icon, like the game's (Settings → Pixel icons).
 {
@@ -71,7 +71,7 @@ const $app = document.getElementById('app');
     for (const m of ms) {
       const b = m.target.closest?.('.btn');
       if (b) { delete b.dataset.px; pixelize(b); }
-      for (const n of m.addedNodes) if (n.nodeType === 1) { pixelize(n); pixelizeTraits(n); }
+      for (const n of m.addedNodes) if (n.nodeType === 1) { pixelize(n); pixelizeText(n); } else if (n.nodeType === 3 && n.parentNode) pixelizeText(n.parentNode);
     }
   }).observe(document.body, { childList: true, subtree: true });
 }
