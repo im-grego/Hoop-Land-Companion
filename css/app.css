@@ -1640,3 +1640,19 @@ fieldset.frame { position: relative; }
 .btn .px { margin-right: 2px; }
 .btn.small .px, .btn.tiny .px { width: 1em; height: 1em; }
 .style-chip .px, .trait-row .px, .trait-txt .px { margin-right: 4px; }
+
+/* Pixel corners, like the game's boxes: one square "pixel" (--nt) missing from each corner, no rounding. A box with a drop edge
+   under it (buttons) keeps that edge inside the shape; a frame's top border runs through its legend (7px down), and
+   the space above it stays open for the legend and the ? button. */
+:root { --nt: 4px; --lt: 7px;
+  --notch: polygon(var(--nt) 0, calc(100% - var(--nt)) 0, calc(100% - var(--nt)) var(--nt), 100% var(--nt), 100% calc(100% - var(--nt)), calc(100% - var(--nt)) calc(100% - var(--nt)), calc(100% - var(--nt)) 100%, var(--nt) 100%, var(--nt) calc(100% - var(--nt)), 0 calc(100% - var(--nt)), 0 var(--nt), var(--nt) var(--nt));
+  --notch-drop: polygon(var(--nt) 0, calc(100% - var(--nt)) 0, calc(100% - var(--nt)) var(--nt), 100% var(--nt), 100% calc(calc(100% + 4px) - var(--nt)), calc(100% - var(--nt)) calc(calc(100% + 4px) - var(--nt)), calc(100% - var(--nt)) calc(100% + 4px), var(--nt) calc(100% + 4px), var(--nt) calc(calc(100% + 4px) - var(--nt)), 0 calc(calc(100% + 4px) - var(--nt)), 0 var(--nt), var(--nt) var(--nt));
+  --notch-frame: polygon(var(--nt) -40px, calc(100% - var(--nt)) -40px, calc(100% - var(--nt)) var(--lt), calc(100% - var(--nt)) calc(var(--lt) + var(--nt)), 100% calc(var(--lt) + var(--nt)), 100% calc(100% - var(--nt)), calc(100% - var(--nt)) calc(100% - var(--nt)), calc(100% - var(--nt)) 100%, var(--nt) 100%, var(--nt) calc(100% - var(--nt)), 0 calc(100% - var(--nt)), 0 calc(var(--lt) + var(--nt)), var(--nt) calc(var(--lt) + var(--nt)), var(--nt) var(--lt)); }
+.btn, .ver-badge { border-radius: 0; clip-path: var(--notch-drop); }
+.panel, .marquee, .nav-btn, .overlay .box, .drill-row, .field input, .stand-row, .outlook { border-radius: 0; clip-path: var(--notch); }
+.toast { border-radius: 0; clip-path: var(--notch); }
+fieldset.frame { clip-path: var(--notch-frame); }
+.info-i { border-radius: 0; box-shadow: 0 3px 0 var(--btn-shadow); clip-path: polygon(3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% + 3px - 3px), calc(100% - 3px) calc(100% + 3px), 3px calc(100% + 3px), 0 100%, 0 3px); }
+.btn.tiny, .btn.small { --nt: 3px; }
+.cal.now, .clock-card, .mvp-card, .cal-day, .ol-need, .lot-chip { clip-path: var(--notch); }
+.cal-day, .lot-chip, .ol-need { --nt: 2px; }
