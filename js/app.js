@@ -16033,11 +16033,36 @@ actions.waiverSign = d => {
 // last roster spot) play out over three preseason games. Winners get a lift; the bubble loser comes up as the cut.
 function campBattles(t) {
   const O = FA.FA_DEFAULTS, out = [];
-  const top = FA.signedRoster(t).sort((a, b) => shownLevel(b) - shownLevel(a));
-  if (top.length >= 6 && shownLevel(top[4]) - shownLevel(top[5]) <= 4) out.push({ kind: 'start', a: top[4].id, b: top[5].id });
+  // The starting fight: a bench player within 4 levels of a starter at a spot he can play (the closest such pair),
+  // from the save's lineup; without one, the 5th and 6th best players.
+  const signed = FA.signedRoster(t), sl = t.startingLineup || [], byId = id => signed.find(p => p.id === id);
+  const starters = sl.filter(e => e.linePos < 5 && byId(e.pid)), bench = signed.filter(p => !starters.some(e => e.pid === p.id));
+  if (starters.length === 5) {
+    const pairs = starters.flatMap(e => bench.filter(b => LU.inPos(b, e.linePos)).map(b => ({ s: byId(e.pid), b, gap: shownLevel(byId(e.pid)) - shownLevel(b) })))
+      .filter(x => Math.abs(x.gap) <= 4).sort((x, y) => Math.abs(x.gap) - Math.abs(y.gap));
+    if (pairs[0]) out.push({ kind: 'start', a: pairs[0].s.id, b: pairs[0].b.id });
+  } else {
+    const top = [...signed].sort((a, b) => shownLevel(b) - shownLevel(a));
+    if (top.length >= 6 && shownLevel(top[4]) - shownLevel(top[5]) <= 4) out.push({ kind: 'start', a: top[4].id, b: top[5].id });
+  }
   const ranked = cutRank(t), need = Math.max(0, FA.signedRoster(t).length - O.seasonMax);
   if (need && ranked[need]) { const a = ranked[need].p, b = ranked[need - 1].p; if (!out.some(x => [x.a, x.b].includes(a.id) || [x.a, x.b].includes(b.id))) out.push({ kind: 'spot', a: a.id, b: b.id }); }
   return out;
+}
+// The battle's winner moves into the starting five (the save's lineup: entries 0-4 start, entry i at slot i, PG to C).
+// He takes the loser's spot if the loser starts, else the weakest starter's at a spot he can play (no better than
+// him). Returns the player he replaced, true when he was starting already, or null (no fit: set it in the game).
+function campStart(t, w, l) {
+  const sl = t.startingLineup || [], ew = sl.find(e => e.pid === w.id), byId = id => t.roster.find(p => p.id === id);
+  if (!ew) return null;
+  if (ew.linePos < 5) return true;
+  const el = sl.find(e => e.pid === l.id && e.linePos < 5)
+    || sl.filter(e => e.linePos < 5 && byId(e.pid) && LU.inPos(w, e.linePos) && shownLevel(byId(e.pid)) <= shownLevel(w)).sort((a, b) => shownLevel(byId(a.pid)) - shownLevel(byId(b.pid)))[0];
+  if (!el) return null;
+  const out = byId(el.pid);
+  [ew.pid, el.pid] = [el.pid, ew.pid];
+  for (const k of ['linePos', 'minutes', 'teamPos', 'posRnk']) [w[k], out[k]] = [out[k], w[k]];
+  return out.id;
 }
 const campStore = () => (typeof calFlags().preseason === 'object' ? calFlags().preseason : (calFlags().preseason = {}));
 function campPlay(t) {
@@ -16060,7 +16085,7 @@ function campPlay(t) {
     moraleEvent(w, `camp:${L.season.currentYear}`, 4, x.kind === 'start' ? 'won the starting job in camp' : 'made the team in camp');
     if (x.kind === 'start' && !isHumble(l)) moraleEvent(l, `camp:${L.season.currentYear}`, -3, 'lost the camp battle for a starting job');
     if (x.kind === 'spot') { const sel = cutSel(); sel[l.id] = true; delete sel[w.id]; }
-    return { ...x, win: w.id, lose: l.id, wl: line(w, true), ll: line(l, false) };
+    return { ...x, win: w.id, lose: l.id, wl: line(w, true), ll: line(l, false), lineup: x.kind === 'start' ? campStart(t, w, l) : null };
   });
   st[t.id] = { games, battles };
   state.dirty = true;
@@ -16076,7 +16101,7 @@ function campBox(t) {
   const w = st.games.filter(g => g.us > g.them).length;
   return `<fieldset class="frame"><legend>Preseason · ${w}-${st.games.length - w}</legend><div class="stack">
     <p class="note small">${st.games.map(g => `<span class="${g.us > g.them ? 'up' : 'down'}">${g.us > g.them ? 'W' : 'L'} ${g.us}-${g.them}</span> vs ${esc(g.opp)}`).join(' · ')}</p>
-    ${st.battles.map(x => `<p class="note small"><b>${label[x.kind]}</b>: <span class="up">${nm(x.win)}</span> (${x.wl.ppg} ppg) beat out ${nm(x.lose)} (${x.ll.ppg} ppg)${x.kind === 'start' ? '. Set him in your lineup in the game.' : ', now picked to cut.'}</p>`).join('')}
+    ${st.battles.map(x => `<p class="note small"><b>${label[x.kind]}</b>: <span class="up">${nm(x.win)}</span> (${x.wl.ppg} ppg) beat out ${nm(x.lose)} (${x.ll.ppg} ppg)${x.kind === 'start' ? (typeof x.lineup === 'number' ? `. He takes ${nm(x.lineup)}'s spot in the starting five.` : x.lineup === true ? '. He keeps his starting job.' : '. Set him in your lineup in the game.') : ', now picked to cut.'}</p>`).join('')}
   </div></fieldset>`;
 }
 actions.campPlay = d => { const t = league().teams.find(x => x.id === +d.t); if (t) { campPlay(t); render(); } };
