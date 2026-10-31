@@ -1636,7 +1636,7 @@ fieldset.frame { position: relative; }
 .info-head { margin: 0 -18px 4px; padding: 10px 14px; background: var(--marquee); border-bottom: 4px solid var(--panel-edge); font-family: var(--pixel); font-size: 18px; letter-spacing: 3px; text-transform: uppercase; text-align: left; }
 
 /* Pixel icons (js/pixelicons.js): drawn in the text color, so they dim with an "off" button like the label. */
-.px { display: inline-block; width: 1.1em; height: 1.1em; flex: none; background: currentColor; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; vertical-align: -0.17em; }
+.px { display: inline-block; width: 1.1em; height: 1.1em; flex: none; background: currentColor; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-position: center; mask-position: center; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; vertical-align: -0.17em; }
 .btn .px { margin-right: 2px; }
 .btn.small .px, .btn.tiny .px { width: 1em; height: 1em; }
 .style-chip .px, .trait-row .px, .trait-txt .px { margin-right: 4px; }
