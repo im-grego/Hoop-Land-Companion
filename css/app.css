@@ -1639,3 +1639,4 @@ fieldset.frame { position: relative; }
 .px { display: inline-block; width: 1.1em; height: 1.1em; flex: none; background: currentColor; -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; vertical-align: -0.17em; }
 .btn .px { margin-right: 2px; }
 .btn.small .px, .btn.tiny .px { width: 1em; height: 1em; }
+.style-chip .px, .trait-row .px, .trait-txt .px { margin-right: 4px; }

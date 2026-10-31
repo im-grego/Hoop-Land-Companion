@@ -46,7 +46,7 @@ import * as CL from './careerlife.js';
 import * as TK from './talks.js';
 import * as CL2 from './careerlife2.js';
 import * as LU from './lineups.js';
-import { pixelIconCss, pixelize } from './pixelicons.js';
+import { pixelIconCss, pixelize, pixelizeTraits } from './pixelicons.js';
 import * as CL3 from './careerlife3.js';
 import * as PO from './playoffs.js';
 import * as CL4 from './careerlife4.js';
@@ -70,7 +70,7 @@ const $app = document.getElementById('app');
     for (const m of ms) {
       const b = m.target.closest?.('.btn');
       if (b) { delete b.dataset.px; pixelize(b); }
-      for (const n of m.addedNodes) if (n.nodeType === 1) pixelize(n);
+      for (const n of m.addedNodes) if (n.nodeType === 1) { pixelize(n); pixelizeTraits(n); }
     }
   }).observe(document.body, { childList: true, subtree: true });
 }
@@ -14077,8 +14077,8 @@ function traitChangesCard(filter = () => true, title = 'Trait Changes') {
   if (!isComplete() || isCollege()) return '';
   const rows = league().teams.filter(isUserTeam).flatMap(t => t.roster).map(p => ({ p, ds: driftsOf(p).filter(filter) })).filter(x => x.ds.length);
   if (!rows.length) return '';
-  const why = rows.map(({ p, ds }) => `<p class="small"><b>${esc(playerName(p))}</b>: ${ds.map(x => `${esc(driftShort(x))} (${esc(x.why)})`).join('; ')}</p>`).join('');
-  return `<fieldset class="frame"><legend>${title}</legend>${infoBtn(`tc:${title}`, `<p class="small muted">Green is good for the player, red is bad. Ego and Money read the other way: going down is good.</p>${why}`)}<div class="stack">${rows.map(({ p, ds }) => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b></span><span class="small">${ds.map(x => `<span class="${driftGood(x) ? 'up' : 'down'}">${esc(driftShort(x))}</span>`).join(' · ')}</span></div>`).join('')}</div></fieldset>`;
+  const why = rows.map(({ p, ds }) => `<p class="small trait-txt"><b>${esc(playerName(p))}</b>: ${ds.map(x => `${esc(driftShort(x))} (${esc(x.why)})`).join('; ')}</p>`).join('');
+  return `<fieldset class="frame"><legend>${title}</legend>${infoBtn(`tc:${title}`, `<p class="small muted">Green is good for the player, red is bad. Ego and Money read the other way: going down is good.</p>${why}`)}<div class="stack">${rows.map(({ p, ds }) => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b></span><span class="small">${ds.map(x => `<span class="trait-txt ${driftGood(x) ? 'up' : 'down'}">${esc(driftShort(x))}</span>`).join(' · ')}</span></div>`).join('')}</div></fieldset>`;
 }
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
@@ -14649,7 +14649,7 @@ function traitsBox(p, prospect = false) {
   return `<fieldset class="frame"><legend>Traits</legend>
     ${tags.length ? `<div class="style-chips one-row">${tags.map(x => `<span class="style-chip" title="${esc(x.label)}">${x.icon} ${esc(x.label)}</span>`).join('')}</div>` : ''}
     <p class="note small">${esc(personality(p, known.map(t => t.k)))}</p>
-    ${moved.length ? `<p class="note small">This offseason: ${moved.map(x => `<span class="${x.d > 0 ? 'up' : 'down'}">${esc(driftText(x))}</span>`).join(' · ')}</p>` : ''}
+    ${moved.length ? `<p class="note small">This offseason: ${moved.map(x => `<span class="trait-txt ${x.d > 0 ? 'up' : 'down'}">${esc(driftText(x))}</span>`).join(' · ')}</p>` : ''}
     <details class="tend-wrap" data-anchor="traits-all" data-keep="traits-all" ${state.keepOpen?.['traits-all'] ? 'open' : ''}><summary class="small">All traits</summary>${TRAIT_GROUPS.map(([g, ks]) => `<h4 class="ov-h">${g}</h4><div class="stack">${ks.map(k => {
     const t = TRAITS.find(x => x.k === k), v = p.traits[t.k] || 0;
     if (!seen(t.k)) return `<div class="trait-row"><span class="small">${t.icon} ${t.label}</span><span class="tbar3"></span><span class="small muted">?</span><span></span></div>`;
