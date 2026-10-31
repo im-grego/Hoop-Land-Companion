@@ -60,7 +60,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.262.0';
+const APP_VERSION = '0.263.0';
 const $app = document.getElementById('app');
 // Pixel icons: the emoji that starts a button becomes a white pixel icon, like the game's (Settings → Pixel icons).
 {
@@ -4980,7 +4980,7 @@ screens.offseason = (args = {}) => {
             <button class="btn big focus" data-act="runAuto">▶ Run Off-season Progression</button>`}
         </div>
       </fieldset>
-      ${isCollege() ? '' : influenceBox(auto)}${auto && !isCollege() ? traitChangesCard(() => true, 'Trait Changes This Summer') : ''}`],
+      ${isCollege() ? '' : influenceBox(auto)}${auto && !isCollege() ? traitChangesCard(() => true, 'Summer Trait Changes') : ''}`],
         ['players', 'Players', `      ${isCollege() ? '' : mentorCard()}
       ${strengthCard()}
       ${isCollege() ? '' : `<fieldset class="frame"><legend>Trainer</legend><div class="stack">
@@ -11898,14 +11898,11 @@ screens.liveTrade = (args) => {
           <div class="stack">${select('b', bId)}${capRoomLine(B, playersOf(sentB), playersOf(sentA))}${sendingLine(sentB, vB)}</div>
         </div>
         ${tradeBar(A, B, vA, vB)}
+        <div class="seg trade-tabs">${[['them', B, sentB], ['you', A, sentA]].map(([k, t, sent]) => `<button class="btn small ${step === k ? 'on focus' : 'off'}" data-act="liveStep" data-s="${k}">${esc(t.shortName)} Assets${sent.length ? ` · ${sent.length}` : ''}</button>`).join('')}</div>
       </div>
       <div class="trade-step">
-        <div class="trade-step-head"><b>${esc(teamFull(T))} Assets</b><span class="small muted">${step === 'them' ? 'Step 1 of 2: what you want' : 'Step 2 of 2: what you give'}</span></div>
+        <p class="note small muted" style="margin:4px 0 6px">${step === 'them' ? 'What you want from them' : 'What you give'}</p>
         <div class="list trade-list">${assetList}</div>
-        <div class="grid2" style="margin-top:8px">
-          ${step === 'them' ? `<span></span><button class="btn focus" data-act="liveStep" data-s="you">Next: ${esc(A.shortName)} Assets ▶</button>`
-            : `<button class="btn off" data-act="liveStep" data-s="them">◀ ${esc(B.shortName)} Assets</button><span></span>`}
-        </div>
       </div>
       ${sw ? `<fieldset class="frame"><legend>Swap</legend><p class="note small muted">Instead of trading the two ${sw.xa.pick.yr} R${sw.xa.pick.rd} picks, each team keeps its own and the order decides who gets which.</p>
         <div class="seg">${[[null, 'No swap'], ['best', `${esc(A.shortName)} get best`], ['worst', `${esc(A.shortName)} get worst`]].map(([v, t]) => `<button class="btn ${(mode || null) === v ? 'on focus' : 'off'}" data-act="liveSwap" data-v="${v || ''}">${t}</button>`).join('')}</div></fieldset>` : ''}
@@ -14065,20 +14062,20 @@ function seasonDrift() {
       const h = injuryRisk(p, ly, state.params);
       if (inj >= 50 || (h?.cls === 'structural' && inj >= 15)) drift(p, 'season:dur', 'durability', -2, 'a major injury', false);
       else if (inj >= 25) drift(p, 'season:dur', 'durability', -1, 'a long injury', false);
-      else if (gp >= 78 && !inj && p.age <= 31 && tr(p, 'durability') <= 15) drift(p, 'season:dur', 'durability', 1, 'a full, healthy season', false);
-      else if (p.age >= 33 && tr(p, 'durability') > 4) drift(p, 'season:dur', 'durability', -1, 'the years catching up', false);
+      else if (gp >= 78 && !inj && p.age <= 31 && tr(p, 'durability') <= 15) drift(p, 'season:dur', 'durability', 1, 'a healthy season', false);
+      else if (p.age >= 33 && tr(p, 'durability') > 4) drift(p, 'season:dur', 'durability', -1, 'age', false);
       let run = 0;
       for (let y = ly; ; y--) { const r = (p.stats || []).find(x => x.league === 0 && x.yr === y)?.season; if (!r?.length || r[r.length - 1].tid !== t.id) break; run++; }
       const l = seasonLine(p, 0, ly), prev = seasonLine(p, 0, ly - 1);
-      if (p === best && run >= 3) drift(p, 'season:room', 'lockerRoom', 1, `the face of the team for ${run} years`, false);
+      if (p === best && run >= 3) drift(p, 'season:room', 'lockerRoom', 1, `face of the team, ${run} yrs`, false);
       // Losing a real role sours a player with some ego; a humble or modest one takes it in stride.
-      else if (l && prev && prev.gp >= 20 && prev.mpg >= 20 && prev.mpg - l.mpg >= 8 && egoVal(p) >= 10) drift(p, 'season:room', 'lockerRoom', -1, 'losing his role', false);
+      else if (l && prev && prev.gp >= 20 && prev.mpg >= 20 && prev.mpg - l.mpg >= 8 && egoVal(p) >= 10) drift(p, 'season:room', 'lockerRoom', -1, 'lost his role', false);
       const up = wonLast(p, 2, ly) ? [2, 'won MVP'] : wonLast(p, 13, ly) ? [1, 'made All-NBA'] : wonLast(p, 101, ly) ? [1, 'made the All-Star team'] : null;
       if (up) drift(p, 'season:ego+', EGO_KEY, up[0], up[1], false);
       // A big ego around leaders, or under a coach who commands the room, comes down a notch.
-      if (egoVal(p) >= 13 && (leaders.filter(x => x !== p).length >= 2 || steady)) drift(p, 'season:ego-', EGO_KEY, -1, leaders.filter(x => x !== p).length >= 2 ? 'the leaders around him keep him grounded' : `${coach.ln} keeps him grounded`, false);
+      if (egoVal(p) >= 13 && (leaders.filter(x => x !== p).length >= 2 || steady)) drift(p, 'season:ego-', EGO_KEY, -1, leaders.filter(x => x !== p).length >= 2 ? 'grounded by the leaders' : `grounded by ${coach.ln}`, false);
       // Age humbles everyone: once the decline sets in, the ego comes down with it.
-      else if (egoVal(p) >= 11 && declining(p) && !up) drift(p, 'season:ego-', EGO_KEY, p.age >= 36 ? -2 : -1, 'the years humble him', false);
+      else if (egoVal(p) >= 11 && declining(p) && !up) drift(p, 'season:ego-', EGO_KEY, p.age >= 36 ? -2 : -1, 'humbled by age', false);
     }
   }
   saveDrift(); saveTraitStore();
@@ -14091,8 +14088,8 @@ function traitChangesCard(filter = () => true, title = 'Trait Changes') {
   if (!isComplete() || isCollege()) return '';
   const rows = league().teams.filter(isUserTeam).flatMap(t => t.roster).map(p => ({ p, ds: driftsOf(p).filter(filter) })).filter(x => x.ds.length);
   if (!rows.length) return '';
-  const why = rows.map(({ p, ds }) => `<p class="small trait-txt"><b>${esc(playerName(p))}</b>: ${ds.map(x => `${esc(driftShort(x))} (${esc(x.why)})`).join('; ')}</p>`).join('');
-  return `<fieldset class="frame"><legend>${title}</legend>${infoBtn(`tc:${title}`, `<p class="small muted">Green is good for the player, red is bad. Ego and Money read the other way: going down is good.</p>${why}`)}<div class="stack">${rows.map(({ p, ds }) => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b></span><span class="small">${ds.map(x => `<span class="trait-txt ${driftGood(x) ? 'up' : 'down'}">${esc(driftShort(x))}</span>`).join(' · ')}</span></div>`).join('')}</div></fieldset>`;
+  const why = rows.map(({ p, ds }) => `<p class="small trait-txt"><b>${esc(playerName(p))}</b>: ${ds.map(x => `${esc(driftShort(x))}, ${esc(x.why)}`).join('; ')}</p>`).join('');
+  return `<fieldset class="frame"><legend>${title}</legend>${infoBtn(`tc:${title}`, `<p class="small muted">Green helps, red hurts. For Ego and Money, down is good.</p>${why}`)}<div class="stack">${rows.map(({ p, ds }) => `<div class="drill-row tap one-line" data-act="openPlayer" data-id="${p.id}"><span class="grow"><b>${esc(playerName(p))}</b></span><span class="small">${ds.map(x => `<span class="trait-txt ${driftGood(x) ? 'up' : 'down'}">${esc(driftShort(x))}</span>`).join(' · ')}</span></div>`).join('')}</div></fieldset>`;
 }
 // A change of situation (a trade, a new deal, a bigger role) lifts a player's
 // mood, a lot more when he was unhappy; a smaller role costs some. Each kind
@@ -15397,7 +15394,7 @@ screens.review = () => {
         <p class="note small" style="margin-top:8px">${r.pro ? `Division ${wl(s.div)}` : `Conference ${wl(s.conf)}`} · Home ${wl(s.home)} · Road ${wl(s.away)}${r.pro ? '' : ` · vs Top 25 ${wl(s.top25)}`}</p>
       </fieldset>` : ''}
       <fieldset class="frame"><legend>Team Leaders</legend><div class="stack">${r.leaders.map(x => pRow(x.p, `${esc(x.label)}<br><b>${f1(x.v)}</b>`)).join('') || '<p class="note small muted">No stats.</p>'}</div></fieldset>
-      ${r.pro ? traitChangesCard(x => x.src.startsWith('season:'), 'What Changed Last Season') : ''}${r.pro ? retireNote() : ''}${r.pro && alphaClash(t) ? `<p class="note small gold">${esc(alphaClash(t))}</p>` : ''}
+      ${r.pro ? traitChangesCard(x => x.src.startsWith('season:'), 'Trait Changes') : ''}${r.pro ? retireNote() : ''}${r.pro && alphaClash(t) ? `<p class="note small gold">${esc(alphaClash(t))}</p>` : ''}
       ${r.mine.length ? `<fieldset class="frame"><legend>Your Awards</legend><div class="stack">${r.mine.map(w => awRow(`🏅 ${w.name}${w.team != null ? ` (${['1st', '2nd', '3rd'][w.team] || ''} team)` : ''}`, w.p)).join('')}</div></fieldset>` : ''}`],
         ['league', r.pro ? 'League' : 'National', `      <fieldset class="frame"><legend>${r.pro ? 'League' : 'National'} Picture</legend>
         ${r.champ ? `<div class="drill-row"><span class="grow">${logoImg(r.champ)} <b>${esc(r.champ.city)} ${esc(r.champ.name)}</b><br><span class="small muted">${r.pro ? 'Champions' : 'National champions'}${r.runnerUp ? `, over ${esc(r.runnerUp.city)}${r.finalsScore ? ` ${r.finalsScore}` : ''}` : ''}</span></span><span>🏆</span></div>` : ''}

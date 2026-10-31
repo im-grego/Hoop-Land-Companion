@@ -1656,3 +1656,15 @@ fieldset.frame { clip-path: var(--notch-frame); }
 .btn.tiny, .btn.small { --nt: 3px; }
 .cal.now, .clock-card, .mvp-card, .cal-day, .ol-need, .lot-chip { clip-path: var(--notch); }
 .cal-day, .lot-chip, .ol-need { --nt: 2px; }
+/* The asset switch rides in the pinned trade header: their assets / yours, always one tap away. */
+.trade-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 2px; }
+.trade-tabs .btn { min-height: 38px; }
+/* Icons in running text: centered on the line, a little air either side (an emoji often had no space after it). */
+.px { vertical-align: -0.2em; }
+span > .px, p > .px, .note .px, .small .px, legend .px { margin: 0 0.22em 0 0.08em; }
+/* Buttons with more words: the label wraps inside the button, balanced over its lines, and never pushes past it. */
+.btn { min-width: 0; line-height: 1.2; text-wrap: balance; overflow-wrap: anywhere; }
+.seg > .btn, .grid2 > .btn, .grid3 > .btn, .opt-btns > .btn, .xbtns > .btn { min-width: 0; }
+.btn.small, .btn.tiny { line-height: 1.15; }
+/* Two answers side by side split the row evenly. */
+.opt-btns { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
