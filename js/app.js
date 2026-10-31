@@ -1323,9 +1323,11 @@ const CALENDAR = [
     done: () => calFlags().office },
   { key: 'review', date: 'May 2', title: 'Season in Review', blurb: 'How your season ended, the league picture, your team leaders and the awards.',
     done: () => !!calFlags().review || phaseRank(league().season) >= 2 },
-  { key: 'hof', date: 'May 3', title: 'Hall of Fame Class', blurb: 'The newest inductees, the teams they made their names with, and who\'s on next year\'s ballot.',
+  { key: 'owner', date: 'May 3', title: 'Owner & Exit Meetings', blurb: 'The owner settles last season\'s goal and sets the next one; your key players say what they want before the summer.',
+    done: () => !!calFlags().owner || phaseRank(league().season) >= 2 },
+  { key: 'hof', date: 'May 4', title: 'Hall of Fame Class', blurb: 'The newest inductees, the teams they made their names with, and who\'s on next year\'s ballot.',
     done: () => !!calFlags().hof || phaseRank(league().season) >= 2 || !hofClass(league()).length },
-  { key: 'overview', date: 'May 4', title: 'Offseason Overview', blurb: 'Where you stand: the books, real roster needs, your draft position and the league rumor mill.',
+  { key: 'overview', date: 'May 5', title: 'Offseason Overview', blurb: 'Where you stand: the books, real roster needs, your draft position and the league rumor mill.',
     done: () => !!calFlags().overview || phaseRank(league().season) >= 2 },
   { key: 'lottery', date: 'May 10', title: 'Draft Lottery', blurb: 'Watch the ping-pong balls decide the fate of your franchise.',
     done: () => phaseRank(league().season) >= 2 },
@@ -1349,10 +1351,14 @@ const CALENDAR = [
     done: () => faDone(2) },
   { key: 'fa3', date: 'Jul 20', title: 'Free Agency · Week 3', blurb: 'Last call: asking prices drop, and anyone left unsigned leaves their old team.',
     done: () => faDone(3) },
+  { key: 'medical', date: 'Sep 14', title: 'Medical & Positions', blurb: 'Surgery or rehab for the injured, and any position changes, before camp starts.',
+    done: () => !!calFlags().medical || !!calFlags().dev },
   { key: 'dev', date: 'Sep 21', title: 'Training Camp', blurb: 'Mentorship, off-season progression and a check-in with the trainer.',
     done: () => calFlags().dev },
   { key: 'media', date: 'Sep 28', title: 'Media Day', blurb: 'Jersey numbers, the season preview\'s top 10 storylines and the GM Survey: every GM in the league weighs in.',
     done: () => calFlags().media },
+  { key: 'exhib', date: 'Oct 8', title: 'Preseason', blurb: 'Three exhibition games settle the camp battles; stash a rookie overseas or bring one home.',
+    done: () => !!calFlags().exhib || !!calFlags().cuts },
   { key: 'cuts', date: 'Oct 15', title: 'Roster Finalization', blurb: `Last call for one-year camp deals, then final cuts: every team gets down to ${FA.FA_DEFAULTS.seasonMax} before the season.`,
     done: () => !!calFlags().cuts },
   { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
@@ -1624,7 +1630,7 @@ const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.ti
 // Franchise saves (one team, the game's own mode 0) skip Front Office: the
 // team is the one the save is built around, like college.
 const isFranchise = () => { const L = league(); return L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId); };
-const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR.filter(st => (st.key !== 'office' || !(isFranchise() || CAR.isCareer(league()))) && (st.key !== 'latefa' || isComplete())));   // a career save runs no team
+const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR.filter(st => (st.key !== 'office' || !(isFranchise() || CAR.isCareer(league()))) && (st.key !== 'latefa' || isComplete()) && (!['owner', 'medical', 'exhib'].includes(st.key) || !CAR.isCareer(league()))));   // a career save runs no team
 const currentStep = () => activeCal().find(st => !st.done());
 const isStep = key => currentStep()?.key === key;
 
@@ -1703,6 +1709,9 @@ function stepActions(key) {
     case 'seniors': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="seniors">🎓 Senior Send-off</button><button class="btn" data-act="calDone" data-k="seniors">✅ Wrap Up</button></div>`;
     case 'departures': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="departures">🎓 Draft Departures</button><button class="btn" data-act="calDone" data-k="departures">✅ Wrap Up</button></div>`;
     case 'review': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="review">📜 Begin</button><button class="btn" data-act="calDone" data-k="review">⏭ Skip</button></div>`;
+    case 'owner': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="ownerday">🤝 Begin</button><button class="btn" data-act="calDone" data-k="owner">⏭ Skip</button></div>`;
+    case 'medical': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="medical">🩺 Begin</button><button class="btn" data-act="calDone" data-k="medical">⏭ Skip</button></div>`;
+    case 'exhib': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="exhib">🏀 Begin</button><button class="btn" data-act="calDone" data-k="exhib">⏭ Skip</button></div>`;
     case 'hof': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="hofClass">🏛️ Ceremony</button><button class="btn" data-act="calDone" data-k="hof">⏭ Skip</button></div>`;
     case 'office': return `<p class="note small">Your teams: <b>${esc(L.teams.filter(isUserTeam).map(t => `${t.city} ${t.name}`.trim()).join(', ') || 'none yet')}</b></p>
       <div class="grid2"><button class="btn" data-act="nav" data-to="teams">👥 Select Teams</button><button class="btn focus" data-act="calDone" data-k="office" ${L.teams.some(isUserTeam) ? '' : 'disabled'}>✅ Confirm</button></div>`;
@@ -1729,7 +1738,7 @@ function stepActions(key) {
       // One button a week: it opens free agency or starts the week as needed and goes straight to the market.
       return `<button class="btn big focus" data-act="faWeek">✍️ ${s.phase === 5 ? 'Open Free Agency' : `Week ${day} Market`}</button>`;
     }
-    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}${shiftOpen() && league().teams.filter(isUserTeam).some(t => medCases(t).some(x => !medStore()[x.p.id])) ? `<button class="btn" data-act="nav" data-to="coaching" style="margin-bottom:8px">🩺 Medical Decisions · ${league().teams.filter(isUserTeam).reduce((a, t) => a + medCases(t).filter(x => !medStore()[x.p.id]).length, 0)} to make</button>` : ''}${shiftOpen() ? `<button class="btn" data-act="nav" data-to="coaching" style="margin-bottom:8px">🔁 Position Changes${(() => { const n = league().teams.filter(isUserTeam).reduce((a, t) => a + shiftIdeas(league(), t).slice(0, 3).length, 0); return n ? ` · ${n} suggested` : ''; })()}</button>` : ''}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
+    case 'dev': return `${isCollege() ? '' : '<button class="btn" data-act="nav" data-to="staff" style="margin-bottom:8px">🧑‍🏫 Staff &amp; Scheme first</button>'}<button class="btn big focus" data-act="devBegin">🏋️ ${state.auto[state.leagueIdx] ? 'Training Camp' : 'Begin Training Camp'}</button>`;
     case 'media': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="storylines">🎤 Media Day</button><button class="btn focus" data-act="nav" data-to="survey">📋 GM Survey</button></div>
       <button class="btn small off" data-act="mediaDone" style="margin-top:8px">✅ Wrap Up</button>`;
     case 'cuts': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Camp Deals</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>
@@ -1741,7 +1750,7 @@ function stepActions(key) {
 
 // ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
 // finished and passed dates crossed off, the current topic on top.
-const CAL_EMOJI = { meeting: '🗣️', office: '🏢', review: '📜', hof: '🏛️', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+const CAL_EMOJI = { owner: '🤝', medical: '🩺', exhib: '🏀', meeting: '🗣️', office: '🏢', review: '📜', hof: '🏛️', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -2006,7 +2015,7 @@ actions.calDev = () => { ensureMeetings(); calFlags().dev = true; applySchemeEvo
 
 // Only the current step's screens open; anything else goes back to the calendar.
 const STEP_SCREENS = {
-  hof: ['hofClass', 'player'],
+  hof: ['hofClass', 'player'], owner: ['ownerday', 'player'], medical: ['medical', 'player'], exhib: ['exhib', 'player', 'latefa', 'liveTrade'],
   office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade', 'mock'], options: ['options', 'extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
   meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
@@ -15287,7 +15296,7 @@ screens.review = () => {
         <p class="note small" style="padding:4px 10px 10px">${esc(historyHeadline(t, r) || reviewHeadline(r, t))}</p>
       </div>
       ${uiTabs('review', [
-        ['mine', 'Your Season', `      ${L.teams.filter(isUserTeam).map(x => ownerMeetingBox(x) + exitInterviewBox(x)).join('')}${s ? `<fieldset class="frame"><legend>The Season</legend>
+        ['mine', 'Your Season', `      ${s ? `<fieldset class="frame"><legend>The Season</legend>
         <div class="stat-grid">
           <div class="tap" data-act="teamStats" data-k="ppg"><b>${f1(s.ppg)}</b><span>PPG</span>${rk('ppg')}</div><div class="tap" data-act="teamStats" data-k="opp"><b>${f1(s.opp)}</b><span>Opp PPG</span>${rk('opp')}</div><div class="tap" data-act="teamStats" data-k="margin"><b class="${s.ppg >= s.opp ? 'up' : 'down'}">${s.ppg >= s.opp ? '+' : ''}${f1(s.ppg - s.opp)}</b><span>Margin</span>${rk('margin')}</div>
           <div class="tap" data-act="teamStats" data-k="fg"><b>${f1(s.fg)}%</b><span>FG</span>${rk('fg')}</div><div class="tap" data-act="teamStats" data-k="tp"><b>${f1(s.tp)}%</b><span>3PT</span>${rk('tp')}</div><div class="tap" data-act="teamStats" data-k="ft"><b>${f1(s.ft)}%</b><span>FT</span>${rk('ft')}</div>
@@ -16001,7 +16010,7 @@ screens.cuts = () => {
     body: `${careerTeamNow() ? viewOnlyNote() : ''}${myTeam() && alphaClash(myTeam()) ? `<p class="note small gold">${esc(alphaClash(myTeam()))}</p>` : ''}<p class="note small">Teams could carry up to ${O.rosterMax} through the summer. Opening night rosters max out at ${O.seasonMax}; cut players go to free agency.</p>
       ${uiTabs('cuts', [
         ['mine', 'Your Cuts', `      ${requestCard()}
-      ${mine.map(t => campBox(t) + stashBox(t)).join('')}${myCards}
+      ${myCards}
       ${done ? waiverBox() : ''}`, mine.some(t => cutsShort(t, sel) > 0)],
         ...(done ? [['league', 'Around the League', `      <fieldset class="frame"><legend>Around the League</legend>${done && log ? `<div class="stack">${log.list.map(x => `<p class="note small"><b>${esc(x.team)}</b>${x.names.length ? ` cut ${esc(x.names.join(', '))}` : ''}${x.bought?.length ? `${x.names.length ? '; ' : ' '}bought out ${esc(x.bought.join(', '))}` : ''}</p>`).join('') || '<p class="note small muted">No cuts needed.</p>'}${(calFlags().waiverLog || []).length ? `<p class="note small"><b>Off the waiver wire</b> ${esc(calFlags().waiverLog.map(x => `${x.team} signed ${x.name} (Lv ${x.lv})`).join(' · '))}</p>` : ''}</div>`
         : `<p class="note small">${over.length ? `${over.length} team${over.length > 1 ? 's' : ''} over ${O.seasonMax}: ${over.map(t => `${esc(t.shortName)} (${FA.signedRoster(t).length})`).join(', ')}. They cut their lowest-rated players.` : 'Every CPU team is at ' + O.seasonMax + ' or below.'}</p>`}</fieldset>`]] : []),
@@ -16183,6 +16192,24 @@ actions.stashDrop = async d => {
   render();
   toast(`${playerName(r.p)} is a free agent`);
 };
+// The calendar days for the newer offseason pieces: each gathers its cards and a wrap-up.
+const myTeamsNow = () => league().teams.filter(isUserTeam);
+screens.ownerday = () => layout({
+  title: 'Owner & Exit Meetings',
+  body: myTeamsNow().map(t => ownerMeetingBox(t) + exitInterviewBox(t)).join('') || '<p class="note">Pick your team first.</p>',
+  action: isStep('owner') ? { act: 'stepWrap', k: 'owner', label: 'Wrap Up the Meetings' } : null,
+});
+screens.medical = () => layout({
+  title: 'Medical & Positions',
+  body: `${medBox()}${posShiftBox()}` || '<p class="note">Nobody needs a medical call, and no position changes are suggested.</p>',
+  action: isStep('medical') ? { act: 'stepWrap', k: 'medical', label: 'On to Training Camp' } : null,
+});
+screens.exhib = () => layout({
+  title: 'Preseason',
+  body: myTeamsNow().map(t => campBox(t) + stashBox(t)).join('') || '<p class="note">No camp battles or rookies to stash.</p>',
+  action: isStep('exhib') ? { act: 'stepWrap', k: 'exhib', label: 'On to Final Cuts' } : null,
+});
+actions.stepWrap = d => { calFlags()[d.k] = true; state.undo = null; goHome(); nextUp(); };
 // Cuts still to pick (only as many as there are cuttable players).
 const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
 actions.goHomeCuts = () => goHome();
