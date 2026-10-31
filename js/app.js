@@ -6298,6 +6298,7 @@ screens.lineup = (args = {}) => {
       <div class="drill-row"><span class="grow small">Players in the rotation</span><span class="trait-ctl"><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.max(7, size - 1)}">−</button><b class="small" style="min-width:2em;text-align:center">${size}</b><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.min(12, size + 1)}">+</button></span></div>
       <fieldset class="frame"><legend>Rotation · ${total} of ${5 * game} minutes</legend>${minLegend()}<div class="stack">${plan.rows.map(row).join('')}</div>
         <p class="note small muted">Minutes follow stars (on a 48-minute game): 5★ 35–38, 4.5★ 32–35, 4★ 30–32, 3.5★ 25–30; good benches eat into them. 🌱 Prospects (24 or younger, 3★ or lower, 4★+ potential) get 22–28 on a developing team, or a good one that isn't deep.</p>
+        ${isComplete() ? '<p class="note small muted">When you set it on the rotation day, minutes move morale: a 3.5★+ player more than 4 minutes short of his range gets unhappy, a prospect playing 22+ gets happier, and a kept promise lifts him more.</p>' : ''}
         <p class="note small muted">Bars are minutes out of a full ${game}; the % is his share of the game. Nobody plays out of position unless the roster has no one within 14 levels of the rotation's worst player who can play the spot.</p>
         ${plan.short.length ? `<p class="note small down">Short at ${plan.short.map(x => `${x.slot} (${x.v})`).join(', ')}: add a player or minutes.</p>` : ''}</fieldset>
       <div class="grid2"><button class="btn off" data-act="luSet" data-k="over" data-v="">↩ Clear hand edits</button><button class="btn focus" data-act="luApply">✅ Set this lineup</button></div>
@@ -6328,7 +6329,12 @@ actions.luApply = async () => {
   state.dirty = true;
   toast('🔁 Lineup set', `${t.shortName}: ${plan.rot.length}-man rotation, ${LU.MODES[a.mode || lineupMode(t)].label.toLowerCase()}.`);
   // On the rotation day, setting your (last) team's lineup finishes the step.
-  if (isStep('rotation')) { (calFlags().rotSet ||= []).push(t.id); if (league().teams.filter(isUserTeam).every(x => calFlags().rotSet.includes(x.id))) { calFlags().rotation = true; goHome(); nextUp(); return; } }
+  if (isStep('rotation')) {
+    (calFlags().rotSet ||= []).push(t.id);
+    const mood = rotationMorale(t);
+    if (mood.length) toast('🔁 Minutes and morale', `${t.shortName}: ${mood.join(', ')}`, 5000);
+    if (league().teams.filter(isUserTeam).every(x => calFlags().rotSet.includes(x.id))) { calFlags().rotation = true; goHome(); nextUp(); return; }
+  }
   render();
 };
 
@@ -16253,12 +16259,32 @@ screens.exhib = () => layout({
   body: myTeamsNow().map(t => campBox(t) + stashBox(t)).join('') || '<p class="note">No camp battles or rookies to stash.</p>',
   action: isStep('exhib') ? { act: 'stepWrap', k: 'exhib', label: 'On to Final Cuts' } : null,
 });
+// Opening-night minutes and morale (Complete rules, once a season a team): a 3.5★+ player more than 4 minutes under
+// his range is unhappy about it, a prospect playing real minutes is happy, and a kept promise lifts a little more.
+function rotationMorale(t) {
+  if (!isComplete() || isCollege()) return [];
+  const done = (calFlags().rotMorale ||= {});
+  if (done[t.id]) return [];
+  done[t.id] = true;
+  const game = gameMinutes(), k = game / 48, pr = promisedMinutes(t), yr = league().season.currentYear, out = [];
+  for (const e of t.startingLineup || []) {
+    const p = t.roster.find(q => q.id === e.pid); if (!p || p.status !== FA.STATUS_SIGNED) continue;
+    const m = e.minutes?.[0] || 0, rg = LU.STAR_MINUTES[LU.starsOf(p)];
+    let n = 0, why = '';
+    if (rg && m < Math.round(rg[0] * k) - 4) { n = -4; why = 'fewer minutes than he expected'; }
+    else if (LU.isProspect(p) && m >= Math.round(22 * k)) { n = 3; why = 'real minutes to develop'; }
+    if (pr[p.id] && m >= Math.round((pr[p.id].min || 0) * k)) { n += 2; why = why ? `${why}, and the promise kept` : 'the promised role'; }
+    if (n && moraleEvent(p, `mins:${yr}`, n, why)) out.push(`${p.ln || playerName(p)} ${n > 0 ? '+' : ''}${n}`);
+  }
+  return out;
+}
 // The rotation day's one-tap option: every team you run gets the suggested rotation.
 actions.rotSuggest = () => {
   const mine = league().teams.filter(isUserTeam);
   for (const t of mine) LU.applyLineup(t, defaultPlan(t));
+  const mood = mine.flatMap(rotationMorale);
   calFlags().rotation = true; state.dirty = true; render();
-  toast('🔁 Rotations set', mine.map(t => t.shortName).join(', '));
+  toast('🔁 Rotations set', `${mine.map(t => t.shortName).join(', ')}${mood.length ? ` · morale: ${mood.join(', ')}` : ''}`, 5000);
 };
 actions.stepWrap = d => { calFlags()[d.k] = true; state.undo = null; goHome(); nextUp(); };
 // Cuts still to pick (only as many as there are cuttable players).
