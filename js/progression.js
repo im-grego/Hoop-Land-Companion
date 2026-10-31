@@ -12,6 +12,7 @@ export const AWARD_CATEGORIES = [0, 1, 2, 3];
 
 export const DEFAULT_PARAMS = {
   seed: 2027,
+  pixelIcons: true,   // app look: white pixel icons on buttons (false: emoji)
   // Upgrade points by age band: [maxAge, minPts, maxPts]. Older players get none.
   ageBands: [
     [20, 4, 6],

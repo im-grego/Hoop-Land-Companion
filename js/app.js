@@ -46,6 +46,7 @@ import * as CL from './careerlife.js';
 import * as TK from './talks.js';
 import * as CL2 from './careerlife2.js';
 import * as LU from './lineups.js';
+import { pixelIconCss, pixelize } from './pixelicons.js';
 import * as CL3 from './careerlife3.js';
 import * as PO from './playoffs.js';
 import * as CL4 from './careerlife4.js';
@@ -60,6 +61,19 @@ import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, d
 
 const APP_VERSION = '0.253.0';
 const $app = document.getElementById('app');
+// Pixel icons: the emoji that starts a button becomes a white pixel icon, like the game's (Settings → Pixel icons).
+{
+  const st = document.createElement('style'); st.textContent = pixelIconCss(); document.head.appendChild(st);
+  const on = () => document.documentElement.dataset.px !== 'off';
+  new MutationObserver(ms => {
+    if (!on()) return;
+    for (const m of ms) {
+      const b = m.target.closest?.('.btn');
+      if (b) { delete b.dataset.px; pixelize(b); }
+      for (const n of m.addedNodes) if (n.nodeType === 1) pixelize(n);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
 
 // ---------------------------------------------------------------------------
 // State
@@ -462,6 +476,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
+  document.documentElement.dataset.px = state.params.pixelIcons === false ? 'off' : 'on';
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); syncTpes(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); if (state.retFixed !== saveTag()) { state.retFixed = saveTag(); fixRetiredNumbers(); } glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
@@ -8712,7 +8727,7 @@ const F_INJ = ['injuryMinGames', 'injuryPotPerGame', 'injuryPotMax', 'injuryLowe
 const F_INJC = ['naggingRiskMult', 'naggingPointsMult', 'structuralRiskMult', 'structuralLongevityCut'];
 const F_MIN = ['starterMpg', 'benchMpg', 'starterMult', 'benchMult'];
 const TAB_KEYS = {
-  basics: ['capSystem', 'commissioner', 'tradeValues'],
+  basics: ['capSystem', 'commissioner', 'tradeValues', 'pixelIcons'],
   ai: ['liveCpuTradeChance', 'cpuCoachChanges', 'redoOptions', 'faClearCpuOffers', 'spendCpuPoints'],
   draft: ['scoutVariance', 'workoutSlots', 'readiness', 'rookieBands', 'rookieIncludeUndrafted', 'recoveryBands'],
   nba: ['startYear'],
@@ -8734,7 +8749,8 @@ screens.settings = (args) => {
         options('Cap system', 'capSystem', [[true, 'NBA cap & aprons'], [false, 'Save\'s cap']], 'NBA: the cap, tax line and aprons by season; the save\'s cap is set to the 2nd apron on export.'),
         options('Trade values', 'tradeValues', [[false, 'Hide'], [true, 'Show']], 'Show each player and pick\'s trade value, and each side\'s total, alongside the balance bar.'),
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
-      ])}`;
+      ])}
+      ${setGroup('Look', [options('Button icons', 'pixelIcons', [[true, 'Pixel'], [false, 'Emoji']], 'Pixel: white pixel icons like the game\'s. Emoji: the colored emoji.')])}`;
   } else if (tab === 'ai') {
     body = setGroup('CPU Teams', [
       options('Draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']], 'How often CPU teams trade picks around each CPU pick in the live draft.'),
