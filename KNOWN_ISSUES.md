@@ -1,0 +1,2 @@
+## Resolved: regressed level ran low vs the game
+- Fixed by refitting regression on a full seven-season decline read off the game (Harrison Barnes): each rating shows as floor(peak × rate^year), year counting from the season after the regression age, with rates in 2.5% steps (see `js/regression.js`). The level floors the half (a rating total of 113 shows 72). `tests/regression.test.mjs` checks every rating and level against the game.

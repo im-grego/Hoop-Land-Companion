@@ -1,0 +1,106 @@
+// Advance the offseason inside the app, the way the game does, so a save
+// can be imported once (Pre-Lottery) and exported once (Free Agency Day 3):
+//
+//   Pre-Lottery (2) --lottery--> Pre-Draft (4) --draft (livedraft.js)-->
+//   Post-Draft (5) --open free agency--> Free Agency Day 1 (6) --> Day 2 --> Day 3
+//
+// What the game writes at each step (from saves before and after):
+// - Lottery: this year's picks get `pk` (0-based slot in their round);
+//   each team's new-season row keeps its pre-lottery slot in `poll` and its
+//   first-round slot in `pick`; one news item names the winner; phase 4.
+// - Free agency: drafted rookies sign (status 2 → 3): first round on the
+//   rookie scale for 4 years with a team option, second round at the
+//   minimum; contract { tid, pid, sal, yrs, opt: 1, canExt: false }, the
+//   new-season stats row gets the salary; phase 6, day 1.
+// - Each day: currentDay + 1 (signings are the app's free agency).
+
+import { PHASE_PRE_LOTTERY, PHASE_PRE_DRAFT, PHASE_POST_DRAFT, PHASE_FREE_AGENCY, draftYear, cloneData } from './savefile.js';
+import { seedOrder } from './draft.js';
+import { capLines } from './freeagency.js';
+
+const row = (team, yr) => (team.season || []).find(s => s.yr === yr);
+
+// Teams worst to best before the lottery: the game's own slot (`pick` on
+// the new-season row) when the save has one, else by record.
+export function preLotteryOrder(league) {
+  return seedOrder(league).map(r => r.team);
+}
+
+// `r1` = all teams in first-round order (lottery winners first). Second
+// round goes by record. Returns a record for undo.
+export function applyLottery(league, r1) {
+  if (league.season.phase !== PHASE_PRE_LOTTERY) throw new Error('The save must be at the Pre-Lottery phase.');
+  const yr = league.season.currentYear, dy = draftYear(league);
+  const r2 = preLotteryOrder(league);
+  const slot1 = new Map(r1.map((t, i) => [t.id, i]));
+  const slot2 = new Map(r2.map((t, i) => [t.id, i]));
+  for (const t of league.teams) {
+    for (const pk of t.draftPicks) {
+      if (pk.yr !== dy) continue;
+      const s = (pk.rd === 1 ? slot1 : slot2).get(pk.otid);
+      if (s != null) pk.pk = s;
+    }
+    const r = row(t, yr);
+    if (r) { r.poll = r.pick ?? slot2.get(t.id); r.pick = slot1.get(t.id); }
+  }
+  const news = league.season.news;
+  const template = news.find(n => n.data?.contract) || news[0];
+  if (template) {
+    const n = cloneData(template);
+    Object.assign(n, { league: 0, rating: 10, date: 0, phase: PHASE_PRE_LOTTERY, category: 0, type: 1, tid: r1[0].id, pid: 0, gid: 0, read: false });
+    if (n.data?.contract) Object.assign(n.data.contract, { tid: 0, pid: 0, type: 0, yrs: 0, sal: 0, nil: 0, opt: 0, noTrd: 0, canExt: false });
+    if (n.data?.draftPick) n.data.draftPick = { pk: 0, rd: 0, tid: 0, otid: 0, yr: 0 };
+    news.push(n);
+  }
+  league.season.phase = PHASE_PRE_DRAFT;
+}
+
+// Rookie scale by first-round slot, as % of the cap: the 2026-27 NBA
+// scale at the 120% teams always pay (No. 1 $14.75M on a $164.96M cap,
+// No. 30 about $3.0M), slots between the published ones interpolated.
+const SCALE_PCT = [8.94, 8.00, 7.18, 6.48, 5.86, 5.42, 4.97, 4.53, 4.09, 3.89, 3.71, 3.53, 3.36, 3.18, 3.01,
+  2.88, 2.75, 2.62, 2.50, 2.37, 2.32, 2.26, 2.21, 2.15, 2.10, 2.04, 1.98, 1.93, 1.87, 1.82];
+export const rookieScale = (league, overall, minSalary = 2) =>
+  Math.max(minSalary, Math.round((SCALE_PCT[Math.min(overall, SCALE_PCT.length) - 1] ?? SCALE_PCT[SCALE_PCT.length - 1]) * capLines(league).cap / 100));
+
+// Sign one of this year's picks: a first-rounder to his 4-year scale deal,
+// a second-rounder at the minimum for `yrs`, both with a team option.
+export function signRookie(league, team, p, yrs, minSalary = 2) {
+  const d = p.history.draft;
+  const sal = d.rd === 1 ? rookieScale(league, d.pk) : minSalary;
+  Object.assign(p.contract, { tid: team.id, pid: p.id, sal, yrs: d.rd === 1 ? 4 : yrs, opt: 1, canExt: false });
+  p.status = 3;
+  const s = (p.stats || []).filter(x => x.yr === league.season.currentYear && x.league === 0).pop();
+  if (s) s.sal = sal;
+  return { p, team, sal, yrs: p.contract.yrs };
+}
+
+// Open free agency: sign this year's draft picks and move to Day 1.
+// `r2Years` is a number or a function (player, team) => years for second-rounders.
+// Returns the signings [{ p, team, sal, yrs }].
+export function startFreeAgency(league, { r2Years = 2, rosterMax = 18, minSalary = 2 } = {}) {
+  if (league.season.phase !== PHASE_POST_DRAFT) throw new Error('The save must be at the Post-Draft phase.');
+  const yr = league.season.currentYear;
+  const out = [];
+  for (const team of league.teams) {
+    const signed = () => team.roster.filter(p => p.status === 3).length;
+    const rookies = team.roster.filter(p => p.status === 2 && p.history?.draft?.yr === yr)
+      .sort((a, b) => a.history.draft.pk - b.history.draft.pk);
+    for (const p of rookies) {
+      const d = p.history.draft;
+      if (d.rd !== 1 && signed() >= rosterMax) continue;
+      out.push(signRookie(league, team, p, d.rd === 1 ? 4 : typeof r2Years === 'function' ? r2Years(p, team) : r2Years, minSalary));
+    }
+  }
+  league.season.phase = PHASE_FREE_AGENCY;
+  league.season.currentDay = 1;
+  return out;
+}
+
+export function nextFreeAgencyDay(league) {
+  const s = league.season;
+  if (s.phase !== PHASE_FREE_AGENCY) throw new Error('Not in free agency.');
+  const last = s.signingDays || 3;
+  if (s.currentDay >= last) throw new Error(`Day ${last} is the last day of free agency.`);
+  s.currentDay++;
+}
