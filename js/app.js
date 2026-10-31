@@ -1376,6 +1376,8 @@ const CALENDAR = [
     done: () => !!calFlags().exhib || !!calFlags().cuts },
   { key: 'cuts', date: 'Oct 15', title: 'Roster Finalization', blurb: `Last call for one-year camp deals, then final cuts: every team gets down to ${FA.FA_DEFAULTS.seasonMax} before the season.`,
     done: () => !!calFlags().cuts },
+  { key: 'rotation', date: 'Oct 18', title: 'Set the Rotation', blurb: 'Starters, the bench order and the minutes for opening night: stars get their minutes, prospects get theirs.',
+    done: () => !!calFlags().rotation },
   { key: 'export', date: 'Oct 20', title: 'Opening Night', blurb: 'Export the season file and load it in Hoop Land.',
     done: () => false },
 ];
@@ -1645,7 +1647,7 @@ const nextUp = () => { const st = currentStep(); if (st) toast(`Next up: ${st.ti
 // Franchise saves (one team, the game's own mode 0) skip Front Office: the
 // team is the one the save is built around, like college.
 const isFranchise = () => { const L = league(); return L.season.mode === 0 && L.teams.some(t => t.id === L.season.teamId); };
-const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR.filter(st => (st.key !== 'office' || !(isFranchise() || CAR.isCareer(league()))) && (st.key !== 'latefa' || isComplete()) && (!['owner', 'medical', 'exhib'].includes(st.key) || !CAR.isCareer(league()))));   // a career save runs no team
+const activeCal = () => (isCollege() ? COLLEGE_CAL : CALENDAR.filter(st => (st.key !== 'office' || !(isFranchise() || CAR.isCareer(league()))) && (st.key !== 'latefa' || isComplete()) && (!['owner', 'medical', 'exhib', 'rotation'].includes(st.key) || !CAR.isCareer(league()))));   // a career save runs no team
 const currentStep = () => activeCal().find(st => !st.done());
 const isStep = key => currentStep()?.key === key;
 
@@ -1758,6 +1760,7 @@ function stepActions(key) {
       <button class="btn small off" data-act="mediaDone" style="margin-top:8px">✅ Wrap Up</button>`;
     case 'cuts': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="latefa">📞 Camp Deals</button><button class="btn" data-act="liveTrade">🔁 Trade</button></div>
       <button class="btn big focus" data-act="nav" data-to="cuts" style="margin-top:8px">✂️ Final Cuts</button>`;
+    case 'rotation': return `<div class="grid2"><button class="btn focus" data-act="nav" data-to="lineup">🔁 Lineup &amp; Minutes</button><button class="btn" data-act="rotSuggest">✅ Use Suggested</button></div>`;
     case 'export': return `<button class="btn big focus" data-act="nav" data-to="export">💾 Export Season File</button>`;
     default: return '';
   }
@@ -1765,7 +1768,7 @@ function stepActions(key) {
 
 // ---- Calendar grid (experiment): the month as a phone calendar, an emoji on each step's date,
 // finished and passed dates crossed off, the current topic on top.
-const CAL_EMOJI = { owner: '🤝', medical: '🩺', exhib: '🏀', meeting: '🗣️', office: '🏢', review: '📜', hof: '🏛️', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
+const CAL_EMOJI = { rotation: '🔁', owner: '🤝', medical: '🩺', exhib: '🏀', meeting: '🗣️', office: '🏢', review: '📜', hof: '🏛️', overview: '📊', preview: '👀', lottery: '🎱', mock1: '📝', scout: '🔎', combine: '⏱️', mock2: '🗒️', workouts: '🏀', draft: '🎤', options: '📃', ext: '✍️', camp: '🌴', fa1: '💰', fa2: '💰', fa3: '💰', dev: '🏋️', survey: '📋', media: '📸', latefa: '📞', cuts: '✂️', export: '🏁',
   departures: '🚪', seniors: '🎓', portal: '🔀', showcase: '⭐', rw1: '📣', rw2: '📣', rw3: '📣', rw4: '📣', signing: '✍️', preseason: '🏟️', rosterlock: '🔒', practice: '🏃' };
 const CAL_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const CAL_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -2034,7 +2037,7 @@ const STEP_SCREENS = {
   office: ['teams'], overview: ['overview'], lottery: ['lottery'], mock1: ['mock', 'draft', 'prospect', 'overview'], scout: ['draft', 'prospect', 'lottery', 'liveTrade'], combine: ['combine', 'prospect', 'mock'], workouts: ['workouts', 'prospect', 'draft', 'liveTrade'], draft: ['draft', 'prospect', 'liveTrade', 'mock'], options: ['options', 'extensions'],
   camp: ['camp', 'rookies'], fa1: ['fa'], fa2: ['fa', 'liveTrade'], fa3: ['fa', 'liveTrade'],
   meeting: ['meeting', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'],
-  dev: ['staff', 'meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], export: ['export'],
+  dev: ['staff', 'meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], rotation: ['lineup', 'player'], export: ['export'],
   review: ['review', 'teamStats', 'player'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
 const ALWAYS = ['gleague', 'fanLog', 'nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
@@ -6269,7 +6272,7 @@ screens.lineup = (args = {}) => {
   const posN = p => POSITIONS[p.pos] || '';
   const row = r => {
     const p = r.p, inRot = r.minutes[0] > 0, now = p.minutes?.[0] ?? 0;
-    return `<div class="drill-row wrap lu-row ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}</span>${r.off ? ' <span class="small down">⚠️ out of position</span>' : ''}
+    return `<div class="drill-row wrap lu-row ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}${LU.isProspect(p) ? ' · <span class="up">🌱 prospect</span>' : ''}</span>${r.off ? ' <span class="small down">⚠️ out of position</span>' : ''}
       ${inRot ? minBar(p, r.minutes, game) : '<br><span class="small muted">Out of the rotation</span>'}${now !== r.minutes[0] ? ` <span class="small muted">(now ${now})</span>` : ''}${r.hand ? ' <span class="small gold">✋ set by hand</span>' : ''}</span>
       ${inRot || r.hand ? `<span class="trait-ctl"><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="-${step}" aria-label="Fewer minutes">−</button><b class="small" style="min-width:2.2em;text-align:center">${r.minutes[0]}</b><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="${step}" aria-label="More minutes">+</button></span>` : `<button class="btn tiny off" data-act="luMin" data-id="${p.id}" data-d="${step * 4}">Play him</button>`}</div>`;
   };
@@ -6282,6 +6285,7 @@ screens.lineup = (args = {}) => {
       <p class="note small">📋 ${hc ? `${esc(hc.fn ? `${hc.fn} ${hc.ln}` : 'Head coach')}: ` : ''}${esc(ROT_TXT.bd[tn.benchDepth ?? 0] || ROT_TXT.bd[0])}, ${esc(ROT_TXT.bu[tn.benchUtilization ?? 1] || ROT_TXT.bu[1])} → ${mode === 'playoffs' ? 'playoffs: ' : ''}${cr.size}-man rotation, starters ${Math.round(cr.share * 100)}% / bench ${100 - Math.round(cr.share * 100)}%. <span class="muted">Now: starters ${Math.round(stMin / (5 * game) * 100)}%.</span></p>
       <div class="drill-row"><span class="grow small">Players in the rotation</span><span class="trait-ctl"><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.max(7, size - 1)}">−</button><b class="small" style="min-width:2em;text-align:center">${size}</b><button class="btn tiny" data-act="luSet" data-k="size" data-v="${Math.min(12, size + 1)}">+</button></span></div>
       <fieldset class="frame"><legend>Rotation · ${total} of ${5 * game} minutes</legend>${minLegend()}<div class="stack">${plan.rows.map(row).join('')}</div>
+        <p class="note small muted">Minutes follow stars (on a 48-minute game): 5★ 35–38, 4.5★ 32–35, 4★ 30–32, 3.5★ 25–30; good benches eat into them. 🌱 Prospects (24 or younger, 3★ or lower, 4★+ potential) get 22–28 on a developing team, or a good one that isn't deep.</p>
         <p class="note small muted">Bars are minutes out of a full ${game}; the % is his share of the game. Nobody plays out of position unless the roster has no one within 14 levels of the rotation's worst player who can play the spot.</p>
         ${plan.short.length ? `<p class="note small down">Short at ${plan.short.map(x => `${x.slot} (${x.v})`).join(', ')}: add a player or minutes.</p>` : ''}</fieldset>
       <div class="grid2"><button class="btn off" data-act="luSet" data-k="over" data-v="">↩ Clear hand edits</button><button class="btn focus" data-act="luApply">✅ Set this lineup</button></div>
@@ -6311,6 +6315,8 @@ actions.luApply = async () => {
   LU.applyLineup(t, plan);
   state.dirty = true;
   toast('🔁 Lineup set', `${t.shortName}: ${plan.rot.length}-man rotation, ${LU.MODES[a.mode || lineupMode(t)].label.toLowerCase()}.`);
+  // On the rotation day, setting your (last) team's lineup finishes the step.
+  if (isStep('rotation')) { (calFlags().rotSet ||= []).push(t.id); if (league().teams.filter(isUserTeam).every(x => calFlags().rotSet.includes(x.id))) { calFlags().rotation = true; goHome(); nextUp(); return; } }
   render();
 };
 
@@ -16235,6 +16241,13 @@ screens.exhib = () => layout({
   body: myTeamsNow().map(t => campBox(t) + stashBox(t)).join('') || '<p class="note">No camp battles or rookies to stash.</p>',
   action: isStep('exhib') ? { act: 'stepWrap', k: 'exhib', label: 'On to Final Cuts' } : null,
 });
+// The rotation day's one-tap option: every team you run gets the suggested rotation.
+actions.rotSuggest = () => {
+  const mine = league().teams.filter(isUserTeam);
+  for (const t of mine) LU.applyLineup(t, defaultPlan(t));
+  calFlags().rotation = true; state.dirty = true; render();
+  toast('🔁 Rotations set', mine.map(t => t.shortName).join(', '));
+};
 actions.stepWrap = d => { calFlags()[d.k] = true; state.undo = null; goHome(); nextUp(); };
 // Cuts still to pick (only as many as there are cuttable players).
 const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
