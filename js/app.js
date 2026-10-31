@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.252.1';
+const APP_VERSION = '0.252.2';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -16039,7 +16039,7 @@ function campBattles(t) {
   if (need && ranked[need]) { const a = ranked[need].p, b = ranked[need - 1].p; if (!out.some(x => [x.a, x.b].includes(a.id) || [x.a, x.b].includes(b.id))) out.push({ kind: 'spot', a: a.id, b: b.id }); }
   return out;
 }
-const campStore = () => (calFlags().camp ||= {});
+const campStore = () => (typeof calFlags().preseason === 'object' ? calFlags().preseason : (calFlags().preseason = {}));
 function campPlay(t) {
   const L = league(), st = campStore();
   if (st[t.id]) return;
