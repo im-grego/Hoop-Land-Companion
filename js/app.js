@@ -3878,13 +3878,15 @@ function bumpContext() {
 const rookieIds = () => new Set(leagueRookies(league()).map(r => r.p.id));
 
 // Veteran bump: everyone except this year's rookies (they have their own).
+// Players brought over from overseas this summer already grew for their years away: camp (and a re-roll) skips them.
+const cameOver = () => new Set(calFlags().stashBack || []);
 function bumpEntries() {
-  const rk = rookieIds();
-  return leaguePlayers(league(), state.params.includeFreeAgents).filter(e => !rk.has(e.p.id));
+  const rk = rookieIds(), back = cameOver();
+  return leaguePlayers(league(), state.params.includeFreeAgents).filter(e => !rk.has(e.p.id) && !back.has(e.p.id));
 }
 function vetPlayers() {
-  const rk = rookieIds();
-  return leaguePlayers(league(), true).filter(e => !rk.has(e.p.id)).map(e => e.p);
+  const rk = rookieIds(), back = cameOver();
+  return leaguePlayers(league(), true).filter(e => !rk.has(e.p.id) && !back.has(e.p.id)).map(e => e.p);
 }
 
 // Holding out at camp: a starter-caliber player on his last year or two who's demanding a new deal (see extAsk)
@@ -16167,6 +16169,7 @@ actions.stashBring = d => {
   if (!t) return;
   if (FA.signedRoster(t).length >= FA.FA_DEFAULTS.rosterMax) { toast('No open roster spot', '', 2400, true); return; }
   const r = stashOut(d.id), sal = FA.minFor(r.p);
+  (calFlags().stashBack ||= []).push(r.p.id);
   FA.signPlayer(L, r.p, t, { sal, yrs: 2, opt: 0 }, L.season.currentDay || 3);
   lockSigning(r.p, 'Came over from overseas');
   render();
