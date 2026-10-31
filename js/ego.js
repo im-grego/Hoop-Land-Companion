@@ -1,12 +1,12 @@
 // Ego: how much a player needs to be the man. A trait (in the save's playoffRiser slot) seeded from his career: how
 // good he is, what he's won, how much of the offense he's carried, his deal, his age, and a lean from his traits.
 // Events move it from there. 1..20 like every trait: 👑 Alpha (16+) wants the ball, the spotlight and the money that
-// says so; 🙏 Humble (4 or less) takes whatever role helps.
+// says so; 🙂 Humble (4 or less) takes whatever role helps.
 import { tr, traitsSet } from './traits.js';
 import { seasonLine } from './storylines.js';
 import { shownLevel as levelOf } from './regression.js';
 
-export const EGO = { icon: '👑', hi: 'Alpha', lo: 'Humble', hiIcon: '👑', loIcon: '🙏' };
+export const EGO = { icon: '👑', hi: 'Alpha', lo: 'Humble', hiIcon: '👑', loIcon: '🙂' };
 const AW = { FMVP: 1, MVP: 2, ALL_NBA: 13, ALL_STAR: 101 };
 // Known reads for real players (ego only; everyone else is read from his career).
 const REAL_EGO = {
