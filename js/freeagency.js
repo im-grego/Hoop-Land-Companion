@@ -210,11 +210,31 @@ export const capSpace = (league, team) => capLines(league).cap - payroll(team) -
 // Cap holds (Complete rules, your teams): each of your own free agents keeps a hold on your cap space until he
 // re-signs or you renounce him (let him walk, losing his Bird rights). The hold is what he's asking on the market
 // (the save keeps no old salary), up to his max. It counts against cap space only, not the tax or the aprons.
-let HOLD_TEAMS = new Set();
+// CPU teams hold space only in week 1, and only for their keepers (a hold of 8% of the cap or more); from week 2 on
+// they've renounced everyone else to use their space.
+let HOLD_TEAMS = new Set(), HOLD_DAY = 0;
 export const setHoldTeams = ids => { HOLD_TEAMS = new Set(ids); };
+export const setHoldDay = d => { HOLD_DAY = d || 0; };
 export const capHold = (league, p) => Math.min(maxSalary(league, p, true), baseAsk(league, p));
-export const capHolds = (league, team) => (CAP_ON && COMPLETE && HOLD_TEAMS.has(team.id) ? team.roster.filter(p => p.status === STATUS_EXPIRING && p.tid === team.id) : []);
-const holdTotal = (league, team) => capHolds(league, team).reduce((a, p) => a + capHold(league, p), 0);
+export function capHolds(league, team) {
+  if (!CAP_ON || !COMPLETE) return [];
+  const own = team.roster.filter(p => p.status === STATUS_EXPIRING && p.tid === team.id);
+  if (HOLD_TEAMS.has(team.id)) return own;
+  if (HOLD_DAY !== 1) return [];
+  const min = capLines(league).cap * 0.08;
+  return own.filter(p => capHold(league, p) >= min);
+}
+// Cached per team and set of players (the CPU's bidding loops ask for cap space a lot).
+const HOLD_CACHE = new Map();
+function holdTotal(league, team) {
+  if (!CAP_ON || !COMPLETE || (!HOLD_TEAMS.has(team.id) && HOLD_DAY !== 1)) return 0;
+  const key = `${HOLD_DAY}|${HOLD_TEAMS.has(team.id)}|${team.roster.filter(p => p.status === STATUS_EXPIRING && p.tid === team.id).map(p => p.id).join(',')}`;
+  const c = HOLD_CACHE.get(team.id);
+  if (c && c.key === key) return c.v;
+  const v = capHolds(league, team).reduce((a, p) => a + capHold(league, p), 0);
+  HOLD_CACHE.set(team.id, { key, v });
+  return v;
+}
 
 // Max salary by years in the league (the save's maxContract, % of the cap:
 // 0–6 years, 7–9, 10+). Re-signing or extending with his own team, a star

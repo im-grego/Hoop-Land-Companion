@@ -477,7 +477,7 @@ function replace(name, args = {}) {
 let lastView = '';
 function render() {
   document.documentElement.dataset.px = state.params.pixelIcons === false ? 'off' : 'on';
-  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); syncTpes(); }
+  if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); FA.setHoldDay(league().season.phase === 6 ? league().season.currentDay : 0); syncTpes(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
   if (state.data && !isCollege()) { seasonDrift(); cpuComebacks(); cpuNumbers(); cpuJerseys(); if (state.retFixed !== saveTag()) { state.retFixed = saveTag(); fixRetiredNumbers(); } glSettle(); taxSettle(); cpuShifts(); }   // once an offseason each (the G League once a season)
   if (state.data && !isCollege()) { careerSync(); syncScarcity(); poSettle(); }
@@ -11257,9 +11257,12 @@ setTradeHook((kind, rec) => {
 const tpeKey = () => `hlc:tpe:${saveTag()}`;
 function tpeList() { try { return JSON.parse(localStorage.getItem(tpeKey())) || []; } catch { return []; } }
 function tpeSave(v) { try { localStorage.setItem(tpeKey(), JSON.stringify(v)); } catch { /* ignore */ } }
-// Live: made this season, or last season and the calendar hasn't come back around to the day it was made.
 const tpeLeft = x => x.amt - Object.values(x.spent || {}).reduce((a, v) => a + v, 0);
-const tpeLive = x => { const s = league().season, y = s.currentYear; return y === x.yr || (y === x.yr + 1 && (s.phase ?? 0) < x.phase); };
+// A moment in the save's calendar: the year turns at the Pre-Lottery phase (2) and the phases count up through the
+// season from there (free agency 6, the regular season 9, done 11), each with its day.
+const saveClock = (s = league().season) => (s.currentYear || 0) * 100 + (s.phase ?? 0) + Math.min(999, s.currentDay || 0) / 1000;
+// Live for exactly one year from the trade.
+const tpeLive = x => saveClock() < (x.at ?? x.yr * 100 + (x.phase ?? 0)) + 100;
 function syncTpes() {
   if (!state.data) return;
   const on = isComplete() && !isCollege() && FA.capSystemOn(), m = {};
@@ -11272,7 +11275,7 @@ function tpeHook(kind, rec) {
   let list = tpeList();
   if (kind === 'undo') { list = list.filter(x => x.rec !== rec.tpeTag); for (const x of list) delete x.spent?.[rec.tpeTag]; tpeSave(list); syncTpes(); return; }
   rec.tpeTag = `${Date.now()}:${Math.random().toString(36).slice(2, 6)}`;
-  for (const t of [rec.A, rec.B].filter(isUserTeam)) {
+  for (const t of [rec.A, rec.B]) {   // every team: CPU trades make and use exceptions the same way
     const out = FA.tradeSalOf(rec.moved.filter(m => m.from === t).map(m => m.p)), inn = FA.tradeSalOf(rec.moved.filter(m => m.to === t).map(m => m.p));
     const pay = FA.teamCommitted(t), before = pay - inn + out;
     if (inn > out && FA.tradeCheckTeam(L, t, out, inn, { pay: before, noTpe: true })) {
@@ -11280,7 +11283,7 @@ function tpeHook(kind, rec) {
       if (row) (row.spent ||= {})[rec.tpeTag] = inn - out;
     } else if (out > inn && pay > C.cap) {
       const who = rec.moved.filter(m => m.from === t).sort((a, b) => (b.p.contract?.sal || 0) - (a.p.contract?.sal || 0))[0]?.p;
-      list.push({ id: rec.tpeTag + t.id, rec: rec.tpeTag, tid: t.id, amt: out - inn, yr: L.season.currentYear, phase: L.season.phase ?? 0, who: who ? playerName(who) : '' });
+      list.push({ id: rec.tpeTag + t.id, rec: rec.tpeTag, tid: t.id, amt: out - inn, yr: L.season.currentYear, phase: L.season.phase ?? 0, at: saveClock(), who: who ? playerName(who) : '' });
     }
   }
   tpeSave(list.filter(tpeLive));
