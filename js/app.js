@@ -6590,7 +6590,8 @@ function exitKept(p, x, yr) {
   const l = seasonLine(p, state.leagueIdx, yr + 1), t = league().teams.find(y => y.id === x.tid), row = (t?.season || []).find(r => r.yr === yr + 1);
   if (x.topic === 'role') return !!l && l.mpg >= Math.max((x.mpg || 0) + 4, 26);
   if (x.topic === 'win') return (row?.playoffStats?.GP || 0) > 0;
-  if (x.topic === 'deal') return (p.contract?.yrs || 0) >= 2;
+  // Extended: a pending extension, or still signed past the last year of the old deal (it rolled into the new one).
+  if (x.topic === 'deal') return (p.contract?.ext?.yrs || 0) > 0 || (p.status === FA.STATUS_SIGNED && (p.contract?.yrs || 0) >= 1);
   return !!l && l.starts >= l.gp / 2;
 }
 // A request from a broken promise joins this summer's list (or waits for it to be drawn).
