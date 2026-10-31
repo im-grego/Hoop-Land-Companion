@@ -6955,6 +6955,7 @@ screens.checkin = () => {
       ${hurt.length ? `<p class="note small">🩹 ${hurt.slice(0, 4).map(p => `<b>${esc(p.ln)}</b> ${p.season.injury.gamesOut}g`).join(' · ')}</p>` : '<p class="note small up">🩹 Healthy.</p>'}
       ${form.length ? `<p class="note small">🔥 ${form.slice(0, 2).filter(f => f.d > 1).map(f => `<b>${esc(f.p.ln)}</b> +${f.d.toFixed(1)}`).join(' · ') || '—'} &nbsp; 🧊 ${form.slice(-2).filter(f => f.d < -1).map(f => `<b>${esc(f.p.ln)}</b> ${f.d.toFixed(1)}`).join(' · ') || '—'} <span class="muted">(game score vs last season)</span></p>` : ''}
       ${me ? '' : pick ? `<p class="note small up">✓ ${calls[pick].icon} ${esc(calls[pick].label)}</p>` : `<div class="stack">${Object.entries(calls).filter(([k]) => !(k === 'rest' && x.seed > 8) && !(k === 'kids' && x.seed <= 6)).map(([k, c]) => `<button class="btn left small" data-act="ciPick" data-t="${t.id}" data-k="${k}"><span class="grow"><b>${c.icon} ${esc(c.label)}</b><br><span class="note small">${esc(c.says)}</span></span></button>`).join('')}</div>`}
+      ${me ? '' : rotCheck(t)}
       ${me ? '' : `<button class="btn small" data-act="nav" data-to="lineup" data-arg="${t.id}" style="margin-top:6px">⏱️ Lineup</button>`}</fieldset>`;
   };
   let career = '';
@@ -6970,6 +6971,34 @@ screens.checkin = () => {
     </fieldset>`;
   }
   layout({ title: w === 'early' ? 'Early-Season Check-in' : 'Stretch-Run Check-in', body: career + teams.map(box).join('') + (teams.length ? '' : '<p class="note">No team to check in on.</p>') });
+};
+// What's drifted in a team's rotation since it was set: the hurt still playing, stars short of their minutes,
+// prospects and promises not getting theirs. One tap sets the suggested rotation again.
+function rotIssues(t) {
+  const k = gameMinutes() / 48, pr = promisedMinutes(t), dev = ['develop', 'normal'].includes(lineupMode(t)), out = [];
+  const byId = new Map(t.roster.map(p => [p.id, p]));
+  // Only what the suggested rotation would fix: a crowded position can't give everyone his range.
+  const plan = defaultPlan(t), sug = new Map(plan.rows.map(r => [r.p.id, r.minutes[0]]));
+  for (const e of t.startingLineup || []) {
+    const p = byId.get(e.pid), m = e.minutes?.[0] || 0;
+    if (!p || p.status !== FA.STATUS_SIGNED) continue;
+    if (!((p.season?.injury?.gamesOut || 0) > 0 && m > 0) && (sug.get(p.id) || 0) < m + 4) continue;
+    const rg = LU.STAR_MINUTES[LU.starsOf(p)];
+    if (m > 0 && (p.season?.injury?.gamesOut || 0) > 0) out.push(`🩹 ${p.ln} is hurt but still has ${m} minutes`);
+    else if (rg && m < Math.round(rg[0] * k) - 4 && !(p.season?.injury?.gamesOut > 0)) out.push(`⭐ ${p.ln} (${LU.starsOf(p) / 2}★) plays ${m}, short of ${Math.round(rg[0] * k)}`);
+    else if (pr[p.id]?.min && m < Math.round(pr[p.id].min * k)) out.push(`🤝 ${p.ln} was promised ${Math.round(pr[p.id].min * k)}+ and plays ${m}`);
+    else if (dev && LU.isProspect(p) && m < Math.round(22 * k)) out.push(`🌱 ${p.ln} is a prospect playing ${m}`);
+  }
+  return out;
+}
+function rotCheck(t) {
+  const iss = rotIssues(t);
+  return `<p class="note small" style="margin-top:6px"><b>🔁 Rotation</b> ${iss.length ? '' : '<span class="up">looks right.</span>'}</p>${iss.length ? `<p class="note small">${iss.slice(0, 5).map(esc).join('<br>')}</p><button class="btn small focus" data-act="ciRot" data-t="${t.id}">🔁 Use the Suggested Rotation</button>` : ''}`;
+}
+actions.ciRot = d => {
+  const t = league().teams.find(x => x.id === +d.t); if (!t || !isUserTeam(t)) return;
+  LU.applyLineup(t, defaultPlan(t)); state.dirty = true; render();
+  toast('🔁 Rotation reset', `${t.shortName}: the suggested rotation`);
 };
 actions.ciPick = d => {
   const L = league(), w = ciWindow(L), t = L.teams.find(x => x.id === +d.t);
