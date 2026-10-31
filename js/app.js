@@ -47,6 +47,7 @@ import * as TK from './talks.js';
 import * as CL2 from './careerlife2.js';
 import * as LU from './lineups.js';
 import { pixelIconCss, pixelize, pixelizeTraits } from './pixelicons.js';
+import { cutFaces, matchFaces } from './faceimport.js';
 import * as CL3 from './careerlife3.js';
 import * as PO from './playoffs.js';
 import * as CL4 from './careerlife4.js';
@@ -277,6 +278,15 @@ function logoUrl(url) {
 }
 // Player faces cut from the game's roster screens (a face pack), keyed by player id. Nothing shows without one.
 const faceOf = p => (p && state.faces?.get?.(p.id)) || '';
+// Saved faces live in the browser per league (player ids carry over from save to save of the same league).
+const facesKey = () => `hlc:faces:${league().shortName}`;
+function facesStored() { try { return JSON.parse(localStorage.getItem(facesKey())) || {}; } catch { return {}; } }
+function loadFaces() {
+  if (!state.data || state.facesFor === facesKey()) return;
+  state.facesFor = facesKey();
+  const m = facesStored();
+  state.faces = Object.keys(m).length ? new Map(Object.entries(m).map(([k, v]) => [+k, v])) : null;
+}
 // Every face is the same cut (centred on the face), so heads of any width line up.
 // Once any faces are loaded, a player without one keeps an empty slot of the same size so names line up.
 const faceImg = (p, cls = 'face-sm') => { const u = faceOf(p); return u ? `<img class="face ${cls}" src="${u}" alt="">` : state.faces?.size && cls === 'face-sm' ? `<span class="face ${cls} face-none"></span>` : ''; };
@@ -476,6 +486,7 @@ function replace(name, args = {}) {
 // a new screen, tab or view starts at the top.
 let lastView = '';
 function render() {
+  loadFaces();
   document.documentElement.dataset.px = state.params.pixelIcons === false ? 'off' : 'on';
   if (state.data) { FA.setQualifyingOffers(optStore().qo); FA.setCapSystem(isComplete() && state.params.capSystem !== false && !isCollege()); FA.setComplete(isComplete() && !isCollege(), FA.capLines(league()).cap); FX.setFacilitiesOn(isComplete() && !isCollege()); if (!isCollege()) syncGrudges(); if (!isCollege()) syncDead(); FA.setHoldTeams(league().teams.filter(isUserTeam).map(t => t.id)); FA.setHoldDay(league().season.phase === 6 ? league().season.currentDay : 0); syncTpes(); }
   if (state.data && isCollege() && state.cal) { try { localStorage.setItem(collegeCalKey(), JSON.stringify(state.cal)); } catch { /* ignore */ } }
@@ -2040,7 +2051,7 @@ const STEP_SCREENS = {
   dev: ['staff', 'meeting', 'offseason', 'report', 'mentor', 'rookies', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'teamBooks', 'coaches', 'coach'], media: ['storylines', 'survey'], cuts: ['cuts', 'latefa', 'liveTrade'], rotation: ['lineup', 'player'], export: ['export'],
   review: ['review', 'teamStats', 'player'], departures: ['departures'], seniors: ['seniors'], portal: ['portal'], showcase: ['showcase', 'recruitee'], rw1: ['recruit', 'recruitee', 'recruitweek'], rw2: ['recruit', 'recruitee', 'recruitweek'], rw3: ['recruit', 'recruitee', 'recruitweek'], rw4: ['recruit', 'recruitee', 'recruitweek'], signing: ['signing'], preseason: ['preseason'], rosterlock: ['rosterlock'], practice: ['practice'], summer: ['offseason', 'report', 'mentor', 'trainer', 'strength', 'coachtree', 'tendencies', 'tendplayer', 'gameplan', 'playbook'],
 };
-const ALWAYS = ['gleague', 'fanLog', 'nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
+const ALWAYS = ['faces', 'gleague', 'fanLog', 'nbaSetup', 'export', 'checkin', 'myteams', 'ledger', 'career', 'careerFA', 'lineup', 'deadline', 'playoffs', 'main', 'editor', 'settings', 'roster', 'payroll', 'classLab', 'coaching', 'news', 'search', 'transactions', 'rumors', 'player', 'leaders', 'prospect', 'coachtree', 'facilities', 'gameplan', 'playbook', 'scoring', 'playbookEdit', 'coaches', 'coach', 'teamBooks'];
 function screenAllowed(name) {
   if (!state.data || ALWAYS.includes(name)) return true;
   if (name === 'teams' && !isCollege() && phaseRank(league().season) === 0) return true;   // Franchise Setup: pick your teams
@@ -8803,7 +8814,7 @@ screens.settings = (args) => {
         options('Trade values', 'tradeValues', [[false, 'Hide'], [true, 'Show']], 'Show each player and pick\'s trade value, and each side\'s total, alongside the balance bar.'),
         options('Commissioner mode', 'commissioner', [[false, 'Off'], [true, 'On']], 'Trade for any team, force trades, undo and reset.'),
       ])}
-      ${setGroup('Look', [options('Button icons', 'pixelIcons', [[true, 'Pixel'], [false, 'Emoji']], 'Pixel: white pixel icons like the game\'s. Emoji: the colored emoji.')])}`;
+      ${setGroup('Look', [options('Button icons', 'pixelIcons', [[true, 'Pixel'], [false, 'Emoji']], 'Pixel: white pixel icons like the game\'s. Emoji: the colored emoji.'), state.data ? `<button class="btn" data-act="nav" data-to="faces">🙂 Player Faces${state.faces?.size ? ` · ${state.faces.size}` : ''}</button><span class="note muted small">Cut players' faces from screenshots of the game's roster screen.</span>` : ''])}`;
   } else if (tab === 'ai') {
     body = setGroup('CPU Teams', [
       options('Draft-day trades', 'liveCpuTradeChance', [[0, 'Off'], [5, 'Rare'], [10, 'Normal'], [20, 'Busy']], 'How often CPU teams trade picks around each CPU pick in the live draft.'),
@@ -16319,6 +16330,59 @@ actions.rotSuggest = () => {
   toast('🔁 Rotations set', `${mine.map(t => t.shortName).join(', ')}${mood.length ? ` · morale: ${mood.join(', ')}` : ''}`, 5000);
 };
 actions.stepWrap = d => { calFlags()[d.k] = true; state.undo = null; goHome(); nextUp(); };
+// ---- Player faces: from screenshots of the game's roster screen (js/faceimport.js cuts and matches them).
+screens.faces = (args = {}) => {
+  const L = league(), mine = L.teams.filter(isUserTeam);
+  const t = L.teams.find(x => x.id === +(args.tid ?? state.faceDraft?.tid)) || mine[0] || L.teams[0];
+  const roster = t.roster.filter(p => p.status !== 7).sort((a, b) => playerName(a).localeCompare(playerName(b)));
+  const stored = facesStored(), have = roster.filter(p => stored[p.id]).length;
+  const d = state.faceDraft?.tid === t.id ? state.faceDraft : null;
+  const opts = sel => `<option value="">— Skip —</option>${roster.map(p => `<option value="${p.id}" ${sel === p.id ? 'selected' : ''}>${esc(playerName(p))}</option>`).join('')}`;
+  layout({
+    title: 'Player Faces',
+    body: `<p class="note small">In Hoop Land, open a team's <b>Roster</b> screen and take a screenshot of each page (rotate to landscape). Add them here: the app cuts out every face and matches it to the player by his skin, hair and eye colors. Check the ones marked ⚠️ (two players with the same colors), then save.</p>
+      <select class="sel-team" data-change="faceTeam">${[...mine, ...L.teams.filter(x => !isUserTeam(x))].map(x => `<option value="${x.id}" ${x === t ? 'selected' : ''}>${esc(teamFull(x))}</option>`).join('')}</select>
+      <p class="note small">${have}/${roster.length} faces saved for ${esc(t.shortName)}.</p>
+      <label class="btn big focus">📂 Add Roster Screenshots<input type="file" accept="image/*" multiple id="faceFiles" data-tid="${t.id}"></label>
+      ${d ? `<fieldset class="frame"><legend>${d.items.length} Faces Found</legend><div class="stack">${d.items.map((x, i) => `<div class="drill-row"><img class="face face-md" src="${x.face.url}" alt=""><span class="grow"><select class="sel-team face-pick" data-i="${i}">${opts(x.pid)}</select>${x.sure ? '' : '<br><span class="small gold">⚠️ Check this one</span>'}</span></div>`).join('') || '<p class="note small muted">No roster rows found. Use a full-screen screenshot of the Roster screen.</p>'}</div>
+        <div class="grid2" style="margin-top:8px"><button class="btn off" data-act="faceCancel">Cancel</button><button class="btn focus" data-act="faceSave" ${d.items.length ? '' : 'disabled'}>✅ Save Faces</button></div></fieldset>` : ''}
+      ${have ? `<button class="btn small off" data-act="faceClear" data-tid="${t.id}">🗑 Clear ${esc(t.shortName)}'s faces</button>` : ''}`,
+  });
+};
+$app.addEventListener('change', async e => {
+  const el = e.target;
+  if (el.dataset?.change === 'faceTeam') { state.faceDraft = null; replace('faces', { tid: +el.value }); return; }
+  if (el.classList?.contains('face-pick') && state.faceDraft) { state.faceDraft.items[+el.dataset.i].pid = el.value ? +el.value : null; state.faceDraft.items[+el.dataset.i].sure = true; return; }
+  if (el.id !== 'faceFiles' || !el.files?.length) return;
+  const L = league(), t = L.teams.find(x => x.id === +el.dataset.tid);
+  const faces = [];
+  for (const f of el.files) {
+    const url = URL.createObjectURL(f);
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = url; }).catch(() => null);
+    if (img) faces.push(...cutFaces(img));
+    URL.revokeObjectURL(url);
+  }
+  const m = matchFaces(faces, t.roster.filter(p => p.status !== 7));
+  state.faceDraft = { tid: t.id, items: m.map(x => ({ face: x.face, pid: x.p?.id ?? null, sure: x.sure })) };
+  replace('faces', { tid: t.id });
+  toast('🙂 Faces found', `${faces.length} from ${el.files.length} screenshot${el.files.length > 1 ? 's' : ''}${m.some(x => !x.sure) ? ' · check the ⚠️ ones' : ''}`);
+});
+actions.faceCancel = () => { state.faceDraft = null; render(); };
+actions.faceSave = () => {
+  const d = state.faceDraft; if (!d) return;
+  const all = facesStored(); let n = 0;
+  for (const x of d.items) if (x.pid) { all[x.pid] = x.face.url; n++; }
+  try { localStorage.setItem(facesKey(), JSON.stringify(all)); } catch { toast('Couldn\'t save the faces', 'Browser storage is full', 3000, true); return; }
+  state.faceDraft = null; state.facesFor = null; render();
+  toast('🙂 Faces saved', `${n} player${n === 1 ? '' : 's'}`);
+};
+actions.faceClear = async d => {
+  const t = league().teams.find(x => x.id === +d.tid);
+  if (!t || !(await confirmBox(`Clear the saved faces for ${esc(t.shortName)}?`, 'Clear'))) return;
+  const all = facesStored(); for (const p of t.roster) delete all[p.id];
+  try { localStorage.setItem(facesKey(), JSON.stringify(all)); } catch { /* ignore */ }
+  state.facesFor = null; render();
+};
 // Cuts still to pick (only as many as there are cuttable players).
 const cutsShort = (t, sel) => { const r = cutRank(t); return Math.min(r.length, Math.max(0, FA.signedRoster(t).length - FA.FA_DEFAULTS.seasonMax)) - r.filter(x => sel[x.p.id]).length; };
 actions.goHomeCuts = () => goHome();
