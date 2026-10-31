@@ -2273,7 +2273,7 @@ screens.career = (args = {}) => {
         ${st.push ? `<p class="note small">Pushing him: <b>${esc(playerName(st.push))}</b> ${lvTag(st.push)}, ${st.push.age}y</p>` : ''}
         ${fo ? `<p class="note small">Front office: ${esc(fo.plan)}; ${esc(fo.word)}. Trade buzz ${Math.round(fo.buzz * 100)}%.</p>` : ''}
       </fieldset>` : ''}
-      ${room.length ? `<fieldset class="frame"><legend>Locker Room</legend>${room.map(x => `<p class="note small">${{ alpha: '🎭', leader: '🫡', cancer: '☣️', mentor: '🎓' }[x.kind]} <b>${esc(playerName(x.m))}</b> ${lvTag(x.m)} · ${esc(x.text)}</p>`).join('')}</fieldset>` : ''}
+      ${room.length ? `<fieldset class="frame"><legend>Locker Room</legend>${room.map(x => `<p class="note small">${{ alpha: '👑', leader: '🫡', cancer: '☣️', mentor: '🎓' }[x.kind]} <b>${esc(playerName(x.m))}</b> ${lvTag(x.m)} · ${esc(x.text)}</p>`).join('')}</fieldset>` : ''}
       ${(() => { const rel = CAR.relationships(L, p); if (!rel.friends.length && !rel.rivals.length) return ''; const row = x => `<p class="note small">${x.r > 0 ? '🤝' : '⚔️'} <b>${esc(playerName(x.m))}</b> <span class="muted">${esc(x.team.shortName)}</span> · ${esc(CAR.bondWord(x.r))} <span class="${x.r > 0 ? 'up' : 'down'}">${x.r > 0 ? '+' : ''}${x.r}</span><span class="muted">/${x.r > 0 ? '+' : '−'}${CAR.BOND_CAP}</span>${x.mate && x.r < 0 ? ' · <span class="gold">now a teammate</span>' : ''}</p>`;
         return `<fieldset class="frame"><legend>Relationships</legend>${rel.friends.slice(0, 6).map(row).join('')}${rel.rivals.length ? `<h4 class="ov-h">Bad Blood</h4>${rel.rivals.map(row).join('')}` : ''}</fieldset>`; })()}
       ${traitsBox(p)}
@@ -2383,7 +2383,7 @@ screens.careerFA = () => {
     return `<fieldset class="frame ${o.tid === pick ? 'sel' : ''}"><legend>${logoImg(x.team)} ${esc(teamFull(x.team))}${o.own ? ' · your team' : ''}${home?.id === o.tid ? ' · 🏠 hometown' : ''}</legend>
       <p><b>$${net}M × ${o.yrs}</b>${net !== o.sal ? ` <span class="muted small">($${o.sal}M before terms)</span>` : ''} <span class="muted">($${x.total}M${o.opt === FA.OPT_PLAYER ? ', player option' : ''})</span>${c?.res ? ` <span class="${c.res === 'won' ? 'up' : 'down'} small">${c.res === 'won' ? 'they came up' : 'they held firm'}</span>` : ''}</p>
       <p class="note small">🏀 ${esc(x.role)} · 🏆 ${x.stage} (${Math.round(x.ring * 100)}) · 🏙️ ${x.market >= 0.8 ? 'Big market' : x.market <= 0.3 ? 'Small market' : 'Mid market'}${coach ? ` · 🧑‍🏫 ${esc(coach)} <span class="muted">${x.coach.rp || 0}/50</span>` : ''}</p>
-      ${x.alphas.length ? `<p class="note small">🎭 Shares the ball with ${names(x.alphas)}</p>` : ''}
+      ${x.alphas.length ? `<p class="note small">👑 Shares the ball with ${names(x.alphas)}</p>` : ''}
       ${x.friends.length ? `<p class="note small up">🤝 ${names(x.friends)}</p>` : ''}${x.rivals.length ? `<p class="note small down">⚔️ ${names(x.rivals)}</p>` : ''}
       ${o.tid === pick ? `<p class="note small gold">${ag.icon} ${esc(ag.name)}: "${esc({ money: 'This is the best money on the table. Take it.', market: 'This is the stage. The money is fine, and the fans will follow.', fit: "This is where you'll be happiest. Trust me." }[ag.wants])}"</p>` : ''}
       <div class="grid2"><button class="btn small" data-act="careerCounter" data-tid="${o.tid}" ${!ag || c ? 'disabled' : ''}>💬 Counter</button><button class="btn small focus" data-act="careerSign" data-tid="${o.tid}">✍️ Sign</button></div></fieldset>`;
@@ -3465,7 +3465,7 @@ function careerFactionBox(L, p, team) {
   const { cy } = careerYear(), names = a => a.slice(0, 4).map(m => esc(m.ln)).join(', ') + (a.length > 4 ? ` +${a.length - 4}` : '');
   const open = careerOffseason() || CL3.atAllStarBreak(L);
   return `<fieldset class="frame"><legend>The Room</legend><p class="note small">Two stars, one locker room: you and <b>${esc(playerName(f.star))}</b> (${f.star.season?.relationship || 0}/50).</p>
-    <p class="note small">🫂 With you: ${f.mine.length ? names(f.mine) : 'nobody yet'}</p><p class="note small">🎭 With ${esc(f.star.ln)}: ${f.his.length ? names(f.his) : 'nobody'}</p>${f.neutral.length ? `<p class="note small muted">Undecided: ${names(f.neutral)}</p>` : ''}
+    <p class="note small">🫂 With you: ${f.mine.length ? names(f.mine) : 'nobody yet'}</p><p class="note small">👑 With ${esc(f.star.ln)}: ${f.his.length ? names(f.his) : 'nobody'}</p>${f.neutral.length ? `<p class="note small muted">Undecided: ${names(f.neutral)}</p>` : ''}
     ${cy.faction ? `<p class="note small">${esc(cy.faction)}</p>` : open ? `<div class="stack">
       <button class="btn left small" data-act="careerFaction" data-v="dinner" ${(L.career?.coins || 0) < 50 ? 'disabled' : ''}>🍽️ Team dinner on you · 50 coins<br><span class="note small">The undecided come over to your side (+6 each).</span></button>
       <button class="btn left small" data-act="careerFaction" data-v="bridge">🤝 Bring ${esc(f.star.ln)} in<br><span class="note small">${esc(f.star.ln)} +10, ego -1: one room.</span></button>
@@ -5433,7 +5433,7 @@ actions.homeSimCamp = () => {
 function alphaClash(t) {
   const al = FA.signedRoster(t).filter(isAlpha).sort((a, b) => shownLevel(b) - shownLevel(a));
   if (al.length < 2 || al.every(x => traitsSet(x) && tr(x, 'winning') >= 15)) return '';
-  return `🎭 ${al.slice(0, 2).map(x => x.ln).join(' and ')}${al.length > 2 ? ` (and ${al.length - 2} more)` : ''} are both Alphas: expect friction (−3 to −6 morale each summer) unless one moves or both put winning first.`;
+  return `👑 ${al.slice(0, 2).map(x => x.ln).join(' and ')}${al.length > 2 ? ` (and ${al.length - 2} more)` : ''} are both Alphas: expect friction (−3 to −6 morale each summer) unless one moves or both put winning first.`;
 }
 // Draft night: a top-three pick or a player taken well above his ranking gets a bigger head; one who slid well past
 // it is humbled. Summer League MVP feeds it too.
@@ -5471,7 +5471,7 @@ function mediaMindCard() {
     <div class="pod-list">${list.map(p => {
       const ch = driftsOf(p).find(x => x.src === 'media'), on = back === p.id ? 'back' : ch ? 'challenge' : '';
       const fx = on === 'back' ? `Backed: morale +6${isAlpha(p) ? ', other Alphas −3' : ''}` : ch ? `Challenged: ${traitLbl(ch.k)} ${ch.d > 0 ? '+' : '−'}${Math.abs(ch.d)}${ch.k === EGO_KEY ? ', morale −4' : ''}` : '';
-      return `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small ${fx ? 'up' : 'muted'}">${fx ? esc(fx) : `🎭 ${tr(p, EGO_KEY)} · ⚙️ ${tr(p, 'motor')}`}</span></span>
+      return `<div class="pod-row"><span class="pod-who"><b>${esc(playerName(p))}</b> ${lvTag(p)}<br><span class="small ${fx ? 'up' : 'muted'}">${fx ? esc(fx) : `👑 ${tr(p, EGO_KEY)} · ⚙️ ${tr(p, 'motor')}`}</span></span>
         <span class="pod-btns"><button class="btn tiny ${on === 'back' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="back">👍 Back</button><button class="btn tiny ${on === 'challenge' ? 'on focus' : 'off'}" data-act="mediaMind" data-id="${p.id}" data-k="challenge">🔥 Challenge</button></span></div>`;
     }).join('')}</div></fieldset>`;
 }
@@ -10174,7 +10174,7 @@ function workoutAnswer(p, k) {
       ['I\'d take it, and I\'d work to change it.', 'I want to start, sure. But I\'d do the job.'],
       ['I\'d be fine for a while. Not forever.', 'I\'d do it, but I think I\'m better than that.'],
       ['Respectfully? I\'m not a bench guy. Draft me to play.', 'I wouldn\'t. I\'m the best player in this class.']][band]),
-      staff: `Staff read: ${v >= 16 ? 'he has an alpha mentality' : v <= 4 ? 'he\'s humble' : v <= 8 ? 'he has a low ego' : 'he has a solid ego'} (🎭 ${v}) and ${['takes whatever role helps', 'is happy to fit in', 'wants a fair role', 'wants his touches and his credit', 'needs to be the man'][band]}.` };
+      staff: `Staff read: ${v >= 16 ? 'he has an alpha mentality' : v <= 4 ? 'he\'s humble' : v <= 8 ? 'he has a low ego' : 'he has a solid ego'} (👑 ${v}) and ${['takes whatever role helps', 'is happy to fit in', 'wants a fair role', 'wants his touches and his credit', 'needs to be the man'][band]}.` };
   }
   if (k === 'future') {
     const reg = p.regressionAge || 30;
@@ -12378,7 +12378,7 @@ screens.fa = (args = {}) => {
     return `<button class="prow ${mineBid ? 'sel' : ''}" data-act="${ro ? 'openPlayer' : 'faOffer'}" data-id="${m.p.id}" ${!ro && (signedIds.has(m.p.id) || s.stage === 'done') ? 'disabled' : ''}>
       <span class="name">${faceImg(m.p)}${esc(playerName(m.p))}${rfa ? ' <span class="badge new">RFA</span>' : ''}${traitsSet(m.p) && tr(m.p, 'durability') <= 6 ? ' <span title="Injury-prone">🩺</span>' : ''}</span>
       <span class="right"><span class="small">Asks $${m.ask}M × ${askYears(m)}</span><br><span class="small" title="${esc(M.text)}">${M.icon} ${esc(M.name)}</span></span>
-      <span class="meta">${lvRow(m.p)} · ${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 🎭 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
+      <span class="meta">${lvRow(m.p)} · ${esc(posName(m.p))} · ${m.p.age}y${l ? ` · ${l.ppg.toFixed(1)}/${l.rpg.toFixed(1)}/${l.apg.toFixed(1)}` : ''} · ${m.from ? esc(m.from.shortName) : 'FA'}${isAlpha(m.p) ? ' · 👑 wants a featured role' : ''}${isComplete() && FA.agentOf(m.p) !== 'fair' ? ` · ${FA.AGENTS[FA.agentOf(m.p)].icon} ${FA.AGENTS[FA.agentOf(m.p)].label.replace(' agent', '')}` : ''}</span>
       ${signed ? `<span class="chg up">Signed: ${esc(signed.team.shortName)} ${offerText(signed.offer)}</span>`
       : list.length ? `<span class="chg">${list.length} team${list.length > 1 ? 's' : ''} interested · best ${esc(teamName(best.tid))} ${offerText(best)}${mineBid ? (best === mineBid ? ' · <span class="up">you lead</span>' : ' · <span class="down">you trail</span>') : ''}</span>` : ''}
     </button>`;
@@ -16464,7 +16464,7 @@ function requestsState() {
       const odds = (0.1 + (ev - 15) * 0.04 + (fresh ? 0.1 : 0) + (morale < 50 ? 0.1 : morale >= 85 ? -0.08 : 0)) * (isUserTeam(t) ? fxNow().requestMult : 1) * (1 - FX.facilityFx(t).requestCut);
       if (mulberry32((saveSalt() ^ Math.imul(p.id + 23, 2654435761) ^ 0x3e9) >>> 0)() >= odds) continue;
       if (!isUserTeam(t)) { cpuAsks++; if (p.season) { p.season.onTradeBlock = 1; p.season.morale = Math.max(0, morale - 8); } }
-      list.push({ pid: p.id, tid: t.id, why: `🎭 wants his own team, tired of playing second to ${rival.ln || playerName(rival)}`, status: isUserTeam(t) ? 'open' : 'cpu' });
+      list.push({ pid: p.id, tid: t.id, why: `👑 wants his own team, tired of playing second to ${rival.ln || playerName(rival)}`, status: isUserTeam(t) ? 'open' : 'cpu' });
       break;   // one a team a summer
     }
   }
