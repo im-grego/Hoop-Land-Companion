@@ -58,7 +58,7 @@ import { presserQuestions, presserStories, promiseStories, leagueGram, teamSitua
 import { runCombine, hoopGram, DRILLS, MEASURES, inchStr, fracIn, fmtDrill, medicalFlag } from './predraft.js';
 import { BUILT_IN_APP_KEY, dropboxConfig, saveDropboxConfig, dropboxConnected, disconnectDropbox, dropboxAuthUrl, dropboxFinishAuth, dropboxUpload, dropboxPath, dropboxPut, dropboxGet } from './dropbox.js';
 
-const APP_VERSION = '0.252.2';
+const APP_VERSION = '0.253.0';
 const $app = document.getElementById('app');
 
 // ---------------------------------------------------------------------------
@@ -6488,7 +6488,7 @@ function ownerReviewBox(t) {
   const say = { A: 'The owner is thrilled. Whatever you\'re doing, keep doing it.', B: 'The owner is pleased: ahead of where we thought.', C: 'Right about where the owner expected.', D: 'The owner expected more. The coach is feeling it.', F: 'The owner is furious. Someone has to answer for this.' }[r.grade];
   return `<fieldset class="frame"><legend>Owner's Review${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>
     <p class="note small">Grade <b class="${'AB'.includes(r.grade) ? 'up' : 'CD'.includes(r.grade) ? 'gold' : 'down'}">${r.grade}</b> · ${r.w}-${r.l} for a ${esc(r.tier)} team (expected about ${Math.round(r.want * 82)} wins over 82). ${esc(say)}</p>
-    ${ownerGoalLine(t)}${done ? `<p class="note small">${esc(done)}</p>` : 'AB'.includes(r.grade) ? `<button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="bonus">🎁 Collect the owner's bonus (+${r.grade === 'A' ? 100 : 50} coins)</button>`
+    ${ownerGoalLine(t)}${done ? `<p class="note small">${esc(done)}</p>` : 'AB'.includes(r.grade) ? `<button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="bonus">🎁 Collect the owner's bonus (+${Math.round((r.grade === 'A' ? 100 : 50) * TRUST_FX[trustTier(t)].bonus)} coins)</button>`
       : 'DF'.includes(r.grade) && c ? `<div class="grid2"><button class="btn small" data-act="ownerAct" data-t="${t.id}" data-v="back">🤝 Back ${esc(c.ln)}</button><button class="btn small off" data-act="ownerAct" data-t="${t.id}" data-v="fire">🔥 Fire ${esc(c.ln)}</button></div>` : ''}</fieldset>`;
 }
 // The owner's goal for a season: picked at the Owner Meeting (Season in Review), judged when that season is done.
@@ -6501,6 +6501,16 @@ function ownerGoals() {
 }
 const saveOwnerGoals = () => { try { localStorage.setItem(ownerGoalKey(), JSON.stringify(ownerGoals())); } catch { /* ignore */ } };
 const ownerTrust = t => ownerGoals().trust[t.id] ?? 50;
+// What trust does: 75+ the owner adds a Franchise Token each offseason and pays a bigger midseason bonus; under 30 he
+// takes a token away (the staff budget) and halves the bonus.
+const trustTier = t => (ownerTrust(t) >= 75 ? 'high' : ownerTrust(t) < 30 ? 'low' : 'mid');
+const TRUST_FX = { high: { tok: 1, bonus: 1.5, says: '+1 Franchise Token each offseason, a bigger midseason bonus' }, mid: { tok: 0, bonus: 1, says: '' }, low: { tok: -1, bonus: 0.5, says: '−1 Franchise Token each offseason (a smaller staff budget), half the midseason bonus' } };
+function trustPerk(t) {
+  const yr = lastSeasonYear(), fx = TRUST_FX[trustTier(t)], tree = treeStore(), k = `trust:${yr}:${t.id}`;
+  if (!fx.tok || tree.earned[k]) return;
+  tree.earned[k] = { pts: fx.tok, why: [fx.tok > 0 ? 'The owner\'s confidence' : 'The owner cut the staff budget'] };
+  saveTree();
+}
 const OWNER_GOALS = {
   title: { label: 'Win the title', test: r => r.title },
   cf: { label: 'Reach the conference finals', test: r => r.series >= 2 },
@@ -6545,15 +6555,15 @@ function ownerSettle(t) {
 }
 function ownerMeetingBox(t) {
   if (isCollege()) return '';
-  ownerSettle(t);
+  ownerSettle(t); trustPerk(t);
   const o = ownerGoals(), yr = lastSeasonYear(), last = o.goals[yr]?.[t.id], res = o.done[`${yr}:${t.id}`];
   const next = o.goals[yr + 1]?.[t.id], open = phaseRank(league().season) >= 1 && !next;
   const trust = ownerTrust(t);
   const mood = trust >= 75 ? 'The owner trusts you completely.' : trust >= 50 ? 'The owner is on board.' : trust >= 30 ? 'The owner is starting to wonder.' : 'You\'re on the hot seat.';
   const reward = g => `${tokTag(g.pts)}${isComplete() ? ` + ${coinTag(g.coins)}` : ''}`;
-  return `<fieldset class="frame"><legend>Owner Meeting${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>${infoBtn('ownergoal', '<p class="small"><b>The owner\'s goal</b>: each offseason you pick one of two goals for the coming season, set by where the team is. The ambitious one pays more Franchise Tokens (and coins).</p><p class="small">Meet it and you collect at next year\'s meeting. Miss it and the owner\'s trust drops (a missed safe goal costs more trust than a missed ambitious one).</p>')}<div class="stack">
+  return `<fieldset class="frame"><legend>Owner Meeting${league().teams.filter(isUserTeam).length > 1 ? ` · ${esc(t.shortName)}` : ''}</legend>${infoBtn('ownergoal', '<p class="small"><b>The owner\'s goal</b>: each offseason you pick one of two goals for the coming season, set by where the team is. The ambitious one pays more Franchise Tokens (and coins).</p><p class="small">Meet it and you collect at next year\'s meeting. Miss it and the owner\'s trust drops (a missed safe goal costs more trust than a missed ambitious one).</p><p class="small">Trust 75+: the owner adds a Franchise Token every offseason and his midseason bonus is 50% bigger. Under 30: he takes a token away and halves the bonus.</p>')}<div class="stack">
     ${last ? `<p class="note small">${yr} goal: <b>${esc(last.label)}</b> · ${res === 'met' ? `<span class="up">Met, +${reward(last)}</span>` : '<span class="down">Missed</span>'}</p>` : ''}
-    <p class="note small">Owner trust <b class="${trust >= 50 ? 'up' : trust >= 30 ? 'gold' : 'down'}">${trust}</b>/100 · ${esc(mood)}</p>
+    <p class="note small">Owner trust <b class="${trust >= 50 ? 'up' : trust >= 30 ? 'gold' : 'down'}">${trust}</b>/100 · ${esc(mood)}${TRUST_FX[trustTier(t)].says ? ` <span class="${trustTier(t) === 'high' ? 'up' : 'down'}">${esc(TRUST_FX[trustTier(t)].says)}.</span>` : ''}</p>
     ${next ? `<p class="note small">${yr + 1} goal: <b class="gold">${esc(next.label)}</b> · pays ${reward(next)}</p>`
       : open ? `<p class="note small muted">Pick the goal for ${yr + 1}:</p>${ownerChoices(t).map((g, i) => `<button class="btn ${i ? '' : 'focus'}" data-act="ownerGoal" data-t="${t.id}" data-i="${i}">${i ? '🛡️' : '🔥'} ${esc(g.label)} · ${reward(g)}</button>`).join('')}` : ''}
   </div></fieldset>`;
@@ -6660,7 +6670,7 @@ function ownerGoalLine(t) {
 actions.ownerAct = async d => {
   const L = league(), t = L.teams.find(x => x.id === +d.t), r = ownerReview(t), s = dlState(); if (!r || (s.owner || {})[t.id]) return;
   let text;
-  if (d.v === 'bonus') { const n = r.grade === 'A' ? 100 : 50; t.frontOffice.coins = (t.frontOffice.coins || 0) + n; text = `The owner sent over ${n} coins.`; }
+  if (d.v === 'bonus') { const n = Math.round((r.grade === 'A' ? 100 : 50) * TRUST_FX[trustTier(t)].bonus); t.frontOffice.coins = (t.frontOffice.coins || 0) + n; text = `The owner sent over ${n} coins.`; }
   else if (d.v === 'back') { for (const p of FA.signedRoster(t)) moraleEvent(p, `backcoach:${L.season.currentYear}`, 2, 'the GM backed the coach'); text = `You backed ${headCoachOf(t).ln}. The owner gives it until the end of the year.`; }
   else {
     const next = CL.bestPoolCoach(L), old = headCoachOf(t);
