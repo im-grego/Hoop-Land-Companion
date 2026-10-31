@@ -70,14 +70,17 @@ function pickStarters(cands, score) {
 // Players 3.5★ and up, and prospects where they're meant to play, get their range instead (starting in its middle;
 // when they'd leave the rest less than a bench minimum, they all give back in proportion), and the rest split
 // what's left by the weights.
-function minutesFor(rot, mode, game, over, share = null, deep = false) {
+function minutesFor(rot, mode, game, over, share = null, deep = false, promised = {}) {
   const W = MODES[mode].w, total = 5 * game, lo = Math.round(game * 0.12), hi = Math.round(game * (MODES[mode].hi || 0.8));
   const want = new Map(rot.filter(p => over[p.id] != null).map(p => [p, Math.max(0, Math.min(game, over[p.id]))]));
   const wOf = p => W[rot.indexOf(p)] ?? 0.2;
   const k = game / 48, range = new Map();
   for (const p of rot) {
     if (over[p.id] != null) continue;
-    const r = STAR_MINUTES[starsOf(p)] || (isProspect(p) && prospectsPlay(mode, deep) ? PROSPECT_MINUTES : null);
+    let r = STAR_MINUTES[starsOf(p)] || (isProspect(p) && prospectsPlay(mode, deep) ? PROSPECT_MINUTES : null);
+    // A promise from his exit interview: at least what was promised (on a 48-minute game).
+    const pm = promised[p.id]?.min;
+    if (pm) r = [Math.max(r?.[0] ?? 0, pm), Math.max(r?.[1] ?? 0, pm + 2)];
     if (r) range.set(p, r.map(v => Math.min(hi, Math.round(v * k))));
   }
   if (range.size) {
@@ -85,7 +88,7 @@ function minutesFor(rot, mode, game, over, share = null, deep = false) {
     const avail = total - rot.filter(p => over[p.id] != null).reduce((a, p) => a + want.get(p), 0);
     // By priority: stars first (5★ down to 3.5★), prospects last. Each pass hands out what's left while the rest keep
     // at least a bench minimum: everyone to the low end of his range, then to its middle.
-    const pri = p => (STAR_MINUTES[starsOf(p)] ? starsOf(p) : 0);
+    const pri = p => (promised[p.id]?.min ? 11 : STAR_MINUTES[starsOf(p)] ? starsOf(p) : 0);
     T.sort((a, b) => pri(b) - pri(a));
     for (const p of T) want.set(p, lo);
     const assigned = () => [...T, ...O].reduce((a, p) => a + (want.get(p) || 0), 0);
@@ -197,9 +200,10 @@ function assign(rot, starters, want, hi, game, over, cap = null) {
 const offMinutes = (rot, g) => rot.reduce((a, q) => a + g.slots.get(q).reduce((b, v, t) => b + (inPos(q, t) ? 0 : v), 0), 0);
 // The plan: starters by slot, the bench in order, each player's minutes by slot. size: players in the rotation (7-12).
 // over: { pid: total } minutes you've set by hand (the rest share what's left).
-export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = {}, share = null } = {}) {
+// promised: { pid: { min, start } } from exit interviews: a floor on his minutes, or a starting spot.
+export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = {}, share = null, promised = {} } = {}) {
   const roster = team.roster.filter(p => p.status === 3 || p.status === 2), deep = isDeep(roster);
-  const score = p => playScore(p, mode, deep);
+  const score = p => playScore(p, mode, deep) + (promised[p.id]?.start ? 25 : promised[p.id]?.min ? 8 : 0);
   // Set to 0 by hand: out of the rotation. Set above 0: in it, whoever else gets squeezed.
   const cands = roster.filter(p => healthy(p) && over[p.id] !== 0).sort((a, b) => score(b) - score(a));
   const starters = pickStarters(cands, score);
@@ -209,12 +213,13 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
   const nBench = Math.max(0, Math.min(12, size) - 5), grp = p => ((p.pos ?? 4) <= 2 ? 0 : (p.pos ?? 4) <= 5 ? 1 : 2);
   const picks = bench.filter(p => over[p.id] > 0).slice(0, nBench);
   // Prospects where they're meant to play come next (at most two), then the position needs.
+  for (const p of bench.filter(q => promised[q.id] && over[q.id] == null && !picks.includes(q))) if (picks.length < nBench) picks.push(p);
   if (prospectsPlay(mode, deep)) for (const p of bench.filter(q => isProspect(q) && over[q.id] == null && !picks.includes(q)).slice(0, 2)) if (picks.length < nBench) picks.push(p);
   for (const g of [2, 0, 1]) { const b = bench.find(p => grp(p) === g && !picks.includes(p)); if (b && picks.length < nBench && (g !== 1 || score(b) >= score(bench[0]) - 10)) picks.push(b); }
   for (const p of bench) if (picks.length < nBench && !picks.includes(p)) picks.push(p);
   picks.sort((a, b) => score(b) - score(a));
   let rot = [...starters, ...picks];
-  let { want, hi, cap } = minutesFor(rot, mode, game, over, share, deep), got = assign(rot, starters, want, hi, game, over, cap);
+  let { want, hi, cap } = minutesFor(rot, mode, game, over, share, deep, promised), got = assign(rot, starters, want, hi, game, over, cap);
   // Still out of position somewhere? Bring in a bench player who can play the spot, if he's within 14 levels of the
   // worst player in the rotation, in place of the last man whose spots are covered without him. Kept only if it
   // cuts the out-of-position minutes.
@@ -228,7 +233,7 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
     const covered = q => [0, 1, 2, 3, 4].every(t => !inPos(q, t) || rot.filter(r => r !== q && inPos(r, t)).length >= 2);
     const drop = rot.length >= Math.min(12, size) ? [...rot.slice(5)].reverse().find(q => over[q.id] == null && !tried.has(q) && covered(q)) : null;
     const nextRot = [...starters, ...[...rot.slice(5).filter(q => q !== drop), add].sort((a, b) => score(b) - score(a))];
-    const m2 = minutesFor(nextRot, mode, game, over, share, deep), g2 = assign(nextRot, starters, m2.want, m2.hi, game, over, m2.cap);
+    const m2 = minutesFor(nextRot, mode, game, over, share, deep, promised), g2 = assign(nextRot, starters, m2.want, m2.hi, game, over, m2.cap);
     if (offMinutes(nextRot, g2) < offMinutes(rot, got)) { rot = nextRot; want = m2.want; hi = m2.hi; cap = m2.cap; got = g2; }
   }
   // A rotation spot that ends up with no minutes (a third center behind two) goes to the next man who can play.
@@ -239,7 +244,7 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
     for (const add of cands.filter(q => !rot.includes(q) && !tried.has(q)).slice(0, 4)) {
       tried.add(add);
       const nextRot = [...starters, ...[...rot.slice(5).filter(q => q !== idle), add].sort((a, b) => score(b) - score(a))];
-      const m2 = minutesFor(nextRot, mode, game, over, share, deep), g2 = assign(nextRot, starters, m2.want, m2.hi, game, over, m2.cap);
+      const m2 = minutesFor(nextRot, mode, game, over, share, deep, promised), g2 = assign(nextRot, starters, m2.want, m2.hi, game, over, m2.cap);
       if (g2.slots.get(add).some(v => v > 0) && offMinutes(nextRot, g2) <= offMinutes(rot, got)) { rot = nextRot; want = m2.want; hi = m2.hi; cap = m2.cap; got = g2; swapped = true; break; }
     }
     if (!swapped) { rot = rot.filter(q => q !== idle); break; }
@@ -248,7 +253,7 @@ export function planLineup(team, { mode = 'normal', size = 9, game = 48, over = 
   const order = [...rot, ...roster.filter(p => !rot.includes(p)).sort((a, b) => score(b) - score(a))];
   return {
     order, starters, rot, game,
-    rows: order.map((p, i) => { const sl = slots.get(p) || [0, 0, 0, 0, 0], tot = sl.reduce((a, b) => a + b, 0); return { p, linePos: i, slot: starters.includes(p) ? starters.indexOf(p) : tot ? sl.indexOf(Math.max(...sl)) : nearestSlot(p), minutes: [tot, ...sl], hand: over[p.id] != null, off: sl.some((m, k) => m > 0 && !inPos(p, k)) }; }),
+    rows: order.map((p, i) => { const sl = slots.get(p) || [0, 0, 0, 0, 0], tot = sl.reduce((a, b) => a + b, 0); return { p, linePos: i, slot: starters.includes(p) ? starters.indexOf(p) : tot ? sl.indexOf(Math.max(...sl)) : nearestSlot(p), minutes: [tot, ...sl], hand: over[p.id] != null, promised: !!promised[p.id], off: sl.some((m, k) => m > 0 && !inPos(p, k)) }; }),
     short: need.map((v, i) => ({ slot: SLOTS[i], v })).filter(x => x.v > 0),
   };
 }

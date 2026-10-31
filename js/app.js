@@ -6242,7 +6242,19 @@ actions.openPlayer = d => go('player', { id: +d.id });
 const gameMinutes = () => Math.round(48 / minScale(state.leagueIdx));
 // The head coach's default rotation (lineups.js coachRotation): size and the starters' share of the minutes.
 const coachRot = (t, po = false) => LU.coachRotation(CO.headCoach(t), po);
-const defaultPlan = (t, po = false) => LU.planLineup(t, { mode: po ? 'playoffs' : lineupMode(t), ...coachRot(t, po), game: gameMinutes() });
+const defaultPlan = (t, po = false) => LU.planLineup(t, { mode: po ? 'playoffs' : lineupMode(t), ...coachRot(t, po), game: gameMinutes(), promised: promisedMinutes(t) });
+// Open exit-interview promises for the season being played (made after last season): "more minutes" is his minutes
+// then plus 4, at least 26; "you'll start" is a starting spot. Your teams only.
+function promisedMinutes(t) {
+  if (!isUserTeam(t) || isCollege() || !isComplete()) return {};
+  const yr = lastSeasonYear(), talks = exitStore().talks[yr] || {}, out = {};
+  for (const [pid, x] of Object.entries(talks)) {
+    if (x.tid !== t.id || x.ans !== 'promise') continue;
+    if (x.topic === 'role') out[pid] = { min: Math.max(26, Math.round((x.mpg || 0) + 4)) };
+    if (x.topic === 'grow') out[pid] = { start: true, min: 24 };
+  }
+  return out;
+}
 const ROT_TXT = { bd: ['Average bench', 'Deep bench', 'Short bench'], bu: ['low bench usage', 'medium bench usage', 'high bench usage'] };
 const lineupMode = t => { const s = teamStatus(league(), t); return s === 'contending' || s === 'competing' ? 'compete' : s === 'rebuilding' || s === 'developing' ? 'develop' : 'normal'; };
 // A player's minutes as a bar out of a full game, split by position (out of position striped), with his share.
@@ -6272,7 +6284,7 @@ screens.lineup = (args = {}) => {
   const posN = p => POSITIONS[p.pos] || '';
   const row = r => {
     const p = r.p, inRot = r.minutes[0] > 0, now = p.minutes?.[0] ?? 0;
-    return `<div class="drill-row wrap lu-row ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}${LU.isProspect(p) ? ' · <span class="up">🌱 prospect</span>' : ''}</span>${r.off ? ' <span class="small down">⚠️ out of position</span>' : ''}
+    return `<div class="drill-row wrap lu-row ${r.linePos < 5 ? 'sel' : ''}"><span class="grow"><b>${r.linePos < 5 ? LU.SLOTS[r.slot] : inRot ? `${r.linePos + 1}.` : '—'}</b> ${esc(playerName(p))} ${lvTag(p)} <span class="muted small">${esc(posN(p))} · ${p.age}y${p.season?.injury?.gamesOut > 0 ? ' · 🩹 hurt' : ''}${LU.isProspect(p) ? ' · <span class="up">🌱 prospect</span>' : ''}${r.promised ? ` · <span class="gold">🤝 promised ${promisedMinutes(t)[p.id]?.start ? 'a starting job' : `${promisedMinutes(t)[p.id]?.min}+ minutes`}</span>` : ''}</span>${r.off ? ' <span class="small down">⚠️ out of position</span>' : ''}
       ${inRot ? minBar(p, r.minutes, game) : '<br><span class="small muted">Out of the rotation</span>'}${now !== r.minutes[0] ? ` <span class="small muted">(now ${now})</span>` : ''}${r.hand ? ' <span class="small gold">✋ set by hand</span>' : ''}</span>
       ${inRot || r.hand ? `<span class="trait-ctl"><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="-${step}" aria-label="Fewer minutes">−</button><b class="small" style="min-width:2.2em;text-align:center">${r.minutes[0]}</b><button class="btn tiny" data-act="luMin" data-id="${p.id}" data-d="${step}" aria-label="More minutes">+</button></span>` : `<button class="btn tiny off" data-act="luMin" data-id="${p.id}" data-d="${step * 4}">Play him</button>`}</div>`;
   };
@@ -6296,7 +6308,7 @@ const luArgs = () => state.stack[state.stack.length - 1].args || {};
 // The screen's plan: the mode you picked, the coach's rotation size and minutes split unless you changed the size.
 function luPlan(t, a) {
   const mode = a.mode || lineupMode(t), cr = coachRot(t, mode === 'playoffs');
-  return LU.planLineup(t, { mode, size: a.size || cr.size, share: cr.share, game: gameMinutes(), over: a.over || {} });
+  return LU.planLineup(t, { mode, size: a.size || cr.size, share: cr.share, game: gameMinutes(), over: a.over || {}, promised: promisedMinutes(t) });
 }
 actions.luSet = d => { const a = { ...luArgs() }; if (d.k === 'over') a.over = {}; else a[d.k] = d.k === 'size' ? +d.v : d.v; replace('lineup', a); };
 actions.luMin = d => {
