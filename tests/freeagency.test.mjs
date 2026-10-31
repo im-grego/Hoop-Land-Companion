@@ -45,8 +45,10 @@ for (const x of signings) {
   assert.ok(team.roster.includes(p) && !L.freeAgents.includes(p), 'on the roster');
   assert.equal(p.status, FA.STATUS_SIGNED);
   assert.equal(p.tid, team.id);
-  assert.deepEqual([p.contract.tid, p.contract.pid, p.contract.sal, p.contract.yrs], [team.id, p.id, offer.sal, offer.yrs]);
-  if (x.rec.fromTeam !== team) assert.ok(team.roster.every(q => q === p || q.num !== p.num), 'free jersey number');
+  // A signed deal is written the way the game writes one: no team or player id (those mark pending offers).
+  assert.deepEqual([p.contract.tid, p.contract.pid, p.contract.sal, p.contract.yrs], [0, 0, offer.sal, offer.yrs]);
+  // Free among the players staying: an expiring (4) or released (5) player's number is up for grabs.
+  if (x.rec.fromTeam !== team) assert.ok(team.roster.every(q => q === p || q.status === 4 || q.status === 5 || q.num !== p.num), 'free jersey number');
   assert.ok(!L.contractOffers.some(o => o.pid === p.id), 'pending offers cleared');
   if (x.kind === 'mle') assert.ok(offer.sal <= O.mle && offer.yrs <= O.mleMaxYears);
   if (x.kind === 'vetMin') assert.ok(offer.sal === O.vetMin && offer.yrs === 1 && p.age >= O.vetMinAge);
